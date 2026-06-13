@@ -3,34 +3,116 @@
  * Clean subject-picker layout — one subject at a time via dropdown
  */
 import { Api } from '../../api.js';
+import { Auth } from '../../auth.js';
+import { icon } from '../../utils/icons.js';
+import { curriculumTableCss } from '../../utils/classroom-ui.js';
+import { getFullName } from '../../utils/user-display.js';
+import {
+    GRADING_PERIODS, buildPeriodGroups, periodQuizSubtotal, isItemMissing,
+    gradingPeriodTableCss, periodMeta,
+} from '../../utils/gradebook-periods.js';
 
 export async function render(container) {
-    container.innerHTML = `<div style="display:flex;justify-content:center;padding:60px">
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const subjectId = hashParams.get('subject_id') || '';
+    await renderGradesView(container, { subjectId });
+}
+
+/** Embed student grades inside a subject tab */
+export async function mountStudentGrades(host, { subjectId } = {}) {
+    await renderGradesView(host, { subjectId, embedded: true });
+}
+
+async function renderGradesView(container, { subjectId = '', embedded = false } = {}) {
+    container.innerHTML = `<div style="display:flex;justify-content:center;padding:${embedded ? '24px' : '60px'}">
         <div style="width:36px;height:36px;border:3px solid #e8e8e8;border-top-color:#1B4D3E;border-radius:50%;animation:spin .8s linear infinite"></div>
         <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
     </div>`;
 
-    const res      = await Api.get('/ProgressAPI.php?action=grades');
-    const subjects = res.success ? res.data : [];
+    await Auth.getUser?.();
+    const me = Auth.user?.() || {};
+    const myName = getFullName(me) || 'My scores';
 
-    /* ── Overall stats ─────────────────────────────────────────────── */
-    let totalQuizzes = 0, totalPassed = 0, allScores = [];
+    const res = await Api.get('/ProgressAPI.php?action=grades');
+    if (!res.success) {
+        container.innerHTML = `
+            <div class="empty-state" style="padding:${embedded ? '24px' : '48px'};text-align:center">
+                <div class="empty-state-icon">!</div>
+                <h3>Could not load grades</h3>
+                <p>${esc(res.message || 'Please refresh and try again.')}</p>
+            </div>`;
+        return;
+    }
+    let subjects = res.data || [];
+    if (subjectId) {
+        subjects = subjects.filter(s => String(s.subject_id) === String(subjectId));
+    }
+    const lockSubject = !!subjectId;
+
+    /* ── Overall stats (raw points — addition only) ─────────────── */
+    let totalQuizzes = 0, totalPassed = 0, totalEarned = 0, totalPossible = 0;
     subjects.forEach(s => {
         s.quizzes.forEach(q => {
             totalQuizzes++;
-            if (q.best_score !== null) allScores.push(parseFloat(q.best_score));
             if (q.passed == 1) totalPassed++;
+            if (q.earned_points != null && q.total_points != null) {
+                totalEarned += parseFloat(q.earned_points) || 0;
+                totalPossible += parseFloat(q.total_points) || 0;
+            }
         });
     });
-    const overallAvg = allScores.length > 0
-        ? (allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(1)
-        : null;
-    const avgColor = overallAvg !== null ? (overallAvg >= 60 ? '#15803D' : '#B91C1C') : '#9CA3AF';
-    const avgBg    = overallAvg !== null ? (overallAvg >= 60 ? '#E8F5E9'  : '#FEE2E2') : '#f1f5f9';
+    const totalRawLabel = totalPossible > 0 ? `${totalEarned} / ${totalPossible}` : '—';
+
+  const activeSubject = subjects[0] || null;
+  const activeTotals = activeSubject ? rawTotals(activeSubject.quizzes) : { earned: 0, possible: 0 };
 
     /* ── Shell ─────────────────────────────────────────────────────── */
     container.innerHTML = `
         <style>
+            ${curriculumTableCss()}
+            ${gradingPeriodTableCss()}
+            .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
+            .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#FEF3C7; color:#B45309; }
+            .gb-record-table { min-width:640px; }
+            .gb-period-subtotal-cell { background:#f8fdf9 !important; }
+            .gb-at-risk { background:#FEF2F2 !important; }
+            .gb-risk-tag { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
+                border-radius:50%; background:#FEE2E2; color:#B91C1C; font-size:10px; font-weight:800; margin-left:4px; }
+            .gr-period-legend {
+                padding:12px 22px; font-size:12px; color:#00461B; background:#E8F5EC;
+                border-bottom:1px solid #f1f5f9;
+            }
+            .gr-panel-periods .gb-period-section { margin:0; }
+            .gr-panel-periods .gb-period-section-hdr { border-radius:0; }
+            .gr-panel-periods .gb-period-panel { border-left:none; border-right:none; border-radius:0; }
+            .gr-panel-periods .gb-period-section:last-of-type .gb-period-panel { border-bottom:none; }
+            .gr-grand-total {
+                display:flex; justify-content:space-between; align-items:center;
+                padding:16px 22px; background:#f9fafb; border-top:2px solid #e5e7eb;
+                font-size:13px; font-weight:600; color:#374151;
+            }
+            .gr-grand-total strong { font-size:18px; color:#1B4D3E; }
+            .gb-table-scroll { overflow-x:auto; }
+            .gr-cell-link { color:#1B4D3E; text-decoration:none; font-weight:700; }
+            .gr-cell-link:hover { text-decoration:underline; }
+            .gr-panel-periods .gc-cur-wrap { margin:0; }
+            .gr-embedded .gr-banner { border-radius:12px; margin-bottom:14px; padding:18px 20px; }
+            .gr-embedded .gr-banner-left h2 { font-size:18px; }
+            .gr-role-badge {
+                display:inline-flex; align-items:center; gap:5px;
+                padding:4px 10px; border-radius:20px; font-size:10px; font-weight:700;
+                text-transform:uppercase; letter-spacing:.5px;
+                background:rgba(255,255,255,.18); color:#fff; margin-bottom:6px;
+            }
+            .gr-embed-stats {
+                display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;
+            }
+            .gr-embed-stat {
+                flex:1; min-width:100px; background:#fff; border:1px solid #e8e8e8;
+                border-radius:12px; padding:12px 14px; text-align:center;
+            }
+            .gr-embed-stat strong { display:block; font-size:20px; font-weight:800; color:#111827; }
+            .gr-embed-stat span { font-size:11px; color:#9CA3AF; font-weight:600; text-transform:uppercase; }
             /* Banner */
             .gr-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:24px 28px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; position:relative; overflow:hidden; }
             .gr-banner::before { content:''; position:absolute; right:-30px; top:-30px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.05); }
@@ -87,9 +169,25 @@ export async function render(container) {
             .gr-score-none  { font-size:13px; color:#9CA3AF; }
 
             .gr-status { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; }
-            .gr-status.passed   { background:#DCFCE7; color:#15803D; }
-            .gr-status.failed   { background:#FEE2E2; color:#B91C1C; }
-            .gr-status.nottaken { background:#f1f5f9; color:#9CA3AF; }
+            .gr-status.passed    { background:#DCFCE7; color:#15803D; }
+            .gr-status.failed    { background:#FEE2E2; color:#B91C1C; }
+            .gr-status.nottaken  { background:#f1f5f9; color:#9CA3AF; }
+            .gr-status.missing   { background:#FEF3C7; color:#B45309; }
+            .gr-status.submitted { background:#DBEAFE; color:#1D4ED8; }
+            .gr-status.graded    { background:#E0E7FF; color:#4338CA; }
+
+            .gr-total-row td { background:#f9fafb; border-top:2px solid #e5e7eb; font-weight:700; }
+            .gr-points { font-size:13px; font-weight:700; color:#374151; white-space:nowrap; }
+
+            .gr-progress-block { padding:16px 22px; border-bottom:1px solid #f1f5f9; background:#fafafa; }
+            .gr-progress-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; font-weight:600; color:#6b7280; }
+            .gr-progress-top strong { color:#1B4D3E; font-size:14px; }
+            .gr-progress-track { height:8px; background:#e5e7eb; border-radius:99px; overflow:hidden; }
+            .gr-progress-fill { height:100%; background:linear-gradient(90deg,#1B4D3E,#40916C); border-radius:99px; transition:width .3s; }
+
+            .gr-view-btn { display:inline-flex; align-items:center; gap:4px; padding:5px 12px; border-radius:8px;
+                font-size:11px; font-weight:700; color:#1B4D3E; background:#E8F5E9; text-decoration:none; border:none; cursor:pointer; }
+            .gr-view-btn:hover { background:#d1fae5; }
 
             .gr-attempts { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 8px; border-radius:8px; background:#f8fafc; color:#64748b; font-size:13px; font-weight:700; }
 
@@ -113,9 +211,26 @@ export async function render(container) {
             }
         </style>
 
+        <div class="${embedded ? 'gr-embedded' : ''}">
+        ${embedded ? `
+        <div class="gr-banner">
+            <div class="gr-banner-left">
+                <span class="gr-role-badge">${icon('graduation', { size: 12, className: 'ui-icon-inline' })} Student view</span>
+                <h2>My Grades${activeSubject ? ` · ${esc(activeSubject.subject_code)}` : ''}</h2>
+                <p>${activeSubject ? esc(activeSubject.subject_name) : 'Your scores for this subject'}</p>
+            </div>
+        </div>
+        ${activeSubject ? `
+        <div class="gr-embed-stats">
+            <div class="gr-embed-stat"><strong>${activeSubject.quizzes.length}</strong><span>Assessments</span></div>
+            <div class="gr-embed-stat"><strong style="color:#15803D">${activeSubject.quizzes.filter(q => q.passed == 1).length}</strong><span>Passed</span></div>
+            <div class="gr-embed-stat"><strong>${activeTotals.possible > 0 ? `${activeTotals.earned} / ${activeTotals.possible}` : '—'}</strong><span>Total score</span></div>
+        </div>` : ''}
+        ` : `
         <!-- Banner -->
         <div class="gr-banner">
             <div class="gr-banner-left">
+                <span class="gr-role-badge">${icon('graduation', { size: 12, className: 'ui-icon-inline' })} Student view</span>
                 <h2>My Grades</h2>
                 <p>Your quiz performance across all enrolled subjects</p>
             </div>
@@ -148,23 +263,24 @@ export async function render(container) {
                 <div><div class="gr-sum-val" style="color:#15803D">${totalPassed}</div><div class="gr-sum-lbl">Passed</div></div>
             </div>
             <div class="gr-sum-card">
-                <div class="gr-sum-icon" style="background:${avgBg};color:${avgColor}">
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+                <div class="gr-sum-icon" style="background:#E8F5E9;color:#1B4D3E">
+                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-3h6"/></svg>
                 </div>
                 <div>
-                    <div class="gr-sum-val" style="color:${avgColor}">${overallAvg !== null ? overallAvg + '%' : '—'}</div>
-                    <div class="gr-sum-lbl">Overall Average</div>
+                    <div class="gr-sum-val" style="color:#1B4D3E">${totalRawLabel}</div>
+                    <div class="gr-sum-lbl">Total Score</div>
                 </div>
             </div>
         </div>
+        `}
 
         ${subjects.length === 0
             ? `<div class="gr-empty">
                 <div style="font-size:36px;margin-bottom:14px">📋</div>
                 <h3 style="font-size:16px;font-weight:700;color:#374151;margin:0 0 6px">No grades yet</h3>
-                <p style="font-size:13px;margin:0">Enroll in subjects and take quizzes to see your scores here.</p>
+                <p style="font-size:13px;margin:0">${lockSubject ? 'No quiz scores recorded for this subject yet.' : 'Enroll in subjects and take quizzes to see your scores here.'}</p>
                </div>`
-            : `<!-- Subject selector bar -->
+            : `${!embedded && !lockSubject ? `<!-- Subject selector bar -->
                <div class="gr-selector-bar">
                    <span class="gr-selector-label">📚 Subject</span>
                    <div class="gr-selector-wrap">
@@ -176,34 +292,57 @@ export async function render(container) {
                        <svg class="gr-chevron" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                    </div>
                    <div class="gr-selector-info" id="gr-sel-info"></div>
-               </div>
+               </div>` : ''}
 
                <!-- Quiz panel (swapped by JS) -->
                <div id="gr-panel-wrap"></div>`
         }
+        </div>
     `;
 
     if (subjects.length === 0) return;
 
-    /* ── Render one subject's quiz table ─────────────────────────── */
+    /* ── Render one subject's grades by period ───────────────────── */
     function renderSubject(idx) {
         const s   = subjects[idx];
-        const avg = s.avg_score !== null ? parseFloat(s.avg_score) : null;
-        const aTxtClr = avg !== null ? (avg >= 60 ? '#15803D' : '#B91C1C') : '#9CA3AF';
-        const aBgClr  = avg !== null ? (avg >= 60 ? '#DCFCE7'  : '#FEE2E2') : '#f1f5f9';
+        const quizzes = s.quizzes || [];
+        const lessons = s.lessons || [];
+        const periodGroups = buildPeriodGroups(quizzes, lessons, 0);
+        const current = periodMeta(s.current_period || 'P1');
+        const periods = GRADING_PERIODS.filter(p => p.code === current.code);
+        const dispItems = periods.flatMap(p => periodGroups.groups[p.code]);
 
-        // Update badge next to dropdown
+        const quizScoreMap = {};
+        for (const q of quizzes) {
+            if (q.earned_points != null && q.total_points != null) {
+                quizScoreMap[q.quiz_id] = {
+                    earned: parseFloat(q.earned_points) || 0,
+                    total: parseFloat(q.total_points) || 0,
+                };
+            }
+        }
+
+        /* Current-term subtotal (only the released period counts) */
+        let dispEarned = 0;
+        let dispPossible = 0;
+        for (const period of periods) {
+            const sub = periodQuizSubtotal(quizScoreMap, periodGroups.groups[period.code]);
+            dispEarned += sub.earned;
+            dispPossible += sub.possible;
+        }
+
         const infoEl = container.querySelector('#gr-sel-info');
         if (infoEl) {
-            infoEl.innerHTML = avg !== null
-                ? `<span class="gr-sel-avg-badge" style="background:${aBgClr};color:${aTxtClr}">${avg.toFixed(1)}% avg</span>`
-                : `<span class="gr-sel-avg-badge" style="background:#f1f5f9;color:#9CA3AF">No data yet</span>`;
+            infoEl.innerHTML = dispPossible > 0
+                ? `<span class="gr-sel-avg-badge" style="background:#E8F5E9;color:#1B4D3E">${current.label} total: ${dispEarned} / ${dispPossible}</span>`
+                : `<span class="gr-sel-avg-badge" style="background:#f1f5f9;color:#9CA3AF">No ${current.label} scores yet</span>`;
         }
 
         const wrap = container.querySelector('#gr-panel-wrap');
         if (!wrap) return;
 
-        if (s.quizzes.length === 0) {
+        const totalItems = dispItems.length;
+        if (periodGroups.flat.length === 0) {
             wrap.innerHTML = `
                 <div class="gr-panel">
                     <div class="gr-panel-head">
@@ -212,68 +351,122 @@ export async function render(container) {
                     </div>
                     <div class="gr-no-quizzes">
                         <div class="gr-no-quizzes-icon">📝</div>
-                        <p>No quizzes published for this subject yet.</p>
+                        <p>No activities or quizzes published for this subject yet.</p>
                     </div>
                 </div>`;
             return;
         }
 
-        const rows = s.quizzes.map(q => {
-            const score     = q.best_score !== null ? parseFloat(q.best_score) : null;
-            const barColor  = score !== null && score >= 60
-                ? 'linear-gradient(90deg,#1B4D3E,#2D6A4F)'
-                : 'linear-gradient(90deg,#B91C1C,#DC2626)';
-            const numColor  = score !== null && score >= 60 ? '#15803D' : '#B91C1C';
-            const typeKey   = q.quiz_type === 'pre_test' ? 'pre' : q.quiz_type === 'post_test' ? 'post' : 'quiz';
-            const typeLabel = q.quiz_type === 'pre_test' ? 'Pre-Test' : q.quiz_type === 'post_test' ? 'Post-Test' : 'Quiz';
-            const statusKey   = q.passed == 1 ? 'passed' : score !== null ? 'failed' : 'nottaken';
-            const statusLabel = q.passed == 1 ? 'Passed'  : score !== null ? 'Failed'  : 'Not Taken';
-            const statusIcon  = statusKey === 'passed'
-                ? `<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>`
-                : statusKey === 'failed'
-                    ? `<svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>`
-                    : '';
+        const lessonStatusMap = {};
+        for (const l of lessons) {
+            lessonStatusMap[l.lessons_id] = l.progress_status;
+        }
 
-            return `<tr>
-                <td class="gr-quiz-name">${esc(q.quiz_title)}</td>
-                <td><span class="gr-type ${typeKey}">${typeLabel}</span></td>
-                <td>
-                    ${score !== null
-                        ? `<div class="gr-score-cell">
-                               <div class="gr-score-track">
-                                   <div class="gr-score-fill" style="width:${score}%;background:${barColor}"></div>
-                               </div>
-                               <span class="gr-score-num" style="color:${numColor}">${score.toFixed(1)}%</span>
-                           </div>`
-                        : `<span class="gr-score-none">—</span>`
+        /* Two-row header: current period + its items underneath */
+        let periodRow = `<th rowspan="2" class="th-left">Assessment</th>`;
+        let itemRow = '';
+        const periodSubtotals = {};
+        for (const period of periods) {
+            const items = periodGroups.groups[period.code];
+            const colCount = Math.max(items.length, 1);
+            periodRow += `<th colspan="${colCount}" class="gb-period-th gb-period-th--${period.code.toLowerCase()}">${period.label}<span class="gb-period-sub">${period.title}</span></th>`;
+            periodRow += `<th rowspan="2" class="gb-period-subtotal-th">${period.label} &Sigma;</th>`;
+            if (items.length) {
+                for (const item of items) {
+                    const typeLabel = item.kind === 'quiz' ? 'Quiz' : 'Activity';
+                    const short = item.title.length > 16 ? `${item.title.slice(0, 14)}…` : item.title;
+                    const pts = item.kind === 'quiz' && item.totalPoints ? ` · ${item.totalPoints}pts` : '';
+                    itemRow += `<th class="gb-item-th" title="${esc(item.title)} (${typeLabel})${pts}">
+                        <span class="gb-item-type ${item.kind === 'quiz' ? 'quiz' : 'activity'}">${typeLabel}</span>
+                        <span class="gb-item-name">${esc(short)}</span>
+                    </th>`;
+                }
+            } else {
+                itemRow += `<th class="gb-item-th gb-item-th--empty">No items yet</th>`;
+            }
+            periodSubtotals[period.code] = periodQuizSubtotal(quizScoreMap, items);
+        }
+        periodRow += `<th rowspan="2">Total</th><th rowspan="2">Remarks</th>`;
+
+        /* Single student row, mirroring the instructor class record */
+        let itemCells = '';
+        let missingCount = 0;
+        const quizItemsDisp = dispItems.filter(i => i.kind === 'quiz');
+        for (const period of periods) {
+            const items = periodGroups.groups[period.code];
+            if (items.length) {
+                itemCells += items.map(item => {
+                    if (item.kind === 'quiz') {
+                        const cell = quizScoreMap[item.id];
+                        const q = quizzes.find(x => String(x.quiz_id) === String(item.id));
+                        if (!cell) {
+                            const missing = isItemMissing(item);
+                            if (missing) missingCount++;
+                            const label = missing ? 'Missing' : '—';
+                            const cls = missing ? 'gc-cur-badge-missing' : 'gc-cur-badge-none';
+                            return `<td class="td-num"><span class="${cls}">${label}</span></td>`;
+                        }
+                        const scoreHtml = `${cell.earned}${cell.total ? ` / ${cell.total}` : ''}`;
+                        const inner = q?.best_attempt_id
+                            ? `<a href="#student/quiz-result?attempt_id=${q.best_attempt_id}" class="gr-cell-link" title="View result">${scoreHtml}</a>`
+                            : scoreHtml;
+                        return `<td class="td-num"><span class="gc-cur-badge-raw">${inner}</span></td>`;
                     }
-                </td>
-                <td><span class="gr-status ${statusKey}">${statusIcon} ${statusLabel}</span></td>
-                <td style="text-align:right">
-                    <span class="gr-attempts">${q.attempts || 0}</span>
-                </td>
+                    const done = lessonStatusMap[item.id] === 'completed';
+                    if (done) return `<td class="td-num"><span class="gc-cur-badge-pass">Done</span></td>`;
+                    if (isItemMissing(item)) { missingCount++; return `<td class="td-num"><span class="gc-cur-badge-missing">Missing</span></td>`; }
+                    return `<td class="td-num"><span class="gc-cur-badge-none">—</span></td>`;
+                }).join('');
+            } else {
+                itemCells += `<td class="td-num"><span class="gc-cur-badge-none">—</span></td>`;
+            }
+            const sub = periodSubtotals[period.code];
+            const subLabel = sub.possible > 0
+                ? `<strong>${sub.earned} / ${sub.possible}</strong>`
+                : '<span class="gc-cur-badge-none">—</span>';
+            itemCells += `<td class="td-num gb-period-subtotal-cell">${subLabel}</td>`;
+        }
+
+        const totalLabel = dispPossible > 0
+            ? `<strong>${dispEarned} / ${dispPossible}</strong>`
+            : '<span class="gc-cur-badge-none">—</span>';
+        const anyScore = dispPossible > 0;
+        const allPassed = quizItemsDisp.length > 0 && quizItemsDisp.every(q => quizzes.find(x => String(x.quiz_id) === String(q.id))?.passed == 1);
+        const belowPass = anyScore && dispEarned / dispPossible < 0.6;
+        const atRisk = belowPass || missingCount >= 2;
+        const remark = !anyScore && missingCount > 0 ? 'At risk'
+            : !anyScore ? '—'
+            : allPassed ? 'Passed'
+            : atRisk ? 'At risk' : 'In progress';
+
+        const studentRow = `
+            <tr class="${atRisk ? 'gb-at-risk' : ''}">
+                <td class="td-name"><strong>${esc(myName)}</strong></td>
+                ${itemCells}
+                <td class="td-num">${totalLabel}</td>
+                <td class="td-pass"><span class="${atRisk && anyScore ? 'gc-cur-badge-fail' : 'gc-cur-badge-pass'}">${remark}</span></td>
             </tr>`;
-        }).join('');
 
         wrap.innerHTML = `
-            <div class="gr-panel">
+            <div class="gr-panel gr-panel-periods">
                 <div class="gr-panel-head">
                     <span class="gr-panel-code">${esc(s.subject_code)}</span>
                     <span class="gr-panel-name">${esc(s.subject_name)}</span>
-                    <span class="gr-panel-count">${s.quizzes.length} quiz${s.quizzes.length !== 1 ? 'zes' : ''}</span>
+                    <span class="gr-panel-count">${totalItems} item${totalItems !== 1 ? 's' : ''} in ${current.label}</span>
                 </div>
-                <table class="gr-table">
-                    <thead>
-                        <tr>
-                            <th>Quiz</th>
-                            <th>Type</th>
-                            <th>Best Score</th>
-                            <th>Status</th>
-                            <th style="text-align:right">Attempts</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
+                <div class="gr-period-legend">Showing <strong>${current.label} — ${current.title}</strong> only (current term set by your instructor). Activities show completion; quizzes show raw points.</div>
+                <div class="gc-cur-wrap">
+                    <div class="gc-cur-label">MY CLASS RECORD — ${esc(s.subject_code)} · ${current.label} ${current.title}</div>
+                    <div class="gb-table-scroll">
+                        <table class="gc-cur-table gb-record-table gb-period-table">
+                            <thead>
+                                <tr>${periodRow}</tr>
+                                <tr>${itemRow}</tr>
+                            </thead>
+                            <tbody>${studentRow}</tbody>
+                        </table>
+                    </div>
+                </div>
             </div>`;
     }
 
@@ -282,7 +475,40 @@ export async function render(container) {
 
     // Dropdown change
     const sel = container.querySelector('#gr-subject-select');
-    sel.addEventListener('change', () => renderSubject(parseInt(sel.value)));
+    sel?.addEventListener('change', () => renderSubject(parseInt(sel.value, 10)));
 }
 
 function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+
+/** Sum raw earned / possible points (addition only, no weighting) */
+function rawTotals(quizzes) {
+    let earned = 0, possible = 0;
+    for (const q of quizzes) {
+        if (q.earned_points != null && q.total_points != null) {
+            earned += parseFloat(q.earned_points) || 0;
+            possible += parseFloat(q.total_points) || 0;
+        }
+    }
+    return { earned, possible };
+}
+
+/** Derive submission status from score, due date, and grading state */
+function quizStatus(q) {
+    const score = q.best_score !== null ? parseFloat(q.best_score) : null;
+    const hasAttempt = (q.attempts || 0) > 0;
+
+    if (hasAttempt && (q.has_pending_grades == 1 || q.has_pending_grades === true)) {
+        return { key: 'submitted', label: 'Submitted' };
+    }
+    if (score !== null) {
+        if (q.has_feedback > 0) return { key: 'graded', label: q.passed == 1 ? 'Graded · Passed' : 'Graded' };
+        if (q.passed == 1) return { key: 'passed', label: 'Passed' };
+        return { key: 'failed', label: 'Failed' };
+    }
+    if (q.due_date) {
+        const due = new Date(q.due_date);
+        due.setHours(23, 59, 59, 999);
+        if (Date.now() > due.getTime()) return { key: 'missing', label: 'Missing' };
+    }
+    return { key: 'nottaken', label: 'Not Taken' };
+}

@@ -5,20 +5,41 @@
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { renderSidebar } from '../../components/sidebar.js';
+import { icon } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 const ROLES = ['admin', 'dean', 'instructor', 'student'];
 const ROLE_META = {
-    admin:      { label: 'Administrator', color: '#7c3aed', bg: '#f5f3ff', icon: '🛡️' },
-    dean:       { label: 'Dean',          color: '#0891b2', bg: '#f0f9ff', icon: '🎓' },
-    instructor: { label: 'Instructor',    color: '#059669', bg: '#f0fdf4', icon: '👨‍🏫' },
-    student:    { label: 'Student',       color: '#d97706', bg: '#fffbeb', icon: '🎒' },
+    admin:      { label: 'Administrator', color: '#7c3aed', bg: '#f5f3ff', icon: 'shield' },
+    dean:       { label: 'Dean',          color: '#0891b2', bg: '#f0f9ff', icon: 'graduation' },
+    instructor: { label: 'Instructor',    color: '#059669', bg: '#f0fdf4', icon: 'instructor' },
+    student:    { label: 'Student',       color: '#d97706', bg: '#fffbeb', icon: 'user' },
 };
 const MODULE_ICONS = {
-    users:'👥', departments:'🏢', programs:'🎓', subjects:'📚',
-    curriculum:'📋', sections:'🏫', subject_offerings:'📅',
-    faculty_assignments:'👨‍🏫', quizzes:'📝', lessons:'📖',
-    question_bank:'🏦', grades:'📊', reports:'📈',
-    analytics:'📉', settings:'⚙️', rbac:'🔐'
+    users:'users', departments:'building', programs:'graduation', subjects:'book',
+    curriculum:'clipboard', sections:'school', subject_offerings:'calendar',
+    faculty_assignments:'instructor', quizzes:'quiz', lessons:'lessons',
+    question_bank:'bank', grades:'dashboard', reports:'chart',
+    analytics:'chart', settings:'settings', rbac:'lock'
+};
+const MODULE_LABELS = {
+    users: 'User Management',
+    departments: 'Departments',
+    programs: 'Programs',
+    subjects: 'Subjects',
+    curriculum: 'Curriculum',
+    sections: 'Sections',
+    subject_offerings: 'Subject Offerings',
+    faculty_assignments: 'Faculty Assignments',
+    quizzes: 'Quizzes',
+    lessons: 'Lessons',
+    question_bank: 'Question Bank',
+    grades: 'Grades',
+    reports: 'Reports',
+    analytics: 'Analytics',
+    settings: 'System Settings',
+    rbac: 'Access Control',
 };
 
 export async function render(container) {
@@ -28,32 +49,22 @@ export async function render(container) {
 
         /* ── Banner ── */
         .rp-banner {
-            background: linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%);
+            background: #00461B;
             border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
             display: flex; align-items: center; justify-content: space-between;
-            box-shadow: 0 4px 24px rgba(27,77,62,.18); position: relative; overflow: hidden;
-        }
-        .rp-banner::before {
-            content:''; position:absolute; top:-40px; right:-40px;
-            width:180px; height:180px; border-radius:50%;
-            background:rgba(255,255,255,.07); pointer-events:none;
-        }
-        .rp-banner::after {
-            content:''; position:absolute; bottom:-60px; right:120px;
-            width:220px; height:220px; border-radius:50%;
-            background:rgba(255,255,255,.05); pointer-events:none;
+            box-shadow: 0 2px 10px rgba(0,70,27,.1);
         }
         .rp-banner-left { display:flex; align-items:center; gap:16px; }
         .rp-banner-icon {
             width:52px; height:52px; border-radius:14px;
-            background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.2);
+            background:rgba(255,255,255,.18); border:none;
             display:flex; align-items:center; justify-content:center; font-size:24px;
             flex-shrink:0;
         }
         .rp-banner h1 { font-size:22px; font-weight:800; color:#fff; margin:0 0 4px; }
         .rp-banner p  { color:rgba(255,255,255,.72); font-size:13px; margin:0; }
         .rp-banner-stat {
-            background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18);
+            background:rgba(255,255,255,.15); border:none;
             border-radius:12px; padding:10px 20px; text-align:center; flex-shrink:0;
         }
         .rp-banner-stat-num { font-size:22px; font-weight:800; color:#fff; }
@@ -62,12 +73,12 @@ export async function render(container) {
         /* ── Role cards ── */
         .rp-roles { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
         .rp-role-card {
-            padding:16px; border-radius:14px; border:2px solid #e5e7eb;
-            background:#fff; cursor:pointer; transition:all .18s;
-            box-shadow:0 1px 3px rgba(0,0,0,.06);
+            padding:16px; border-radius:14px; border:none;
+            background:#fff; cursor:pointer; transition:background .15s;
+            box-shadow:none;
         }
         .rp-role-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.1); }
-        .rp-role-card.active { border-width:2px; box-shadow:0 6px 20px rgba(0,0,0,.12); }
+        .rp-role-card.active { box-shadow:none; }
         .rp-role-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
         .rp-role-icon {
             width:38px; height:38px; border-radius:10px;
@@ -86,8 +97,8 @@ export async function render(container) {
         /* ── Toolbar ── */
         .rp-toolbar {
             display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;
-            background:#fff; border:1px solid #e8ecef; border-radius:12px;
-            padding:10px 14px; box-shadow:0 1px 3px rgba(0,0,0,.04);
+            background:#F3F4F6; border:none; border-radius:12px;
+            padding:10px 14px; box-shadow:none;
         }
         .rp-search-wrap { flex:1; min-width:180px; display:flex; align-items:center; gap:8px; }
         .rp-search-icon { color:#9ca3af; font-size:15px; flex-shrink:0; }
@@ -99,27 +110,27 @@ export async function render(container) {
         .rp-divider { width:1px; height:24px; background:#e5e7eb; flex-shrink:0; }
         .rp-btn {
             padding:7px 14px; border-radius:8px; font-size:12.5px;
-            font-weight:600; cursor:pointer; border:1px solid #e5e7eb;
-            background:#fff; color:#374151; transition:all .15s; white-space:nowrap;
+            font-weight:600; cursor:pointer; border:none;
+            background:#E5E7EB; color:#374151; transition:background .15s; white-space:nowrap;
         }
-        .rp-btn:hover { background:#f3f4f6; border-color:#d1d5db; }
+        .rp-btn:hover { background:#D1D5DB; }
         .rp-btn-save {
-            background:#1B4D3E; color:#fff; border-color:#1B4D3E; padding:7px 18px;
+            background:#1B4D3E; color:#fff; border:none; padding:7px 18px;
         }
         .rp-btn-save:hover { background:#163d31; }
         .rp-btn-save:disabled { opacity:.55; cursor:not-allowed; }
 
         /* ── Module group ── */
         .rp-module {
-            margin-bottom:10px; border:1px solid #e8ecef; border-radius:14px;
-            overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.05);
-            transition:box-shadow .2s;
+            margin-bottom:10px; border:none; border-radius:14px;
+            overflow:hidden; background:#fff;
+            transition:background .15s;
         }
-        .rp-module:hover { box-shadow:0 3px 10px rgba(0,0,0,.08); }
+        .rp-module:hover { background:#FAFAFA; }
         .rp-module-head {
             display:flex; align-items:center; gap:10px;
-            padding:13px 18px; background:#f8fafc; cursor:pointer;
-            user-select:none; border-bottom:1px solid #e8ecef; transition:background .12s;
+            padding:13px 18px; background:#F3F4F6; cursor:pointer;
+            user-select:none; border-bottom:none; transition:background .12s;
         }
         .rp-module-head:hover { background:#f1f5f9; }
         .rp-mod-icon-wrap {
@@ -137,7 +148,7 @@ export async function render(container) {
         }
         .rp-mod-check-all {
             font-size:11px; padding:4px 10px; border-radius:7px;
-            border:1px solid #d1d5db; background:#fff; cursor:pointer;
+            border:none; background:#E5E7EB; cursor:pointer;
             color:#6b7280; transition:all .15s; font-weight:500;
         }
         .rp-mod-check-all:hover { background:#f3f4f6; color:#374151; }
@@ -170,7 +181,7 @@ export async function render(container) {
             font-family:'Courier New',monospace;
             background:#f1f5f9; display:inline-block;
             padding:1px 7px; border-radius:5px; margin-bottom:2px;
-            border:1px solid #e2e8f0;
+            border:none;
         }
         .rp-perm-desc { font-size:12px; color:#6b7280; }
 
@@ -189,10 +200,10 @@ export async function render(container) {
     <div class="rp-wrap">
         <div class="rp-banner">
             <div class="rp-banner-left">
-                <div class="rp-banner-icon">🔐</div>
+                <div class="rp-banner-icon">${icon('lock', { size: 28 })}</div>
                 <div>
-                    <h1>Roles & Permissions</h1>
-                    <p>Select a role, then toggle permissions — click Save when done.</p>
+                    <h1>Roles &amp; Permissions</h1>
+                    <p>Control what each role can access. Select a role, review permissions by module, then save your changes.</p>
                 </div>
             </div>
             <div class="rp-banner-stat">
@@ -205,12 +216,12 @@ export async function render(container) {
 
         <div class="rp-toolbar">
             <div class="rp-search-wrap">
-                <span class="rp-search-icon">🔍</span>
+                <span class="rp-search-icon">${icon('search', inl)}</span>
                 <input class="rp-search" id="rpSearch" type="text" placeholder="Search permissions…">
             </div>
             <div class="rp-divider"></div>
-            <button class="rp-btn" id="rpCheckAll">Check All</button>
-            <button class="rp-btn" id="rpUncheckAll">Uncheck All</button>
+            <button class="rp-btn" id="rpCheckAll">Grant All</button>
+            <button class="rp-btn" id="rpUncheckAll">Revoke All</button>
             <button class="rp-btn rp-btn-save" id="rpSave">Save Changes</button>
         </div>
 
@@ -264,13 +275,13 @@ export async function render(container) {
             const pct = totalPerms > 0 ? Math.round((count / totalPerms) * 100) : 0;
             return `
             <div class="rp-role-card ${isActive ? 'active' : ''}" data-role="${r}"
-                 style="${isActive ? `border-color:${m.color};` : ''}">
+                 style="${isActive ? `background:${m.bg};` : ''}">
                 <div class="rp-role-top">
-                    <div class="rp-role-icon" style="background:${m.bg}">${m.icon}</div>
+                    <div class="rp-role-icon" style="background:${m.bg}">${icon(m.icon, { size: 20 })}</div>
                     <div class="rp-role-dot" style="background:${isActive ? m.color : '#e5e7eb'}"></div>
                 </div>
                 <div class="rp-role-name" style="color:${isActive ? m.color : '#1e293b'}">${m.label}</div>
-                <div class="rp-role-count" id="rc-${r}">${count} of ${totalPerms} permissions</div>
+                <div class="rp-role-count" id="rc-${r}">${count} of ${totalPerms} granted</div>
                 <div class="rp-role-bar-wrap">
                     <div class="rp-role-bar" id="rb-${r}" style="width:${pct}%;background:${m.color}"></div>
                 </div>
@@ -291,7 +302,7 @@ export async function render(container) {
         const bar = container.querySelector(`#rb-${role}`);
         const count = dirty[role].size;
         const pct = totalPerms > 0 ? Math.round((count / totalPerms) * 100) : 0;
-        if (el) el.textContent = `${count} of ${totalPerms} permissions`;
+        if (el) el.textContent = `${count} of ${totalPerms} granted`;
         if (bar) bar.style.width = `${pct}%`;
     }
 
@@ -310,13 +321,13 @@ export async function render(container) {
             <div class="rp-module">
                 <div class="rp-module-head" data-mod="${mod}">
                     <span class="rp-chevron open">&#9654;</span>
-                    <div class="rp-mod-icon-wrap">${MODULE_ICONS[mod] || '📌'}</div>
-                    <span class="rp-mod-title">${mod.replace(/_/g,' ')}</span>
+                    <div class="rp-mod-icon-wrap">${icon(MODULE_ICONS[mod] || 'pin', { size: 18 })}</div>
+                    <span class="rp-mod-title">${MODULE_LABELS[mod] || mod.replace(/_/g,' ')}</span>
                     <span class="rp-mod-badge" style="background:${badgeBg};color:${badgeColor}"
                           id="badge-${mod}">${grantedCount}/${perms.length}</span>
                     <button class="rp-mod-check-all" data-mod-all="${mod}"
                             data-action="${allGranted ? 'off' : 'on'}">
-                        ${allGranted ? 'Uncheck all' : 'Check all'}
+                        ${allGranted ? 'Revoke all' : 'Grant all'}
                     </button>
                 </div>
                 <div class="rp-perm-list" data-mod-list="${mod}">
@@ -326,7 +337,7 @@ export async function render(container) {
                             ${dirty[active].has(p.id) ? 'checked' : ''}>
                         <div class="rp-perm-info">
                             <div class="rp-perm-name">${p.name}</div>
-                            <div class="rp-perm-desc">${p.description}</div>
+                            <div class="rp-perm-desc">${p.description || 'No description provided for this permission.'}</div>
                         </div>
                     </label>`).join('')}
                 </div>
@@ -369,7 +380,7 @@ export async function render(container) {
                     cb.checked = on;
                 });
                 btn.dataset.action = on ? 'off' : 'on';
-                btn.textContent    = on ? 'Uncheck all' : 'Check all';
+                btn.textContent    = on ? 'Revoke all' : 'Grant all';
                 updateModBadge(mod);
             });
         });
@@ -418,7 +429,7 @@ export async function render(container) {
             });
 
             if (r.success) {
-                toast(`✓ ${ROLE_META[active].label} permissions saved`);
+                toast(`${icon('check', inl)} ${ROLE_META[active].label} permissions saved`);
 
                 // If the saved role matches the current logged-in user's role,
                 // refresh their permissions and re-render the sidebar instantly

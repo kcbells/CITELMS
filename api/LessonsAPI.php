@@ -6,6 +6,19 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
+require_once __DIR__ . '/helpers/BankAccessHelper.php';
+require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
+require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
+
+$action = $_GET['action'] ?? '';
+
+// Stream file bytes (not JSON) — auth via session, JWT header, or ?token=
+if ($action === 'serve-material') {
+    require_once __DIR__ . '/../config/jwt.php';
+    serveMaterial();
+    exit;
+}
 
 header('Content-Type: application/json');
 
@@ -15,12 +28,129 @@ if (!Auth::check()) {
     exit;
 }
 
-$action = $_GET['action'] ?? '';
+function ensureLessonMaterialsColumns() {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $cols = db()->fetchAll('SHOW COLUMNS FROM lesson_materials');
+        if (!$cols) {
+            return;
+        }
+        $names = array_column($cols, 'Field');
+        if (in_array('lesson_id', $names, true) && !in_array('lessons_id', $names, true)) {
+            pdo()->exec('ALTER TABLE lesson_materials CHANGE lesson_id lessons_id INT(11) NOT NULL');
+        }
+    } catch (Exception $e) {
+        error_log('lesson_materials schema: ' . $e->getMessage());
+    }
+}
+
+function materialLessonId(array $material): int {
+    return (int)($material['lessons_id'] ?? $material['lesson_id'] ?? 0);
+}
+
+function ensureLessonSectionTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec(
+            "CREATE TABLE IF NOT EXISTS lesson_section (
+                lessons_id INT UNSIGNED NOT NULL,
+                section_id INT UNSIGNED NOT NULL,
+                PRIMARY KEY (lessons_id, section_id),
+                KEY idx_lesson_section (section_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    } catch (Exception $e) {
+        error_log('lesson_section table: ' . $e->getMessage());
+    }
+}
+
+function attachLessonSections($lessonId, array $sectionIds) {
+    ensureLessonSectionTable();
+    $pdo = pdo();
+    $pdo->prepare("DELETE FROM lesson_section WHERE lessons_id = ?")->execute([$lessonId]);
+    if (empty($sectionIds)) return;
+    $stmt = $pdo->prepare("INSERT INTO lesson_section (lessons_id, section_id) VALUES (?, ?)");
+    foreach ($sectionIds as $sid) {
+        $sid = (int)$sid;
+        if ($sid > 0) {
+            $stmt->execute([$lessonId, $sid]);
+        }
+    }
+}
+
+function getLessonSectionIds($lessonId) {
+    ensureLessonSectionTable();
+    $rows = db()->fetchAll(
+        "SELECT section_id FROM lesson_section WHERE lessons_id = ?",
+        [$lessonId]
+    );
+    return array_map(fn($r) => (int)$r['section_id'], $rows);
+}
+
+function enrichLessonsWithSections(array &$rows) {
+    foreach ($rows as &$row) {
+        $ids = getLessonSectionIds((int)$row['lessons_id']);
+        $row['section_ids'] = $ids;
+        $row['all_sections'] = empty($ids);
+        if (!empty($ids)) {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $names = db()->fetchAll(
+                "SELECT section_id, section_name FROM section WHERE section_id IN ($placeholders)",
+                $ids
+            );
+            $row['section_names'] = implode(', ', array_column($names, 'section_name'));
+        } else {
+            $row['section_names'] = '';
+        }
+    }
+    unset($row);
+}
+
+function lessonVisibleToSectionSql($lessonAlias = 'l', $sectionIdParam = '?') {
+    return "(
+        NOT EXISTS (SELECT 1 FROM lesson_section ls0 WHERE ls0.lessons_id = {$lessonAlias}.lessons_id)
+        OR EXISTS (
+            SELECT 1 FROM lesson_section ls1
+            WHERE ls1.lessons_id = {$lessonAlias}.lessons_id
+            AND ls1.section_id = {$sectionIdParam}
+        )
+    )";
+}
+
+/**
+ * Determine if the lesson is unlocked for this student.
+ * Only explicit prerequisite_lessons_id gates access (classwork posts are open by default).
+ */
+function evaluateLessonUnlock($userId, array $lesson, int $sectionId = 0): array {
+    $explicitPrereqId = (int)($lesson['prerequisite_lessons_id'] ?? 0);
+    if ($explicitPrereqId <= 0) {
+        return [true, null];
+    }
+
+    $prerequisiteLesson = db()->fetchOne(
+        "SELECT lessons_id, lesson_title FROM lessons WHERE lessons_id = ?",
+        [$explicitPrereqId]
+    );
+    $prereqProgress = db()->fetchOne(
+        "SELECT 1 FROM student_progress
+         WHERE user_student_id = ? AND lessons_id = ? AND status = 'completed'
+         LIMIT 1",
+        [$userId, $explicitPrereqId]
+    );
+    return [!empty($prereqProgress), $prerequisiteLesson];
+}
 
 // RBAC: enforce permission per action
 $_lessonPerms = [
     'get'             => 'lessons.view',
     'list'            => 'lessons.view',
+    'new-lessons'     => 'lessons.view',
     'materials'       => 'lessons.view',
     'instructor-lessons' => 'lessons.view',
     'students'        => 'lessons.view',
@@ -32,6 +162,7 @@ $_lessonPerms = [
     'upload-material' => 'lessons.edit',
     'delete-material' => 'lessons.edit',
     'delete'          => 'lessons.delete',
+    'set-status'      => 'lessons.edit',
 ];
 if (isset($_lessonPerms[$action]) && !Auth::can($_lessonPerms[$action])) {
     http_response_code(403);
@@ -45,6 +176,9 @@ switch ($action) {
         break;
     case 'list':
         getLessons();
+        break;
+    case 'new-lessons':
+        getNewStudentLessons();
         break;
     case 'complete':
         markComplete();
@@ -78,6 +212,9 @@ switch ($action) {
         break;
     case 'delete-material':
         deleteMaterial();
+        break;
+    case 'set-status':
+        setLessonStatus();
         break;
     default:
         http_response_code(400);
@@ -127,29 +264,40 @@ function getLesson() {
             return;
         }
 
-        // Check prerequisite
-        $prerequisiteMet = true;
-        $prerequisiteLesson = null;
-        if (!empty($lesson['prerequisite_lessons_id'])) {
-            $prerequisiteLesson = db()->fetchOne("SELECT lessons_id, lesson_title FROM lessons WHERE lessons_id = ?", [$lesson['prerequisite_lessons_id']]);
-            $prereqProgress = db()->fetchOne(
-                "SELECT * FROM student_progress WHERE user_student_id = ? AND lessons_id = ? AND status = 'completed'",
-                [$userId, $lesson['prerequisite_lessons_id']]
-            );
-            $prerequisiteMet = !empty($prereqProgress);
+        ensureLessonSectionTable();
+        $studentSection = db()->fetchOne(
+            "SELECT ss.section_id FROM student_subject ss
+             JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+             WHERE ss.user_student_id = ? AND so.subject_id = ? AND ss.status = 'enrolled'
+             ORDER BY ss.student_subject_id DESC LIMIT 1",
+            [$userId, $lesson['subject_id']]
+        );
+        $sectionId = (int)($studentSection['section_id'] ?? 0);
+        $sectionIds = getLessonSectionIds($lessonId);
+        if (!empty($sectionIds) && ($sectionId <= 0 || !in_array($sectionId, $sectionIds, true))) {
+            echo json_encode(['success' => false, 'message' => 'Lesson not available for your section']);
+            return;
         }
+
+        // Check explicit prerequisite only
+        [$prerequisiteMet, $prerequisiteLesson] = evaluateLessonUnlock($userId, $lesson, $sectionId);
 
         // Get progress
         $progress = db()->fetchOne("SELECT * FROM student_progress WHERE user_student_id = ? AND lessons_id = ?", [$userId, $lessonId]);
         $isCompleted = $progress && $progress['status'] == 'completed';
 
-        // Get all lessons for sidebar + prev/next nav
-        $allLessons = db()->fetchAll(
-            "SELECT lessons_id, lesson_title as title, lesson_order as order_number,
+        // Get all lessons for sidebar + prev/next nav (respect section targeting)
+        ensureLessonSectionTable();
+        $allLessonsSql = "SELECT lessons_id, lesson_title as title, lesson_order as order_number,
                 (SELECT CASE WHEN status = 'completed' THEN 1 ELSE 0 END FROM student_progress WHERE lessons_id = l.lessons_id AND user_student_id = ?) as is_completed
-             FROM lessons l WHERE subject_id = ? AND status = 'published' ORDER BY lesson_order",
-            [$userId, $lesson['subject_id']]
-        );
+             FROM lessons l WHERE subject_id = ? AND status = 'published'";
+        $allParams = [$userId, $lesson['subject_id']];
+        if ($sectionId > 0) {
+            $allLessonsSql .= ' AND ' . lessonVisibleToSectionSql('l', '?');
+            $allParams[] = $sectionId;
+        }
+        $allLessonsSql .= ' ORDER BY lesson_order';
+        $allLessons = db()->fetchAll($allLessonsSql, $allParams);
 
         $currentIndex = null;
         foreach ($allLessons as $i => $item) {
@@ -159,7 +307,13 @@ function getLesson() {
         $nextLesson = ($currentIndex !== null && $currentIndex < count($allLessons) - 1) ? $allLessons[$currentIndex + 1] : null;
 
         // Get materials
-        $materials = db()->fetchAll("SELECT * FROM lesson_materials WHERE lessons_id = ? ORDER BY uploaded_at", [$lessonId]) ?: [];
+        ensureLessonMaterialsColumns();
+        $materials = db()->fetchAll(
+            "SELECT material_id, lessons_id, file_name, original_name, file_path, file_type,
+                    file_size, material_type, uploaded_at
+             FROM lesson_materials WHERE lessons_id = ? ORDER BY uploaded_at",
+            [$lessonId]
+        ) ?: [];
 
         echo json_encode([
             'success' => true,
@@ -189,12 +343,24 @@ function getLessons() {
     $userId = Auth::id();
 
     try {
-        $lessons = db()->fetchAll(
-            "SELECT
+        ensureLessonSectionTable();
+        ensureLessonDueDateColumn();
+        $studentSection = db()->fetchOne(
+            "SELECT section_id FROM student_subject
+             WHERE user_student_id = ? AND subject_offered_id = ? AND status = 'enrolled'
+             ORDER BY student_subject_id DESC LIMIT 1",
+            [$userId, $subjectOfferedId]
+        );
+        $sectionId = (int)($studentSection['section_id'] ?? 0);
+
+        $sql = "SELECT
                 l.lessons_id,
                 l.lesson_title as title,
                 l.lesson_description as description,
                 l.lesson_order as order_number,
+                l.subject_id,
+                l.prerequisite_lessons_id,
+                l.due_date,
                 l.created_at,
                 CASE WHEN sp.status = 'completed' THEN 1 ELSE 0 END as is_completed,
                 sp.completed_at,
@@ -203,15 +369,20 @@ function getLessons() {
             LEFT JOIN student_progress sp
                 ON l.lessons_id = sp.lessons_id AND sp.user_student_id = ?
             WHERE l.subject_id = (SELECT subject_id FROM subject_offered WHERE subject_offered_id = ?)
-            AND l.status = 'published'
-            ORDER BY l.lesson_order",
-            [$userId, $subjectOfferedId]
-        );
-
-        // Sequential lock: lesson N is locked if lesson N-1 is not completed
-        for ($i = 0; $i < count($lessons); $i++) {
-            $lessons[$i]['is_locked'] = ($i > 0 && !$lessons[$i - 1]['is_completed']) ? 1 : 0;
+            AND l.status = 'published'";
+        $params = [$userId, $subjectOfferedId];
+        if ($sectionId > 0) {
+            $sql .= ' AND ' . lessonVisibleToSectionSql('l', '?');
+            $params[] = $sectionId;
         }
+        $sql .= ' ORDER BY l.lesson_order';
+        $lessons = db()->fetchAll($sql, $params);
+
+        foreach ($lessons as &$row) {
+            [$prerequisiteMet] = evaluateLessonUnlock($userId, $row, $sectionId);
+            $row['is_locked'] = $prerequisiteMet ? 0 : 1;
+        }
+        unset($row);
 
         echo json_encode(['success' => true, 'data' => $lessons]);
     } catch (Exception $e) {
@@ -260,8 +431,29 @@ function markComplete() {
             return;
         }
         
-        // Get subject_id from lesson
-        $lesson = db()->fetchOne("SELECT subject_id FROM lessons WHERE lessons_id = ?", [$lessonId]);
+        // Get lesson + subject for unlock checks
+        $lesson = db()->fetchOne(
+            "SELECT lessons_id, subject_id, lesson_order, prerequisite_lessons_id
+             FROM lessons WHERE lessons_id = ?",
+            [$lessonId]
+        );
+        if (!$lesson) {
+            echo json_encode(['success' => false, 'message' => 'Lesson not found']);
+            return;
+        }
+
+        // Prevent forced completion of locked lessons
+        ensureLessonSectionTable();
+        $sectionId = (int)($enrollment['section_id'] ?? 0);
+        [$prerequisiteMet, $prerequisiteLesson] = evaluateLessonUnlock($userId, $lesson, $sectionId);
+        if (!$prerequisiteMet) {
+            $label = $prerequisiteLesson['lesson_title'] ?? 'the previous lesson';
+            echo json_encode([
+                'success' => false,
+                'message' => 'Lesson is locked. Complete "' . $label . '" first.'
+            ]);
+            return;
+        }
 
         if ($existing) {
             db()->execute(
@@ -282,6 +474,46 @@ function markComplete() {
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Lessons newly posted for the current student (since timestamp).
+ */
+function getNewStudentLessons() {
+    $userId = Auth::id();
+    $sinceRaw = trim($_GET['since'] ?? '');
+    $since = $sinceRaw !== '' ? date('Y-m-d H:i:s', strtotime($sinceRaw)) : date('Y-m-d H:i:s', strtotime('-7 days'));
+
+    try {
+        ensureLessonSectionTable();
+        $rows = db()->fetchAll(
+            "SELECT l.lessons_id, l.lesson_title, l.created_at, l.updated_at, l.subject_id,
+                    s.subject_code, s.subject_name,
+                    GREATEST(COALESCE(l.updated_at, l.created_at), COALESCE(l.created_at, l.updated_at)) AS notify_at
+             FROM lessons l
+             JOIN subject s ON s.subject_id = l.subject_id
+             JOIN subject_offered so ON so.subject_id = s.subject_id
+             JOIN student_subject ss ON ss.subject_offered_id = so.subject_offered_id
+             WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+               AND l.status = 'published'
+               AND (
+                    NOT EXISTS (SELECT 1 FROM lesson_section ls0 WHERE ls0.lessons_id = l.lessons_id)
+                    OR EXISTS (
+                        SELECT 1 FROM lesson_section ls1
+                        WHERE ls1.lessons_id = l.lessons_id AND ls1.section_id = ss.section_id
+                    )
+               )
+               AND GREATEST(COALESCE(l.updated_at, l.created_at), COALESCE(l.created_at, l.updated_at)) > ?
+             GROUP BY l.lessons_id
+             ORDER BY notify_at DESC
+             LIMIT 25",
+            [$userId, $since]
+        );
+        echo json_encode(['success' => true, 'data' => $rows ?: []]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }
 
@@ -328,6 +560,7 @@ function getInstructorLessons() {
          ORDER BY s.subject_code, l.lesson_order",
         $params
     );
+    enrichLessonsWithSections($lessons);
     echo json_encode(['success' => true, 'data' => $lessons]);
 }
 
@@ -338,9 +571,18 @@ function createLesson() {
     $description = trim($data['lesson_description'] ?? '');
     $content = $data['lesson_content'] ?? '';
     $status = $data['status'] ?? 'draft';
+    $hasSectionTargeting = array_key_exists('all_sections', $data) || array_key_exists('section_ids', $data);
+    $allSections = $hasSectionTargeting ? !empty($data['all_sections']) : true;
+    $sectionIds = $hasSectionTargeting
+        ? array_values(array_filter(array_map('intval', $data['section_ids'] ?? [])))
+        : [];
 
     if (!$subjectId || !$title) {
         echo json_encode(['success' => false, 'message' => 'Subject and title are required']);
+        return;
+    }
+    if ($hasSectionTargeting && !$allSections && empty($sectionIds)) {
+        echo json_encode(['success' => false, 'message' => 'Select at least one section or choose All sections']);
         return;
     }
 
@@ -348,13 +590,25 @@ function createLesson() {
     $maxOrder = db()->fetchOne("SELECT MAX(lesson_order) as m FROM lessons WHERE subject_id = ?", [$subjectId])['m'] ?? 0;
 
     $teacherId = Auth::id();
+    ensureLessonDueDateColumn();
+    ensureGradingPeriodColumns();
+    $dueDate = normalizeDueDate($data['due_date'] ?? null);
+    $gradingPeriod = normalizeGradingPeriod($data['grading_period'] ?? 'P1');
 
     try {
         pdo()->prepare(
-            "INSERT INTO lessons (subject_id, user_teacher_id, lesson_title, lesson_description, lesson_content, lesson_order, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
-        )->execute([$subjectId, $teacherId, $title, $description, $content, $maxOrder + 1, $status]);
-        echo json_encode(['success' => true, 'message' => 'Lesson created', 'data' => ['id' => pdo()->lastInsertId()]]);
+            "INSERT INTO lessons (subject_id, user_teacher_id, lesson_title, lesson_description, lesson_content, lesson_order, status, grading_period, due_date, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+        )->execute([$subjectId, $teacherId, $title, $description, $content, $maxOrder + 1, $status, $gradingPeriod, $dueDate]);
+        $lessonId = (int)pdo()->lastInsertId();
+        if (!$allSections && !empty($sectionIds)) {
+            attachLessonSections($lessonId, $sectionIds);
+        }
+        if ($status === 'published') {
+            NotificationEmailHelper::queueNewLesson($lessonId);
+            NotificationEmailHelper::dispatchAfterPublish();
+        }
+        echo json_encode(['success' => true, 'message' => 'Lesson created', 'data' => ['id' => $lessonId, 'lessons_id' => $lessonId]]);
     } catch (Exception $e) {
         error_log('Create lesson: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to create lesson']);
@@ -370,10 +624,52 @@ function updateLesson() {
     $description = trim($data['lesson_description'] ?? '');
     $content = $data['lesson_content'] ?? '';
     $status = $data['status'] ?? 'draft';
+    $allSections = array_key_exists('all_sections', $data) ? !empty($data['all_sections']) : null;
+    $sectionIds = array_key_exists('section_ids', $data)
+        ? array_values(array_filter(array_map('intval', $data['section_ids'] ?? [])))
+        : null;
 
     try {
-        pdo()->prepare("UPDATE lessons SET lesson_title=?, lesson_description=?, lesson_content=?, status=?, updated_at=NOW() WHERE lessons_id=?")
-            ->execute([$title, $description, $content, $status, $id]);
+        if (!verifyLessonOwner($id)) {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            return;
+        }
+        $prev = db()->fetchOne("SELECT status FROM lessons WHERE lessons_id = ?", [$id]);
+        ensureLessonDueDateColumn();
+        ensureGradingPeriodColumns();
+        $dueDate = array_key_exists('due_date', $data)
+            ? normalizeDueDate($data['due_date'])
+            : null;
+        $gradingPeriod = array_key_exists('grading_period', $data)
+            ? normalizeGradingPeriod($data['grading_period'])
+            : null;
+        $sql = 'UPDATE lessons SET lesson_title=?, lesson_description=?, lesson_content=?, status=?, updated_at=NOW()';
+        $params = [$title, $description, $content, $status];
+        if ($gradingPeriod !== null) {
+            $sql .= ', grading_period=?';
+            $params[] = $gradingPeriod;
+        }
+        if (array_key_exists('due_date', $data)) {
+            $sql .= ', due_date=?';
+            $params[] = $dueDate;
+        }
+        $sql .= ' WHERE lessons_id=?';
+        $params[] = $id;
+        pdo()->prepare($sql)->execute($params);
+        if ($allSections !== null) {
+            if ($allSections) {
+                attachLessonSections($id, []);
+            } elseif (!empty($sectionIds)) {
+                attachLessonSections($id, $sectionIds);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Select at least one section or choose All sections']);
+                return;
+            }
+        }
+        if ($status === 'published' && ($prev['status'] ?? '') !== 'published') {
+            NotificationEmailHelper::queueNewLesson($id);
+            NotificationEmailHelper::dispatchAfterPublish();
+        }
         echo json_encode(['success' => true, 'message' => 'Lesson updated']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to update lesson']);
@@ -386,6 +682,8 @@ function deleteLesson() {
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Lesson ID required']); return; }
 
     try {
+        ensureLessonSectionTable();
+        pdo()->prepare("DELETE FROM lesson_section WHERE lessons_id = ?")->execute([$id]);
         pdo()->prepare("DELETE FROM student_progress WHERE lessons_id = ?")->execute([$id]);
         pdo()->prepare("DELETE FROM lessons WHERE lessons_id = ?")->execute([$id]);
         echo json_encode(['success' => true, 'message' => 'Lesson deleted']);
@@ -462,8 +760,17 @@ function getMaterials() {
         return;
     }
 
+    ensureLessonMaterialsColumns();
+    if (!verifyMaterialAccess($lessonId, (int)Auth::id())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
     $materials = db()->fetchAll(
-        "SELECT * FROM lesson_materials WHERE lessons_id = ? ORDER BY uploaded_at DESC",
+        "SELECT material_id, lessons_id, file_name, original_name, file_path, file_type,
+                file_size, material_type, uploaded_at
+         FROM lesson_materials WHERE lessons_id = ? ORDER BY uploaded_at DESC",
         [$lessonId]
     );
     echo json_encode(['success' => true, 'data' => $materials ?: []]);
@@ -552,7 +859,7 @@ function uploadMaterial() {
     }
 
     $file = $_FILES['file'];
-    $maxFileSize = 10 * 1024 * 1024; // 10MB
+    $maxFileSize = 25 * 1024 * 1024; // 25MB
 
     $allowedTypes = [
         'application/pdf' => 'document',
@@ -560,6 +867,8 @@ function uploadMaterial() {
         'image/png' => 'image',
         'image/gif' => 'image',
         'image/webp' => 'image',
+        'image/bmp' => 'image',
+        'image/svg+xml' => 'image',
         'application/msword' => 'document',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'document',
         'application/vnd.ms-powerpoint' => 'document',
@@ -567,7 +876,13 @@ function uploadMaterial() {
         'application/vnd.ms-excel' => 'document',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'document',
         'text/plain' => 'document',
+        'text/csv' => 'document',
+        'application/csv' => 'document',
+        'application/rtf' => 'document',
+        'text/rtf' => 'document',
         'application/zip' => 'other',
+        'application/x-rar-compressed' => 'other',
+        'application/vnd.rar' => 'other',
         'audio/mpeg' => 'audio',
         'audio/mp3' => 'audio',
         'audio/wav' => 'audio',
@@ -576,7 +891,10 @@ function uploadMaterial() {
         'audio/aac' => 'audio',
         'audio/flac' => 'audio',
         'audio/x-wav' => 'audio',
-        'audio/x-m4a' => 'audio'
+        'audio/x-m4a' => 'audio',
+        'video/mp4' => 'video',
+        'video/webm' => 'video',
+        'video/quicktime' => 'video',
     ];
 
     if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -585,7 +903,7 @@ function uploadMaterial() {
     }
 
     if ($file['size'] > $maxFileSize) {
-        echo json_encode(['success' => false, 'message' => 'File too large. Maximum size is 10MB.']);
+        echo json_encode(['success' => false, 'message' => 'File too large. Maximum size is 25MB.']);
         return;
     }
 
@@ -596,6 +914,7 @@ function uploadMaterial() {
     }
 
     $materialType = $allowedTypes[$mimeType];
+    ensureLessonMaterialsColumns();
     $uploadDir = __DIR__ . '/../uploads/materials/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
@@ -653,7 +972,7 @@ function deleteMaterial() {
         return;
     }
 
-    if (!verifyLessonOwner($material['lessons_id'])) {
+    if (!verifyLessonOwner(materialLessonId($material))) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized']);
         return;
     }
@@ -672,4 +991,241 @@ function deleteMaterial() {
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to delete material']);
     }
+}
+
+/**
+ * Quick publish / draft toggle for classwork menu
+ */
+function setLessonStatus() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+    $d = json_decode(file_get_contents('php://input'), true);
+    $id = (int)($d['lessons_id'] ?? 0);
+    if (!$id) {
+        echo json_encode(['success' => false, 'message' => 'Lesson ID required']);
+        return;
+    }
+    if (!verifyLessonOwner($id)) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        return;
+    }
+    $status = (($d['status'] ?? '') === 'published') ? 'published' : 'draft';
+    try {
+        pdo()->prepare("UPDATE lessons SET status = ?, updated_at = NOW() WHERE lessons_id = ?")
+            ->execute([$status, $id]);
+        if ($status === 'published') {
+            NotificationEmailHelper::queueNewLesson($id);
+            NotificationEmailHelper::dispatchAfterPublish();
+        }
+        echo json_encode([
+            'success' => true,
+            'message' => $status === 'published' ? 'Lesson published' : 'Lesson saved as draft',
+            'data' => ['status' => $status],
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Failed to update status']);
+    }
+}
+
+/**
+ * Resolve user ID for file streaming (session cookie, JWT header, or ?token=)
+ */
+function resolveMaterialUserId() {
+    if (Auth::check()) {
+        return (int)Auth::id();
+    }
+    $token = $_GET['token'] ?? null;
+    if ($token) {
+        $payload = JWT::validate($token);
+        if ($payload && !empty($payload['sub'])) {
+            return (int)$payload['sub'];
+        }
+    }
+    $jwtUser = JWT::authenticate();
+    return $jwtUser ? (int)$jwtUser['sub'] : 0;
+}
+
+/**
+ * Verify student/instructor may access lesson materials
+ */
+function verifyMaterialAccess($lessonId, $userId) {
+    $lesson = db()->fetchOne("SELECT * FROM lessons WHERE lessons_id = ?", [$lessonId]);
+    if (!$lesson) {
+        return false;
+    }
+
+    $user = db()->fetchOne("SELECT role FROM users WHERE users_id = ?", [$userId]);
+    $role = $user['role'] ?? '';
+
+    if (in_array($role, ['admin', 'dean'], true)) {
+        return true;
+    }
+    if ($role === 'instructor') {
+        if (verifyLessonOwner($lessonId)) {
+            return true;
+        }
+        return instructorTeachesSubject($userId, (int)($lesson['subject_id'] ?? 0));
+    }
+
+    if ($lesson['status'] !== 'published') {
+        return false;
+    }
+
+    $enrollment = db()->fetchOne(
+        "SELECT ss.student_subject_id FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE ss.user_student_id = ? AND so.subject_id = ? AND ss.status = 'enrolled'
+         LIMIT 1",
+        [$userId, $lesson['subject_id']]
+    );
+    if (!$enrollment) {
+        return false;
+    }
+
+    ensureLessonSectionTable();
+    $studentSection = db()->fetchOne(
+        "SELECT ss.section_id FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE ss.user_student_id = ? AND so.subject_id = ? AND ss.status = 'enrolled'
+         ORDER BY ss.student_subject_id DESC LIMIT 1",
+        [$userId, $lesson['subject_id']]
+    );
+    $sectionId = (int)($studentSection['section_id'] ?? 0);
+    $sectionIds = getLessonSectionIds($lessonId);
+    if (!empty($sectionIds) && ($sectionId <= 0 || !in_array($sectionId, $sectionIds, true))) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Best-guess MIME type for lesson material streaming.
+ */
+function guessMaterialMime(string $filePath, string $originalName = ''): string {
+    $mime = @mime_content_type($filePath) ?: '';
+    if ($mime && $mime !== 'application/octet-stream' && $mime !== 'application/zip') {
+        return $mime;
+    }
+
+    $ext = strtolower(pathinfo($originalName ?: $filePath, PATHINFO_EXTENSION));
+    $map = [
+        'pdf'  => 'application/pdf',
+        'doc'  => 'application/msword',
+        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls'  => 'application/vnd.ms-excel',
+        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt'  => 'application/vnd.ms-powerpoint',
+        'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt'  => 'text/plain',
+        'csv'  => 'text/csv',
+        'rtf'  => 'application/rtf',
+        'jpg'  => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png'  => 'image/png',
+        'gif'  => 'image/gif',
+        'webp' => 'image/webp',
+        'mp3'  => 'audio/mpeg',
+        'wav'  => 'audio/wav',
+        'ogg'  => 'audio/ogg',
+        'm4a'  => 'audio/mp4',
+        'aac'  => 'audio/aac',
+        'flac' => 'audio/flac',
+        'mp4'  => 'video/mp4',
+        'webm' => 'video/webm',
+        'mov'  => 'video/quicktime',
+        'mkv'  => 'video/x-matroska',
+    ];
+
+    return $map[$ext] ?? ($mime ?: 'application/octet-stream');
+}
+
+/**
+ * Resolve on-disk path for an uploaded lesson material.
+ */
+function resolveMaterialFilePath(array $material): ?string {
+    $uploadsRoot = realpath(__DIR__ . '/../uploads');
+    if (!$uploadsRoot) {
+        return null;
+    }
+
+    $candidates = [];
+    $relative = str_replace('\\', '/', (string)($material['file_path'] ?? ''));
+    if ($relative !== '' && strpos($relative, '..') === false) {
+        $candidates[] = realpath(__DIR__ . '/../' . ltrim($relative, '/'));
+    }
+    if (!empty($material['file_name'])) {
+        $candidates[] = realpath($uploadsRoot . '/materials/' . basename((string)$material['file_name']));
+    }
+
+    foreach ($candidates as $path) {
+        if ($path && strpos($path, $uploadsRoot) === 0 && is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
+/**
+ * Stream a lesson material file (inline or download)
+ */
+function serveMaterial() {
+    ensureLessonMaterialsColumns();
+    $materialId = (int)($_GET['material_id'] ?? $_GET['id'] ?? 0);
+    if (!$materialId) {
+        http_response_code(400);
+        header('Content-Type: text/plain');
+        echo 'Material ID required';
+        return;
+    }
+
+    $userId = resolveMaterialUserId();
+    if (!$userId) {
+        http_response_code(401);
+        header('Content-Type: text/plain');
+        echo 'Unauthorized';
+        return;
+    }
+
+    $material = db()->fetchOne("SELECT * FROM lesson_materials WHERE material_id = ?", [$materialId]);
+    if (!$material) {
+        http_response_code(404);
+        header('Content-Type: text/plain');
+        echo 'Material not found';
+        return;
+    }
+
+    $lessonId = materialLessonId($material);
+    if ($lessonId <= 0 || !verifyMaterialAccess($lessonId, $userId)) {
+        http_response_code(403);
+        header('Content-Type: text/plain');
+        echo 'Access denied';
+        return;
+    }
+
+    if ($material['material_type'] === 'link') {
+        header('Location: ' . $material['file_path']);
+        exit;
+    }
+
+    $filePath = resolveMaterialFilePath($material);
+    if (!$filePath) {
+        http_response_code(404);
+        header('Content-Type: text/plain');
+        echo 'File not found';
+        return;
+    }
+
+    $download = isset($_GET['download']) && $_GET['download'] !== '0';
+    $filename = $material['original_name'] ?: $material['file_name'] ?: basename($filePath);
+    $mime = guessMaterialMime($filePath, $filename);
+    $safeName = preg_replace('/[^\w.\-() ]+/u', '_', $filename);
+
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($filePath));
+    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $safeName . '"');
+    header('Cache-Control: private, max-age=3600');
+    readfile($filePath);
 }

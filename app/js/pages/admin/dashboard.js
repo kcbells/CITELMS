@@ -29,7 +29,7 @@ export async function render(container) {
 
             /* ── Banner ── */
             .dash-banner {
-                background: linear-gradient(135deg, #1B4D3E 0%, #2D6A4F 60%, #40916C 100%);
+                background: #00461B;
                 border-radius: 20px; padding: 30px 36px; margin-bottom: 24px;
                 display: flex; justify-content: space-between; align-items: center;
                 position: relative; overflow: hidden;
@@ -245,7 +245,7 @@ export async function render(container) {
             }
             .dept-bar-fill {
                 height: 100%; border-radius: 10px;
-                background: linear-gradient(90deg, #1B4D3E, #40916C);
+                background: #1B4D3E;
                 min-width: 3px; transition: width .5s ease;
             }
             .dept-bar-fill.zero { background: #e5e7eb; }
@@ -296,7 +296,7 @@ export async function render(container) {
             <!-- Stat Cards -->
             <div class="stat-row">
                 <div class="stat-card">
-                    <div class="stat-card-accent" style="background:linear-gradient(90deg,#1B4D3E,#40916C)"></div>
+                    <div class="stat-card-accent" style="background:#1B4D3E"></div>
                     <div class="stat-card-top">
                         <span class="stat-card-label">Total Users</span>
                         <div class="stat-card-badge" style="background:#E8F5E9">
@@ -313,7 +313,7 @@ export async function render(container) {
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-card-accent" style="background:linear-gradient(90deg,#1E40AF,#3b82f6)"></div>
+                    <div class="stat-card-accent" style="background:#1E40AF"></div>
                     <div class="stat-card-top">
                         <span class="stat-card-label">Programs</span>
                         <div class="stat-card-badge" style="background:#DBEAFE">
@@ -329,7 +329,7 @@ export async function render(container) {
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-card-accent" style="background:linear-gradient(90deg,#B45309,#f59e0b)"></div>
+                    <div class="stat-card-accent" style="background:#B45309"></div>
                     <div class="stat-card-top">
                         <span class="stat-card-label">Lessons</span>
                         <div class="stat-card-badge" style="background:#FEF3C7">
@@ -345,7 +345,7 @@ export async function render(container) {
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-card-accent" style="background:linear-gradient(90deg,#5B21B6,#8b5cf6)"></div>
+                    <div class="stat-card-accent" style="background:#5B21B6"></div>
                     <div class="stat-card-top">
                         <span class="stat-card-label">Active Sections</span>
                         <div class="stat-card-badge" style="background:#EDE9FE">

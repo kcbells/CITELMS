@@ -9,6 +9,9 @@ header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/QuizSectionHelper.php';
+
+ensureQuizScheduleColumns();
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -322,7 +325,7 @@ function handleStudentDashboard() {
             (SELECT COUNT(*) FROM lessons l WHERE l.subject_id = s.subject_id AND l.status = 'published') as total_lessons,
             (SELECT COUNT(*) FROM student_progress sp JOIN lessons l2 ON sp.lessons_id = l2.lessons_id
              WHERE sp.user_student_id = ? AND l2.subject_id = s.subject_id AND sp.status = 'completed') as completed_lessons,
-            (SELECT COUNT(*) FROM quiz q WHERE q.subject_id = s.subject_id AND q.status = 'published') as total_quizzes,
+            (SELECT COUNT(*) FROM quiz q WHERE q.subject_id = s.subject_id AND " . quizVisibleToStudentsSql('q') . ") as total_quizzes,
             (SELECT COUNT(DISTINCT qa.quiz_id) FROM student_quiz_attempts qa
              JOIN quiz q2 ON qa.quiz_id = q2.quiz_id
              WHERE qa.user_student_id = ? AND q2.subject_id = s.subject_id AND qa.status = 'completed') as completed_quizzes
@@ -357,24 +360,67 @@ function handleStudentDashboard() {
         [$userId]
     )['avg'] ?? 0;
 
-    // Pending quizzes: published, not yet completed by this student
+    // Quiz to-do lists categorized by due date / completion
     $subjectIds = array_map(fn($s) => $s['subject_id'], $subjects);
     $pendingQuizzes = [];
+    $todos = ['due_today' => [], 'no_due_date' => [], 'missing' => [], 'done' => []];
+
     if ($subjectIds) {
         $placeholders = implode(',', array_fill(0, count($subjectIds), '?'));
-        $pendingQuizzes = db()->fetchAll(
-            "SELECT q.quiz_id, q.quiz_title, s.subject_code, s.subject_name, q.time_limit
+        $quizItems = db()->fetchAll(
+            "SELECT q.quiz_id, q.quiz_title, q.due_date, q.time_limit,
+                    s.subject_id, s.subject_code, s.subject_name,
+                    (SELECT COUNT(*) FROM student_quiz_attempts sqa
+                     WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed') AS is_done,
+                    (SELECT ROUND(sqa.percentage, 1) FROM student_quiz_attempts sqa
+                     WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed'
+                     ORDER BY sqa.completed_at DESC LIMIT 1) AS last_score,
+                    (SELECT sqa.completed_at FROM student_quiz_attempts sqa
+                     WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed'
+                     ORDER BY sqa.completed_at DESC LIMIT 1) AS completed_at
              FROM quiz q
              JOIN subject s ON q.subject_id = s.subject_id
-             WHERE q.subject_id IN ($placeholders)
-               AND q.status = 'published'
-               AND q.quiz_id NOT IN (
-                   SELECT DISTINCT quiz_id FROM student_quiz_attempts
-                   WHERE user_student_id = ? AND status = 'completed'
-               )
-             ORDER BY s.subject_code, q.quiz_title",
-            array_merge($subjectIds, [$userId])
+             WHERE q.subject_id IN ($placeholders) AND " . quizVisibleToStudentsSql('q') . "
+             ORDER BY q.due_date ASC, s.subject_code, q.quiz_title",
+            array_merge([$userId, $userId, $userId], $subjectIds)
         );
+
+        $today = date('Y-m-d');
+
+        foreach ($quizItems as $q) {
+            $item = [
+                'quiz_id'      => $q['quiz_id'],
+                'quiz_title'   => $q['quiz_title'],
+                'subject_id'   => $q['subject_id'],
+                'subject_code' => $q['subject_code'],
+                'subject_name' => $q['subject_name'],
+                'due_date'     => $q['due_date'],
+                'time_limit'   => $q['time_limit'],
+                'last_score'   => $q['last_score'],
+                'completed_at' => $q['completed_at'],
+            ];
+
+            if ((int)$q['is_done'] > 0) {
+                $todos['done'][] = $item;
+                continue;
+            }
+
+            $pendingQuizzes[] = $item;
+            $due = $q['due_date'];
+
+            if ($due && $due < $today) {
+                $todos['missing'][] = $item;
+            } elseif ($due && $due === $today) {
+                $todos['due_today'][] = $item;
+            } elseif (!$due) {
+                $todos['no_due_date'][] = $item;
+            }
+            // Future-due quizzes are omitted from the board (visible per subject)
+        }
+
+        // Most recently completed first
+        usort($todos['done'], fn($a, $b) => strtotime($b['completed_at'] ?? '0') - strtotime($a['completed_at'] ?? '0'));
+        $todos['done'] = array_slice($todos['done'], 0, 10);
     }
 
     echo json_encode([
@@ -388,7 +434,8 @@ function handleStudentDashboard() {
                 'avg_score' => round((float)$avgScore, 1),
             ],
             'subjects' => $subjects,
-            'pending_quizzes' => $pendingQuizzes
+            'pending_quizzes' => $pendingQuizzes,
+            'todos' => $todos,
         ]
     ]);
 }

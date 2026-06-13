@@ -3,6 +3,9 @@
  * Add/Edit/Delete questions for a specific quiz
  */
 import { Api } from '../../api.js';
+import { L, icon } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container, params = {}) {
     const quizId = params.quiz_id;
@@ -38,7 +41,7 @@ async function loadPage(container, quizId) {
             .badge-published { background:#E8F5E9; color:#1B4D3E; }
             .badge-draft { background:#FEF3C7; color:#B45309; }
 
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .btn-bank { background:#fff; color:#1B4D3E; border:1px solid #1B4D3E; padding:9px 18px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
@@ -153,11 +156,11 @@ async function loadPage(container, quizId) {
         <div class="qq-header">
             <div>
                 <div class="qq-title">${esc(quiz.quiz_title)} <span class="qq-count">${questions.length} questions</span></div>
-                <div class="qq-meta"><span class="code">${esc(quiz.subject_id)}</span> <span class="badge badge-${quiz.status}">${quiz.status}</span> &middot; ${quiz.time_limit} min &middot; ${quiz.passing_rate}% to pass</div>
+                <div class="qq-meta"><span class="code">${esc(quiz.subject_id)}</span> <span class="badge badge-${quiz.status}">${quiz.status}</span> &middot; ${quiz.time_limit} min &middot; ${quiz.passing_rate}% to pass &middot; ${(quiz.max_attempts || 0) > 0 ? quiz.max_attempts + ' attempt' + (quiz.max_attempts !== 1 ? 's' : '') + '/student' : 'Unlimited attempts'}</div>
             </div>
             <div style="display:flex;gap:10px;align-items:center;">
-                <button class="btn-ai" id="btn-ai-gen">🤖 AI Generate</button>
-                <button class="btn-bank" id="btn-copy-bank">📋 Copy from Bank</button>
+                <button class="btn-ai" id="btn-ai-gen">${L.aiGenerate}</button>
+                <button class="btn-bank" id="btn-copy-bank">${icon('clipboard', inl)} Copy from Bank</button>
                 <button class="btn-primary" id="btn-add-q">+ Add Question</button>
             </div>
         </div>
@@ -284,7 +287,7 @@ function openQuestionModal(container, quizId, question = null) {
                 </div>
                 <div id="model-answer-section" style="display:none;">
                     <div class="form-group" style="margin-top:12px;">
-                        <label class="form-label" id="model-answer-label">Model Answer <span style="color:#737373;font-weight:400;font-size:11px;">(used by AI for grading)</span></label>
+                        <label class="form-label" id="model-answer-label">Model Answer <span style="color:#737373;font-weight:400;font-size:11px;">(answer key — used when quiz checking is set to answer key or AI grading)</span></label>
                         <textarea class="form-textarea" id="m-model-answer" rows="4"
                             placeholder="Enter the expected answer or key points the student should cover..."
                             style="border-color:#1B4D3E;">${esc(question?.options?.find(o => o.is_correct)?.option_text || '')}</textarea>
@@ -463,7 +466,7 @@ async function openBankModal(container, quizId) {
     overlay.innerHTML = `
         <div class="modal bank-modal">
             <div class="modal-header">
-                <h3>📋 Copy from Question Bank</h3>
+                <h3>${icon('clipboard', inl)} Copy from Question Bank</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
@@ -543,7 +546,7 @@ async function openBankModal(container, quizId) {
             html += `
                 <div class="bank-group">
                     <div class="bank-group-header" data-gid="${gid}">
-                        <span class="folder-icon">📁</span>
+                        <span class="folder-icon">${icon('folder', inl)}</span>
                         <div class="group-info">
                             ${group.code ? `<span class="group-code">${esc(group.code)}</span>` : ''}
                             <span class="group-name">${esc(group.name)}</span>
@@ -560,12 +563,12 @@ async function openBankModal(container, quizId) {
                                     <div class="bq-meta">
                                         <span class="bq-tag ${typeTagClass[q.question_type] || ''}">${typeLabel[q.question_type] || q.question_type}</span>
                                         <span>${q.points} pt${q.points > 1 ? 's' : ''}</span>
-                                        <span>👤 ${esc(q.first_name)} ${esc(q.last_name)}</span>
+                                        <span>${icon('user', inl)} ${esc(q.first_name)} ${esc(q.last_name)}</span>
                                         ${q.copy_count > 0 ? `<span>Used ${q.copy_count}×</span>` : ''}
                                     </div>
                                     ${q.options && q.options.length > 0 ? `
                                         <div class="bq-opts">
-                                            ${q.options.map(o => `<div class="bq-opt ${o.is_correct ? 'correct' : ''}">${o.is_correct ? '✓' : '○'} ${esc(o.option_text)}</div>`).join('')}
+                                            ${q.options.map(o => `<div class="bq-opt ${o.is_correct ? 'correct' : ''}">${o.is_correct ? icon('check', { size: 12 }) : '○'} ${esc(o.option_text)}</div>`).join('')}
                                         </div>
                                     ` : ''}
                                 </div>
@@ -598,7 +601,7 @@ async function openBankModal(container, quizId) {
                     quiz_id:  parseInt(quizId)
                 });
                 if (res.success) {
-                    btn.textContent = '✓ Copied';
+                    btn.innerHTML = `${icon('check', inl)} Copied`;
                     btn.style.background = '#1a6635';
                     loadPage(container, quizId);
                 } else {
@@ -628,12 +631,12 @@ async function openBankModal(container, quizId) {
                     });
                     if (res.success) {
                         done++;
-                        if (qBtn) { qBtn.textContent = '✓'; qBtn.style.background = '#1a6635'; }
+                        if (qBtn) { qBtn.innerHTML = icon('check', { size: 12 }); qBtn.style.background = '#1a6635'; }
                     } else {
                         if (qBtn) { qBtn.disabled = false; qBtn.textContent = 'Copy'; }
                     }
                 }
-                btn.textContent = `✓ Done (${done})`;
+                btn.innerHTML = `${icon('check', inl)} Done (${done})`;
                 if (done > 0) loadPage(container, quizId);
             });
         });
@@ -695,15 +698,15 @@ async function openBankModal(container, quizId) {
 
             if (res.success) {
                 done++;
-                if (btn) { btn.textContent = '✓'; btn.style.background = '#1a6635'; }
+                if (btn) { btn.innerHTML = icon('check', { size: 12 }); btn.style.background = '#1a6635'; }
             } else {
                 failed++;
-                if (btn) { btn.textContent = '✗'; btn.style.background = '#b91c1c'; btn.disabled = false; }
+                if (btn) { btn.innerHTML = icon('close', { size: 12 }); btn.style.background = '#b91c1c'; btn.disabled = false; }
             }
             statusEl.textContent = `Copying… ${done + failed}/${currentQuestions.length}`;
         }
 
-        statusEl.innerHTML = `<strong style="color:#1B4D3E;">✓ ${done} copied${failed ? `, ${failed} failed` : ''}</strong>`;
+        statusEl.innerHTML = `<strong style="color:#1B4D3E;">${icon('check', inl)} ${done} copied${failed ? `, ${failed} failed` : ''}</strong>`;
         copyAllBtn.textContent = 'Done';
         searchInput.disabled   = false;
         typeSelect.disabled    = false;

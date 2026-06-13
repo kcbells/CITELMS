@@ -2,60 +2,113 @@
  * Student Lesson View (SPA)
  * Full lesson content with materials, video embeds, nav, and mark complete
  */
-import { Api, BASE_URL } from '../../api.js';
+import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
+import {
+    renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss,
+} from '../../utils/material-files.js';
+import { setAssistantContext } from '../../utils/assistant-context.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container, params) {
     const lessonId = params?.id || new URLSearchParams(window.location.hash.split('?')[1] || '').get('id');
-
     if (!lessonId) {
         container.innerHTML = '<div style="text-align:center;padding:60px;color:#737373">No lesson selected. <a href="#student/lessons" style="color:#1B4D3E">Go to Lessons</a></div>';
         return;
     }
-
     container.innerHTML = `<style>${getStyles()}</style><div class="lv-wrap"><div style="text-align:center;padding:60px;color:#737373">Loading lesson...</div></div>`;
-
-    const res = await Api.get('/LessonsAPI.php?action=get&lessons_id=' + lessonId);
-    if (!res.success) {
-        container.innerHTML = `<style>${getStyles()}</style><div class="lv-wrap"><div style="text-align:center;padding:60px;color:#737373">${esc(res.message || 'Failed to load lesson')}. <a href="#student/lessons" style="color:#1B4D3E">Go to Lessons</a></div></div>`;
+    const bundle = await loadLessonBundle(lessonId);
+    if (bundle.error) {
+        container.innerHTML = `<style>${getStyles()}</style><div class="lv-wrap"><div style="text-align:center;padding:60px;color:#737373">${esc(bundle.error)}. <a href="#student/lessons" style="color:#1B4D3E">Go to Lessons</a></div></div>`;
         return;
     }
+    paintLesson(container, lessonId, bundle, false);
+}
+
+/** Embed full lesson inside subject classwork (no page navigation) */
+export async function renderEmbedded(container, lessonId, hooks = {}) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:#737373">Loading lesson...</div>`;
+    const bundle = await loadLessonBundle(lessonId);
+    if (bundle.error) {
+        container.innerHTML = `<div style="text-align:center;padding:40px;color:#737373">${esc(bundle.error)}</div>`;
+        return;
+    }
+    paintLesson(container, lessonId, bundle, true, hooks);
+}
+
+export function getLessonStyles() { return getStyles(); }
+
+async function loadLessonBundle(lessonId) {
+    const res = await Api.get('/LessonsAPI.php?action=get&lessons_id=' + lessonId);
+    if (!res.success) return { error: res.message || 'Failed to load lesson' };
 
     const d = res.data;
     const lesson = d.lesson;
     const allLessons = d.all_lessons || [];
     const materials = d.materials || [];
     const completedCount = allLessons.filter(l => l.is_completed == 1).length;
-
-    // Separate video links from other materials
     const videoLinks = materials.filter(m => m.material_type === 'link' && (m.file_type === 'youtube' || m.file_type === 'vimeo'));
     const otherMaterials = materials.filter(m => !(m.material_type === 'link' && (m.file_type === 'youtube' || m.file_type === 'vimeo')));
 
-    // Fetch quizzes linked to this lesson
     let linkedQuizzes = [];
     try {
         const qRes = await Api.get('/QuizzesAPI.php?action=by-lesson&lesson_id=' + lessonId);
         if (qRes.success) linkedQuizzes = qRes.data || [];
     } catch (_) { /* non-fatal */ }
 
-    container.innerHTML = `
-        <style>${getStyles()}</style>
-        <div class="lv-wrap">
-            <a href="#student/lessons?subject_id=${lesson.subject_offered_id || ''}" class="back-link">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                Back to ${esc(lesson.subject_code)} Lessons
-            </a>
+    return { d, lesson, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes };
+}
 
-            ${!d.prerequisite_met ? renderLocked(d.prerequisite_lesson) : renderContent(lesson, d, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes)}
-        </div>
-    `;
+function paintLesson(container, lessonId, bundle, embedded, hooks = {}) {
+    const { d, lesson, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes } = bundle;
+    const body = !d.prerequisite_met
+        ? renderLocked(d.prerequisite_lesson, embedded)
+        : renderContent(lesson, d, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes, embedded, hooks);
 
-    // Event listeners
+    if (embedded) {
+        container.innerHTML = `<div class="lv-wrap lv-embedded${hooks.focus ? ' lv-focus' : ''}">${body}</div>`;
+    } else {
+        container.innerHTML = `
+            <style>${getStyles()}</style>
+            <div class="lv-wrap">
+                <a href="#student/lessons?subject_id=${lesson.subject_offered_id || ''}" class="back-link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    Back to ${esc(lesson.subject_code)} Lessons
+                </a>
+                ${body}
+            </div>`;
+    }
+
     if (d.prerequisite_met) {
-        bindEvents(container, lessonId, d);
+        bindEvents(container, lessonId, d, hooks);
+        setAssistantContext({
+            page: embedded ? 'classwork-lesson' : 'lesson',
+            lessons_id: parseInt(lessonId, 10),
+            work_title: lesson.lesson_title || lesson.title || 'Lesson',
+            subject_id: lesson.subject_id,
+            subject_name: lesson.subject_name || '',
+            subject_code: lesson.subject_code || '',
+            highlighted_text: '',
+        });
+        bindLessonAiHighlight(container, lesson, parseInt(lessonId, 10));
+    } else if (embedded) {
+        bindLessonNav(container, hooks);
     }
 }
 
-function renderLocked(prereq) {
+function renderLocked(prereq, embedded = false) {
+    const goBtn = prereq
+        ? (embedded
+            ? `<button type="button" class="btn-primary" data-lesson-nav="${prereq.lessons_id}">
+                Go to Required Lesson
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+               </button>`
+            : `<a href="#student/lesson-view?id=${prereq.lessons_id}" class="btn-primary">
+                Go to Required Lesson
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+               </a>`)
+        : '';
     return `
         <div class="locked-box">
             <div class="locked-icon">
@@ -66,14 +119,15 @@ function renderLocked(prereq) {
             </div>
             <h2>Lesson Locked</h2>
             <p>Complete "<strong>${esc(prereq?.lesson_title || 'Previous lesson')}</strong>" first</p>
-            ${prereq ? `<a href="#student/lesson-view?id=${prereq.lessons_id}" class="btn-primary">
-                Go to Required Lesson
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </a>` : ''}
+            ${goBtn}
         </div>`;
 }
 
-function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes = []) {
+function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherMaterials, linkedQuizzes = [], embedded = false, hooks = {}) {
+    const hideMaterials = !!hooks.hideMaterials;
+    const hideActions = !!hooks.hideActions;
+    const hideHeader = !!hooks.hideHeader;
+    const focus = !!hooks.focus;
     return `
         <div class="lesson-layout">
             <!-- Sidebar -->
@@ -87,22 +141,30 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
                     <span class="count">${completedCount}/${allLessons.length}</span>
                 </div>
                 <div class="sidebar-list">
-                    ${allLessons.map(item => `
-                        <a href="#student/lesson-view?id=${item.lessons_id}" class="sidebar-item ${item.lessons_id == lesson.lessons_id ? 'active' : ''} ${item.is_completed == 1 ? 'completed' : ''}">
+                    ${allLessons.map(item => embedded
+                        ? `<button type="button" data-lesson-nav="${item.lessons_id}" class="sidebar-item ${item.lessons_id == lesson.lessons_id ? 'active' : ''} ${item.is_completed == 1 ? 'completed' : ''}">
                             <span class="item-num">
                                 ${item.is_completed == 1
                                     ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>'
                                     : item.order_number}
                             </span>
                             <span class="item-title">${esc(item.title)}</span>
-                        </a>
-                    `).join('')}
+                           </button>`
+                        : `<a href="#student/lesson-view?id=${item.lessons_id}" class="sidebar-item ${item.lessons_id == lesson.lessons_id ? 'active' : ''} ${item.is_completed == 1 ? 'completed' : ''}">
+                            <span class="item-num">
+                                ${item.is_completed == 1
+                                    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>'
+                                    : item.order_number}
+                            </span>
+                            <span class="item-title">${esc(item.title)}</span>
+                           </a>`
+                    ).join('')}
                 </div>
             </aside>
 
             <!-- Main -->
             <div class="lesson-main">
-                <!-- Header -->
+                ${!hideHeader ? `<!-- Header -->
                 <div class="lesson-header">
                     <div class="header-badges">
                         <span class="badge-code">${esc(lesson.subject_code)}</span>
@@ -120,10 +182,10 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
                             ${lesson.estimated_time || 30} mins
                         </span>
                     </div>
-                </div>
+                </div>` : ''}
 
                 <!-- Learning Objectives -->
-                ${lesson.learning_objectives ? `
+                ${!focus && lesson.learning_objectives ? `
                 <div class="objectives-card">
                     <h3>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
@@ -136,17 +198,17 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
 
                 <!-- Content -->
                 ${lesson.lesson_content ? `
-                <div class="content-card">
+                <div class="content-card${focus ? ' lv-focus-card' : ''}">
                     <div class="content-body">${lesson.lesson_content}</div>
                 </div>` : ''}
 
                 <!-- Video Materials -->
-                ${videoLinks.length > 0 ? `
-                <div class="resources-card">
-                    <h3>
+                ${!hideMaterials && videoLinks.length > 0 ? `
+                <div class="${focus ? 'lv-materials-block' : 'resources-card'}">
+                    ${focus ? '' : `<h3>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                         Video Materials
-                    </h3>
+                    </h3>`}
                     <div class="video-list">
                         ${videoLinks.map(v => {
                             const embedUrl = getEmbedUrl(v);
@@ -165,22 +227,20 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
                     </div>
                 </div>` : ''}
 
-                <!-- Other Materials -->
-                ${otherMaterials.length > 0 ? `
-                <div class="resources-card">
-                    <h3>
+                <!-- Attachments -->
+                ${!hideMaterials && otherMaterials.length > 0 ? `
+                <div class="${focus ? 'lv-materials-block' : 'resources-card'}">
+                    ${focus ? '' : `<h3>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         Resources & Files
-                    </h3>
-                    <div class="resources-list">
-                        ${otherMaterials.map(f => renderMaterial(f)).join('')}
-                    </div>
+                    </h3>`}
+                    <div class="gc-material-list">${otherMaterials.map(f => renderMaterialAttachment(f)).join('')}</div>
                 </div>` : ''}
 
                 <!-- Related Quizzes -->
                 ${linkedQuizzes.length > 0 ? renderQuizzesCard(linkedQuizzes) : ''}
 
-                <!-- Actions -->
+                ${!hideActions ? `<!-- Actions -->
                 <div class="actions-card">
                     ${!d.is_completed
                         ? `<button id="markCompleteBtn" class="btn-complete" data-lesson="${lesson.lessons_id}">
@@ -191,30 +251,40 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
                             Completed on ${d.completed_at ? new Date(d.completed_at).toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}) : ''}
                         </div>`}
-                </div>
+                </div>` : ''}
 
-                <!-- Navigation -->
+                ${!hideActions ? `<!-- Navigation -->
                 <div class="lesson-nav">
                     ${d.prev_lesson
-                        ? `<a href="#student/lesson-view?id=${d.prev_lesson.lessons_id}" class="nav-btn prev">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                            <div><small>Previous</small><span>${esc(d.prev_lesson.title)}</span></div>
-                        </a>`
+                        ? (embedded
+                            ? `<button type="button" data-lesson-nav="${d.prev_lesson.lessons_id}" class="nav-btn prev">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                <div><small>Previous</small><span>${esc(d.prev_lesson.title)}</span></div>
+                               </button>`
+                            : `<a href="#student/lesson-view?id=${d.prev_lesson.lessons_id}" class="nav-btn prev">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                <div><small>Previous</small><span>${esc(d.prev_lesson.title)}</span></div>
+                               </a>`)
                         : '<div></div>'}
                     ${d.next_lesson
-                        ? `<a href="#student/lesson-view?id=${d.next_lesson.lessons_id}" class="nav-btn next">
-                            <div><small>Next</small><span>${esc(d.next_lesson.title)}</span></div>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        </a>`
+                        ? (embedded
+                            ? `<button type="button" data-lesson-nav="${d.next_lesson.lessons_id}" class="nav-btn next">
+                                <div><small>Next</small><span>${esc(d.next_lesson.title)}</span></div>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                               </button>`
+                            : `<a href="#student/lesson-view?id=${d.next_lesson.lessons_id}" class="nav-btn next">
+                                <div><small>Next</small><span>${esc(d.next_lesson.title)}</span></div>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                               </a>`)
                         : ''}
-                </div>
+                </div>` : ''}
             </div>
         </div>`;
 }
 
 function renderQuizzesCard(quizzes) {
     const statusMeta = {
-        passed:    { label: 'Passed',    bg: '#E8F5E9', color: '#1B4D3E', icon: '✓' },
+        passed:    { label: 'Passed',    bg: '#E8F5E9', color: '#1B4D3E', icon: icon('check', { size: 12 }) },
         attempted: { label: 'Attempted', bg: '#EFF6FF', color: '#1d4ed8', icon: '↺' },
         overdue:   { label: 'Overdue',   bg: '#FEE2E2', color: '#b91c1c', icon: '!' },
         available: { label: 'Available', bg: '#F0FDF4', color: '#166534', icon: '▶' },
@@ -247,10 +317,12 @@ function renderQuizzesCard(quizzes) {
                             <div class="quiz-row-right">
                                 <span class="quiz-status-badge" style="background:${s.bg};color:${s.color}">${s.icon} ${s.label}</span>
                                 ${q.status === 'passed'
-                                    ? `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz btn-passed">✓ Passed</a>`
+                                    ? `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz btn-passed">${icon('check', inl)} Passed</a>`
+                                    : (q.status === 'exhausted' || (!q.can_take && q.attempts_remaining === 0 && (q.max_attempts || 0) > 0))
+                                        ? `<span class="btn-take-quiz disabled">No attempts left</span>`
                                     : q.can_take
                                         ? `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz">
-                                            ${q.attempts_used > 0 ? 'Retake' : 'Take Quiz'}
+                                            ${q.attempts_used > 0 ? 'Retake' : 'Take Quiz'}${q.attempts_remaining != null ? ` (${q.attempts_remaining} left)` : ''}
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                            </a>`
                                         : `<span class="btn-take-quiz disabled">Closed</span>`}
@@ -259,82 +331,6 @@ function renderQuizzesCard(quizzes) {
                 }).join('')}
             </div>
         </div>`;
-}
-
-function renderMaterial(f) {
-    const isLink = f.material_type === 'link';
-    const isImage = f.material_type === 'image';
-    const ext = (f.original_name || f.file_name || '').split('.').pop().toLowerCase();
-
-    if (isImage && !isLink) {
-        return `<div class="resource-image-card">
-            <img src="${BASE_URL}/${esc(f.file_path)}" alt="${esc(f.original_name)}" loading="lazy">
-            <div class="resource-image-info">
-                <span class="resource-name">${esc(f.original_name)}</span>
-                <a href="${BASE_URL}/${esc(f.file_path)}" class="res-download-btn" download>Download</a>
-            </div>
-        </div>`;
-    }
-
-    if (f.material_type === 'audio') {
-        return `<div class="resource-item" style="flex-direction:column;align-items:flex-start;gap:8px;">
-            <div style="display:flex;align-items:center;gap:10px;width:100%;">
-                <div style="width:36px;height:36px;border-radius:8px;background:#FEF3C7;color:#B45309;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z"/></svg>
-                </div>
-                <div style="flex:1;min-width:0;">
-                    <div class="resource-name">${esc(f.original_name || f.file_name)}</div>
-                    <div class="resource-meta">${ext.toUpperCase()} &middot; ${f.file_size > 1048576 ? (f.file_size/1048576).toFixed(1)+' MB' : (f.file_size/1024).toFixed(1)+' KB'}</div>
-                </div>
-            </div>
-            <audio controls style="width:100%;border-radius:6px;height:36px;">
-                <source src="${BASE_URL}/${esc(f.file_path)}">
-            </audio>
-        </div>`;
-    }
-
-    if (isLink) {
-        const host = (() => { try { return new URL(f.file_path).hostname; } catch { return f.file_path; } })();
-        return `<a href="${esc(f.file_path)}" class="resource-item" target="_blank" rel="noopener">
-            <div class="res-icon link-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
-            <div style="flex:1;min-width:0">
-                <div class="resource-name">${esc(f.original_name)}</div>
-                <div class="resource-url">${esc(host)}</div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        </a>`;
-    }
-
-    // File — PDFs open inline, others download
-    const iconClass = ext === 'pdf' ? 'pdf-icon' : (ext === 'zip' ? 'zip-icon' : 'doc-icon');
-    const fileSize = f.file_size > 1048576 ? (f.file_size / 1048576).toFixed(1) + ' MB' : (f.file_size / 1024).toFixed(1) + ' KB';
-    const fileUrl = `${BASE_URL}/${esc(f.file_path)}`;
-    const fileName = esc(f.original_name || f.file_name);
-
-    if (ext === 'pdf') {
-        return `<div class="resource-item pdf-view-btn" style="cursor:pointer;"
-                     data-pdf-url="${fileUrl}" data-pdf-name="${fileName}">
-            <div class="res-icon pdf-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-            </div>
-            <div style="flex:1;min-width:0">
-                <div class="resource-name">${fileName}</div>
-                <div class="resource-meta">PDF &middot; ${fileSize} &middot; <span style="color:#1B4D3E;font-weight:600;">Click to view</span></div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </div>`;
-    }
-
-    return `<a href="${fileUrl}" class="resource-item" target="_blank" download>
-        <div class="res-icon ${iconClass}">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        </div>
-        <div style="flex:1;min-width:0">
-            <div class="resource-name">${fileName}</div>
-            <div class="resource-meta">${ext.toUpperCase()} &middot; ${fileSize}</div>
-        </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    </a>`;
 }
 
 function getEmbedUrl(v) {
@@ -360,32 +356,89 @@ function getEmbedUrl(v) {
     return null;
 }
 
-function openPdfViewer(url, name) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;flex-direction:column;';
-    overlay.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1B4D3E;color:#fff;flex-shrink:0;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                <span style="font-size:14px;font-weight:700;">${name}</span>
-            </div>
-            <div style="display:flex;gap:10px;align-items:center;">
-                <a href="${url}" download style="font-size:12px;color:rgba(255,255,255,.8);text-decoration:none;padding:5px 10px;border:1px solid rgba(255,255,255,.3);border-radius:6px;">⬇ Download</a>
-                <button id="pdf-modal-close" style="background:none;border:none;color:#fff;font-size:26px;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
-            </div>
-        </div>
-        <iframe src="${url}" style="flex:1;border:none;width:100%;background:#525659;"></iframe>
-    `;
-    document.body.appendChild(overlay);
-    overlay.querySelector('#pdf-modal-close').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
+function bindLessonNav(container, hooks = {}) {
+    container.querySelectorAll('[data-lesson-nav]').forEach(el => {
+        el.addEventListener('click', () => {
+            const id = el.dataset.lessonNav;
+            if (id && hooks.onSelectLesson) hooks.onSelectLesson(id);
+        });
+    });
 }
 
-function bindEvents(container, lessonId, d) {
-    // PDF inline viewer
-    container.querySelectorAll('.pdf-view-btn').forEach(el => {
-        el.addEventListener('click', () => openPdfViewer(el.dataset.pdfUrl, el.dataset.pdfName));
+function bindLessonAiHighlight(container, lesson, lessonId) {
+    let toolbar = null;
+
+    const hideToolbar = () => {
+        toolbar?.remove();
+        toolbar = null;
+    };
+
+    const onDocDown = (e) => {
+        if (toolbar && !toolbar.contains(e.target)) hideToolbar();
+    };
+
+    const showToolbar = (rect, text) => {
+        hideToolbar();
+        toolbar = document.createElement('div');
+        toolbar.className = 'lv-ali-toolbar';
+        toolbar.innerHTML = `<button type="button" class="lv-ali-toolbar-btn">${icon('robot', { size: 14, className: 'ui-icon-inline' })} Ask Ali</button>`;
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - 140));
+        const top = Math.max(8, rect.top - 44);
+        toolbar.style.left = `${left}px`;
+        toolbar.style.top = `${top}px`;
+        toolbar.querySelector('button').addEventListener('click', async () => {
+            const snippet = text.slice(0, 800);
+            const { askAli } = await import('../../components/floating-assistant.js');
+            askAli(`Please explain this part of the lesson in simple terms:\n\n"${snippet}"`, {
+                page: 'lesson',
+                lessons_id: lessonId,
+                work_title: lesson.lesson_title || lesson.title || 'Lesson',
+                subject_id: lesson.subject_id,
+                subject_name: lesson.subject_name || '',
+                subject_code: lesson.subject_code || '',
+                highlighted_text: snippet,
+            });
+            hideToolbar();
+            window.getSelection()?.removeAllRanges();
+        });
+        document.body.appendChild(toolbar);
+    };
+
+    container.querySelectorAll('.content-body').forEach((body) => {
+        body.addEventListener('mouseup', () => {
+            setTimeout(() => {
+                const sel = window.getSelection();
+                const text = sel?.toString().trim() || '';
+                if (text.length < 3 || !sel?.rangeCount) {
+                    hideToolbar();
+                    return;
+                }
+                const anchor = sel.anchorNode;
+                if (!anchor || !body.contains(anchor)) {
+                    hideToolbar();
+                    return;
+                }
+                const rect = sel.getRangeAt(0).getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) {
+                    hideToolbar();
+                    return;
+                }
+                showToolbar(rect, text);
+            }, 10);
+        });
     });
+
+    document.addEventListener('mousedown', onDocDown);
+    container._aliHighlightCleanup = () => {
+        hideToolbar();
+        document.removeEventListener('mousedown', onDocDown);
+    };
+}
+
+function bindEvents(container, lessonId, d, hooks = {}) {
+    bindLessonNav(container, hooks);
+
+    bindMaterialAttachments(container);
 
     const btn = container.querySelector('#markCompleteBtn');
     if (btn) {
@@ -394,10 +447,12 @@ function bindEvents(container, lessonId, d) {
             btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg> Marking...';
             const res = await Api.post('/LessonsAPI.php?action=complete', { lessons_id: parseInt(lessonId) });
             if (res.success) {
-                // Re-render to update UI
-                const params = { id: lessonId };
-                const mod = await import('./lesson-view.js?v=' + Date.now());
-                mod.render(container, params);
+                if (hooks.onComplete) {
+                    hooks.onComplete(lessonId);
+                } else {
+                    const mod = await import('./lesson-view.js?v=' + Date.now());
+                    mod.render(container, { id: lessonId });
+                }
             } else {
                 btn.disabled = false;
                 btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg> Mark as Complete';
@@ -414,9 +469,10 @@ function esc(str) {
 }
 
 function getStyles() {
-    return `
+    return materialAttachmentCss() + `
 /* Lesson View - Green Theme */
 .lv-wrap { padding:24px; max-width:1200px; margin:0 auto; }
+.lv-wrap.lv-embedded { padding:0; max-width:none; margin:0; }
 
 .back-link {
     display:inline-flex; align-items:center; gap:6px;
@@ -442,7 +498,8 @@ function getStyles() {
 .sidebar-list { flex:1; overflow-y:auto; padding:8px; }
 
 .sidebar-item {
-    display:flex; align-items:center; gap:10px; padding:10px 12px;
+    display:flex; align-items:center; gap:10px; padding:10px 12px; width:100%;
+    border:none; background:none; cursor:pointer; text-align:left;
     border-radius:8px; text-decoration:none; color:#666; font-size:13px;
     margin-bottom:4px; transition:all .2s;
 }
@@ -585,8 +642,10 @@ function getStyles() {
 .lesson-nav { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .nav-btn {
     display:flex; align-items:center; gap:12px; padding:16px;
-    background:#fff; border:1px solid #e8e8e8; border-radius:10px; text-decoration:none; transition:all .2s;
+    background:#fff; border:1px solid #e8e8e8; border-radius:10px; text-decoration:none;
+    transition:all .2s; cursor:pointer; font:inherit; color:inherit;
 }
+button.nav-btn { width:100%; }
 .nav-btn:hover { border-color:#1B4D3E; background:#f8fdf9; }
 .nav-btn svg { color:#1B4D3E; flex-shrink:0; }
 .nav-btn div { min-width:0; }
@@ -611,6 +670,26 @@ function getStyles() {
     text-decoration:none; font-weight:600; transition:all .2s;
 }
 .btn-primary:hover { background:#2D6A4F; }
+
+.lv-ali-toolbar {
+    position: fixed; z-index: 960;
+    background: #00461B; color: #fff; border-radius: 20px;
+    box-shadow: 0 4px 16px rgba(0,70,27,.35);
+    padding: 2px;
+    animation: lv-ali-pop .15s ease;
+}
+@keyframes lv-ali-pop {
+    from { opacity: 0; transform: scale(.92); }
+    to { opacity: 1; transform: scale(1); }
+}
+.lv-ali-toolbar-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: transparent; border: none; color: #fff;
+    font-size: 13px; font-weight: 700; padding: 8px 14px; cursor: pointer;
+    border-radius: 18px;
+}
+.lv-ali-toolbar-btn:hover { background: rgba(255,255,255,.12); }
+.content-body { user-select: text; }
 
 /* Responsive */
 @media (max-width:900px) {

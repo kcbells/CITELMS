@@ -20,17 +20,30 @@ register_shutdown_function(function() {
     if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
         ob_clean();
         header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Server error: ' . $err['message']]);
+        echo json_encode(['success' => false, 'message' => 'Something went wrong. Please try again.']);
     }
 });
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/QuizProctorHelper.php';
+require_once __DIR__ . '/helpers/QuizSectionHelper.php';
+require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
 
 // Discard any stray output from includes
 ob_clean();
 
+ensureTabSwitchColumn();
+
 header('Content-Type: application/json');
+
+/**
+ * Log technical errors internally; return a simple message to students.
+ */
+function friendlyQuizMessage(Throwable $e, string $fallback = 'Something went wrong. Please try again.'): string {
+    error_log('QuizAttempts: ' . $e->getMessage());
+    return $fallback;
+}
 
 $action = $_GET['action'] ?? '';
 
@@ -48,6 +61,7 @@ if (!Auth::check()) {
 // RBAC: enforce permission per action
 $_attemptPerms = [
     'submit'           => 'quizzes.view',
+    'proctor-unlock'   => 'quizzes.view',
     'get'              => 'quizzes.view',
     'history'          => 'quizzes.view',
     'quiz-scores'      => 'grades.view',
@@ -64,6 +78,11 @@ if (isset($_attemptPerms[$action]) && !Auth::can($_attemptPerms[$action])) {
 }
 
 switch ($action) {
+    case 'proctor-unlock':
+        header('Content-Type: application/json');
+        clearQuizProctorLock();
+        echo json_encode(['success' => true]);
+        break;
     case 'submit':
         submitQuiz();
         break;
@@ -119,11 +138,13 @@ function submitQuiz() {
         $answers      = $input['answers']             ?? [];
         $timeTaken    = (int)($input['time_taken']    ?? 0);
         $tabSwitches  = max(0, (int)($input['tab_switches'] ?? 0));
+        $endedReason  = trim((string)($input['ended_reason'] ?? ''));
     } else {
         $quizId       = (int)($_POST['quiz_id']      ?? 0);
         $answers      = $_POST['answers']             ?? [];
         $timeTaken    = (int)($_POST['time_taken']    ?? 0);
         $tabSwitches  = max(0, (int)($_POST['tab_switches'] ?? 0));
+        $endedReason  = trim((string)($_POST['ended_reason'] ?? ''));
     }
 
     // ── Input validation ─────────────────────────────────────
@@ -158,7 +179,7 @@ function submitQuiz() {
         $quiz = db()->fetchOne(
             "SELECT q.*, s.subject_id FROM quiz q
              JOIN subject s ON q.subject_id = s.subject_id
-             WHERE q.quiz_id = ? AND q.status = 'published'",
+             WHERE q.quiz_id = ? AND " . quizVisibleToStudentsSql('q'),
             [$quizId]
         );
 
@@ -179,12 +200,27 @@ function submitQuiz() {
             return;
         }
 
-        $attemptCount = db()->fetchOne(
-            "SELECT COUNT(*) as count FROM student_quiz_attempts WHERE quiz_id = ? AND user_student_id = ?",
-            [$quizId, $userId]
-        )['count'] ?? 0;
+        ensureQuizScheduleColumns();
+        ensureQuizBehaviorColumns();
+        if (!empty($quiz['due_date']) && isPastDueDate((string)$quiz['due_date'])) {
+            echo json_encode(['success' => false, 'message' => 'This quiz is past its due date. Contact your instructor for an extension.']);
+            return;
+        }
 
-        // Unlimited attempts — no attempt limit check
+        $attemptCount = (int)(db()->fetchOne(
+            "SELECT COUNT(*) as count FROM student_quiz_attempts
+             WHERE quiz_id = ? AND user_student_id = ? AND status = 'completed'",
+            [$quizId, $userId]
+        )['count'] ?? 0);
+
+        if (quizAttemptsExhausted($quiz, $attemptCount)) {
+            $limit = quizAttemptLimit($quiz);
+            echo json_encode([
+                'success' => false,
+                'message' => "You have used all {$limit} attempt(s) for this quiz."
+            ]);
+            return;
+        }
 
         // Get questions from `questions` table via `quiz_questions` junction
         // NOTE: question_option.quiz_question_id is the FK column name (points to questions.questions_id)
@@ -207,6 +243,8 @@ function submitQuiz() {
         $answerRecords = [];
 
         $hasPendingGrades = false;
+        $objGradingMode = normalizeObjectiveGradingMode($quiz['objective_grading_mode'] ?? 'auto');
+        $subGradingMode = normalizeSubjectiveGradingMode($quiz['subjective_grading_mode'] ?? 'ai_auto');
 
         foreach ($questions as $q) {
             $totalPoints += (int)$q['points'];
@@ -227,14 +265,28 @@ function submitQuiz() {
                 $expectedAnswer = trim($q['expected_answer'] ?? ''); // from main query — no extra DB call
 
                 if (!empty($answerText)) {
-                    // Always run AI — works with or without a model answer
-                    $ai = aiGradeAnswer($q['question_text'], $expectedAnswer, $answerText, (int)$q['points'], $q['question_type']);
-                    $pointsEarned = $ai['score'];
-                    $earnedPoints += $pointsEarned;
-                    $gradingStatus = $ai['status'];
-                    $isCorrect = $pointsEarned >= $q['points'];
-                    $q['_ai_feedback'] = $ai['feedback'];
-                    if ($gradingStatus === 'pending') $hasPendingGrades = true;
+                    if ($subGradingMode === 'manual') {
+                        $gradingStatus = 'pending';
+                        $hasPendingGrades = true;
+                    } elseif ($subGradingMode === 'answer_key' && $expectedAnswer === '') {
+                        $gradingStatus = 'pending';
+                        $hasPendingGrades = true;
+                    } else {
+                        $ai = aiGradeAnswer($q['question_text'], $expectedAnswer, $answerText, (int)$q['points'], $q['question_type']);
+                        $pointsEarned = $ai['score'];
+                        $earnedPoints += $pointsEarned;
+                        $isCorrect = $pointsEarned >= $q['points'];
+                        $q['_ai_feedback'] = $ai['feedback'];
+                        if ($subGradingMode === 'ai_review') {
+                            $gradingStatus = 'pending';
+                            $hasPendingGrades = true;
+                        } else {
+                            $gradingStatus = $ai['status'];
+                            if ($gradingStatus === 'pending') {
+                                $hasPendingGrades = true;
+                            }
+                        }
+                    }
                 } else {
                     $gradingStatus = 'auto_graded'; // blank = 0 pts, not pending
                 }
@@ -249,14 +301,24 @@ function submitQuiz() {
                         $pointsEarned = (int)$q['points'];
                         $earnedPoints += $pointsEarned;
                         $gradingStatus = 'auto_graded';
-                    } else {
-                        // AI fuzzy match for synonyms / minor typos
+                    } elseif ($objGradingMode === 'manual') {
+                        $gradingStatus = 'pending';
+                        $hasPendingGrades = true;
+                    } elseif (in_array($objGradingMode, ['ai_auto', 'ai_review'], true)) {
                         $ai = aiGradeAnswer($q['question_text'], $correct, $answerText, (int)$q['points'], 'fill_blank');
                         $pointsEarned = $ai['score'];
                         $earnedPoints += $pointsEarned;
                         $isCorrect = $pointsEarned >= $q['points'];
-                        $gradingStatus = $ai['status'];
                         $q['_ai_feedback'] = $ai['feedback'];
+                        if ($objGradingMode === 'ai_review') {
+                            $gradingStatus = 'pending';
+                            $hasPendingGrades = true;
+                        } else {
+                            $gradingStatus = $ai['status'];
+                        }
+                    } else {
+                        // auto / answer_key — no partial credit without exact match
+                        $gradingStatus = 'auto_graded';
                     }
                 } elseif ($answerText !== '' && $correct === '') {
                     // Answer given but no correct answer configured — mark pending for manual review
@@ -333,25 +395,34 @@ function submitQuiz() {
         }
 
         $pdo->commit();
+        clearQuizProctorLock();
+
+        $message = 'Quiz submitted';
+        if ($endedReason === 'tab_switch') {
+            $message = 'Quiz ended — you left the quiz tab.';
+        }
 
         echo json_encode([
             'success' => true,
-            'message' => 'Quiz submitted',
+            'message' => $message,
             'data' => [
                 'attempt_id'   => $attemptId,
                 'percentage'   => round($percentage, 1),
                 'passed'       => $passed,
                 'earned_points'=> $earnedPoints,
                 'total_points' => $totalPoints,
-                'lessons_id'   => $linkedLessonsId
+                'lessons_id'   => $linkedLessonsId,
+                'ended_reason' => $endedReason ?: null,
             ]
         ]);
 
     } catch (Exception $e) {
-        // Roll back if transaction was started but not committed
         try { if ($pdo?->inTransaction()) $pdo->rollBack(); } catch (Exception $_) {}
-        error_log("Quiz submit error: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Error submitting quiz: ' . $e->getMessage()]);
+        $msg = 'We could not submit your quiz. Please try again.';
+        if ($endedReason === 'tab_switch') {
+            $msg = 'Your quiz was ended because you left this page.';
+        }
+        echo json_encode(['success' => false, 'message' => friendlyQuizMessage($e, $msg)]);
     }
 }
 
@@ -821,14 +892,15 @@ PROMPT;
         'temperature' => 0.1
     ];
 
+    require_once __DIR__ . '/helpers/GroqCurl.php';
     $ch = curl_init("https://api.groq.com/openai/v1/chat/completions");
-    curl_setopt_array($ch, [
+    curl_setopt_array($ch, applyGroqCurlSsl([
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload),
         CURLOPT_HTTPHEADER     => ["Authorization: Bearer $apiKey", 'Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 25
-    ]);
+        CURLOPT_TIMEOUT        => 25,
+    ]));
     $response = curl_exec($ch);
     $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     unset($ch); // curl_close() deprecated in PHP 8.5 — let destructor handle it

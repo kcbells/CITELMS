@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { bindPasswordChangeOtp } from '../../utils/password-change-otp.js';
 
 export async function render(container) {
     const user = Auth.user();
@@ -17,7 +18,7 @@ export async function render(container) {
             .profile-layout { display:grid; grid-template-columns:300px 1fr; gap:24px; align-items:start; }
 
             .profile-sidebar { background:#fff; border:1px solid #e8e8e8; border-radius:14px; overflow:hidden; position:sticky; top:24px; }
-            .profile-banner { height:80px; background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 100%); position:relative; }
+            .profile-banner { height:80px; background:#00461B; position:relative; }
             .profile-avatar { width:72px; height:72px; border-radius:50%; background:#E8F5E9; color:#1B4D3E; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; border:4px solid #fff; position:absolute; bottom:-36px; left:50%; transform:translateX(-50%); }
             .profile-info { text-align:center; padding:44px 20px 16px; }
             .profile-name { font-size:18px; font-weight:700; color:#262626; }
@@ -45,7 +46,7 @@ export async function render(container) {
             .form-label { display:block; font-size:13px; font-weight:600; color:#404040; margin-bottom:6px; }
             .form-input { width:100%; padding:10px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box; }
             .form-input:focus { outline:none; border-color:#00461B; }
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
             .form-actions { display:flex; justify-content:flex-end; padding-top:8px; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
             .alert-success { background:#E8F5E9; color:#1B4D3E; }
@@ -98,7 +99,8 @@ export async function render(container) {
                         <div class="form-group"><label class="form-label">Current Password</label><input type="password" class="form-input" id="f-curpw"></div>
                         <div class="form-group"><label class="form-label">New Password</label><input type="password" class="form-input" id="f-newpw"></div>
                         <div class="form-group"><label class="form-label">Confirm Password</label><input type="password" class="form-input" id="f-confirmpw"></div>
-                        <div class="form-actions"><button class="btn-primary" id="btn-pw">Change Password</button></div>
+                        <p style="font-size:12px;color:#737373;margin:0">A verification code will be emailed to you before your password is changed.</p>
+                        <div class="form-actions"><button class="btn-primary" id="btn-pw">Send verification code</button></div>
                     </div>
                 </div>
             </div>
@@ -126,24 +128,14 @@ export async function render(container) {
         }
     });
 
-    // Change password
-    container.querySelector('#btn-pw').addEventListener('click', async () => {
-        const alertEl = container.querySelector('#pw-alert');
-        const curPw = container.querySelector('#f-curpw').value;
-        const newPw = container.querySelector('#f-newpw').value;
-        const confirmPw = container.querySelector('#f-confirmpw').value;
-        if (!curPw || !newPw) { alertEl.innerHTML = '<div class="alert alert-error">Fill in all password fields</div>'; return; }
-        if (newPw.length < 6) { alertEl.innerHTML = '<div class="alert alert-error">New password must be at least 6 characters</div>'; return; }
-        if (newPw !== confirmPw) { alertEl.innerHTML = '<div class="alert alert-error">Passwords do not match</div>'; return; }
-        const res = await Api.post('/AuthAPI.php?action=change-password', { current_password: curPw, new_password: newPw });
-        if (res.success) {
-            alertEl.innerHTML = '<div class="alert alert-success">Password changed!</div>';
-            container.querySelector('#f-curpw').value = '';
-            container.querySelector('#f-newpw').value = '';
-            container.querySelector('#f-confirmpw').value = '';
-        } else {
-            alertEl.innerHTML = `<div class="alert alert-error">${res.message}</div>`;
-        }
+    bindPasswordChangeOtp(container, {
+        alertSelector: '#pw-alert',
+        curSelector: '#f-curpw',
+        newSelector: '#f-newpw',
+        confirmSelector: '#f-confirmpw',
+        btnSelector: '#btn-pw',
+        okClass: 'alert alert-success',
+        errClass: 'alert alert-error',
     });
 }
 

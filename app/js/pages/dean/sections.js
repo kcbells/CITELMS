@@ -34,7 +34,7 @@ export async function render(container) {
             .detail-item { font-size:12px; color:#737373; }
             .detail-item strong { color:#404040; display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; }
             .enrollment-bar { background:#f0f0f0; height:6px; border-radius:3px; overflow:hidden; margin-bottom:4px; }
-            .enrollment-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#00461B,#006428); }
+            .enrollment-fill { height:100%; border-radius:3px; background:#00461B; }
             .enrollment-text { font-size:11px; color:#737373; }
 
             .copied-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1B4D3E; color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:9999; }

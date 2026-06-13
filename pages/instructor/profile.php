@@ -426,13 +426,11 @@ if (!empty($user['department_id'])) {
 .alert-success {
     background: #dcfce7;
     color: #166534;
-    border-left: 4px solid #10b981;
-}
+    }
 .alert-error {
     background: #fee2e2;
     color: #991b1b;
-    border-left: 4px solid #ef4444;
-}
+    }
 
 /* Responsive */
 @media (max-width: 1024px) {

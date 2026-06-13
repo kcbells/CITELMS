@@ -385,10 +385,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 .required{color:#dc2626;font-weight:700}
 
 .alert{padding:18px 24px;border-radius:12px;margin-bottom:24px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
-.alert-success{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);color:#065f46;border-left:5px solid #10b981}
-.alert-danger{background:linear-gradient(135deg,#fee2e2 0%,#fecaca 100%);color:#991b1b;border-left:5px solid #ef4444}
-
-@media(max-width:768px){.filters-form{flex-direction:column}.page-header h2{font-size:22px}.modal-content{max-width:95%;margin:20px}}
+.alert-success{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);color:#065f46;color:#991b1b;margin:20px}}
 </style>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

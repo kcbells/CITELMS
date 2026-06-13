@@ -23,12 +23,17 @@ class JWT {
         ]));
 
         $payload = self::base64UrlEncode(json_encode([
-            'sub'   => $user['users_id'],
-            'name'  => trim($user['first_name'] . ' ' . $user['last_name']),
-            'role'  => $user['role'],
-            'email' => $user['email'],
-            'iat'   => time(),
-            'exp'   => time() + JWT_EXPIRY
+            'sub'         => $user['users_id'],
+            'users_id'    => $user['users_id'],
+            'name'        => trim($user['first_name'] . ' ' . $user['last_name']),
+            'first_name'  => $user['first_name'] ?? '',
+            'last_name'   => $user['last_name'] ?? '',
+            'role'        => $user['role'],
+            'email'       => $user['email'],
+            'student_id'  => $user['student_id'] ?? null,
+            'employee_id' => $user['employee_id'] ?? null,
+            'iat'         => time(),
+            'exp'         => time() + JWT_EXPIRY
         ]));
 
         $signature = self::base64UrlEncode(

@@ -43,12 +43,12 @@ if ($role === 'admin') {
         [$like, $like]
     );
     if ($users) $results[] = [
-        'category' => 'Users', 'icon' => '👤',
+        'category' => 'Users', 'icon' => 'user',
         'items' => array_map(fn($u) => [
             'label' => $u['first_name'] . ' ' . $u['last_name'],
             'sub'   => ucfirst($u['role']) . ' · ' . $u['email'],
             'url'   => '#admin/users',
-            'icon'  => '👤',
+            'icon'  => 'user',
         ], $users)
     ];
 
@@ -61,12 +61,12 @@ if ($role === 'admin') {
         [$like, $like]
     );
     if ($depts) $results[] = [
-        'category' => 'Departments', 'icon' => '🏢',
+        'category' => 'Departments', 'icon' => 'building',
         'items' => array_map(fn($d) => [
             'label' => $d['department_name'],
             'sub'   => $d['department_code'],
             'url'   => '#admin/departments',
-            'icon'  => '🏢',
+            'icon'  => 'building',
         ], $depts)
     ];
 
@@ -79,12 +79,12 @@ if ($role === 'admin') {
         [$like, $like]
     );
     if ($progs) $results[] = [
-        'category' => 'Programs', 'icon' => '🎓',
+        'category' => 'Programs', 'icon' => 'graduation',
         'items' => array_map(fn($p) => [
             'label' => $p['program_name'],
             'sub'   => $p['program_code'],
             'url'   => '#admin/programs',
-            'icon'  => '🎓',
+            'icon'  => 'graduation',
         ], $progs)
     ];
 
@@ -97,12 +97,12 @@ if ($role === 'admin') {
         [$like, $like]
     );
     if ($subjs) $results[] = [
-        'category' => 'Subjects', 'icon' => '📚',
+        'category' => 'Subjects', 'icon' => 'book',
         'items' => array_map(fn($s) => [
             'label' => $s['subject_name'],
             'sub'   => $s['subject_code'],
             'url'   => '#admin/subjects',
-            'icon'  => '📚',
+            'icon'  => 'book',
         ], $subjs)
     ];
 
@@ -115,12 +115,12 @@ if ($role === 'admin') {
         [$like]
     );
     if ($sects) $results[] = [
-        'category' => 'Sections', 'icon' => '🏫',
+        'category' => 'Sections', 'icon' => 'school',
         'items' => array_map(fn($s) => [
             'label' => $s['section_name'],
             'sub'   => $s['enrollment_code'] ? 'Code: ' . $s['enrollment_code'] : '',
             'url'   => '#admin/sections',
-            'icon'  => '🏫',
+            'icon'  => 'school',
         ], $sects)
     ];
 }
@@ -143,12 +143,12 @@ elseif ($role === 'dean') {
         [$deptId, $like, $like]
     );
     if ($instr) $results[] = [
-        'category' => 'Instructors', 'icon' => '👨‍🏫',
+        'category' => 'Instructors', 'icon' => 'instructor',
         'items' => array_map(fn($u) => [
             'label' => $u['first_name'] . ' ' . $u['last_name'],
             'sub'   => $u['employee_id'] ?? $u['email'],
             'url'   => '#dean/instructors',
-            'icon'  => '👨‍🏫',
+            'icon'  => 'instructor',
         ], $instr)
     ];
 
@@ -163,12 +163,12 @@ elseif ($role === 'dean') {
         [$deptId, $like, $like]
     );
     if ($subjs) $results[] = [
-        'category' => 'Subjects', 'icon' => '📚',
+        'category' => 'Subjects', 'icon' => 'book',
         'items' => array_map(fn($s) => [
             'label' => $s['subject_name'],
             'sub'   => $s['subject_code'],
             'url'   => '#dean/subjects',
-            'icon'  => '📚',
+            'icon'  => 'book',
         ], $subjs)
     ];
 
@@ -186,12 +186,12 @@ elseif ($role === 'dean') {
         [$deptId, $like]
     );
     if ($sects) $results[] = [
-        'category' => 'Sections', 'icon' => '🏫',
+        'category' => 'Sections', 'icon' => 'school',
         'items' => array_map(fn($s) => [
             'label' => $s['section_name'],
             'sub'   => '',
             'url'   => '#dean/sections',
-            'icon'  => '🏫',
+            'icon'  => 'school',
         ], $sects)
     ];
 }
@@ -211,12 +211,12 @@ elseif ($role === 'instructor') {
         [$uid, $like, $like]
     );
     if ($classes) $results[] = [
-        'category' => 'My Classes', 'icon' => '🏫',
+        'category' => 'My Classes', 'icon' => 'school',
         'items' => array_map(fn($c) => [
             'label' => $c['subject_name'],
             'sub'   => $c['subject_code'],
             'url'   => '#instructor/my-classes',
-            'icon'  => '🏫',
+            'icon'  => 'school',
         ], $classes)
     ];
 
@@ -232,12 +232,12 @@ elseif ($role === 'instructor') {
         [$uid, $like]
     );
     if ($students) $results[] = [
-        'category' => 'Students', 'icon' => '👤',
+        'category' => 'Students', 'icon' => 'user',
         'items' => array_map(fn($u) => [
             'label' => $u['first_name'] . ' ' . $u['last_name'],
             'sub'   => $u['student_id'] ?? '',
             'url'   => '#instructor/gradebook',
-            'icon'  => '👤',
+            'icon'  => 'user',
         ], $students)
     ];
 
@@ -251,12 +251,12 @@ elseif ($role === 'instructor') {
         [$uid, $like]
     );
     if ($quizzes) $results[] = [
-        'category' => 'Quizzes', 'icon' => '📝',
+        'category' => 'Quizzes', 'icon' => 'quiz',
         'items' => array_map(fn($q) => [
             'label' => $q['quiz_title'],
             'sub'   => $q['subject_code'],
             'url'   => '#instructor/quizzes',
-            'icon'  => '📝',
+            'icon'  => 'quiz',
         ], $quizzes)
     ];
 }
@@ -277,12 +277,12 @@ elseif ($role === 'student') {
         [$uid, $like, $like]
     );
     if ($subjs) $results[] = [
-        'category' => 'My Subjects', 'icon' => '📚',
+        'category' => 'My Subjects', 'icon' => 'book',
         'items' => array_map(fn($s) => [
             'label' => $s['subject_name'],
             'sub'   => $s['subject_code'],
             'url'   => '#student/my-subjects',
-            'icon'  => '📚',
+            'icon'  => 'book',
         ], $subjs)
     ];
 
@@ -299,12 +299,12 @@ elseif ($role === 'student') {
         [$uid, $like]
     );
     if ($lessons) $results[] = [
-        'category' => 'Lessons', 'icon' => '📖',
+        'category' => 'Lessons', 'icon' => 'lessons',
         'items' => array_map(fn($l) => [
             'label' => $l['lesson_title'],
             'sub'   => $l['subject_code'],
             'url'   => '#student/my-subjects',
-            'icon'  => '📖',
+            'icon'  => 'lessons',
         ], $lessons)
     ];
 
@@ -321,12 +321,12 @@ elseif ($role === 'student') {
         [$uid, $like]
     );
     if ($quizzes) $results[] = [
-        'category' => 'Quizzes', 'icon' => '📝',
+        'category' => 'Quizzes', 'icon' => 'quiz',
         'items' => array_map(fn($q) => [
             'label' => $q['quiz_title'],
             'sub'   => $q['subject_code'],
             'url'   => '#student/quizzes',
-            'icon'  => '📝',
+            'icon'  => 'quiz',
         ], $quizzes)
     ];
 }

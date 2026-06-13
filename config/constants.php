@@ -23,13 +23,13 @@ if (!defined('BASE_URL')) {
      *   - Subdomain: ''
      *   - Subfolder: '/myapp/cit-lms'
      */
-    define('BASE_URL', '/COC-LMS');
+    define('BASE_URL', '/COC_LMS(2)');
     
     /**
      * Application Information
      */
     define('APP_NAME', 'CIT-LMS');
-    define('APP_FULL_NAME', 'College of Information Technology - Learning Management System');
+    define('APP_FULL_NAME', 'PHINMA Cagayan de Oro College - Learning Management System');
     define('APP_VERSION', '1.0.0');
     define('APP_DESCRIPTION', 'A comprehensive Learning Management System for CIT students and instructors.');
     

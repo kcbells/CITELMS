@@ -486,8 +486,8 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     font-weight: 600;
     font-size: 14px;
 }
-.alert-success { background: #E8F5E9; color: #1B4D3E; border-left: 4px solid #2D6A4F; }
-.alert-danger { background: #FEE2E2; color: #991b1b; border-left: 4px solid #ef4444; }
+.alert-success { background: #E8F5E9; color: #1B4D3E; }
+.alert-danger { background: #FEE2E2; color: #991b1b; }
 
 @media (max-width: 768px) {
     .form-grid { grid-template-columns: 1fr; }

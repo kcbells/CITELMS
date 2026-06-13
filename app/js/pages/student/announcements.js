@@ -4,6 +4,9 @@
  */
 import { Api }  from '../../api.js';
 import { Auth } from '../../auth.js';
+import { L, icon, iconLg } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     container.innerHTML = `<div style="display:flex;justify-content:center;padding:60px">
@@ -39,7 +42,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
     container.innerHTML = `
         <style>
             /* Banner */
-            .an-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:24px 28px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; position:relative; overflow:hidden; }
+            .an-banner { background:#00461B; border-radius:16px; padding:24px 28px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
             .an-banner::before { content:''; position:absolute; right:-30px; top:-30px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .an-banner-left { position:relative; z-index:1; }
             .an-banner-left h2 { font-size:22px; font-weight:800; color:#fff; margin:0 0 4px; }
@@ -63,8 +66,6 @@ function renderPage(container, allAnn, subjects, filterSubject) {
             @keyframes an-fadein { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
             .an-card { background:#fff; border:1px solid #e8e8e8; border-radius:14px; padding:0; overflow:hidden; transition:box-shadow .2s, transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.06); animation:an-fadein .2s ease both; }
             .an-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.09); transform:translateY(-1px); }
-            .an-card.pinned { border-left:4px solid #1B4D3E; }
-            .an-card.urgent { border-left:4px solid #B91C1C; }
             .an-card-body { padding:20px 22px 16px; }
 
             .an-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
@@ -95,7 +96,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
         <!-- Banner -->
         <div class="an-banner">
             <div class="an-banner-left">
-                <h2>📢 Announcements</h2>
+                <h2>${icon('announce', { size: 22, className: 'ui-icon-inline' })} Announcements</h2>
                 <p>Updates and notices from your instructors</p>
             </div>
             <div class="an-banner-right">
@@ -115,7 +116,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
 
         <!-- Filter bar -->
         <div class="an-filter-bar">
-            <span class="an-filter-label">📚 Filter by Subject</span>
+            <span class="an-filter-label">${L.book} Filter by Subject</span>
             <div class="an-filter-wrap">
                 <select class="an-filter-select" id="an-filter">
                     <option value="">All Subjects</option>
@@ -130,7 +131,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
         <div class="an-list">
             ${list.length === 0
                 ? `<div class="an-empty">
-                       <div class="an-empty-icon">📭</div>
+                       <div class="an-empty-icon">${iconLg('folder')}</div>
                        <h3>No announcements yet</h3>
                        <p>${filterSubject ? 'No announcements for this subject.' : 'Your instructors haven\'t posted anything yet.'}</p>
                    </div>`
@@ -154,9 +155,9 @@ function buildCard(a, i) {
 
     const typeBadge = {
         general:  '',
-        urgent:   '<span class="an-badge an-badge-urgent">🚨 Urgent</span>',
-        reminder: '<span class="an-badge an-badge-reminder">⏰ Reminder</span>',
-        event:    '<span class="an-badge an-badge-event">📅 Event</span>',
+        urgent:   `<span class="an-badge an-badge-urgent">${icon('siren', inl)} Urgent</span>`,
+        reminder: `<span class="an-badge an-badge-reminder">${icon('clock', inl)} Reminder</span>`,
+        event:    `<span class="an-badge an-badge-event">${L.event}</span>`,
     }[annType] || '';
 
     const authorName = [a.author_first, a.author_last].filter(Boolean).join(' ') || 'Instructor';
@@ -175,7 +176,7 @@ function buildCard(a, i) {
                             : `<span class="an-badge an-badge-all">All Classes</span>`
                         }
                         ${typeBadge}
-                        ${pinned ? '<span class="an-badge an-badge-pinned">📌 Pinned</span>' : ''}
+                        ${pinned ? `<span class="an-badge an-badge-pinned">${icon('pin', inl)} Pinned</span>` : ''}
                         ${newFlag ? '<span class="an-badge an-badge-new">New</span>' : ''}
                     </div>
                 </div>

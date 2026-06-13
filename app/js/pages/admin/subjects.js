@@ -3,6 +3,7 @@
  * Full CRUD for subject management
  */
 import { Api } from '../../api.js';
+import { L } from '../../utils/action-labels.js';
 
 let programs    = [];
 let departments = [];
@@ -34,7 +35,7 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
             .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
             .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; }
@@ -131,7 +132,7 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
                 </tr>
             </thead>
             <tbody>
-                ${subjects.length === 0 ? `<tr><td colspan="9"><div class="empty-state-sm">${dbError ? '⚠️ DB Error: ' + esc(dbError) : 'No subjects found'}</div></td></tr>` :
+                ${subjects.length === 0 ? `<tr><td colspan="9"><div class="empty-state-sm">${dbError ? L.warning + ' DB Error: ' + esc(dbError) : 'No subjects found'}</div></td></tr>` :
                   subjects.map(s => {
                     const yr  = s.year_level ? s.year_level + 'Y' : '—';
                     const sem = s.semester == 1 ? '1st' : s.semester == 2 ? '2nd' : s.semester == 3 ? 'Sum' : '—';
@@ -154,9 +155,9 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
                             <td class="actions-cell">
                                 <button class="btn-actions" data-id="${s.subject_id}">⋮</button>
                                 <div class="actions-dropdown" data-dropdown="${s.subject_id}">
-                                    <a href="#" data-edit="${s.subject_id}">✏️ Edit</a>
+                                    <a href="#" data-edit="${s.subject_id}">${L.edit}</a>
                                     <div class="divider"></div>
-                                    <a href="#" class="danger" data-delete="${s.subject_id}" data-name="${esc(s.subject_name)}">🗑️ Deactivate</a>
+                                    <a href="#" class="danger" data-delete="${s.subject_id}" data-name="${esc(s.subject_name)}">${L.deactivate}</a>
                                 </div>
                             </td>
                         </tr>`;

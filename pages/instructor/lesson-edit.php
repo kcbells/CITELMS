@@ -390,10 +390,7 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
 .btn-sm{padding:6px 12px;font-size:12px;border-radius:4px;cursor:pointer;border:1px solid #ddd;background:#fff}
 .btn-danger{color:#dc2626;border-color:#fecaca}
 .alert{padding:12px 16px;border-radius:6px;margin-bottom:16px}
-.alert-error{background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626}
-.alert-success{background:#dcfce7;color:#166534;border-left:3px solid #16a34a}
-.mt-4{margin-top:20px}
-.empty-box{text-align:center;padding:30px;color:#888;background:#fafafa;border-radius:6px;margin-bottom:16px}
+.alert-error{background:#fee2e2;color:#991b1b;color:#166534;padding:30px;color:#888;background:#fafafa;border-radius:6px;margin-bottom:16px}
 
 /* File Styles */
 .files-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}

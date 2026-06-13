@@ -3,6 +3,9 @@
  * CRUD for subject offerings
  */
 import { Api } from '../../api.js';
+import { L, icon } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects = [];
 let semesters = [];
@@ -138,10 +141,10 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
                         <td class="actions-cell">
                             <button class="btn-actions" data-id="${o.subject_offered_id}">⋮</button>
                             <div class="actions-dropdown" data-dropdown="${o.subject_offered_id}">
-                                <a href="#" data-edit="${o.subject_offered_id}" data-batch="${esc(o.batch||'')}" data-status="${o.status}">✏️ Edit Batch</a>
-                                <a href="#" data-toggle="${o.subject_offered_id}" data-status="${o.status === 'open' ? 'closed' : 'open'}">${o.status === 'open' ? '🔒 Close' : '🔓 Open'}</a>
+                                <a href="#" data-edit="${o.subject_offered_id}" data-batch="${esc(o.batch||'')}" data-status="${o.status}">${L.editBatch}</a>
+                                <a href="#" data-toggle="${o.subject_offered_id}" data-status="${o.status === 'open' ? 'closed' : 'open'}">${o.status === 'open' ? `${icon('lock', inl)} Close` : `${icon('lock', inl)} Open`}</a>
                                 <div class="divider"></div>
-                                <a href="#" class="danger" data-cancel="${o.subject_offered_id}" data-name="${esc(o.subject_code)}">🗑️ Cancel</a>
+                                <a href="#" class="danger" data-cancel="${o.subject_offered_id}" data-name="${esc(o.subject_code)}">${L.cancel}</a>
                             </div>
                         </td>
                     </tr>

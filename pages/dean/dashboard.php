@@ -295,7 +295,6 @@ include __DIR__ . '/../../includes/sidebar.php';
 /* Alert Banner */
 .alert-banner {
     background: #fef3c7;
-    border-left: 4px solid var(--coc-gold);
     padding: 12px 16px;
     margin-bottom: 24px;
     display: flex;

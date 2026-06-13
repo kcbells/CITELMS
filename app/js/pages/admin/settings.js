@@ -3,6 +3,9 @@
  * System settings management — professional left-nav layout
  */
 import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     container.innerHTML = `
@@ -11,16 +14,10 @@ export async function render(container) {
 
             /* ── Banner ── */
             .set-banner {
-                background: linear-gradient(135deg, #00461B 0%, #006428 50%, #004d1f 100%);
+                background: #00461B;
                 border-radius: 20px; padding: 28px 36px; margin-bottom: 28px;
                 display: flex; align-items: center; gap: 20px;
-                position: relative; overflow: hidden;
-                box-shadow: 0 8px 24px -4px rgba(0,70,27,.25);
-            }
-            .set-banner::before {
-                content: ''; position: absolute; top: -60%; right: -5%;
-                width: 300px; height: 300px;
-                background: rgba(255,255,255,.05); border-radius: 50%;
+                box-shadow: 0 2px 10px rgba(0,70,27,.1);
             }
             .set-banner-icon {
                 width: 52px; height: 52px; border-radius: 14px;
@@ -47,11 +44,11 @@ export async function render(container) {
             .set-nav-item {
                 display: flex; align-items: center; gap: 11px;
                 padding: 11px 18px; cursor: pointer; transition: all .18s;
-                border-left: 3px solid transparent; margin: 2px 0;
+                margin: 2px 0;
                 font-size: 13.5px; font-weight: 500; color: #525252;
             }
             .set-nav-item:hover { background: #f5faf7; color: #00461B; }
-            .set-nav-item.active { background: #f0fdf4; color: #00461B; font-weight: 700; border-left-color: #00461B; }
+            .set-nav-item.active { background: #f0fdf4; color: #00461B; font-weight: 700; }
             .set-nav-item .nav-icon { font-size: 16px; width: 22px; text-align: center; }
             .set-nav-divider { height: 1px; background: #f0f0f0; margin: 6px 0; }
 
@@ -73,11 +70,11 @@ export async function render(container) {
                 display: flex; align-items: center; justify-content: center;
                 font-size: 18px; flex-shrink: 0;
             }
-            .set-card-head-icon.green  { background: linear-gradient(135deg,#D1FAE5,#A7F3D0); }
-            .set-card-head-icon.blue   { background: linear-gradient(135deg,#DBEAFE,#BFDBFE); }
-            .set-card-head-icon.yellow { background: linear-gradient(135deg,#FEF3C7,#FDE68A); }
-            .set-card-head-icon.purple { background: linear-gradient(135deg,#EDE9FE,#DDD6FE); }
-            .set-card-head-icon.red    { background: linear-gradient(135deg,#FEE2E2,#FECACA); }
+            .set-card-head-icon.green  { background: #D1FAE5; }
+            .set-card-head-icon.blue   { background: #DBEAFE; }
+            .set-card-head-icon.yellow { background: #FEF3C7; }
+            .set-card-head-icon.purple { background: #EDE9FE; }
+            .set-card-head-icon.red    { background: #FEE2E2; }
             .set-card-title h3 { font-size: 15px; font-weight: 700; color: #262626; }
             .set-card-title p  { font-size: 12.5px; color: #737373; margin-top: 2px; }
 
@@ -148,7 +145,7 @@ export async function render(container) {
 
             /* Buttons */
             .btn-primary {
-                background: linear-gradient(135deg,#00461B,#006428);
+                background: #00461B;
                 color: #fff; border: none; padding: 9px 22px;
                 border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer;
                 display: flex; align-items: center; gap: 7px;
@@ -204,7 +201,7 @@ export async function render(container) {
         <div class="set-wrap">
             <!-- Banner -->
             <div class="set-banner">
-                <div class="set-banner-icon">⚙️</div>
+                <div class="set-banner-icon">${icon('settings', { size: 28 })}</div>
                 <div class="set-banner-text">
                     <h1>System Settings</h1>
                     <p>Configure and manage CIT-LMS system-wide preferences</p>
@@ -216,36 +213,36 @@ export async function render(container) {
                 <aside class="set-nav">
                     <div class="set-nav-label">Configuration</div>
                     <div class="set-nav-item active" data-section="general">
-                        <span class="nav-icon">🏫</span> General
+                        <span class="nav-icon">${icon('school')}</span> General
                     </div>
                     <div class="set-nav-item" data-section="quiz">
-                        <span class="nav-icon">📝</span> Quiz Settings
+                        <span class="nav-icon">${icon('quiz')}</span> Quiz Settings
                     </div>
                     <div class="set-nav-item" data-section="upload">
-                        <span class="nav-icon">📁</span> File Upload
+                        <span class="nav-icon">${icon('folder')}</span> File Upload
                     </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Integrations</div>
                     <div class="set-nav-item" data-section="ai">
-                        <span class="nav-icon">🤖</span> AI Generation
+                        <span class="nav-icon">${icon('robot')}</span> AI Generation
                     </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Academic</div>
                     <div class="set-nav-item" data-section="school-year">
-                        <span class="nav-icon">📅</span> School Year
+                        <span class="nav-icon">${icon('calendar')}</span> School Year
                     </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Advanced</div>
                     <div class="set-nav-item" data-section="maintenance">
-                        <span class="nav-icon">🔧</span> Maintenance
+                        <span class="nav-icon">${icon('wrench')}</span> Maintenance
                     </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Administration</div>
                     <div class="set-nav-item" data-section="users">
-                        <span class="nav-icon">👥</span> Users
+                        <span class="nav-icon">${icon('users')}</span> Users
                     </div>
                     <div class="set-nav-item" data-section="rbac">
-                        <span class="nav-icon">🔐</span> Roles & Permissions
+                        <span class="nav-icon">${icon('lock')}</span> Roles & Permissions
                     </div>
                 </aside>
 
@@ -255,7 +252,7 @@ export async function render(container) {
                     <div class="set-panel active" data-panel="general">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon green">🏫</div>
+                                <div class="set-card-head-icon green">${icon('school', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>General Settings</h3>
                                     <p>Basic system information and academic calendar</p>
@@ -288,17 +285,17 @@ export async function render(container) {
                                     <label>Student Enrollment</label>
                                     <div class="radio-cards">
                                         <label class="radio-card selected" id="enroll-open-card">
-                                            <input type="radio" name="s-enrollment" value="1" checked> 🟢 Open
+                                            <input type="radio" name="s-enrollment" value="1" checked> ${icon('checkCircle', inl)} Open
                                         </label>
                                         <label class="radio-card" id="enroll-closed-card">
-                                            <input type="radio" name="s-enrollment" value="0"> 🔴 Closed
+                                            <input type="radio" name="s-enrollment" value="0"> ${icon('close', inl)} Closed
                                         </label>
                                     </div>
                                     <div class="fg-hint">Controls whether students can enroll in sections</div>
                                 </div>
                             </div>
                             <div class="set-card-foot">
-                                <button class="btn-primary" data-section="general">💾 Save General Settings</button>
+                                <button class="btn-primary" data-section="general">${icon('check', inl)} Save General Settings</button>
                             </div>
                         </div>
                     </div>
@@ -307,7 +304,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="quiz">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon blue">📝</div>
+                                <div class="set-card-head-icon blue">${icon('quiz', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>Quiz Settings</h3>
                                     <p>Default values applied when instructors create new quizzes</p>
@@ -354,7 +351,7 @@ export async function render(container) {
                                 </div>
                             </div>
                             <div class="set-card-foot">
-                                <button class="btn-primary" data-section="quiz">💾 Save Quiz Settings</button>
+                                <button class="btn-primary" data-section="quiz">${icon('check', inl)} Save Quiz Settings</button>
                             </div>
                         </div>
                     </div>
@@ -363,7 +360,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="upload">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon yellow">📁</div>
+                                <div class="set-card-head-icon yellow">${icon('folder', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>File Upload Settings</h3>
                                     <p>Control what files users can upload and their size limits</p>
@@ -387,7 +384,7 @@ export async function render(container) {
                                 </div>
                             </div>
                             <div class="set-card-foot">
-                                <button class="btn-primary" data-section="upload">💾 Save Upload Settings</button>
+                                <button class="btn-primary" data-section="upload">${icon('check', inl)} Save Upload Settings</button>
                             </div>
                         </div>
                     </div>
@@ -396,7 +393,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="ai">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon purple">🤖</div>
+                                <div class="set-card-head-icon purple">${icon('robot', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>AI Quiz Generation</h3>
                                     <p>Configure the Groq API for AI-powered quiz creation</p>
@@ -407,17 +404,17 @@ export async function render(container) {
                                     <label>Groq API Key</label>
                                     <div class="pw-wrap">
                                         <input type="password" class="f-input" id="s-groq-key" placeholder="gsk_...">
-                                        <button class="pw-toggle" id="toggle-key" title="Show/hide key">👁️</button>
+                                        <button class="pw-toggle" id="toggle-key" title="Show/hide key">${icon('eye', { size: 16 })}</button>
                                     </div>
-                                    <div class="fg-hint">🔗 Get your key at <strong>console.groq.com</strong> — kept server-side only</div>
+                                    <div class="fg-hint">${icon('link', { size: 14, className: 'ui-icon-inline' })} Get your key at <strong>console.groq.com</strong> — kept server-side only</div>
                                 </div>
                                 <div class="fg">
                                     <label>AI Model</label>
                                     <select class="f-select" id="s-ai-model">
-                                        <option value="llama-3.3-70b-versatile">🏆 Llama 3.3 70B — Best Quality (Recommended)</option>
-                                        <option value="llama-3.1-8b-instant">⚡ Llama 3.1 8B — Fast & Lightweight</option>
-                                        <option value="mixtral-8x7b-32768">🔀 Mixtral 8x7B — Large Context Window</option>
-                                        <option value="gemma2-9b-it">💎 Gemma 2 9B — Google DeepMind</option>
+                                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B — Best Quality (Recommended)</option>
+                                        <option value="llama-3.1-8b-instant">Llama 3.1 8B — Fast & Lightweight</option>
+                                        <option value="mixtral-8x7b-32768">Mixtral 8x7B — Large Context Window</option>
+                                        <option value="gemma2-9b-it">Gemma 2 9B — Google DeepMind</option>
                                     </select>
                                     <div class="fg-hint">Model used for generating quiz questions from uploaded documents</div>
                                 </div>
@@ -433,7 +430,7 @@ export async function render(container) {
                                 </div>
                             </div>
                             <div class="set-card-foot">
-                                <button class="btn-primary" data-section="ai">💾 Save AI Settings</button>
+                                <button class="btn-primary" data-section="ai">${icon('check', inl)} Save AI Settings</button>
                             </div>
                         </div>
                     </div>
@@ -442,7 +439,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="school-year">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon blue">📅</div>
+                                <div class="set-card-head-icon blue">${icon('calendar', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>School Year Records</h3>
                                     <p>Manage academic semesters and their active/inactive status for record keeping</p>
@@ -461,7 +458,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="maintenance">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon red">🔧</div>
+                                <div class="set-card-head-icon red">${icon('wrench', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>Maintenance Mode</h3>
                                     <p>Take the system offline for updates or maintenance</p>
@@ -477,7 +474,7 @@ export async function render(container) {
                                         </label>
                                         <span class="toggle-label" id="maint-label">Disabled — system is live</span>
                                     </div>
-                                    <div class="fg-hint" style="color:#b45309;">⚠️ Enabling this will prevent all non-admin users from logging in</div>
+                                    <div class="fg-hint" style="color:#b45309;">${icon('warning', { size: 14, className: 'ui-icon-inline' })} Enabling this will prevent all non-admin users from logging in</div>
                                 </div>
                                 <div class="fg">
                                     <label>Maintenance Message</label>
@@ -587,10 +584,10 @@ export async function render(container) {
         btn.addEventListener('click', async () => {
             const orig = btn.innerHTML;
             btn.disabled = true;
-            btn.innerHTML = '⏳ Saving...';
+            btn.innerHTML = `${icon('clock', inl)} Saving...`;
             await new Promise(r => setTimeout(r, 500));
             btn.disabled = false;
-            btn.innerHTML = '✅ Saved!';
+            btn.innerHTML = `${icon('checkCircle', inl)} Saved!`;
             showToast('Settings saved successfully!', 'success');
             setTimeout(() => { btn.innerHTML = orig; }, 1800);
         });
@@ -646,7 +643,7 @@ export async function render(container) {
         body.innerHTML = `
             <style>
                 .sy-active-card {
-                    background: linear-gradient(135deg,#f0fdf4,#dcfce7);
+                    background: #f0fdf4;
                     border: 1.5px solid #86efac; border-radius: 12px;
                     padding: 14px 18px; margin-bottom: 20px;
                     display: flex; align-items: center; gap: 14px;
@@ -690,7 +687,7 @@ export async function render(container) {
                         <div class="sy-active-sub">${dateRange(active)}</div>
                     </div>
                    </div>`
-                : `<div class="sy-no-active">⚠️ No active semester — set one below so offerings and student data resolve correctly.</div>`
+                : `<div class="sy-no-active">${icon('warning', { size: 14, className: 'ui-icon-inline' })} No active semester — set one below so offerings and student data resolve correctly.</div>`
             }
 
             ${Object.entries(grouped).map(([ay, rows]) => `
@@ -829,9 +826,9 @@ export async function render(container) {
                     <div class="fg">
                         <label>Status</label>
                         <select class="f-select" id="sem-status">
-                            <option value="upcoming" ${(sem?.status || 'upcoming') === 'upcoming' ? 'selected' : ''}>🔵 Upcoming</option>
-                            <option value="active"   ${sem?.status === 'active'   ? 'selected' : ''}>🟢 Active</option>
-                            <option value="inactive" ${sem?.status === 'inactive' ? 'selected' : ''}>⚫ Inactive</option>
+                            <option value="upcoming" ${(sem?.status || 'upcoming') === 'upcoming' ? 'selected' : ''}>Upcoming</option>
+                            <option value="active"   ${sem?.status === 'active'   ? 'selected' : ''}>Active</option>
+                            <option value="inactive" ${sem?.status === 'inactive' ? 'selected' : ''}>Inactive</option>
                         </select>
                         <div class="fg-hint">Setting as "Active" will mark all other semesters as inactive</div>
                     </div>

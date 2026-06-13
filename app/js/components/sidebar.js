@@ -1,113 +1,89 @@
 /**
  * Sidebar Component
- * Renders navigation based on user role + live RBAC permissions.
- * Each nav item declares a `permission` slug — items are hidden
- * if the current user does not have that permission.
+ * Renders navigation based on user role + RBAC permissions.
  */
 
 import { Auth } from '../auth.js';
-import { Api }  from '../api.js';
+import { Api, BASE_URL } from '../api.js';
+import { icon } from '../utils/icons.js';
 
-// ── Menu definitions ─────────────────────────────────────────
-// permission: null  → always visible (dashboard, profile)
-// permission: 'x.view' → hidden if user lacks that slug
 const menus = {
-
-    // ── Admin — Technical/System only ────────────────────────
     admin: [
         { section: 'Main', items: [
-            { icon: '📊', text: 'Dashboard',           page: 'dashboard',           permission: null },
+            { icon: 'dashboard', text: 'Dashboard', page: 'dashboard', permission: null },
         ]},
         { section: 'Organization', items: [
-            { icon: '🏢', text: 'Departments',         page: 'departments',         permission: null },
-            { icon: '🎓', text: 'Programs',            page: 'programs',            permission: null },
+            { icon: 'building', text: 'Departments', page: 'departments', permission: null },
+            { icon: 'graduation', text: 'Programs', page: 'programs', permission: null },
         ]},
         { section: 'System', items: [
-            { icon: '⚙️', text: 'Settings',            page: 'settings',            permission: null },
+            { icon: 'settings', text: 'Settings', page: 'settings', permission: null },
         ]},
     ],
 
-    // ── Dean — Academic management (dept-scoped) ──────────────
     dean: [
         { section: 'Main', items: [
-            { icon: '📊', text: 'Dashboard',           page: 'dashboard',           permission: null },
+            { icon: 'dashboard', text: 'Dashboard', page: 'dashboard', permission: null },
         ]},
         { section: 'Academic', items: [
-            { icon: '📋', text: 'Curriculum',          page: 'curriculum',          permission: null },
-            { icon: '📚', text: 'Subjects',            page: 'subjects',            permission: null },
-            { icon: '📅', text: 'Subject Offerings',   page: 'subject-offerings',   permission: null },
-            { icon: '🏫', text: 'Sections',            page: 'sections',            permission: null },
+            { icon: 'clipboard', text: 'Curriculum', page: 'curriculum', permission: null },
+            { icon: 'book', text: 'Subjects', page: 'subjects', permission: null },
+            { icon: 'calendar', text: 'Subject Offerings', page: 'subject-offerings', permission: null },
+            { icon: 'school', text: 'Sections', page: 'sections', permission: null },
         ]},
         { section: 'Staff', items: [
-            { icon: '👨‍🏫', text: 'Instructors',         page: 'instructors',         permission: null },
-            { icon: '👥', text: 'Faculty Assignments', page: 'faculty-assignments', permission: null },
+            { icon: 'instructor', text: 'Instructors', page: 'instructors', permission: null },
+            { icon: 'users', text: 'Faculty Assignments', page: 'faculty-assignments', permission: null },
         ]},
         { section: 'Reports', items: [
-            { icon: '📈', text: 'Reports',             page: 'reports',             permission: null },
+            { icon: 'chart', text: 'Reports', page: 'reports', permission: null },
         ]},
     ],
 
-    // ── Instructor ────────────────────────────────────────────
     instructor: [
         { section: 'Main', items: [
-            { icon: '📊', text: 'Dashboard',   page: 'dashboard',    permission: null },
+            { icon: 'dashboard', text: 'Dashboard', page: 'dashboard', permission: null },
         ]},
         { section: 'Teaching', items: [
-            { icon: '🏫', text: 'Sections',    page: 'sections',     permission: 'sections.view' },
-            { icon: '📚', text: 'My Classes',  page: 'my-classes',   permission: 'subjects.view' },
-            { icon: '🏦', text: 'Content Bank',page: 'content-bank', permission: 'lessons.view' },
+            { icon: 'book', text: 'My Classes', page: 'my-classes', permission: 'subjects.view' },
+            { icon: 'bank', text: 'Content Bank', page: 'content-bank', permission: 'lessons.view' },
         ]},
         { section: 'Assessment', items: [
-            { icon: '📋', text: 'Gradebook',   page: 'gradebook',    permission: 'grades.view' },
+            { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: 'grades.view' },
         ]},
         { section: 'Communication', items: [
-            { icon: '💬', text: 'Messages',    page: 'messages',     permission: null, badge: true },
-        ]},
-        // RBAC-unlockable extras (not granted to instructor by default)
-        { section: 'Administration', items: [
-            { icon: '🏢', text: 'Departments',         page: 'departments',         permission: 'departments.view' },
-            { icon: '🎓', text: 'Programs',            page: 'programs',            permission: 'programs.view' },
-            { icon: '📋', text: 'Curriculum',          page: 'curriculum',          permission: 'curriculum.view' },
-            { icon: '📅', text: 'Subject Offerings',   page: 'subject-offerings',   permission: 'subject_offerings.view' },
-            { icon: '👥', text: 'Faculty Assignments', page: 'faculty-assignments', permission: 'faculty_assignments.view' },
-            { icon: '📈', text: 'Reports',             page: 'reports',             permission: 'reports.view' },
-            { icon: '👤', text: 'Users',               page: 'users',               permission: 'users.view' },
-            { icon: '🔐', text: 'Roles & Permissions', page: 'rbac',                permission: 'rbac.view' },
-            { icon: '⚙️', text: 'Settings',            page: 'settings',            permission: 'settings.view' },
+            { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },
         ]},
     ],
 
-    // ── Student ───────────────────────────────────────────────
     student: [
         { section: 'Main', items: [
-            { icon: '📊', text: 'Dashboard',   page: 'dashboard',   permission: null },
+            { icon: 'dashboard', text: 'Dashboard', page: 'dashboard', permission: null },
         ]},
         { section: 'Learning', items: [
-            { icon: '📚', text: 'My Subjects', page: 'my-subjects', permission: 'subjects.view' },
-            { icon: '📝', text: 'My Quizzes',  page: 'quizzes',     permission: 'quizzes.view' },
+            { icon: 'book', text: 'My Subjects', page: 'my-subjects', permission: 'subjects.view' },
         ]},
         { section: 'Progress', items: [
-            { icon: '📋', text: 'My Grades',   page: 'grades',      permission: 'grades.view' },
+            { icon: 'gradebook', text: 'My Grades', page: 'grades', permission: 'grades.view' },
         ]},
         { section: 'Communication', items: [
-            { icon: '💬', text: 'Messages',    page: 'messages',    permission: null, badge: true },
+            { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },
         ]},
     ],
 };
 
-/**
- * Render sidebar into the given element
- */
 export function renderSidebar(container) {
-    const user = Auth.user();
-    const role = user.role;
+    const role = Auth.user().role;
     const roleMenu = menus[role] || [];
-    const currentPage = (window.location.hash.replace('#', '').split('/')[1] || 'dashboard').split('?')[0];
+
+    let currentPage = (window.location.hash.replace('#', '').split('/')[1] || 'dashboard').split('?')[0];
+    if (role === 'student' && currentPage === 'quizzes') currentPage = 'my-subjects';
+    if (role === 'instructor' && currentPage === 'subject') currentPage = 'my-classes';
 
     let html = `
         <div class="sidebar-header">
             <a href="#${role}/dashboard" class="logo">
-                <img src="/COC-LMS/assets/images/phinma_logo2.png" alt="COC" class="logo-img">
+                <img src="${BASE_URL}/assets/images/phinma_logo2.png" alt="PHINMA Education" class="logo-img">
                 <span class="logo-text">COC-LMS</span>
             </a>
         </div>
@@ -115,7 +91,6 @@ export function renderSidebar(container) {
     `;
 
     for (const section of roleMenu) {
-        // Filter items by permission
         const visibleItems = section.items.filter(item =>
             item.permission === null || Auth.can(item.permission)
         );
@@ -124,13 +99,14 @@ export function renderSidebar(container) {
         html += `<div class="nav-section"><span class="nav-section-title">${section.section}</span>`;
 
         for (const item of visibleItems) {
-            const isActive  = currentPage === item.page ? 'active' : '';
+            const isActive = currentPage === item.page ? 'active' : '';
             const badgeHtml = item.badge
                 ? `<span class="nav-badge" id="msg-nav-badge" style="display:none">0</span>`
                 : '';
+
             html += `
                 <a href="#${role}/${item.page}" class="nav-item ${isActive}" data-page="${item.page}">
-                    <span class="nav-icon">${item.icon}</span>
+                    <span class="nav-icon">${icon(item.icon)}</span>
                     <span class="nav-text">${item.text}</span>
                     ${badgeHtml}
                 </a>
@@ -140,12 +116,11 @@ export function renderSidebar(container) {
         html += `</div>`;
     }
 
-    // Account section — always visible
     html += `
             <div class="nav-section">
                 <span class="nav-section-title">Account</span>
                 <a href="#${role}/profile" class="nav-item ${currentPage === 'profile' ? 'active' : ''}" data-page="profile">
-                    <span class="nav-icon">👤</span>
+                    <span class="nav-icon">${icon('user')}</span>
                     <span class="nav-text">My Profile</span>
                 </a>
             </div>
@@ -154,15 +129,16 @@ export function renderSidebar(container) {
 
     container.innerHTML = html;
 
-    // Poll unread message badge
     if (role === 'student' || role === 'instructor') {
         pollUnreadBadge();
         setInterval(pollUnreadBadge, 30000);
     }
 
-    // Re-render sidebar active state on navigation
     window.addEventListener('hashchange', () => {
-        const page = (window.location.hash.replace('#', '').split('/')[1] || 'dashboard').split('?')[0];
+        let page = (window.location.hash.replace('#', '').split('/')[1] || 'dashboard').split('?')[0];
+        if (role === 'student' && page === 'quizzes') page = 'my-subjects';
+        if (role === 'instructor' && page === 'subject') page = 'my-classes';
+
         container.querySelectorAll('.nav-item').forEach(el => {
             el.classList.toggle('active', el.dataset.page === page);
         });
@@ -171,18 +147,12 @@ export function renderSidebar(container) {
 
 async function pollUnreadBadge() {
     try {
-        const res   = await Api.get('/MessagingAPI.php?action=unread_count');
+        const res = await Api.get('/MessagingAPI.php?action=unread_count');
         const count = res.success ? (res.count || 0) : 0;
         const badge = document.getElementById('msg-nav-badge');
         if (badge) {
-            badge.textContent    = count > 99 ? '99+' : count;
-            badge.style.display  = count > 0 ? 'inline-flex' : 'none';
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = count > 0 ? 'inline-flex' : 'none';
         }
     } catch (_) { /* silent */ }
-}
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
 }

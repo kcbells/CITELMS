@@ -366,8 +366,8 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
 .correct-label { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: auto; }
 
 .btn-delete-q { background: none; border: none; color: #dc2626; font-size: 13px; font-weight: 600; cursor: pointer; }
-.alert { padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; background: #dcfce7; color: #166534; border-left: 4px solid #16a34a; }
-.alert-error { background: #fee2e2; color: #b91c1c; border-left: 4px solid #dc2626; }
+.alert { padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; background: #dcfce7; color: #166534; }
+.alert-error { background: #fee2e2; color: #b91c1c; }
 .empty-box { text-align: center; padding: 60px; background: #fff; border: 1px solid #f5f0e8; border-radius: 12px; }
 
 @media (max-width: 1024px) {

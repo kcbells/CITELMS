@@ -1,7 +1,7 @@
 <?php
 /**
  * CIT-LMS Enrollment API
- * Student enrollment via section code
+ * Student enrollment via subject code + section
  */
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -26,22 +26,190 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 
-// ─── Preview: return section + subjects before confirming enrollment ────────
+function normalizeSubjectCode($code) {
+    return strtoupper(trim(preg_replace('/\s+/', '', (string)$code)));
+}
+
+function getStudentProgramId($userId) {
+    $student = db()->fetchOne('SELECT program_id FROM users WHERE users_id = ?', [$userId]);
+    return $student['program_id'] ?? null;
+}
+
+function getActiveSemesterId() {
+    $semRow = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
+    return $semRow ? (int)$semRow['semester_id'] : 0;
+}
+
+function subjectCodeSqlMatch() {
+    return "REPLACE(UPPER(TRIM(s.subject_code)), ' ', '')";
+}
+
+function findSubjectSectionMatches($subjectCode, $sectionId, $userId, $requireActiveSemester = true) {
+    $subjectCode = normalizeSubjectCode($subjectCode);
+    if ($subjectCode === '') {
+        return [];
+    }
+
+    $studentProgramId = getStudentProgramId($userId);
+    $semId = $requireActiveSemester ? getActiveSemesterId() : 0;
+
+    $matches = querySubjectSectionMatches($subjectCode, $sectionId, $semId);
+
+    // If active-semester filter is too strict, retry across open offerings
+    if (empty($matches) && $requireActiveSemester && getActiveSemesterId() > 0) {
+        $matches = querySubjectSectionMatches($subjectCode, $sectionId, 0);
+    }
+
+    if ($studentProgramId) {
+        $matches = array_values(array_filter($matches, static function ($row) use ($studentProgramId) {
+            $sectionOk = empty($row['program_id']) || (int)$row['program_id'] === (int)$studentProgramId;
+            $subjectOk = empty($row['subject_program_id']) || (int)$row['subject_program_id'] === (int)$studentProgramId;
+            return $sectionOk || $subjectOk;
+        }));
+    }
+
+    return $matches;
+}
+
+function querySubjectSectionMatches($subjectCode, $sectionId, $semId) {
+    $sql = "
+        SELECT sec.section_id, sec.section_name, sec.max_students, sec.program_id,
+               ss.subject_offered_id, ss.schedule, ss.room,
+               s.subject_id, s.subject_code, s.subject_name, s.units, s.program_id AS subject_program_id,
+               CONCAT(u.first_name, ' ', u.last_name) AS instructor_name,
+               (SELECT COUNT(DISTINCT st.user_student_id)
+                FROM student_subject st
+                WHERE st.section_id = sec.section_id AND st.status = 'enrolled') AS current_enrollment
+        FROM section_subject ss
+        JOIN section sec ON sec.section_id = ss.section_id
+        JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+        JOIN subject s ON s.subject_id = so.subject_id
+        LEFT JOIN users u ON u.users_id = so.user_teacher_id
+        WHERE " . subjectCodeSqlMatch() . " = ?
+          AND sec.status = 'active'
+          AND ss.status = 'active'
+          AND so.status = 'open'
+    ";
+    $params = [$subjectCode];
+
+    if ($semId > 0) {
+        $sql .= ' AND so.semester_id = ?';
+        $params[] = $semId;
+    }
+    if ($sectionId > 0) {
+        $sql .= ' AND sec.section_id = ?';
+        $params[] = $sectionId;
+    }
+
+    $sql .= ' ORDER BY sec.section_name, (so.user_teacher_id IS NOT NULL) DESC';
+
+    return db()->fetchAll($sql, $params);
+}
+
+function isSubjectAlreadyEnrolled($userId, $subjectId) {
+    return (bool)db()->fetchOne(
+        "SELECT 1 FROM student_subject ss2
+         JOIN subject_offered so2 ON so2.subject_offered_id = ss2.subject_offered_id
+         WHERE ss2.user_student_id = ? AND so2.subject_id = ? AND ss2.status = 'enrolled'",
+        [$userId, $subjectId]
+    );
+}
+
+function buildSubjectPreviewPayload($userId, $match) {
+    $already = isSubjectAlreadyEnrolled($userId, $match['subject_id']);
+    $spots = $match['max_students'] > 0
+        ? max(0, $match['max_students'] - $match['current_enrollment'])
+        : PHP_INT_MAX;
+
+    $subject = [
+        'subject_offered_id' => $match['subject_offered_id'],
+        'subject_id'         => $match['subject_id'],
+        'subject_code'       => $match['subject_code'],
+        'subject_name'       => $match['subject_name'],
+        'units'              => $match['units'],
+        'instructor_name'    => $match['instructor_name'],
+        'schedule'           => $match['schedule'],
+        'room'               => $match['room'],
+        'already_enrolled'   => $already,
+    ];
+
+    return [
+        'section_id'         => $match['section_id'],
+        'section_name'       => $match['section_name'],
+        'subject_code'       => $match['subject_code'],
+        'subject_name'       => $match['subject_name'],
+        'max_students'       => $match['max_students'],
+        'current_enrollment' => $match['current_enrollment'],
+        'spots_left'         => $spots === PHP_INT_MAX ? null : $spots,
+        'subjects'           => [$subject],
+        'new_count'          => $already ? 0 : 1,
+    ];
+}
+
+// ─── Preview ────────────────────────────────────────────────────────────────
 
 function previewCode() {
-    $input  = json_decode(file_get_contents('php://input'), true);
-    $code   = strtoupper(trim($input['enrollment_code'] ?? ''));
+    $input  = json_decode(file_get_contents('php://input'), true) ?: [];
     $userId = Auth::id();
 
-    if (!$code) {
-        echo json_encode(['success' => false, 'message' => 'Enrollment code is required']);
-        return;
-    }
-    if (!preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $code)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid code format. Expected XXX-XXXX (e.g. ABC-1234)']);
+    $subjectCode = normalizeSubjectCode($input['subject_code'] ?? '');
+    $sectionId   = (int)($input['section_id'] ?? 0);
+
+    if ($subjectCode !== '') {
+        previewBySubjectCode($userId, $subjectCode, $sectionId);
         return;
     }
 
+    // Legacy: enrollment_code still supported
+    $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
+    if ($legacy !== '' && preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $legacy)) {
+        previewByEnrollmentCode($userId, $legacy);
+        return;
+    }
+
+    echo json_encode(['success' => false, 'message' => 'Enter a subject code (e.g. IT101)']);
+}
+
+function previewBySubjectCode($userId, $subjectCode, $sectionId) {
+    $matches = findSubjectSectionMatches($subjectCode, $sectionId, $userId);
+
+    if (empty($matches)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'No class found for subject code "' . $subjectCode . '". Use the exact code from your instructor (e.g. IT 202 or IT202).',
+        ]);
+        return;
+    }
+
+    if ($sectionId <= 0 && count($matches) > 1) {
+        echo json_encode([
+            'success' => true,
+            'data' => [
+                'needs_section' => true,
+                'subject_code'  => $subjectCode,
+                'sections'      => array_map(static function ($m) {
+                    return [
+                        'section_id'         => $m['section_id'],
+                        'section_name'       => $m['section_name'],
+                        'schedule'           => $m['schedule'],
+                        'room'               => $m['room'],
+                        'instructor_name'    => $m['instructor_name'],
+                        'current_enrollment' => $m['current_enrollment'],
+                        'max_students'       => $m['max_students'],
+                    ];
+                }, $matches),
+            ],
+        ]);
+        return;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data'    => buildSubjectPreviewPayload($userId, $matches[0]),
+    ]);
+}
+
+function previewByEnrollmentCode($userId, $code) {
     $section = db()->fetchOne(
         "SELECT section_id, section_name, max_students, program_id,
                 (SELECT COUNT(DISTINCT user_student_id) FROM student_subject
@@ -55,12 +223,10 @@ function previewCode() {
         return;
     }
 
-    // Block cross-program enrollment
     if ($section['program_id']) {
-        $student = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [$userId]);
-        $studentProgramId = $student['program_id'] ?? null;
+        $studentProgramId = getStudentProgramId($userId);
         if ($studentProgramId && (int)$section['program_id'] !== (int)$studentProgramId) {
-            echo json_encode(['success' => false, 'message' => 'This enrollment code is for a different program. Please use a code from your own program.']);
+            echo json_encode(['success' => false, 'message' => 'This class is for a different program.']);
             return;
         }
     }
@@ -78,8 +244,7 @@ function previewCode() {
         [$section['section_id']]
     );
 
-    // Deduplicate by subject_id — keep the first row (instructor-assigned preferred)
-    $seen     = [];
+    $seen = [];
     $subjects = [];
     foreach ($rawSubjects as $row) {
         if (!isset($seen[$row['subject_id']])) {
@@ -88,17 +253,12 @@ function previewCode() {
         }
     }
 
-    // Mark already enrolled by subject_id (catches same subject in another section/offering)
     $newCount = 0;
     foreach ($subjects as &$subj) {
-        $alreadyIn = db()->fetchOne(
-            "SELECT 1 FROM student_subject ss2
-             JOIN subject_offered so2 ON so2.subject_offered_id = ss2.subject_offered_id
-             WHERE ss2.user_student_id = ? AND so2.subject_id = ? AND ss2.status = 'enrolled'",
-            [$userId, $subj['subject_id']]
-        );
-        $subj['already_enrolled'] = $alreadyIn ? true : false;
-        if (!$alreadyIn) $newCount++;
+        $subj['already_enrolled'] = isSubjectAlreadyEnrolled($userId, $subj['subject_id']);
+        if (!$subj['already_enrolled']) {
+            $newCount++;
+        }
     }
     unset($subj);
 
@@ -107,35 +267,105 @@ function previewCode() {
         'data' => [
             'section_id'         => $section['section_id'],
             'section_name'       => $section['section_name'],
+            'subject_code'       => $subjects[0]['subject_code'] ?? '',
             'enrollment_code'    => $code,
             'max_students'       => $section['max_students'],
             'current_enrollment' => $section['current_enrollment'],
             'subjects'           => $subjects,
             'new_count'          => $newCount,
-        ]
+        ],
     ]);
 }
 
-// ─── Enroll student in all subjects of a section ───────────────────────────
+// ─── Enroll ─────────────────────────────────────────────────────────────────
 
 function enrollByCode() {
-    $input  = json_decode(file_get_contents('php://input'), true);
-    $code   = strtoupper(trim($input['enrollment_code'] ?? ''));
+    $input  = json_decode(file_get_contents('php://input'), true) ?: [];
     $userId = Auth::id();
 
-    // ── Validation ────────────────────────────────────────────
-    if (!$code) {
-        echo json_encode(['success' => false, 'message' => 'Enrollment code is required']);
-        return;
-    }
-    if (!preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $code)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid code format. Expected XXX-XXXX (e.g. ABC-1234)']);
+    $subjectCode = normalizeSubjectCode($input['subject_code'] ?? '');
+    $sectionId   = (int)($input['section_id'] ?? 0);
+
+    if ($subjectCode !== '') {
+        enrollBySubjectCode($userId, $subjectCode, $sectionId);
         return;
     }
 
+    $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
+    if ($legacy !== '' && preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $legacy)) {
+        enrollByLegacyCode($userId, $legacy);
+        return;
+    }
+
+    echo json_encode(['success' => false, 'message' => 'Subject code is required']);
+}
+
+function enrollBySubjectCode($userId, $subjectCode, $sectionId) {
+    if ($sectionId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Please select a section for this subject.']);
+        return;
+    }
+
+    $matches = findSubjectSectionMatches($subjectCode, $sectionId, $userId);
+    if (empty($matches)) {
+        echo json_encode(['success' => false, 'message' => 'Subject not found in this section.']);
+        return;
+    }
+
+    $match = $matches[0];
+
+    if ($match['program_id'] || !empty($match['subject_program_id'])) {
+        $studentProgramId = getStudentProgramId($userId);
+        if ($studentProgramId) {
+            $sectionOk = empty($match['program_id']) || (int)$match['program_id'] === (int)$studentProgramId;
+            $subjectOk = empty($match['subject_program_id']) || (int)$match['subject_program_id'] === (int)$studentProgramId;
+            if (!$sectionOk && !$subjectOk) {
+                echo json_encode(['success' => false, 'message' => 'This class is for a different program.']);
+                return;
+            }
+        }
+    }
+
+    if ($match['max_students'] > 0 && $match['current_enrollment'] >= $match['max_students']) {
+        echo json_encode(['success' => false, 'message' => 'This section is full.']);
+        return;
+    }
+
+    if (isSubjectAlreadyEnrolled($userId, $match['subject_id'])) {
+        echo json_encode(['success' => false, 'message' => 'You are already enrolled in ' . $match['subject_code'] . '.']);
+        return;
+    }
+
+    try {
+        $pdo = pdo();
+        $pdo->beginTransaction();
+
+        $pdo->prepare(
+            "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
+             VALUES (?, ?, ?, 'enrolled', NOW())"
+        )->execute([$userId, $match['subject_offered_id'], $match['section_id']]);
+
+        $pdo->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Joined ' . $match['subject_code'] . ' — ' . $match['section_name'] . '.',
+            'enrolled' => 1,
+            'section_id' => $match['section_id'],
+            'subject_id' => $match['subject_id'],
+        ]);
+    } catch (PDOException $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('Enrollment error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Enrollment failed. Please try again.']);
+    }
+}
+
+function enrollByLegacyCode($userId, $code) {
     $pdo = null;
     try {
-        // Find section
         $section = db()->fetchOne(
             "SELECT section_id, section_name, max_students, program_id,
                     (SELECT COUNT(DISTINCT user_student_id) FROM student_subject
@@ -149,23 +379,19 @@ function enrollByCode() {
             return;
         }
 
-        // Block cross-program enrollment
         if ($section['program_id']) {
-            $student = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [$userId]);
-            $studentProgramId = $student['program_id'] ?? null;
+            $studentProgramId = getStudentProgramId($userId);
             if ($studentProgramId && (int)$section['program_id'] !== (int)$studentProgramId) {
-                echo json_encode(['success' => false, 'message' => 'This enrollment code is for a different program. Please use a code from your own program.']);
+                echo json_encode(['success' => false, 'message' => 'This enrollment code is for a different program.']);
                 return;
             }
         }
 
-        // Check capacity
         if ($section['max_students'] > 0 && $section['current_enrollment'] >= $section['max_students']) {
             echo json_encode(['success' => false, 'message' => 'Section is full']);
             return;
         }
 
-        // Get all subjects in section — deduplicate by subject_id (instructor-assigned preferred)
         $rawSubjects = db()->fetchAll(
             "SELECT ss.subject_offered_id, so.subject_id, s.subject_code
              FROM section_subject ss
@@ -176,7 +402,7 @@ function enrollByCode() {
             [$section['section_id']]
         );
 
-        $seen     = [];
+        $seen = [];
         $subjects = [];
         foreach ($rawSubjects as $row) {
             if (!isset($seen[$row['subject_id']])) {
@@ -186,11 +412,10 @@ function enrollByCode() {
         }
 
         if (empty($subjects)) {
-            echo json_encode(['success' => false, 'message' => 'This section has no subjects yet. Contact your administrator.']);
+            echo json_encode(['success' => false, 'message' => 'This section has no subjects yet.']);
             return;
         }
 
-        // ── Transaction: all subjects enroll or none do ───────
         $pdo = pdo();
         $pdo->beginTransaction();
 
@@ -198,14 +423,10 @@ function enrollByCode() {
         $skipped  = 0;
 
         foreach ($subjects as $subj) {
-            // Skip if already enrolled in this subject (any offering, any section)
-            $exists = db()->fetchOne(
-                "SELECT ss2.student_subject_id FROM student_subject ss2
-                 JOIN subject_offered so2 ON so2.subject_offered_id = ss2.subject_offered_id
-                 WHERE ss2.user_student_id = ? AND so2.subject_id = ? AND ss2.status = 'enrolled'",
-                [$userId, $subj['subject_id']]
-            );
-            if ($exists) { $skipped++; continue; }
+            if (isSubjectAlreadyEnrolled($userId, $subj['subject_id'])) {
+                $skipped++;
+                continue;
+            }
 
             $pdo->prepare(
                 "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
@@ -223,14 +444,15 @@ function enrollByCode() {
         $pdo->commit();
 
         $msg = $skipped > 0
-            ? "Added {$enrolled} new subject" . ($enrolled !== 1 ? 's' : '') . " to your enrollment."
-            : "Enrolled in {$section['section_name']} — {$enrolled} subject" . ($enrolled !== 1 ? 's' : '') . ".";
+            ? "Added {$enrolled} new subject" . ($enrolled !== 1 ? 's' : '') . ' to your enrollment.'
+            : "Enrolled in {$section['section_name']} — {$enrolled} subject" . ($enrolled !== 1 ? 's' : '') . '.';
 
         echo json_encode(['success' => true, 'message' => $msg, 'enrolled' => $enrolled]);
-
     } catch (PDOException $e) {
-        if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
-        error_log("Enrollment error: " . $e->getMessage());
+        if ($pdo && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('Enrollment error: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Enrollment failed. Please try again.']);
     }
 }

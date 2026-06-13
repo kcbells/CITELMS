@@ -3,6 +3,9 @@
  * Dean picks an instructor → checks which subjects to assign → saves
  */
 import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let _instructors   = [];
 let _semesters     = [];
@@ -38,8 +41,8 @@ export async function render(container) {
                 </svg>
             </div>
             <div>
-                <h2 class="fa-banner-title">Faculty Assignments</h2>
-                <p class="fa-banner-sub">Select an instructor then check which subjects they should handle</p>
+                <h2 class="fa-banner-title">Faculty</h2>
+                <p class="fa-banner-sub">View instructors and assign subjects they handle each semester</p>
             </div>
         </div>
         <div class="fa-banner-right">
@@ -60,7 +63,7 @@ export async function render(container) {
         <div class="fa-left">
             <div class="fa-left-head">
                 <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <span class="fa-left-title">Instructors <span class="fa-instr-count" id="fa-instr-count">${_instructors.length}</span></span>
+                    <span class="fa-left-title">Faculty <span class="fa-instr-count" id="fa-instr-count">${_instructors.length}</span></span>
                 </div>
                 <div class="fa-dept-wrap">
                     <select id="fa-dept-filter" class="fa-dept-sel">
@@ -268,7 +271,7 @@ function renderRight(instr, right) {
                 <div class="fa-prog-header">
                     <span class="fa-prog-code">${esc(prog)}</span>
                     <span class="fa-prog-name">${esc(_subjects.find(s=>s.program_code===prog)?.program_name||'')}</span>
-                    ${isPrimary ? `<span class="fa-prog-primary">★ Primary Program</span>` : ''}
+                    ${isPrimary ? `<span class="fa-prog-primary">${icon('pin', inl)} Primary Program</span>` : ''}
                 </div>
                 ${Object.entries(years).map(([yr, sems]) => `
                 <div class="fa-year-block">
@@ -407,7 +410,7 @@ function bindSaveBar(instr) {
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save Assignments';
             const lbl = document.getElementById('fa-change-label');
-            if (lbl) lbl.textContent = '⚠ ' + (res.message || 'Save failed');
+            if (lbl) lbl.innerHTML = `${icon('warning', inl)} ${res.message || 'Save failed'}`;
         }
     });
 }
@@ -450,7 +453,7 @@ function css() { return `
     @keyframes spin { to { transform:rotate(360deg); } }
 
     /* Banner */
-    .fa-banner { background:linear-gradient(135deg,#00461B 0%,#006428 55%,#1B4D3E 100%);border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
+    .fa-banner { background:#00461B;border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
     .fa-banner-left { display:flex;align-items:center;gap:14px; }
     .fa-banner-icon { width:46px;height:46px;background:rgba(255,255,255,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
     .fa-banner-title { font-size:19px;font-weight:800;color:#fff;margin:0 0 2px; }
@@ -481,7 +484,7 @@ function css() { return `
     .fa-instr-card { display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;border-bottom:1px solid #f5f5f5;transition:background .15s; }
     .fa-instr-card:hover { background:#f9fafb; }
     .fa-instr-card.active { background:#E8F5E9;border-right:3px solid #00461B; }
-    .fa-instr-av { width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0; }
+    .fa-instr-av { width:36px;height:36px;border-radius:50%;background:#1e40af;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0; }
     .fa-instr-name { font-size:13px;font-weight:600;color:#1a1a1a; }
     .fa-instr-meta { font-size:11px;color:#9ca3af;margin-top:1px; }
     .fa-instr-dept { display:inline-block;margin-top:3px;font-size:10px;font-weight:700;background:#E8F5E9;color:#1B4D3E;padding:1px 6px;border-radius:8px; }
@@ -498,7 +501,7 @@ function css() { return `
 
     /* Instructor profile */
     .fa-prof-card { display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid #f0f0f0;background:#fafafa;border-radius:14px 14px 0 0; }
-    .fa-prof-av { width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00461B,#2D6A4F);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0; }
+    .fa-prof-av { width:48px;height:48px;border-radius:50%;background:#00461B;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0; }
     .fa-prof-name { font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:4px; }
     .fa-prof-meta { display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#737373; }
     .fa-prof-meta span::before { content:'·';margin-right:12px; }

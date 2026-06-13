@@ -3,6 +3,9 @@
  * Each section is a semester-specific cohort with program + year level context
  */
 import { Api } from '../../api.js';
+import { L, icon } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let _semesters      = [];
 let _programs       = [];
@@ -56,7 +59,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
             .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
             /* Workflow banner */
@@ -128,7 +131,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .no-subjects { font-size:13px; color:#9ca3af; text-align:center; padding:12px 0; }
 
             .enrollment-bar { background:#f0f0f0; height:5px; border-radius:3px; overflow:hidden; margin:12px 0 4px; }
-            .enrollment-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#00461B,#006428); transition:width .3s; }
+            .enrollment-fill { height:100%; border-radius:3px; background:#00461B; transition:width .3s; }
             .enrollment-text { font-size:11px; color:#737373; margin-bottom:12px; }
 
             .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:1000; }
@@ -354,9 +357,9 @@ function renderSectionCard(s) {
                 <div class="kebab-wrap">
                     <button class="btn-kebab" title="Actions">&#8942;</button>
                     <div class="kebab-menu">
-                        <button class="kebab-item" data-edit="${s.section_id}">✏️ Edit</button>
-                        <button class="kebab-item" data-manage-students="${s.section_id}" data-sname="${esc(s.section_name)}">👥 Manage Students</button>
-                        <button class="kebab-item danger" data-delete="${s.section_id}" data-name="${esc(s.section_name)}" data-count="${s.student_count}">🗑 Delete</button>
+                        <button class="kebab-item" data-edit="${s.section_id}">${L.edit}</button>
+                        <button class="kebab-item" data-manage-students="${s.section_id}" data-sname="${esc(s.section_name)}">${icon('users', inl)} Manage Students</button>
+                        <button class="kebab-item danger" data-delete="${s.section_id}" data-name="${esc(s.section_name)}" data-count="${s.student_count}">${icon('trash', inl)} Delete</button>
                     </div>
                 </div>
             </div>
@@ -378,12 +381,12 @@ function renderSectionCard(s) {
                             <div class="subj-info">
                                 <div class="subj-name">${esc(subj.subject_name)}</div>
                                 <div class="subj-detail">
-                                    ${subj.schedule ? `<span>🕐 ${esc(subj.schedule)}</span>` : '<span class="no-sched">No schedule</span>'}
-                                    ${subj.room ? `<span>📍 ${esc(subj.room)}</span>` : ''}
-                                    ${subj.instructor_name ? `<span>👤 ${esc(subj.instructor_name)}</span>` : '<span style="color:#9ca3af;font-size:11px">No instructor</span>'}
+                                    ${subj.schedule ? `<span>${icon('clock', inl)} ${esc(subj.schedule)}</span>` : '<span class="no-sched">No schedule</span>'}
+                                    ${subj.room ? `<span>${icon('pin', inl)} ${esc(subj.room)}</span>` : ''}
+                                    ${subj.instructor_name ? `<span>${icon('user', inl)} ${esc(subj.instructor_name)}</span>` : '<span style="color:#9ca3af;font-size:11px">No instructor</span>'}
                                 </div>
                             </div>
-                            <button class="btn-edit-subj" data-edit-secsubj="${subj.section_subject_id}" data-schedule="${esc(subj.schedule||'')}" data-room="${esc(subj.room||'')}" title="Edit schedule/room">✏️</button>
+                            <button class="btn-edit-subj" data-edit-secsubj="${subj.section_subject_id}" data-schedule="${esc(subj.schedule||'')}" data-room="${esc(subj.room||'')}" title="Edit schedule/room">${icon('edit', inl)}</button>
                             <button class="btn-remove-subj" data-remove-secsubj="${subj.section_subject_id}" title="Remove">&times;</button>
                         </div>
                     `).join('')}
@@ -572,7 +575,7 @@ async function openBulkSubjectModal(container, sectionId, currentFilters = {}) {
                    ${s.offerings.map(o => `<option value="${o.id}">${esc(o.name || 'No instructor')}</option>`).join('')}
                </select>`
             : s.offerings[0].name
-                ? `<span style="font-size:11px;color:#1B4D3E;background:#E8F5E9;padding:2px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;">👤 ${esc(s.offerings[0].name)}</span>`
+                ? `<span style="font-size:11px;color:#1B4D3E;background:#E8F5E9;padding:2px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;">${icon('user', inl)} ${esc(s.offerings[0].name)}</span>`
                 : `<span style="font-size:11px;color:#9ca3af;flex-shrink:0">No instructor</span>`;
 
         return `<div class="bm-row" data-code="${esc(s.subject_code)}" data-name="${esc(s.subject_name)}"
@@ -759,7 +762,7 @@ async function openManageStudentsModal(container, sectionId, sectionName) {
     overlay.innerHTML = `
         <div class="modal" style="max-width:560px;">
             <div class="modal-header">
-                <h3>👥 Students — ${esc(sectionName)}</h3>
+                <h3>${icon('users', inl)} Students — ${esc(sectionName)}</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body" id="ms-body">

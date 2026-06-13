@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
 
 header('Content-Type: application/json');
 
@@ -15,6 +16,66 @@ if (!Auth::check()) {
 }
 
 $action = $_GET['action'] ?? '';
+
+function ensureAnnouncementSectionTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec(
+            "CREATE TABLE IF NOT EXISTS announcement_section (
+                announcement_id INT UNSIGNED NOT NULL,
+                section_id INT UNSIGNED NOT NULL,
+                PRIMARY KEY (announcement_id, section_id),
+                KEY idx_ann_section (section_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    } catch (Exception $e) {
+        error_log('announcement_section table: ' . $e->getMessage());
+    }
+}
+
+function attachAnnouncementSections($announcementId, array $sectionIds) {
+    ensureAnnouncementSectionTable();
+    $pdo = pdo();
+    $pdo->prepare("DELETE FROM announcement_section WHERE announcement_id = ?")->execute([$announcementId]);
+    if (empty($sectionIds)) return;
+    $stmt = $pdo->prepare("INSERT INTO announcement_section (announcement_id, section_id) VALUES (?, ?)");
+    foreach ($sectionIds as $sid) {
+        $sid = (int)$sid;
+        if ($sid > 0) {
+            $stmt->execute([$announcementId, $sid]);
+        }
+    }
+}
+
+function getAnnouncementSectionIds($announcementId) {
+    ensureAnnouncementSectionTable();
+    $rows = db()->fetchAll(
+        "SELECT section_id FROM announcement_section WHERE announcement_id = ?",
+        [$announcementId]
+    );
+    return array_map(fn($r) => (int)$r['section_id'], $rows);
+}
+
+function enrichAnnouncementsWithSections(array &$rows) {
+    foreach ($rows as &$row) {
+        $ids = getAnnouncementSectionIds((int)$row['announcement_id']);
+        $row['section_ids'] = $ids;
+        $row['all_sections'] = empty($ids) && !empty($row['subject_offered_id']);
+        if (!empty($ids)) {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $names = db()->fetchAll(
+                "SELECT section_id, section_name FROM section WHERE section_id IN ($placeholders)",
+                $ids
+            );
+            $row['section_names'] = implode(', ', array_column($names, 'section_name'));
+        } else {
+            $row['section_names'] = '';
+        }
+    }
+    unset($row);
+}
 
 switch ($action) {
     case 'instructor-list':   getInstructorAnnouncements(); break;
@@ -34,7 +95,7 @@ function getInstructorAnnouncements() {
     $status = $_GET['status'] ?? '';
 
     try {
-        $sql = "SELECT a.*, s.subject_code, s.subject_name
+        $sql = "SELECT a.*, s.subject_id, s.subject_code, s.subject_name
                 FROM announcement a
                 LEFT JOIN subject_offered so ON a.subject_offered_id = so.subject_offered_id
                 LEFT JOIN subject s ON so.subject_id = s.subject_id
@@ -52,6 +113,7 @@ function getInstructorAnnouncements() {
 
         $sql .= " ORDER BY a.created_at DESC";
         $data = db()->fetchAll($sql, $params);
+        enrichAnnouncementsWithSections($data);
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
         http_response_code(500);
@@ -66,6 +128,8 @@ function createAnnouncement() {
     $content = trim($input['content'] ?? '');
     $status = $input['status'] ?? 'published';
     $subjectId = $input['subject_id'] ?? null;
+    $allSections = !empty($input['all_sections']);
+    $sectionIds = array_values(array_filter(array_map('intval', $input['section_ids'] ?? [])));
 
     if (!$title || !$content) {
         echo json_encode(['success' => false, 'message' => 'Title and content are required']);
@@ -73,24 +137,36 @@ function createAnnouncement() {
     }
 
     try {
-        // If subject_id provided, find the subject_offered_id for this instructor
         $subjectOfferedId = null;
         if ($subjectId) {
             $offering = db()->fetchOne(
                 "SELECT so.subject_offered_id
                  FROM subject_offered so
-                 WHERE so.subject_id = ? AND so.user_teacher_id = ?
-                 LIMIT 1",
+                 WHERE so.subject_id = ? AND so.user_teacher_id = ? AND so.status = 'open'
+                 ORDER BY so.subject_offered_id DESC LIMIT 1",
                 [$subjectId, $userId]
             );
-            if ($offering) $subjectOfferedId = $offering['subject_offered_id'];
+            if ($offering) {
+                $subjectOfferedId = $offering['subject_offered_id'];
+            }
         }
 
-        $stmt = pdo()->prepare(
+        $pdo = pdo();
+        $stmt = $pdo->prepare(
             "INSERT INTO announcement (user_id, subject_offered_id, title, content, status, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, NOW(), NOW())"
         );
         $stmt->execute([$userId, $subjectOfferedId, $title, $content, $status]);
+        $annId = (int)$pdo->lastInsertId();
+
+        if ($subjectOfferedId && !$allSections && !empty($sectionIds)) {
+            attachAnnouncementSections($annId, $sectionIds);
+        }
+
+        if ($status === 'published') {
+            NotificationEmailHelper::queueNewAnnouncement($annId);
+            NotificationEmailHelper::dispatchAfterPublish();
+        }
 
         echo json_encode(['success' => true, 'message' => 'Announcement created']);
     } catch (PDOException $e) {
@@ -102,10 +178,13 @@ function createAnnouncement() {
 function updateAnnouncement() {
     $input = json_decode(file_get_contents('php://input'), true);
     $userId = Auth::id();
-    $annId = $input['announcement_id'] ?? 0;
+    $annId = (int)($input['announcement_id'] ?? 0);
     $title = trim($input['title'] ?? '');
     $content = trim($input['content'] ?? '');
     $status = $input['status'] ?? 'published';
+    $subjectId = $input['subject_id'] ?? null;
+    $allSections = !empty($input['all_sections']);
+    $sectionIds = array_values(array_filter(array_map('intval', $input['section_ids'] ?? [])));
 
     if (!$annId || !$title || !$content) {
         echo json_encode(['success' => false, 'message' => 'All fields are required']);
@@ -113,11 +192,40 @@ function updateAnnouncement() {
     }
 
     try {
+        $prev = db()->fetchOne(
+            "SELECT status FROM announcement WHERE announcement_id = ? AND user_id = ?",
+            [$annId, $userId]
+        );
+        $subjectOfferedId = null;
+        if ($subjectId) {
+            $offering = db()->fetchOne(
+                "SELECT so.subject_offered_id FROM subject_offered so
+                 WHERE so.subject_id = ? AND so.user_teacher_id = ? AND so.status = 'open'
+                 ORDER BY so.subject_offered_id DESC LIMIT 1",
+                [$subjectId, $userId]
+            );
+            if ($offering) {
+                $subjectOfferedId = $offering['subject_offered_id'];
+            }
+        }
+
         $stmt = pdo()->prepare(
-            "UPDATE announcement SET title = ?, content = ?, status = ?, updated_at = NOW()
+            "UPDATE announcement SET title = ?, content = ?, status = ?,
+                    subject_offered_id = ?, updated_at = NOW()
              WHERE announcement_id = ? AND user_id = ?"
         );
-        $stmt->execute([$title, $content, $status, $annId, $userId]);
+        $stmt->execute([$title, $content, $status, $subjectOfferedId, $annId, $userId]);
+
+        if ($subjectOfferedId && !$allSections && !empty($sectionIds)) {
+            attachAnnouncementSections($annId, $sectionIds);
+        } else {
+            attachAnnouncementSections($annId, []);
+        }
+
+        if ($status === 'published' && ($prev['status'] ?? '') !== 'published') {
+            NotificationEmailHelper::queueNewAnnouncement($annId);
+            NotificationEmailHelper::dispatchAfterPublish();
+        }
 
         echo json_encode(['success' => true, 'message' => 'Announcement updated']);
     } catch (PDOException $e) {
@@ -137,6 +245,8 @@ function deleteAnnouncement() {
     }
 
     try {
+        ensureAnnouncementSectionTable();
+        pdo()->prepare("DELETE FROM announcement_section WHERE announcement_id = ?")->execute([$annId]);
         $stmt = pdo()->prepare("DELETE FROM announcement WHERE announcement_id = ? AND user_id = ?");
         $stmt->execute([$annId, $userId]);
         echo json_encode(['success' => true, 'message' => 'Announcement deleted']);
@@ -158,10 +268,27 @@ function getStudentAnnouncements() {
                 JOIN users u ON a.user_id = u.users_id
                 WHERE a.status = 'published'
                 AND (a.subject_offered_id IS NULL
-                     OR a.subject_offered_id IN (
-                         SELECT ss.subject_offered_id FROM student_subject ss WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                     OR (
+                         a.subject_offered_id IN (
+                             SELECT ss.subject_offered_id FROM student_subject ss
+                             WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                         )
+                         AND (
+                             NOT EXISTS (
+                                 SELECT 1 FROM announcement_section ans
+                                 WHERE ans.announcement_id = a.announcement_id
+                             )
+                             OR EXISTS (
+                                 SELECT 1 FROM announcement_section ans
+                                 JOIN student_subject ss2 ON ss2.section_id = ans.section_id
+                                     AND ss2.user_student_id = ?
+                                     AND ss2.subject_offered_id = a.subject_offered_id
+                                     AND ss2.status = 'enrolled'
+                                 WHERE ans.announcement_id = a.announcement_id
+                             )
+                         )
                      ))";
-        $params = [$userId];
+        $params = [$userId, $userId];
 
         if ($subjectId) {
             $sql .= " AND so.subject_id = ?";
@@ -201,13 +328,29 @@ function getNewAnnouncements() {
                  WHERE a.status = 'published'
                    AND a.created_at > ?
                    AND (a.subject_offered_id IS NULL
-                        OR a.subject_offered_id IN (
-                            SELECT ss.subject_offered_id FROM student_subject ss
-                            WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                        OR (
+                            a.subject_offered_id IN (
+                                SELECT ss.subject_offered_id FROM student_subject ss
+                                WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                            )
+                            AND (
+                                NOT EXISTS (
+                                    SELECT 1 FROM announcement_section ans
+                                    WHERE ans.announcement_id = a.announcement_id
+                                )
+                                OR EXISTS (
+                                    SELECT 1 FROM announcement_section ans
+                                    JOIN student_subject ss2 ON ss2.section_id = ans.section_id
+                                        AND ss2.user_student_id = ?
+                                        AND ss2.subject_offered_id = a.subject_offered_id
+                                        AND ss2.status = 'enrolled'
+                                    WHERE ans.announcement_id = a.announcement_id
+                                )
+                            )
                         ))
                  ORDER BY a.created_at DESC
                  LIMIT 20",
-                [$cutoff, $userId]
+                [$cutoff, $userId, $userId]
             );
         } else {
             // Instructors / dean / admin — only global announcements not posted by themselves

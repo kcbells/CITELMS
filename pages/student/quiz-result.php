@@ -536,8 +536,7 @@ include __DIR__ . '/../../includes/sidebar.php';
     border: 1px solid #f5f0e8;
     border-radius: 12px;
     padding: 24px;
-    border-left: 4px solid #e7e5e4;
-}
+    }
 .question-card.correct { border-left-color: #16a34a; }
 .question-card.incorrect { border-left-color: #dc2626; }
 

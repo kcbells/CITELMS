@@ -3,6 +3,9 @@
  * CRUD for lessons grouped by subject, with materials (links, files) support
  */
 import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects = [];
 
@@ -29,7 +32,7 @@ async function renderList(container, filterSubject = '') {
 
     container.innerHTML = `
         <style>
-            .ls-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:28px 32px; margin-bottom:24px; position:relative; overflow:hidden; }
+            .ls-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .ls-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .ls-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .ls-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
@@ -190,7 +193,7 @@ async function renderList(container, filterSubject = '') {
                                     <button class="btn-actions" data-id="${l.lessons_id}">&#8942;</button>
                                     <div class="actions-dropdown ${isLast ? 'drop-up' : ''}" data-dropdown="${l.lessons_id}">
                                         <a href="#" data-edit="${l.lessons_id}" data-subj="${l.subject_id}" data-title="${esc(l.lesson_title)}" data-desc="${esc(l.lesson_description||'')}" data-content="${esc(l.lesson_content||'')}" data-status="${l.status}">Edit Lesson</a>
-                                        <a href="#" class="archive" data-archive="${l.lessons_id}" data-subj="${l.subject_id}" data-subj-code="${esc(group.code)}" data-title="${esc(l.lesson_title)}" data-desc="${esc(l.lesson_description||'')}" data-content="${esc(l.lesson_content||'')}">📦 Archive to Bank</a>
+                                        <a href="#" class="archive" data-archive="${l.lessons_id}" data-subj="${l.subject_id}" data-subj-code="${esc(group.code)}" data-title="${esc(l.lesson_title)}" data-desc="${esc(l.lesson_description||'')}" data-content="${esc(l.lesson_content||'')}">${icon('folder', inl)} Archive to Bank</a>
                                         <a href="#" class="danger" data-delete="${l.lessons_id}" data-name="${esc(l.lesson_title)}">Delete</a>
                                     </div>
                                 </td>
@@ -529,7 +532,7 @@ function openArchiveModal(lesson) {
     overlay.innerHTML = `
         <div class="modal" style="max-width:560px;">
             <div class="modal-header">
-                <h3>📦 Archive to Content Bank</h3>
+                <h3>${icon('folder', inl)} Archive to Content Bank</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
@@ -589,7 +592,7 @@ function openArchiveModal(lesson) {
             overlay.remove();
             const toast = document.createElement('div');
             toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1B4D3E;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2);';
-            toast.textContent = '✓ Lesson archived to Content Bank!';
+            toast.innerHTML = `${icon('check', inl)} Lesson archived to Content Bank!`;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3500);
         } else {

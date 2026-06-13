@@ -11,7 +11,7 @@ export async function render(container) {
     container.innerHTML = `
         <style>
             .profile-card { background:#fff; border:1px solid #e8e8e8; border-radius:16px; max-width:600px; overflow:hidden; }
-            .profile-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 100%); padding:32px 24px; text-align:center; }
+            .profile-banner { background:#00461B; padding:32px 24px; text-align:center; }
             .profile-avatar { width:80px; height:80px; border-radius:50%; background:#fff; color:#1B4D3E; display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800; margin:0 auto 12px; border:3px solid rgba(255,255,255,.3); }
             .profile-name { font-size:22px; font-weight:700; color:#fff; }
             .profile-role { color:rgba(255,255,255,.7); font-size:14px; margin-top:4px; text-transform:capitalize; }

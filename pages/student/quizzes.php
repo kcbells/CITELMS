@@ -768,8 +768,8 @@ function renderQuizCard($quiz, $userId, $allQuizzes, $subjectId) {
 }
 
 /* Quiz Type Borders */
-.quiz-card.type-pre_test { border-left: 4px solid #2196F3; }
-.quiz-card.type-post_test { border-left: 4px solid #9C27B0; }
+.quiz-card.type-pre_test { }
+.quiz-card.type-post_test { }
 .quiz-card.passed { border-left-color: #1B4D3E; }
 
 .quiz-main {

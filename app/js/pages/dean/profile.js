@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { bindPasswordChangeOtp } from '../../utils/password-change-otp.js';
 
 export async function render(container) {
     const user = Auth.user();
@@ -13,7 +14,7 @@ export async function render(container) {
             .profile-layout { display:grid; grid-template-columns:280px 1fr; gap:24px; align-items:start; }
             .profile-sidebar { position:sticky; top:20px; }
             .profile-card { background:#fff; border:1px solid #e8e8e8; border-radius:16px; overflow:hidden; }
-            .profile-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 100%); padding:32px 20px 24px; text-align:center; }
+            .profile-banner { background:#00461B; padding:32px 20px 24px; text-align:center; }
             .profile-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:#1B4D3E; display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800; margin:0 auto 14px; box-shadow:0 0 0 4px rgba(255,255,255,.25); }
             .profile-name { font-size:18px; font-weight:700; color:#fff; line-height:1.3; }
             .profile-role { display:inline-block; background:rgba(255,255,255,.18); padding:4px 14px; border-radius:20px; font-size:12px; color:#fff; margin-top:8px; font-weight:600; text-transform:capitalize; letter-spacing:.3px; }
@@ -37,7 +38,7 @@ export async function render(container) {
             .form-input { width:100%; padding:10px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; box-sizing:border-box; color:#1a1a1a; background:#fff; transition:border .15s; }
             .form-input:focus { outline:none; border-color:#1B4D3E; box-shadow:0 0 0 3px rgba(27,77,62,.08); }
 
-            .btn-save { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 24px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
+            .btn-save { background:#00461B; color:#fff; border:none; padding:10px 24px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-save:hover { box-shadow:0 4px 12px rgba(0,70,27,.3); transform:translateY(-1px); }
             .alert { padding:10px 16px; border-radius:8px; margin-bottom:16px; font-size:13px; }
             .alert-success { background:#E8F5E9; color:#1B4D3E; border:1px solid #bbf7d0; }
@@ -101,6 +102,7 @@ export async function render(container) {
                 <div class="form-card">
                     <div class="card-header">Change Password</div>
                     <div class="card-body">
+                        <div id="pw-alert"></div>
                         <div class="form-group">
                             <label class="form-label">Current Password</label>
                             <input type="password" class="form-input" id="p-current-pw">
@@ -116,7 +118,7 @@ export async function render(container) {
                             </div>
                         </div>
                     </div>
-                    <div class="card-footer"><button class="btn-save" id="btn-change-pw">Update Password</button></div>
+                    <div class="card-footer"><button class="btn-save" id="btn-change-pw">Send verification code</button></div>
                 </div>
             </div>
         </div>
@@ -129,24 +131,14 @@ export async function render(container) {
         setTimeout(() => alert.innerHTML = '', 3000);
     });
 
-    container.querySelector('#btn-change-pw').addEventListener('click', () => {
-        const newPw = container.querySelector('#p-new-pw').value;
-        const confirmPw = container.querySelector('#p-confirm-pw').value;
-        const alert = container.querySelector('#profile-alert');
-
-        if (!newPw || newPw.length < 6) {
-            alert.innerHTML = '<div class="alert alert-error">Password must be at least 6 characters</div>';
-            return;
-        }
-        if (newPw !== confirmPw) {
-            alert.innerHTML = '<div class="alert alert-error">Passwords do not match</div>';
-            return;
-        }
-        alert.innerHTML = '<div class="alert alert-success">Password updated successfully!</div>';
-        container.querySelector('#p-current-pw').value = '';
-        container.querySelector('#p-new-pw').value = '';
-        container.querySelector('#p-confirm-pw').value = '';
-        setTimeout(() => alert.innerHTML = '', 3000);
+    bindPasswordChangeOtp(container, {
+        alertSelector: '#pw-alert',
+        curSelector: '#p-current-pw',
+        newSelector: '#p-new-pw',
+        confirmSelector: '#p-confirm-pw',
+        btnSelector: '#btn-change-pw',
+        okClass: 'alert alert-success',
+        errClass: 'alert alert-error',
     });
 }
 

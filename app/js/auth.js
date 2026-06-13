@@ -4,10 +4,18 @@
  */
 
 import { Api, BASE_URL } from './api.js';
+import {
+    applyLoginLease,
+    claimActiveTabIfNeeded,
+    initSessionTabGuard,
+    redirectSuperseded,
+} from './utils/session-tab.js';
+import { clearClientAuth } from './utils/tab-lease-store.js';
 
 export const Auth = {
     _user: null,
     _permissions: null,   // cached Set of permission slugs
+    _serverTabLease: null,
 
     /**
      * Check if user is logged in (calls AuthAPI check endpoint)
@@ -17,7 +25,14 @@ export const Auth = {
         try {
             const result = await Api.get('/AuthAPI.php?action=check');
             if (result.success && result.data && result.data.authenticated) {
-                this._user = result.data.user;
+                const u = result.data.user || {};
+                if (u.sub && !u.users_id) u.users_id = u.sub;
+                if (!u.name && u.first_name) {
+                    u.name = (u.first_name + ' ' + (u.last_name || '')).trim();
+                }
+                this._user = u;
+                this._serverTabLease = result.data?.tab_lease || null;
+                if (result.data?.tab_lease) applyLoginLease(result.data.tab_lease);
                 return this._user;
             }
             return null;
@@ -81,17 +96,36 @@ export const Auth = {
      * Logout
      */
     async logout() {
-        // Clear client state immediately so any in-flight page loads see no user
         this._user = null;
         this._permissions = null;
-        localStorage.removeItem('jwt_token');
+        this._serverTabLease = null;
+        clearClientAuth();
 
-        // Tell the server to destroy the session (best-effort — ignore failures)
         try {
             await Api.get('/AuthAPI.php?action=logout');
         } catch (e) { /* ignore */ }
 
-        window.location.href = BASE_URL + '/app/login.html';
+        window.location.href = BASE_URL + '/app/index.html';
+    },
+
+    /**
+     * Local-only sign-out when another tab claimed this session.
+     * Must not call server logout (would kill the active tab too).
+     */
+    logoutSuperseded() {
+        this._user = null;
+        this._permissions = null;
+        this._serverTabLease = null;
+        clearClientAuth();
+        redirectSuperseded();
+    },
+
+    /**
+     * Claim this tab as the active session and watch for other tabs.
+     */
+    async initSingleTabSession() {
+        initSessionTabGuard(() => this.logoutSuperseded());
+        await claimActiveTabIfNeeded(this._serverTabLease);
     },
 
     /**
@@ -100,7 +134,7 @@ export const Auth = {
     async requireLogin() {
         const user = await this.check();
         if (!user) {
-            window.location.href = BASE_URL + '/app/login.html';
+            window.location.href = BASE_URL + '/app/index.html';
             return null;
         }
         return user;
@@ -115,7 +149,7 @@ export const Auth = {
 
         if (typeof roles === 'string') roles = [roles];
         if (!roles.includes(user.role)) {
-            window.location.href = BASE_URL + '/app/index.html';
+            window.location.href = BASE_URL + '/app/dashboard.html';
             return null;
         }
         return user;

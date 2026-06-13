@@ -7,6 +7,19 @@ import { Auth } from './auth.js';
 import { BASE_URL } from './api.js';
 import { renderSidebar } from './components/sidebar.js';
 import { renderTopbar } from './components/topbar.js';
+import { mountStudentEnrollFab, unmountStudentEnrollFab, openJoinPanel, openJoinPanelWithSubject } from './components/student-enroll-fab.js';
+import { mountFloatingMessenger, unmountFloatingMessenger, openFloatingChat } from './components/floating-messenger.js';
+import { mountFloatingAssistant, unmountFloatingAssistant } from './components/floating-assistant.js';
+import {
+    isQuizProctored,
+    clearQuizProctoring,
+    getActiveQuizId,
+    isQuizInProgress,
+    requestQuizLeaveConfirm,
+    runConfirmedQuizExit,
+} from './utils/quiz-guard.js';
+import { Api } from './api.js';
+import { icon, iconLg } from './utils/icons.js';
 
 // ── Permission map: page → required permission slug ───────────
 // null = no permission required (always accessible)
@@ -38,6 +51,7 @@ const PAGE_PERMISSIONS = {
     'instructor/sections':       'sections.view',
     'instructor/subject-offerings': 'subject_offerings.view',
     'instructor/my-classes':     'subjects.view',
+    'instructor/subject':        'subjects.view',
     'instructor/content-bank':   'lessons.view',
     'instructor/quizzes':        'quizzes.view',
     'instructor/gradebook':      'grades.view',
@@ -45,6 +59,7 @@ const PAGE_PERMISSIONS = {
     'instructor/analytics':      'analytics.view',
     // Student
     'student/my-subjects':       'subjects.view',
+    'student/subject':           'subjects.view',
     'student/lessons':           'lessons.view',
     'student/quizzes':           'quizzes.view',
     'student/grades':            'grades.view',
@@ -64,6 +79,7 @@ const PAGE_ALIASES = {
     'instructor/curriculum':        'admin/curriculum',
     'instructor/subject-offerings': 'admin/subject-offerings',
     'instructor/faculty-assignments': 'admin/faculty-assignments',
+    'instructor/sections':          'instructor/my-classes',
     'instructor/reports':           'dean/reports',
     'instructor/users':             'admin/users',
     'instructor/rbac':              'admin/rbac',
@@ -72,9 +88,10 @@ const PAGE_ALIASES = {
     'dean/departments':             'admin/departments',
     'dean/programs':                'admin/programs',
     'dean/curriculum':              'admin/curriculum',
-    'dean/sections':                'admin/sections',
-    'dean/subject-offerings':       'admin/subject-offerings',
-    'dean/analytics':               'instructor/analytics',
+    'dean/sections':                'admin/curriculum',
+    'dean/subject-offerings':       'admin/curriculum',
+    'dean/subjects':                'admin/curriculum',
+    'dean/instructors':             'dean/faculty-assignments',
     'dean/users':                   'admin/users',
     'dean/rbac':                    'admin/rbac',
     'dean/settings':                'admin/settings',
@@ -91,6 +108,12 @@ const pages = {};
 export function registerPage(role, name, loadFn) {
     pages[`${role}/${name}`] = loadFn;
 }
+
+// Pre-register subject hubs (large modules — avoids dynamic import misses)
+import { render as renderStudentSubject } from './pages/student/subject.js';
+import { render as renderInstructorSubject } from './pages/instructor/subject.js';
+registerPage('student', 'subject', renderStudentSubject);
+registerPage('instructor', 'subject', renderInstructorSubject);
 
 /**
  * Navigate to a page
@@ -142,9 +165,12 @@ async function loadCurrentPage() {
     document.title = `${pageTitle} | CIT-LMS`;
 
     // Update sidebar active state
+    const navPage = route.page === 'subject'
+        ? (route.role === 'instructor' ? 'my-classes' : 'my-subjects')
+        : route.page;
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
-        if (item.dataset.page === route.page) {
+        if (item.dataset.page === navPage) {
             item.classList.add('active');
         }
     });
@@ -153,15 +179,43 @@ async function loadCurrentPage() {
     const topbarTitle = document.querySelector('.page-title');
     if (topbarTitle) topbarTitle.textContent = pageTitle;
 
-    // Check permission before loading
     const pageKey  = `${route.role}/${route.page}`;
+
+    // Confirm before leaving an in-progress quiz (sidebar / hash navigation)
+    if (isQuizInProgress()) {
+        const hashQuizId = route.params?.quiz_id || '';
+        const activeId = String(getActiveQuizId() || '');
+        const onWrongPage = pageKey !== 'student/take-quiz'
+            || (hashQuizId && activeId && hashQuizId !== activeId);
+        if (onWrongPage && activeId) {
+            const back = `#student/take-quiz?quiz_id=${activeId}`;
+            const confirmed = await requestQuizLeaveConfirm('navigation');
+            if (!confirmed) {
+                if (window.location.hash !== back) {
+                    window.location.hash = back;
+                }
+                return;
+            }
+            const wasProctored = isQuizProctored();
+            await runConfirmedQuizExit();
+            clearQuizProctoring();
+            Api.post('/QuizAttemptsAPI.php?action=proctor-unlock', {}).catch(() => {});
+            if (wasProctored) return;
+        }
+    } else if (window.__prevRoute === 'student/take-quiz' && pageKey !== 'student/take-quiz') {
+        clearQuizProctoring();
+        Api.post('/QuizAttemptsAPI.php?action=proctor-unlock', {}).catch(() => {});
+    }
+    window.__prevRoute = pageKey;
+
+    // Check permission before loading
     const required = PAGE_PERMISSIONS[pageKey];
     const content  = document.getElementById('page-content');
 
     if (required && !Auth.can(required)) {
         content.innerHTML = `
             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 24px;text-align:center;">
-                <div style="font-size:56px;margin-bottom:16px;">🚫</div>
+                <div style="margin-bottom:16px;">${iconLg('eyeOff')}</div>
                 <h2 style="font-size:22px;font-weight:700;color:#1B4D3E;margin:0 0 8px;">Access Denied</h2>
                 <p style="color:#6b7280;font-size:14px;max-width:360px;margin:0 0 24px;">
                     You don't have permission to view this page.<br>
@@ -171,6 +225,7 @@ async function loadCurrentPage() {
                     Required permission: <strong>${required}</strong>
                 </div>
             </div>`;
+        mountRoleWidgets(user.role);
         return;
     }
 
@@ -191,20 +246,76 @@ async function loadCurrentPage() {
         try {
             content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner-lg" style="width:36px;height:36px;border:3px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div></div>';
             const module = await import(`./pages/${resolvedRole}/${resolvedPage}.js?v=${Date.now()}`);
-            if (module.render) {
-                pages[resolvedKey] = module.render;
+            if (!module.render) {
+                throw new Error(`Page module has no render export: ${pageKey}`);
+            }
+            pages[resolvedKey] = module.render;
+            try {
                 await module.render(content, route.params);
+            } catch (renderErr) {
+                console.error('Page render error:', pageKey, renderErr);
+                content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">!</div><h3>Error Loading Page</h3><p>${renderErr.message}</p></div>`;
             }
         } catch (err) {
             console.error('Module not found:', pageKey, err);
+            const detail = String(err?.message || err || '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const isMissing = /failed to fetch|404|not found/i.test(detail);
             content.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">🚧</div>
-                    <h3>Page Not Available Yet</h3>
-                    <p>The "${route.page}" page for ${route.role} hasn't been built yet.</p>
+                    <div class="empty-state-icon">${iconLg(isMissing ? 'construction' : 'alert')}</div>
+                    <h3>${isMissing ? 'Page Not Available Yet' : 'Error Loading Page'}</h3>
+                    <p>${isMissing
+                        ? `The "${route.page}" page for ${route.role} hasn't been built yet.`
+                        : 'This page could not be loaded.'}</p>
                     <p style="margin-top:12px;font-size:13px;color:var(--gray-400)">Route: ${pageKey}</p>
+                    ${detail ? `<p style="margin-top:8px;font-size:12px;color:var(--gray-500);max-width:480px;word-break:break-word">${detail}</p>` : ''}
                 </div>`;
         }
+    }
+
+    mountRoleWidgets(user.role);
+
+    // Deep-link: ?with=USER_ID opens floating chat (stays on current page)
+    const withId = route.params?.with;
+    if (withId) {
+        openFloatingChat(
+            parseInt(withId, 10),
+            route.params.name || 'Chat',
+            route.params.role || ''
+        );
+    }
+
+    // Deep-link: ?join=1 opens join panel (subject code + optional section)
+    if (route.params?.join && user.role === 'student') {
+        setTimeout(() => {
+            const subjectCode = route.params?.subject_code || route.params?.code || '';
+            const sectionId = parseInt(route.params?.section_id || '0', 10) || 0;
+            if (subjectCode) openJoinPanelWithSubject(subjectCode, sectionId);
+            else openJoinPanel();
+        }, 150);
+    }
+}
+
+function mountRoleWidgets(role) {
+    if (isQuizProctored() || isQuizInProgress()) {
+        unmountFloatingAssistant();
+        unmountFloatingMessenger();
+        unmountStudentEnrollFab();
+        return;
+    }
+
+    mountFloatingAssistant();
+
+    if (role === 'student') {
+        mountStudentEnrollFab();
+        mountFloatingMessenger();
+    } else if (role === 'instructor') {
+        unmountStudentEnrollFab();
+        mountFloatingMessenger();
+    } else {
+        unmountStudentEnrollFab();
+        unmountFloatingMessenger();
     }
 }
 
@@ -212,23 +323,23 @@ async function loadCurrentPage() {
  * Boot the application
  */
 async function boot() {
-    // Check authentication
     const user = await Auth.requireLogin();
-    if (!user) return; // Redirected to login
+    if (!user) return;
 
-    // Get detailed user data
-    await Auth.getUser();
-
-    // Load RBAC permissions for the current user
-    await Auth.fetchPermissions();
-
-    // Hide loading, show app
+    // Show the shell immediately — don't block on secondary API calls
     document.getElementById('app-loading').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-
-    // Render sidebar and topbar
     renderSidebar(document.getElementById('sidebar'));
     renderTopbar(document.getElementById('topbar'));
+
+    await Promise.all([
+        Auth.initSingleTabSession(),
+        Auth.getUser(),
+        Auth.fetchPermissions(),
+    ]);
+
+    renderSidebar(document.getElementById('sidebar'));
+    mountRoleWidgets(Auth.user()?.role || user.role);
 
     // Set default route if none
     if (!window.location.hash) {

@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { bindPasswordChangeOtp } from '../../utils/password-change-otp.js';
 
 export async function render(container) {
     const user = Auth.user();
@@ -21,7 +22,7 @@ export async function render(container) {
                 overflow: hidden;
             }
             .pr-banner {
-                height: 100px; background: linear-gradient(135deg, #1B4D3E 0%, #2D6A4F 60%, #40916C 100%);
+                height: 100px; background: #00461B;
                 position: relative;
             }
             .pr-avatar {
@@ -51,8 +52,8 @@ export async function render(container) {
                 display: flex; align-items: center; gap: 10px;
                 padding: 10px 14px; border-radius: 10px;
             }
-            .pr-badge-row.dept { background: linear-gradient(135deg, #1B4D3E, #2D6A4F); }
-            .pr-badge-row.prog { background: linear-gradient(135deg, #1B4D3E, #2D6A4F); }
+            .pr-badge-row.dept { background: #1B4D3E; }
+            .pr-badge-row.prog { background: #1B4D3E; }
             .pr-badge-code {
                 font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.95);
                 background: rgba(255,255,255,0.18); padding: 3px 10px;
@@ -128,7 +129,7 @@ export async function render(container) {
                 transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px;
             }
             .pr-btn-primary {
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F); color: #fff;
+                background: #00461B; color: #fff;
                 box-shadow: 0 2px 8px rgba(27,77,62,0.25);
             }
             .pr-btn-primary:hover {
@@ -272,10 +273,11 @@ export async function render(container) {
                                 <input type="password" class="pr-input" id="f-confirmpw" placeholder="Repeat new password">
                             </div>
                         </div>
+                        <p style="font-size:12px;color:#9ca3af;margin:0 0 8px">A verification code will be sent to your registered email.</p>
                         <div class="pr-actions">
                             <button class="pr-btn pr-btn-primary" id="btn-pw">
                                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
-                                Update Password
+                                Send verification code
                             </button>
                         </div>
                     </div>
@@ -305,26 +307,14 @@ export async function render(container) {
         }
     });
 
-    // Change password handler
-    container.querySelector('#btn-pw').addEventListener('click', async () => {
-        const alertEl = container.querySelector('#pw-alert');
-        const curPw = container.querySelector('#f-curpw').value;
-        const newPw = container.querySelector('#f-newpw').value;
-        const confirmPw = container.querySelector('#f-confirmpw').value;
-
-        if (!curPw || !newPw) { alertEl.innerHTML = '<div class="pr-alert pr-alert-err">Fill in all password fields</div>'; return; }
-        if (newPw.length < 6) { alertEl.innerHTML = '<div class="pr-alert pr-alert-err">New password must be at least 6 characters</div>'; return; }
-        if (newPw !== confirmPw) { alertEl.innerHTML = '<div class="pr-alert pr-alert-err">Passwords do not match</div>'; return; }
-
-        const res = await Api.post('/AuthAPI.php?action=change-password', { current_password: curPw, new_password: newPw });
-        if (res.success) {
-            alertEl.innerHTML = '<div class="pr-alert pr-alert-ok">Password changed successfully!</div>';
-            container.querySelector('#f-curpw').value = '';
-            container.querySelector('#f-newpw').value = '';
-            container.querySelector('#f-confirmpw').value = '';
-        } else {
-            alertEl.innerHTML = `<div class="pr-alert pr-alert-err">${res.message}</div>`;
-        }
+    bindPasswordChangeOtp(container, {
+        alertSelector: '#pw-alert',
+        curSelector: '#f-curpw',
+        newSelector: '#f-newpw',
+        confirmSelector: '#f-confirmpw',
+        btnSelector: '#btn-pw',
+        okClass: 'pr-alert pr-alert-ok',
+        errClass: 'pr-alert pr-alert-err',
     });
 }
 

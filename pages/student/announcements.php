@@ -336,8 +336,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 }
 
 .announcement-card.is-new {
-    border-left: 3px solid #1B4D3E;
-}
+    }
 
 .card-header {
     display: flex;

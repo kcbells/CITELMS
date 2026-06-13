@@ -92,7 +92,7 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
     <div class="page-content">
 
         <?php if (!empty($quizError)): ?>
-            <div class="alert alert-error" style="background:#fee2e2;color:#b91c1c;padding:16px;border-radius:8px;margin-bottom:20px;border-left:4px solid #dc2626;">
+            <div class="alert alert-error" style="background:#fee2e2;color:#b91c1c;padding:16px;border-radius:8px;margin-bottom:20px;">
                 Query Error: <?= e($quizError) ?>
             </div>
         <?php endif; ?>
@@ -433,8 +433,7 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
 .alert-success {
     background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
     color: #065f46;
-    border-left: 4px solid #10b981;
-}
+    }
 
 /* Actions Dropdown */
 .actions-cell {

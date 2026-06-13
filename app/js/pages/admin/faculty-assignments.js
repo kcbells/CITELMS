@@ -9,6 +9,9 @@
  */
 import { Api }    from '../../api.js';
 import { render as renderSections } from './sections.js';
+import { L, icon } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -65,7 +68,7 @@ export async function render(container) {
             .instr-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; margin-bottom:28px; }
             .instr-card { background:#fff; border:1.5px solid #e8e8e8; border-radius:14px; overflow:hidden; transition:all .2s; }
             .instr-card:hover { border-color:#1B4D3E; box-shadow:0 4px 16px rgba(27,77,62,.08); }
-            .instr-card-top { background:linear-gradient(135deg,#1B4D3E,#2D6A4F); padding:18px 20px; display:flex; align-items:center; gap:14px; }
+            .instr-card-top { background:#00461B; padding:18px 20px; display:flex; align-items:center; gap:14px; }
             .instr-avatar { width:46px; height:46px; border-radius:50%; background:rgba(255,255,255,.2); color:#fff; font-size:17px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
             .instr-name  { font-size:15px; font-weight:700; color:#fff; line-height:1.3; }
             .instr-role  { font-size:11px; color:rgba(255,255,255,.7); margin-top:1px; }
@@ -103,7 +106,7 @@ export async function render(container) {
 
             /* ── Subject view (tree) ── */
             .fa-panel { background:#fff; border:1px solid #e8e8e8; border-radius:12px; overflow:hidden; }
-            .fa-prog-header { padding:14px 20px; background:linear-gradient(135deg,#1B4D3E,#2D6A4F); color:#fff; font-size:15px; font-weight:700; }
+            .fa-prog-header { padding:14px 20px; background:#00461B; color:#fff; font-size:15px; font-weight:700; }
             .fa-year-header { padding:10px 20px 6px; font-size:12px; font-weight:700; color:#737373; text-transform:uppercase; letter-spacing:.7px; background:#fafafa; border-bottom:1px solid #f0f0f0; }
             .fa-sem-header  { padding:8px 20px 6px; font-size:12px; font-weight:600; color:#6b7280; background:#fff; border-bottom:1px solid #f5f5f5; display:flex; align-items:center; gap:10px; }
             .fa-sem-badge   { background:#DBEAFE; color:#1E40AF; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; }
@@ -171,7 +174,7 @@ export async function render(container) {
         <!-- Header -->
         <div class="fa-header">
             <h2>Faculty Assignments</h2>
-            <button class="fa-sections-btn" id="fa-sec-btn">🏫 Manage Sections</button>
+            <button class="fa-sections-btn" id="fa-sec-btn">${L.manageSections}</button>
         </div>
 
         <!-- Toolbar -->
@@ -209,8 +212,8 @@ export async function render(container) {
 
         <!-- Tabs -->
         <div class="fa-tabs" id="fa-tabs-bar">
-            <div class="fa-tab active" data-tab="instructor">👥 By Instructor</div>
-            <div class="fa-tab"        data-tab="subject">📋 By Subject</div>
+            <div class="fa-tab active" data-tab="instructor">${L.byInstructor}</div>
+            <div class="fa-tab"        data-tab="subject">${L.bySubject}</div>
         </div>
 
         <div id="fa-content"></div>
@@ -233,7 +236,7 @@ export async function render(container) {
     secBtn.addEventListener('click', () => {
         sectionsMode = !sectionsMode;
         secBtn.classList.toggle('active', sectionsMode);
-        secBtn.textContent = sectionsMode ? '← Faculty Assignments' : '🏫 Manage Sections';
+        secBtn.innerHTML = sectionsMode ? '← Faculty Assignments' : L.manageSections;
         toolbarWrap.style.display = sectionsMode ? 'none' : '';
         tabsBar.style.display     = sectionsMode ? 'none' : '';
         if (sectionsMode) {
@@ -425,7 +428,7 @@ export async function render(container) {
 
         // ── Instructor banner ──
         let html = `
-        <div style="background:linear-gradient(135deg,#1B4D3E,#2D6A4F);border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="background:#00461B;border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
             <div style="width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;font-size:20px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                 ${initials(instr.first_name + ' ' + instr.last_name)}
             </div>
@@ -463,7 +466,7 @@ export async function render(container) {
                         <span class="fa-subj-name">${esc(o.subject_name)}</span>
                         ${secCount > 0 ? `<span class="fa-sec-pill">${secCount} sec</span>` : ''}
                         ${isMe
-                            ? `<span class="fa-status-pill fa-ok">✓ Assigned</span>`
+                            ? `<span class="fa-status-pill fa-ok">${icon('check', inl)} Assigned</span>`
                             : isOther
                                 ? `<span class="fa-status-pill" style="background:#DBEAFE;color:#1E40AF;" title="You can still assign this instructor — they will get their own section">Also: ${esc(o.instructor_name)}</span>`
                                 : `<span class="fa-status-pill" style="background:#f3f4f6;color:#9ca3af;">Unassigned</span>`}
@@ -567,7 +570,7 @@ export async function render(container) {
                         <div class="mm-subj-name">${esc(o.subject_name)}</div>
                         <div class="mm-subj-meta">${YEAR_LBL[o.year_level] || ''} · ${SEM_LBL[o.subject_semester] || ''}</div>
                     </div>
-                    ${isOther ? `<span class="mm-other-note">⚠ ${otherName}</span>` : ''}
+                    ${isOther ? `<span class="mm-other-note">${icon('warning', { size: 12, className: 'ui-icon-inline' })} ${otherName}</span>` : ''}
                 </div>`;
             });
         }
@@ -582,7 +585,7 @@ export async function render(container) {
                         <h3>${esc(instr.name)}</h3>
                         <p>Check subjects to assign · Uncheck to remove</p>
                     </div>
-                    <button class="mm-close" id="mm-close">✕</button>
+                    <button class="mm-close" id="mm-close">${icon('close', inl)}</button>
                 </div>
                 <div class="mm-search" style="display:flex;gap:8px;align-items:center;">
                     <select id="mm-prog-filter" style="padding:8px 10px;border:1px solid #e0e0e0;border-radius:9px;font-size:13px;flex-shrink:0;max-width:180px;">
@@ -715,7 +718,7 @@ export async function render(container) {
                                     data-subject-id="${s.subject_id}"
                                     data-instructor-id="${i.user_teacher_id}"
                                     data-instructor-name="${esc(i.instructor_name)}"
-                                    title="Remove ${esc(i.instructor_name)}">✕</button>
+                                    title="Remove ${esc(i.instructor_name)}">${icon('close', inl)}</button>
                             </span>`).join('');
 
                         // "Add instructor" dropdown — only lists instructors not yet assigned
@@ -731,8 +734,8 @@ export async function render(container) {
                             : `<span style="font-size:12px;color:#9ca3af;font-style:italic;">All instructors assigned</span>`;
 
                         const statusPill = count > 0
-                            ? `<span class="fa-status-pill fa-ok" style="align-self:flex-start;margin-top:2px;">✓ ${count} Instructor${count > 1 ? 's' : ''}</span>`
-                            : `<span class="fa-status-pill fa-warn" style="align-self:flex-start;margin-top:2px;">⚠ Unassigned</span>`;
+                            ? `<span class="fa-status-pill fa-ok" style="align-self:flex-start;margin-top:2px;">${icon('check', inl)} ${count} Instructor${count > 1 ? 's' : ''}</span>`
+                            : `<span class="fa-status-pill fa-warn" style="align-self:flex-start;margin-top:2px;">${L.unassigned}</span>`;
 
                         html += `
                         <div class="fa-item" data-subject-id="${s.subject_id}">

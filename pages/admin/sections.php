@@ -418,22 +418,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 .badge-secondary{background:#e5e7eb;color:#6b7280}
 
 .alert{padding:18px 24px;border-radius:12px;margin-bottom:24px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
-.alert-success{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);color:#065f46;border-left:5px solid #10b981}
-.alert-danger{background:linear-gradient(135deg,#fee2e2 0%,#fecaca 100%);color:#991b1b;border-left:5px solid #ef4444}
-
-@media(max-width:768px){
-    .form-row{grid-template-columns:1fr}
-    .sections-grid{grid-template-columns:1fr}
-    .page-header h2{font-size:22px}
-}
-</style>
-
-<script>
-function copyCode(code) {
-    navigator.clipboard.writeText(code).then(function() {
-        // Create a temporary success message
-        const tempMsg = document.createElement('div');
-        tempMsg.textContent = '✓ Code ' + code + ' copied!';
+.alert-success{background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);color:#065f46;color:#991b1b;tempMsg.textContent = '✓ Code ' + code + ' copied!';
         tempMsg.style.cssText = 'position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:white;padding:16px 24px;border-radius:10px;font-weight:600;z-index:10000;box-shadow:0 4px 12px rgba(16,185,129,0.3);animation:slideIn 0.3s ease;';
         document.body.appendChild(tempMsg);
 

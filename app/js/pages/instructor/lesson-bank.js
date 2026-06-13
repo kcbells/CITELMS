@@ -3,6 +3,9 @@
  * Browse, publish, and copy shared lessons
  */
 import { Api } from '../../api.js';
+import { L, icon, iconLg } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let mySubjects = [];
 let activeTab  = 'browse'; // 'browse' | 'my-bank'
@@ -13,7 +16,7 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .lb-banner { background:linear-gradient(135deg,#1B4D3E,#2D6A4F); border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+            .lb-banner { background:#00461B; border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
             .lb-banner h2 { font-size:20px; font-weight:700; margin:0; }
             .lb-banner p  { font-size:13px; opacity:.85; margin:4px 0 0; }
             .lb-banner-btn { padding:9px 18px; background:rgba(255,255,255,.18); color:#fff; border:1.5px solid rgba(255,255,255,.5); border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
@@ -91,7 +94,7 @@ export async function render(container) {
 
         <div class="lb-banner">
             <div>
-                <h2>📚 Lesson Bank</h2>
+                <h2>${icon('book', { size: 22, className: 'ui-icon-inline' })} Lesson Bank</h2>
                 <p>Browse shared lessons from other instructors, or publish your own for the community.</p>
             </div>
             <button class="lb-banner-btn" id="lb-publish-btn">
@@ -164,7 +167,7 @@ async function loadContent() {
 function renderBrowse(wrap, lessons) {
     if (lessons.length === 0) {
         wrap.innerHTML = `<div class="lb-empty">
-            <div style="font-size:44px;">📭</div>
+            <div>${iconLg('folder')}</div>
             <h3>No lessons found</h3>
             <p>Try a different search, or be the first to publish a lesson!</p>
         </div>`;
@@ -187,7 +190,7 @@ function renderBrowse(wrap, lessons) {
 function renderMyBank(wrap, lessons) {
     if (lessons.length === 0) {
         wrap.innerHTML = `<div class="lb-empty">
-            <div style="font-size:44px;">✏️</div>
+            <div>${iconLg('edit')}</div>
             <h3>You haven't published anything yet</h3>
             <p>Click "Publish a Lesson" to share your lesson content with other instructors.</p>
         </div>`;
@@ -218,7 +221,7 @@ function lessonCard(l, isOwn) {
         ${tags.length ? `<div class="lb-tags">${tags.map(t => `<span class="lb-tag">${esc(t)}</span>`).join('')}</div>` : ''}
         <div class="lb-card-meta">
             ${l.subject_code ? `<span class="lb-subject-tag">${esc(l.subject_code)}</span>` : ''}
-            <span class="copy-count-badge">📋 ${l.copy_count ?? 0} copies</span>
+            <span class="copy-count-badge">${icon('clipboard', inl)} ${l.copy_count ?? 0} copies</span>
             <span class="lb-meta-item">${date}</span>
         </div>
         <div class="lb-card-footer">
@@ -396,7 +399,7 @@ function openPreviewModal(lesson) {
                 <div class="lb-card-meta" style="margin-bottom:12px;">
                     ${lesson.subject_code ? `<span class="lb-subject-tag">${esc(lesson.subject_code)}</span>` : ''}
                     <span class="lb-meta-item">By <strong>${esc((lesson.first_name || '') + ' ' + (lesson.last_name || ''))}</strong></span>
-                    <span class="copy-count-badge">📋 ${lesson.copy_count ?? 0} copies</span>
+                    <span class="copy-count-badge">${icon('clipboard', inl)} ${lesson.copy_count ?? 0} copies</span>
                 </div>
                 ${lesson.lesson_description ? `<p style="font-size:13px;color:#555;margin:0 0 14px;">${esc(lesson.lesson_description)}</p>` : ''}
                 ${tags.length ? `<div class="lb-tags" style="margin-bottom:14px;">${tags.map(t => `<span class="lb-tag">${esc(t)}</span>`).join('')}</div>` : ''}
@@ -449,8 +452,8 @@ function showToast(msg) {
 
 function alertHtml(type, msg) {
     const styles = type === 'error'
-        ? 'background:#FEE2E2;color:#991b1b;border-left:4px solid #ef4444;'
-        : 'background:#d1fae5;color:#065f46;border-left:4px solid #10b981;';
+        ? 'background:#FEE2E2;color:#991b1b;'
+        : 'background:#d1fae5;color:#065f46;';
     return `<div style="${styles}padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;font-weight:600;">${esc(msg)}</div>`;
 }
 

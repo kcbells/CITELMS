@@ -3,6 +3,9 @@
  * Grade essay and short answer responses from students
  */
 import { Api } from '../../api.js';
+import { L, icon, iconLg } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     // Fetch instructor's subjects for the filter dropdown
@@ -11,7 +14,7 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .eg-header { background:linear-gradient(135deg,#1B4D3E,#2D6A4F); border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+            .eg-header { background:#00461B; border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
             .eg-header h2 { font-size:20px; font-weight:700; margin:0; }
             .eg-header p { font-size:13px; opacity:.85; margin:4px 0 0; }
             .btn-back { display:inline-flex; align-items:center; gap:6px; color:#1B4D3E; font-size:13px; font-weight:600; text-decoration:none; margin-bottom:16px; }
@@ -38,7 +41,7 @@ export async function render(container) {
             .eg-progress { min-width:140px; }
             .eg-prog-label { display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:5px; }
             .eg-prog-bar { height:5px; background:#e8e8e8; border-radius:3px; overflow:hidden; }
-            .eg-prog-fill { height:100%; background:linear-gradient(90deg,#1B4D3E,#2D6A4F); border-radius:3px; transition:width .3s; }
+            .eg-prog-fill { height:100%; background:#1B4D3E; border-radius:3px; transition:width .3s; }
             .eg-pending-count { background:#FEF3C7; color:#B45309; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
             .eg-btn { padding:8px 16px; background:#1B4D3E; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:6px; }
             .eg-btn:hover { background:#2D6A4F; }
@@ -157,22 +160,22 @@ async function loadList(container, subjectId) {
     const flaggedAttempts  = attempts.filter(a => parseInt(a.tab_switch_count || 0) > 0);
     statsEl.innerHTML = `
         <div class="eg-stat">
-            <div class="eg-stat-icon warn">✏️</div>
+            <div class="eg-stat-icon warn">${icon('edit', { size: 22 })}</div>
             <div><span class="eg-stat-num">${pendingAttempts.length}</span><span class="eg-stat-lbl">Submissions Pending</span></div>
         </div>
         <div class="eg-stat">
-            <div class="eg-stat-icon ok">✅</div>
+            <div class="eg-stat-icon ok">${icon('checkCircle', { size: 22 })}</div>
             <div><span class="eg-stat-num">${totalAnswers}</span><span class="eg-stat-lbl">Answers to Grade</span></div>
         </div>
         ${flaggedAttempts.length > 0 ? `
         <div class="eg-stat" style="border-color:#FCA5A5;">
-            <div class="eg-stat-icon" style="background:#FEE2E2;">🚨</div>
+            <div class="eg-stat-icon" style="background:#FEE2E2;">${icon('siren', { size: 22 })}</div>
             <div><span class="eg-stat-num" style="color:#b91c1c;">${flaggedAttempts.length}</span><span class="eg-stat-lbl">Integrity Flags</span></div>
         </div>` : ''}`;
 
     if (attempts.length === 0) {
         wrap.innerHTML = `<div class="empty-state">
-            <div style="font-size:48px;margin-bottom:12px;">📝</div>
+            <div style="margin-bottom:12px;">${iconLg('quiz')}</div>
             <h3>No Subjective Submissions</h3>
             <p>No students have submitted quizzes with essay or short answer questions yet.</p>
         </div>`;
@@ -209,7 +212,7 @@ async function loadList(container, subjectId) {
                 </div>
                 ${totalPending > 0
                     ? `<span class="eg-pending-count">${totalPending} pending</span>`
-                    : `<span class="eg-pending-count" style="background:#E8F5E9;color:#1B4D3E;">✓ all graded</span>`
+                    : `<span class="eg-pending-count" style="background:#E8F5E9;color:#1B4D3E;">${icon('check', inl)} all graded</span>`
                 }
                 <span style="font-size:12px;color:#9ca3af;">${totalAttempts} attempt${totalAttempts!==1?'s':''}</span>
             </div>
@@ -226,7 +229,7 @@ async function loadList(container, subjectId) {
                             <span>${esc(a.subject_code)} &bull; ${date}</span>
                             ${parseInt(a.tab_switch_count || 0) > 0
                                 ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#FEE2E2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-top:3px;">
-                                    🚨 ${a.tab_switch_count} tab switch${parseInt(a.tab_switch_count)>1?'es':''}
+                                    ${icon('siren', inl)} ${a.tab_switch_count} tab switch${parseInt(a.tab_switch_count)>1?'es':''}
                                    </span>`
                                 : ''}
                         </div>
@@ -236,7 +239,7 @@ async function loadList(container, subjectId) {
                         </div>
                         ${parseInt(a.pending_count) > 0
                             ? `<span class="eg-pending-count" style="font-size:11px;">${a.pending_count} pending</span>`
-                            : `<span class="eg-pending-count" style="font-size:11px;background:#E8F5E9;color:#1B4D3E;">✓ graded</span>`
+                            : `<span class="eg-pending-count" style="font-size:11px;background:#E8F5E9;color:#1B4D3E;">${icon('check', inl)} graded</span>`
                         }
                         <button class="eg-btn grade-btn" data-attempt="${a.attempt_id}" data-switches="${a.tab_switch_count || 0}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -313,7 +316,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
     const switches = parseInt(attempt.tab_switch_count || tabSwitches || 0);
     const integrityHtml = switches > 0 ? `
         <div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;">
-            <span style="font-size:22px;flex-shrink:0;">🚨</span>
+            <span style="flex-shrink:0;">${icon('siren', { size: 22 })}</span>
             <div>
                 <div style="font-size:13px;font-weight:700;color:#991B1B;margin-bottom:2px;">
                     Integrity Flag — ${switches} tab switch${switches > 1 ? 'es' : ''} detected
@@ -346,7 +349,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
                 <div style="display:flex;gap:8px;align-items:center;">
                     <span class="qtype-badge ${a.question_type}">${formatType(a.question_type)}</span>
                     <span style="font-size:11px;color:#999;">${a.max_points} pt${a.max_points != 1 ? 's' : ''}</span>
-                    ${isAiGraded ? `<span style="font-size:10px;background:#EDE9FE;color:#7C3AED;padding:2px 7px;border-radius:4px;font-weight:600;">🤖 AI Graded</span>` : ''}
+                    ${isAiGraded ? `<span style="font-size:10px;background:#EDE9FE;color:#7C3AED;padding:2px 7px;border-radius:4px;font-weight:600;">${L.aiGraded}</span>` : ''}
                 </div>
             </div>
             <div class="qblock-body">
@@ -360,13 +363,13 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
                 const currentFb  = isAiGraded ? (a.grader_feedback || '') : '';
                 html += `
                 ${isAiGraded ? `<div style="background:#EDE9FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#5B21B6;">
-                    🤖 <strong>AI Score: ${currentPts}/${a.max_points} pts</strong>${currentFb ? ` — <em>${esc(currentFb)}</em>` : ''}<br>
+                    ${icon('robot', inl)} <strong>AI Score: ${currentPts}/${a.max_points} pts</strong>${currentFb ? ` — <em>${esc(currentFb)}</em>` : ''}<br>
                     <span style="opacity:.75">Review and adjust below if needed.</span>
                 </div>` : `<div id="ai-hint-${a.answer_id}" style="background:#F5F3FF;border:1px dashed #C4B5FD;border-radius:8px;padding:9px 14px;margin-bottom:10px;font-size:12px;color:#7C3AED;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-                    <span>🤖 AI grading didn't run for this answer.</span>
+                    <span>${icon('robot', inl)} AI grading didn't run for this answer.</span>
                     <button class="ai-grade-btn" id="aibtn_${a.answer_id}" data-answer="${a.answer_id}" data-max="${a.max_points}"
                         style="background:#7C3AED;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;">
-                        🤖 Auto-grade with AI
+                        ${L.aiGenerate}
                     </button>
                 </div>`}
                 <div class="grade-row">
@@ -471,7 +474,7 @@ async function runAiGrade(overlay, answerId, maxPts) {
             hint.style.background  = '#EDE9FE';
             hint.style.border      = 'none';
             hint.style.color       = '#5B21B6';
-            hint.innerHTML = `🤖 <strong>AI Score: ${res.score}/${maxPts} pts</strong>${res.feedback ? ` — <em>${esc(res.feedback)}</em>` : ''}<br><span style="opacity:.75">Review and adjust below if needed.</span>`;
+            hint.innerHTML = `${icon('robot', inl)} <strong>AI Score: ${res.score}/${maxPts} pts</strong>${res.feedback ? ` — <em>${esc(res.feedback)}</em>` : ''}<br><span style="opacity:.75">Review and adjust below if needed.</span>`;
         }
 
         // Update save button label to "Override / Confirm Grade"
@@ -480,7 +483,7 @@ async function runAiGrade(overlay, answerId, maxPts) {
         }
     } else {
         btn.disabled = false;
-        btn.textContent = '🤖 Retry AI grade';
+        btn.innerHTML = `${icon('robot', inl)} Retry AI grade`;
         if (hint) {
             const msgEl = hint.querySelector('span');
             if (msgEl) msgEl.textContent = res.message || 'AI grading failed. Check Groq API key in Settings.';

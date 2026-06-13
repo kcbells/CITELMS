@@ -3,6 +3,9 @@
  * Full CRUD for program management with client-side filters
  */
 import { Api } from '../../api.js';
+import { L, icon } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let departments  = [];
 let allPrograms  = [];
@@ -29,7 +32,7 @@ async function renderList(container) {
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
             .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:7px; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:7px; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
             /* ── Filter Bar ── */
@@ -163,7 +166,7 @@ async function renderList(container) {
             </div>
 
             <div class="filter-divider"></div>
-            <button class="btn-clear-filters" id="btn-clear">✕ Clear</button>
+            <button class="btn-clear-filters" id="btn-clear">${icon('close', inl)} Clear</button>
         </div>
 
         <div class="results-info" id="results-info"></div>
@@ -236,9 +239,9 @@ async function renderList(container) {
                             <div class="actions-cell">
                                 <button class="btn-actions" data-id="${p.program_id}">⋮</button>
                                 <div class="actions-dropdown" data-dropdown="${p.program_id}">
-                                    <a href="#" data-edit="${p.program_id}">✏️ Edit</a>
+                                    <a href="#" data-edit="${p.program_id}">${L.edit}</a>
                                     <div class="divider"></div>
-                                    <a href="#" class="danger" data-delete="${p.program_id}" data-name="${esc(p.program_name)}">🗑️ Deactivate</a>
+                                    <a href="#" class="danger" data-delete="${p.program_id}" data-name="${esc(p.program_name)}">${L.deactivate}</a>
                                 </div>
                             </div>
                         </div>

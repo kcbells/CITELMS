@@ -4,10 +4,20 @@
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { renderMessageBody, validateMessageFile, bindImagePreview } from '../../utils/message-ui.js';
+import {
+    messagePageStyles, messagePageHeader, messageSidebarShell,
+    messagePlaceholder, applyMessagePageBg,
+} from '../../utils/message-page-ui.js';
+import { L, icon } from '../../utils/action-labels.js';
 
-let pollTimer  = null;   // setInterval handle for chat polling
-let badgeTimer = null;   // setInterval handle for sidebar badge
+const inl = { size: 14, className: 'ui-icon-inline' };
+
+let pollTimer  = null;
+let badgeTimer = null;
 let activeOtherId = null;
+let pendingFile = null;
+let allThreads = [];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -43,218 +53,68 @@ export async function render(container) {
     activeOtherId = null;
 
     container.innerHTML = `
-        <style>
-            .msg-layout {
-                display: flex; height: calc(100vh - 140px); min-height: 500px;
-                border: 1px solid #e8e8e8; border-radius: 14px; overflow: hidden;
-                background: #fff;
-            }
-            /* ── Left panel: thread list ── */
-            .msg-sidebar {
-                width: 300px; min-width: 260px; border-right: 1px solid #f0f0f0;
-                display: flex; flex-direction: column; background: #fafafa;
-            }
-            .msg-sidebar-header {
-                padding: 18px 16px 14px;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            .msg-sidebar-header h2 { font-size: 18px; font-weight: 800; color: #111827; margin: 0 0 12px; }
-            .msg-new-btn {
-                display: flex; align-items: center; gap: 7px;
-                width: 100%; padding: 9px 14px; border-radius: 9px;
-                background: #1B4D3E; color: #fff; border: none;
-                font-size: 13px; font-weight: 600; cursor: pointer;
-                transition: background .18s;
-            }
-            .msg-new-btn:hover { background: #2D6A4F; }
-            .thread-list { flex: 1; overflow-y: auto; }
-            .thread-item {
-                display: flex; align-items: flex-start; gap: 10px;
-                padding: 13px 16px; cursor: pointer;
-                border-bottom: 1px solid #f5f5f5;
-                transition: background .15s;
-            }
-            .thread-item:hover  { background: #f0f7f5; }
-            .thread-item.active { background: #E8F5E9; border-left: 3px solid #1B4D3E; }
-            .thread-avatar {
-                width: 40px; height: 40px; border-radius: 50%;
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F);
-                color: #fff; font-size: 15px; font-weight: 700;
-                display: flex; align-items: center; justify-content: center;
-                flex-shrink: 0;
-            }
-            .thread-info { flex: 1; min-width: 0; }
-            .thread-name { font-size: 13px; font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .thread-preview { font-size: 12px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-            .thread-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-            .thread-time { font-size: 11px; color: #9ca3af; }
-            .thread-badge {
-                background: #1B4D3E; color: #fff;
-                font-size: 10px; font-weight: 700;
-                padding: 2px 7px; border-radius: 20px; min-width: 18px; text-align: center;
-            }
-            .thread-empty { padding: 32px 16px; text-align: center; color: #9ca3af; font-size: 13px; }
-
-            /* ── Right panel: chat window ── */
-            .msg-main { flex: 1; display: flex; flex-direction: column; }
-            .msg-topbar {
-                padding: 14px 20px; border-bottom: 1px solid #f0f0f0;
-                display: flex; align-items: center; gap: 12px;
-                background: #fff;
-            }
-            .msg-topbar-avatar {
-                width: 38px; height: 38px; border-radius: 50%;
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F);
-                color: #fff; font-size: 15px; font-weight: 700;
-                display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-            }
-            .msg-topbar-name { font-size: 15px; font-weight: 700; color: #111827; }
-            .msg-topbar-role { font-size: 12px; color: #6b7280; text-transform: capitalize; }
-            .msg-body {
-                flex: 1; overflow-y: auto; padding: 20px;
-                display: flex; flex-direction: column; gap: 12px;
-                background: #f9fafb;
-            }
-            .msg-bubble-row { display: flex; }
-            .msg-bubble-row.mine { justify-content: flex-end; }
-            .msg-bubble-row.theirs { justify-content: flex-start; }
-            .msg-bubble {
-                max-width: 68%; padding: 10px 14px;
-                border-radius: 16px; font-size: 14px; line-height: 1.5;
-                word-break: break-word;
-            }
-            .msg-bubble-row.mine   .msg-bubble { background: #1B4D3E; color: #fff; border-bottom-right-radius: 4px; }
-            .msg-bubble-row.theirs .msg-bubble { background: #fff; color: #111827; border: 1px solid #e8e8e8; border-bottom-left-radius: 4px; }
-            .msg-time { font-size: 11px; opacity: .65; margin-top: 3px; display: block; text-align: right; }
-            .msg-bubble-row.theirs .msg-time { text-align: left; }
-            .msg-date-divider {
-                text-align: center; font-size: 11px; color: #9ca3af;
-                padding: 8px 0; position: relative;
-            }
-            .msg-date-divider::before {
-                content: ''; position: absolute; left: 0; right: 0; top: 50%;
-                border-top: 1px solid #e8e8e8;
-            }
-            .msg-date-divider span { background: #f9fafb; padding: 0 10px; position: relative; }
-
-            .msg-footer {
-                padding: 14px 20px; border-top: 1px solid #f0f0f0;
-                display: flex; gap: 10px; background: #fff; align-items: flex-end;
-            }
-            .msg-input {
-                flex: 1; padding: 10px 14px; border-radius: 22px;
-                border: 1px solid #e0e0e0; font-size: 14px; outline: none;
-                resize: none; max-height: 120px; line-height: 1.5; font-family: inherit;
-                transition: border-color .18s;
-            }
-            .msg-input:focus { border-color: #1B4D3E; }
-            .msg-send-btn {
-                width: 40px; height: 40px; border-radius: 50%;
-                background: #1B4D3E; color: #fff; border: none;
-                font-size: 18px; cursor: pointer; transition: background .18s;
-                display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-            }
-            .msg-send-btn:hover { background: #2D6A4F; }
-            .msg-send-btn:disabled { background: #d1d5db; cursor: default; }
-
-            .msg-placeholder {
-                flex: 1; display: flex; flex-direction: column;
-                align-items: center; justify-content: center; color: #9ca3af;
-                gap: 12px; padding: 40px;
-            }
-            .msg-placeholder-icon { font-size: 48px; }
-            .msg-placeholder h3 { font-size: 18px; color: #6b7280; margin: 0; }
-            .msg-placeholder p { font-size: 14px; margin: 0; text-align: center; }
-
-            /* New chat modal */
-            .nc-overlay {
-                position: fixed; inset: 0; background: rgba(0,0,0,.45);
-                display: flex; align-items: center; justify-content: center; z-index: 900;
-            }
-            .nc-modal {
-                background: #fff; border-radius: 14px; width: 420px; max-width: 95vw;
-                max-height: 80vh; display: flex; flex-direction: column;
-                box-shadow: 0 20px 60px rgba(0,0,0,.2);
-            }
-            .nc-header {
-                padding: 18px 20px; border-bottom: 1px solid #f0f0f0;
-                display: flex; justify-content: space-between; align-items: center;
-            }
-            .nc-header h3 { font-size: 16px; font-weight: 700; margin: 0; color: #111827; }
-            .nc-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 4px 8px; }
-            .nc-body { flex: 1; overflow-y: auto; padding: 12px 8px; }
-            .nc-contact {
-                display: flex; align-items: center; gap: 12px;
-                padding: 10px 12px; border-radius: 10px; cursor: pointer;
-                transition: background .15s;
-            }
-            .nc-contact:hover { background: #f0f7f5; }
-            .nc-avatar {
-                width: 38px; height: 38px; border-radius: 50%;
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F);
-                color: #fff; font-size: 14px; font-weight: 700;
-                display: flex; align-items: center; justify-content: center;
-            }
-            .nc-name { font-size: 14px; font-weight: 600; color: #111827; }
-            .nc-sub  { font-size: 12px; color: #6b7280; }
-
-            @media (max-width: 640px) {
-                .msg-layout { flex-direction: column; height: auto; }
-                .msg-sidebar { width: 100%; min-width: unset; border-right: none; border-bottom: 1px solid #f0f0f0; max-height: 260px; }
-                .msg-main { min-height: 400px; }
-            }
-        </style>
-
-        <div style="margin-bottom:20px">
-            <h2 style="font-size:22px;font-weight:800;color:#111827;margin:0">Messages</h2>
-            <p style="font-size:13px;color:#6b7280;margin:4px 0 0">Chat with your instructors for instant academic support.</p>
-        </div>
-
-        <div class="msg-layout">
-            <!-- Left: thread list -->
-            <div class="msg-sidebar">
-                <div class="msg-sidebar-header">
-                    <h2>Chats</h2>
-                    <button class="msg-new-btn" id="btn-new-chat">
-                        ✏️ New Message
-                    </button>
-                </div>
-                <div class="thread-list" id="thread-list">
-                    <div class="thread-empty">Loading...</div>
-                </div>
-            </div>
-
-            <!-- Right: chat window -->
-            <div class="msg-main" id="msg-main">
-                <div class="msg-placeholder">
-                    <div class="msg-placeholder-icon">💬</div>
-                    <h3>Select a conversation</h3>
-                    <p>Choose an instructor from the list, or start a new message.</p>
+        <style>${messagePageStyles()}</style>
+        <div class="msg-page">
+            ${messagePageHeader('Chat with your instructors about classwork, lessons, and school updates.')}
+            <div class="msg-layout">
+                ${messageSidebarShell(L.newMessage)}
+                <div class="msg-main" id="msg-main">
+                    ${messagePlaceholder(
+                        'Select a conversation',
+                        'Pick someone from the list on the left, or tap New Message to start chatting.'
+                    )}
                 </div>
             </div>
         </div>
     `;
 
+    applyMessagePageBg(container);
     await loadThreads();
     startBadgePolling();
 
     document.getElementById('btn-new-chat').addEventListener('click', openNewChatModal);
+    document.getElementById('msg-thread-search')?.addEventListener('input', (e) => {
+        renderThreadList(e.target.value);
+    });
 
     // If URL has ?with=ID open that thread immediately
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
-    if (params.get('with')) openThread(parseInt(params.get('with'), 10), params.get('name') || 'Chat');
+    if (params.get('with')) {
+        openThread(
+            parseInt(params.get('with'), 10),
+            params.get('name') || 'Chat',
+            params.get('role') || ''
+        );
+    }
 }
 
 // ── Thread list ────────────────────────────────────────────────────────────
 
 async function loadThreads() {
     const res = await Api.get('/MessagingAPI.php?action=threads');
-    const threads = res.success ? res.data : [];
+    allThreads = res.success ? res.data : [];
+    const q = document.getElementById('msg-thread-search')?.value || '';
+    renderThreadList(q);
+}
+
+function renderThreadList(query = '') {
     const list = document.getElementById('thread-list');
     if (!list) return;
 
+    const q = query.toLowerCase().trim();
+    const threads = q
+        ? allThreads.filter(t =>
+            (t.name || '').toLowerCase().includes(q)
+            || (t.last_message || '').toLowerCase().includes(q))
+        : allThreads;
+
+    if (!allThreads.length) {
+        list.innerHTML = '<div class="thread-empty">No conversations yet.<br>Tap <strong>New Message</strong> to start.</div>';
+        return;
+    }
+
     if (!threads.length) {
-        list.innerHTML = '<div class="thread-empty">No conversations yet.<br>Click <strong>New Message</strong> to start.</div>';
+        list.innerHTML = '<div class="thread-empty">No matches for your search.</div>';
         return;
     }
 
@@ -281,9 +141,10 @@ async function loadThreads() {
 
 window._openThread = function(otherId, name) { openThread(otherId, name); };
 
-async function openThread(otherId, name) {
+async function openThread(otherId, name, otherRole = '') {
     clearInterval(pollTimer);
     activeOtherId = otherId;
+    pendingFile = null;
 
     // Mark active in thread list
     document.querySelectorAll('.thread-item').forEach(el => {
@@ -300,15 +161,22 @@ async function openThread(otherId, name) {
             <div class="msg-topbar-avatar">${initials}</div>
             <div>
                 <div class="msg-topbar-name">${esc(name)}</div>
-                <div class="msg-topbar-role">Instructor</div>
+                <div class="msg-topbar-role">${esc(otherRole === 'instructor' ? 'Instructor' : otherRole === 'student' ? 'Classmate' : 'Contact')}</div>
             </div>
         </div>
         <div class="msg-body" id="chat-body">
             <div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px">Loading messages...</div>
         </div>
+        <div class="msg-att-preview" id="msg-att-preview"></div>
         <div class="msg-footer">
-            <textarea class="msg-input" id="msg-input" rows="1" placeholder="Type a message..." maxlength="2000"></textarea>
-            <button class="msg-send-btn" id="msg-send" title="Send">➤</button>
+            <div class="msg-compose">
+                <button type="button" class="msg-attach-btn" id="msg-attach" title="Attach file (max 2MB)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <input type="file" id="msg-file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" hidden>
+                <textarea class="msg-input" id="msg-input" rows="1" placeholder="Write a message…" maxlength="2000"></textarea>
+            </div>
+            <button type="button" class="msg-send-btn" id="msg-send" title="Send">${L.send}</button>
         </div>
     `;
 
@@ -323,6 +191,7 @@ async function openThread(otherId, name) {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
     document.getElementById('msg-send').addEventListener('click', sendMessage);
+    bindAttachmentInput();
 
     await loadMessages(otherId);
     markRead(otherId);
@@ -353,7 +222,7 @@ async function loadMessages(otherId, isPolling = false) {
     const wasAtBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 40;
 
     if (!msgs.length) {
-        body.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;font-size:13px">No messages yet. Say hello! 👋</div>';
+        body.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;font-size:13px">No messages yet. Say hello!</div>';
         return;
     }
 
@@ -368,14 +237,15 @@ async function loadMessages(otherId, isPolling = false) {
         }
         const mine = parseInt(m.sender_id) === parseInt(me);
         html += `
-            <div class="msg-bubble-row ${mine ? 'mine' : 'theirs'}">
+            <div class="msg-bubble-row msg-row ${mine ? 'mine' : 'theirs'}">
                 <div class="msg-bubble">
-                    ${esc(m.content)}
+                    ${renderMessageBody(m, me, esc)}
                     <span class="msg-time">${fmtTime(m.created_at)}</span>
                 </div>
             </div>`;
     }
     body.innerHTML = html;
+    bindImagePreview(body);
 
     // Auto-scroll to bottom if user was already at bottom (or initial load)
     if (!isPolling || wasAtBottom) {
@@ -389,21 +259,66 @@ async function loadMessages(otherId, isPolling = false) {
 
 // ── Send message ───────────────────────────────────────────────────────────
 
+function clearPendingFile() {
+    pendingFile = null;
+    const preview = document.getElementById('msg-att-preview');
+    const fileInput = document.getElementById('msg-file');
+    if (preview) {
+        preview.classList.remove('visible');
+        preview.innerHTML = '';
+    }
+    if (fileInput) fileInput.value = '';
+}
+
+function bindAttachmentInput() {
+    document.getElementById('msg-attach')?.addEventListener('click', () => {
+        document.getElementById('msg-file')?.click();
+    });
+    document.getElementById('msg-file')?.addEventListener('change', () => {
+        const file = document.getElementById('msg-file')?.files?.[0];
+        if (!file) return;
+        const check = validateMessageFile(file);
+        if (!check.ok) {
+            alert(check.message);
+            clearPendingFile();
+            return;
+        }
+        pendingFile = file;
+        const preview = document.getElementById('msg-att-preview');
+        if (preview) {
+            preview.classList.add('visible');
+            preview.innerHTML = `
+                <span>${esc(file.name)} (${(file.size / 1024).toFixed(0)} KB)</span>
+                <button type="button" id="msg-att-remove" style="border:none;background:#e5e7eb;border-radius:50%;width:24px;height:24px;cursor:pointer">&times;</button>`;
+            preview.querySelector('#msg-att-remove')?.addEventListener('click', clearPendingFile);
+        }
+    });
+}
+
 async function sendMessage() {
     const input = document.getElementById('msg-input');
     const btn   = document.getElementById('msg-send');
     if (!input || !activeOtherId) return;
 
     const content = input.value.trim();
-    if (!content) return;
+    if (!content && !pendingFile) return;
 
     btn.disabled = true;
     input.disabled = true;
 
-    const res = await Api.post('/MessagingAPI.php?action=send', {
-        receiver_id: activeOtherId,
-        content
-    });
+    let res;
+    if (pendingFile) {
+        const fd = new FormData();
+        fd.append('receiver_id', String(activeOtherId));
+        fd.append('content', content);
+        fd.append('attachment', pendingFile);
+        res = await Api.postForm('/MessagingAPI.php?action=send', fd);
+    } else {
+        res = await Api.post('/MessagingAPI.php?action=send', {
+            receiver_id: activeOtherId,
+            content,
+        });
+    }
 
     input.disabled = false;
     btn.disabled = false;
@@ -411,6 +326,7 @@ async function sendMessage() {
     if (res.success) {
         input.value = '';
         input.style.height = 'auto';
+        clearPendingFile();
         await loadMessages(activeOtherId);
         loadThreads();
     } else {
@@ -456,7 +372,7 @@ async function openNewChatModal() {
         <div class="nc-modal">
             <div class="nc-header">
                 <h3>New Message</h3>
-                <button class="nc-close" id="nc-close">✕</button>
+                <button class="nc-close" id="nc-close">${icon('close', inl)}</button>
             </div>
             <div class="nc-body">
                 ${!contacts.length

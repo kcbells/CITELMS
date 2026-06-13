@@ -4,6 +4,9 @@
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { L, icon, iconLg } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     const res  = await Api.get('/DashboardAPI.php?action=dean');
@@ -48,25 +51,22 @@ export async function render(container) {
     <style>
         /* ── Banner ── */
         .dn-banner {
-            background: linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 55%,#40916C 100%);
+            background: #00461B;
             border-radius: 16px; padding: 30px 32px; margin-bottom: 24px;
             display: flex; justify-content: space-between; align-items: center;
-            position: relative; overflow: hidden;
         }
-        .dn-banner::before { content:''; position:absolute; top:-60px; right:-60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.06); pointer-events:none; }
-        .dn-banner::after  { content:''; position:absolute; bottom:-80px; left:80px; width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.04); pointer-events:none; }
         .dn-banner-left { position:relative; z-index:1; }
         .dn-banner-left h2 { font-size:24px; font-weight:800; color:#fff; margin:0 0 4px; }
         .dn-banner-left p  { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
         .dn-banner-right { position:relative; z-index:1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-        .dn-dept-badge { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); padding:8px 18px; border-radius:10px; font-weight:800; font-size:15px; color:#fff; letter-spacing:.5px; }
+        .dn-dept-badge { background:rgba(255,255,255,.25); border:none; padding:8px 18px; border-radius:10px; font-weight:800; font-size:15px; color:#fff; letter-spacing:.5px; }
         .dn-date { font-size:12px; color:rgba(255,255,255,.65); }
 
         /* ── Stat cards ── */
         .dn-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px; }
-        .dn-stat { background:#fff; border:1px solid #e8e8e8; border-radius:14px; padding:18px 16px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; transition:all .2s; }
-        .dn-stat:hover { border-color:#1B4D3E; box-shadow:0 4px 12px rgba(27,77,62,.08); }
-        .dn-stat.highlight { border-color:#1B4D3E; background:linear-gradient(145deg,#f0faf4,#fff); }
+        .dn-stat { background:#fff; border:none; border-radius:14px; padding:18px 16px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; transition:background .15s; }
+        .dn-stat:hover { background:#F3F4F6; }
+        .dn-stat.highlight { background:#E8F5EC; }
         .dn-stat-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
         .dn-stat-val  { font-size:26px; font-weight:800; color:#262626; line-height:1.1; }
         .dn-stat.highlight .dn-stat-val { color:#1B4D3E; }
@@ -79,7 +79,7 @@ export async function render(container) {
 
         /* ── Charts grid ── */
         .dn-charts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; margin-bottom:24px; }
-        .dn-chart-card { background:#fff; border:1px solid #e8e8e8; border-radius:14px; padding:20px; }
+        .dn-chart-card { background:#fff; border:none; border-radius:14px; padding:20px; }
         .dn-chart-title { font-size:13px; font-weight:700; color:#262626; margin-bottom:4px; }
         .dn-chart-sub   { font-size:11px; color:#9ca3af; margin-bottom:16px; }
 
@@ -94,7 +94,7 @@ export async function render(container) {
         .dn-year-row { display:flex; align-items:center; gap:10px; }
         .dn-year-lbl { font-size:12px; color:#404040; font-weight:600; width:62px; flex-shrink:0; text-align:right; }
         .dn-year-track { flex:1; background:#f0f0f0; border-radius:6px; height:18px; overflow:hidden; position:relative; }
-        .dn-year-fill  { height:100%; border-radius:6px; background:linear-gradient(90deg,#1B4D3E,#2D6A4F); transition:width .6s ease; display:flex; align-items:center; justify-content:flex-end; padding-right:6px; }
+        .dn-year-fill  { height:100%; border-radius:6px; background:#1B4D3E; transition:width .6s ease; display:flex; align-items:center; justify-content:flex-end; padding-right:6px; }
         .dn-year-fill-val { font-size:10px; font-weight:700; color:rgba(255,255,255,.9); white-space:nowrap; }
         .dn-year-fill-val.outside { position:absolute; right:-28px; top:50%; transform:translateY(-50%); color:#404040; }
         .dn-year-count { font-size:12px; font-weight:700; color:#1B4D3E; width:30px; flex-shrink:0; }
@@ -128,7 +128,7 @@ export async function render(container) {
         .dn-fac-table td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:12.5px; vertical-align:middle; }
         .dn-fac-table tr:last-child td { border-bottom:none; }
         .dn-fac-table tr:hover td { background:#f9fffe; }
-        .dn-fac-av { width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#1B4D3E,#2D6A4F); color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+        .dn-fac-av { width:30px; height:30px; border-radius:50%; background:#1B4D3E; color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
         .dn-fac-cell { display:flex; align-items:center; gap:9px; }
         .dn-fac-name { font-weight:600; color:#262626; }
         .dn-fac-id   { font-size:10.5px; color:#9ca3af; }
@@ -138,8 +138,8 @@ export async function render(container) {
 
         /* Quick links */
         .dn-quick { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-        .dn-ql { display:flex; align-items:center; gap:11px; padding:13px 15px; border:1px solid #e8e8e8; border-radius:12px; text-decoration:none; color:#262626; font-weight:600; font-size:13px; background:#fff; transition:all .18s; }
-        .dn-ql:hover { border-color:#1B4D3E; background:#E8F5E9; color:#1B4D3E; }
+        .dn-ql { display:flex; align-items:center; gap:11px; padding:13px 15px; border:none; border-radius:12px; text-decoration:none; color:#262626; font-weight:600; font-size:13px; background:#F3F4F6; transition:background .15s; }
+        .dn-ql:hover { background:#E8F5EC; color:#1B4D3E; }
         .dn-ql-icon { width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; background:#f3f4f6; flex-shrink:0; }
         .dn-ql:hover .dn-ql-icon { background:#C8E6C9; }
 
@@ -153,7 +153,7 @@ export async function render(container) {
     <!-- Banner -->
     <div class="dn-banner">
         <div class="dn-banner-left">
-            <h2>👋 Welcome, ${esc(user.first_name || user.name)}</h2>
+            <h2>${L.wave} Welcome, ${esc(user.first_name || user.name)}</h2>
             <p>${esc(dept.department_name || 'Department')} · Department Overview</p>
         </div>
         <div class="dn-banner-right">
@@ -164,7 +164,7 @@ export async function render(container) {
     <!-- Key Stats -->
     <div class="dn-stats">
         <div class="dn-stat highlight">
-            <div class="dn-stat-icon" style="background:#E8F5E9;">🎓</div>
+            <div class="dn-stat-icon" style="background:#E8F5E9;">${icon('graduation', { size: 22 })}</div>
             <div class="dn-stat-val">${stats.students || 0}</div>
             <div class="dn-stat-lbl">Enrolled Students</div>
             ${enrollByYear.length > 0
@@ -172,46 +172,46 @@ export async function render(container) {
                 : ''}
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:#DBEAFE;">👨‍🏫</div>
+            <div class="dn-stat-icon" style="background:#DBEAFE;">${icon('instructor', { size: 22 })}</div>
             <div class="dn-stat-val">${stats.instructors || 0}</div>
             <div class="dn-stat-lbl">Instructors</div>
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:#FEF3C7;">📚</div>
+            <div class="dn-stat-icon" style="background:#FEF3C7;">${icon('book', { size: 22 })}</div>
             <div class="dn-stat-val">${stats.subjects || 0}</div>
             <div class="dn-stat-lbl">Active Subjects</div>
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:#EDE9FE;">🏫</div>
+            <div class="dn-stat-icon" style="background:#EDE9FE;">${icon('school', { size: 22 })}</div>
             <div class="dn-stat-val">${stats.sections || 0}</div>
             <div class="dn-stat-lbl">Sections</div>
         </div>
         <div class="dn-stat ${avgScore >= 75 ? 'highlight' : ''}">
-            <div class="dn-stat-icon" style="background:${avgScore >= 75 ? '#E8F5E9' : avgScore >= 50 ? '#FEF3C7' : '#FEE2E2'};">📊</div>
+            <div class="dn-stat-icon" style="background:${avgScore >= 75 ? '#E8F5E9' : avgScore >= 50 ? '#FEF3C7' : '#FEE2E2'};">${icon('chart', { size: 22 })}</div>
             <div class="dn-stat-val" style="color:${avgScore >= 75 ? '#1B4D3E' : avgScore >= 50 ? '#B45309' : '#b91c1c'};">${avgScore ? avgScore + '%' : '—'}</div>
             <div class="dn-stat-lbl">Avg Quiz Score</div>
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:${passRate >= 70 ? '#E8F5E9' : '#FEF3C7'};">✅</div>
+            <div class="dn-stat-icon" style="background:${passRate >= 70 ? '#E8F5E9' : '#FEF3C7'};">${icon('checkCircle', { size: 22 })}</div>
             <div class="dn-stat-val" style="color:${passRate >= 70 ? '#1B4D3E' : '#B45309'};">${passRate}%</div>
             <div class="dn-stat-lbl">Pass Rate</div>
             ${totalAttempts > 0 ? `<div class="dn-stat-sub">${totalAttempts} total attempts</div>` : ''}
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:#E8F5E9;">📖</div>
+            <div class="dn-stat-icon" style="background:#E8F5E9;">${icon('lessons', { size: 22 })}</div>
             <div class="dn-stat-val">${pubLessons}</div>
             <div class="dn-stat-lbl">Published Lessons</div>
             ${totalLessons > pubLessons ? `<div class="dn-stat-sub">${totalLessons - pubLessons} draft</div>` : ''}
         </div>
         <div class="dn-stat">
-            <div class="dn-stat-icon" style="background:#FEF3C7;">🎯</div>
+            <div class="dn-stat-icon" style="background:#FEF3C7;">${icon('quiz', { size: 22 })}</div>
             <div class="dn-stat-val">${stats.total_quizzes || 0}</div>
             <div class="dn-stat-lbl">Total Quizzes</div>
         </div>
     </div>
 
     <!-- Charts Section -->
-    <div class="dn-section-title">📈 Analytics &amp; Performance</div>
+    <div class="dn-section-title">${icon('chart', inl)} Analytics &amp; Performance</div>
     <div class="dn-charts">
 
         <!-- Chart 1: Enrollment by Year Level -->
@@ -398,17 +398,17 @@ export async function render(container) {
             <div class="dn-chart-card">
                 <div class="dn-chart-title" style="margin-bottom:12px;">Quick Actions</div>
                 <div class="dn-quick">
-                    <a class="dn-ql" href="#dean/instructors">
-                        <div class="dn-ql-icon">👨‍🏫</div>Instructors
+                    <a class="dn-ql" href="#dean/curriculum">
+                        <div class="dn-ql-icon">${icon('clipboard', { size: 20 })}</div>Curriculum
                     </a>
                     <a class="dn-ql" href="#dean/faculty-assignments">
-                        <div class="dn-ql-icon">📋</div>Assignments
-                    </a>
-                    <a class="dn-ql" href="#dean/sections">
-                        <div class="dn-ql-icon">🏫</div>Sections
+                        <div class="dn-ql-icon">${icon('users', { size: 20 })}</div>Faculty
                     </a>
                     <a class="dn-ql" href="#dean/reports">
-                        <div class="dn-ql-icon">📈</div>Reports
+                        <div class="dn-ql-icon">${icon('chart', { size: 20 })}</div>Reports
+                    </a>
+                    <a class="dn-ql" href="#dean/dashboard">
+                        <div class="dn-ql-icon">${icon('dashboard', { size: 20 })}</div>Overview
                     </a>
                 </div>
             </div>

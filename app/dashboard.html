@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COC-LMS</title>
+    <link rel="icon" type="image/png" href="../assets/images/phinma_logo2.png">
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        /* Loading spinner while app boots */
+        .app-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--cream-light);
+        }
+        .app-loading .spinner-lg {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--gray-200);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <!-- Loading state (shown while JS boots) -->
+    <div id="app-loading" class="app-loading">
+        <div class="spinner-lg"></div>
+    </div>
+
+    <!-- App container (hidden until ready) -->
+    <div id="app" class="app-container" style="display:none;">
+        <!-- Sidebar (rendered by JS) -->
+        <aside class="sidebar" id="sidebar"></aside>
+
+        <!-- Main content area -->
+        <main class="main-content">
+            <!-- Topbar (rendered by JS) -->
+            <header class="topbar" id="topbar"></header>
+
+            <!-- Page content (rendered by router) -->
+            <div class="page-content" id="page-content">
+                <!-- Each page renders here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Load the app -->
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

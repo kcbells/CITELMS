@@ -429,10 +429,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 .summary-label{font-size:13px;color:#6b7280;font-weight:600}
 
 .alert{padding:16px 20px;border-radius:10px;margin-bottom:24px;font-weight:600}
-.alert-success{background:#d1fae5;color:#065f46;border-left:4px solid #10b981}
-.alert-danger{background:#fee2e2;color:#991b1b;border-left:4px solid #ef4444}
-
-.empty-state{text-align:center;padding:60px;background:#fff;border:2px dashed #e5e7eb;border-radius:16px}
+.alert-success{background:#d1fae5;color:#065f46;color:#991b1b;padding:60px;background:#fff;border:2px dashed #e5e7eb;border-radius:16px}
 .empty-state-icon{font-size:56px;margin-bottom:16px}
 .empty-state h3{margin:0 0 8px;font-size:20px;color:#374151}
 .empty-state p{margin:0;color:#6b7280}

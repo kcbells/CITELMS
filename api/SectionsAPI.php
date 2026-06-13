@@ -6,6 +6,7 @@
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/StudentListParser.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -22,6 +23,9 @@ $_sectPerms = [
     'available-subjects'        => 'sections.view',
     'instructor-avail-subjects'      => 'sections.view',
     'instructor-assigned-subjects'   => 'sections.view',
+    'instructor-classes'             => 'sections.view',
+    'create-for-subject'             => 'sections.create',
+    'subject-sections'               => 'sections.view',
     'instructor-programs'            => 'sections.view',
     'instructors'               => 'sections.view',
     'students'                  => 'sections.view',
@@ -30,6 +34,8 @@ $_sectPerms = [
     'departments'               => 'sections.view',
     'create'                    => 'sections.create',
     'bulk-import'               => 'sections.create',
+    'preview-import-students'   => 'sections.edit',
+    'bulk-import-students'      => 'sections.edit',
     'update'                    => 'sections.edit',
     'add-subject'               => 'sections.edit',
     'remove-subject'            => 'sections.edit',
@@ -46,7 +52,8 @@ $isInstrSect = Auth::role() === 'instructor';
 // Actions instructors can always perform on their own sections (server-side scoping handles security)
 $instrActions = ['create','update','delete','add-subject','remove-subject','unenroll',
                  'instructor-list','instructor-avail-subjects','instructor-assigned-subjects',
-                 'instructor-programs','students'];
+                 'instructor-programs','instructor-classes','create-for-subject','students',
+                 'preview-import-students','bulk-import-students'];
 $instrBypassed = $isInstrSect && in_array($action, $instrActions);
 
 if (!$isDeanSect && !$instrBypassed && isset($_sectPerms[$action]) && !Auth::can($_sectPerms[$action])) {
@@ -66,6 +73,9 @@ switch ($action) {
     case 'instructor-list':            handleInstructorList();            break;
     case 'instructor-avail-subjects':      handleInstructorAvailSubjects();      break;
     case 'instructor-assigned-subjects':   handleInstructorAssignedSubjects();   break;
+    case 'instructor-classes':             handleInstructorClasses();            break;
+    case 'create-for-subject':             handleCreateForSubject();             break;
+    case 'subject-sections':               handleSubjectSections();              break;
     case 'instructor-programs':            handleInstructorPrograms();           break;
     case 'remove-class':               handleRemoveClass();               break;
     case 'instructors':                handleInstructors();               break;
@@ -76,6 +86,8 @@ switch ($action) {
     case 'departments':                handleDepartments();               break;
     case 'bulk-add-subjects':          handleBulkAddSubjects();           break;
     case 'update-section-subject':     handleUpdateSectionSubject();      break;
+    case 'preview-import-students':    handlePreviewImportStudents();     break;
+    case 'bulk-import-students':       handleBulkImportStudents();        break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
@@ -615,6 +627,271 @@ function handleUpdateSectionSubject() {
     echo json_encode(['success' => true]);
 }
 
+// ─── Subject sections (dean/admin curriculum drill-down) ─────────────────────
+
+function handleSubjectSections() {
+    $subjectId  = (int)($_GET['subject_id'] ?? 0);
+    $semesterId = (int)($_GET['semester_id'] ?? 0);
+    $programId  = (int)($_GET['program_id'] ?? 0);
+
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+
+    $subject = db()->fetchOne(
+        "SELECT s.subject_id, s.subject_code, s.subject_name, s.units, s.year_level, s.semester,
+                s.program_id, p.program_code, p.program_name
+         FROM subject s
+         LEFT JOIN program p ON p.program_id = s.program_id
+         WHERE s.subject_id = ?",
+        [$subjectId]
+    );
+    if (!$subject) {
+        echo json_encode(['success' => false, 'message' => 'Subject not found']);
+        return;
+    }
+
+    if (Auth::role() === 'dean') {
+        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deanDeptId = $deanUser['department_id'] ?? null;
+        if ($deanDeptId && $subject['program_id']) {
+            $inDept = db()->fetchOne(
+                "SELECT 1 FROM department_program WHERE department_id = ? AND program_id = ? LIMIT 1",
+                [$deanDeptId, $subject['program_id']]
+            );
+            if (!$inDept) {
+                echo json_encode(['success' => false, 'message' => 'Subject not in your department']);
+                return;
+            }
+        }
+    }
+
+    if (!$semesterId) {
+        $active = db()->fetchOne("SELECT semester_id, semester_name, academic_year FROM semester WHERE status = 'active' LIMIT 1");
+        $semesterId = $active ? (int)$active['semester_id'] : 0;
+    }
+
+    $semester = $semesterId
+        ? db()->fetchOne("SELECT semester_id, semester_name, academic_year, status FROM semester WHERE semester_id = ?", [$semesterId])
+        : null;
+
+    $offering = null;
+    $sections = [];
+
+    if ($semesterId) {
+        $offering = db()->fetchOne(
+            "SELECT so.subject_offered_id, so.subject_id, so.semester_id, so.status, so.batch,
+                    so.user_teacher_id,
+                    CONCAT(u.first_name, ' ', u.last_name) AS instructor_name
+             FROM subject_offered so
+             LEFT JOIN users u ON u.users_id = so.user_teacher_id
+             WHERE so.subject_id = ? AND so.semester_id = ? AND so.status != 'cancelled'
+             ORDER BY so.subject_offered_id DESC LIMIT 1",
+            [$subjectId, $semesterId]
+        );
+
+        if ($offering) {
+            $sections = db()->fetchAll(
+                "SELECT sec.section_id, sec.section_name, sec.enrollment_code,
+                        sec.max_students, sec.status,
+                        ss.section_subject_id, ss.subject_offered_id, ss.schedule, ss.room,
+                        COUNT(DISTINCT st.user_student_id) AS student_count
+                 FROM section_subject ss
+                 JOIN section sec ON sec.section_id = ss.section_id
+                 LEFT JOIN student_subject st ON st.section_id = sec.section_id
+                      AND st.subject_offered_id = ss.subject_offered_id
+                      AND st.status = 'enrolled'
+                 WHERE ss.subject_offered_id = ? AND ss.status = 'active'
+                 GROUP BY ss.section_subject_id, ss.subject_offered_id, sec.section_id, sec.section_name,
+                          sec.enrollment_code, sec.max_students, sec.status,
+                          ss.schedule, ss.room
+                 ORDER BY sec.section_name",
+                [$offering['subject_offered_id']]
+            );
+        }
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'subject'  => $subject,
+            'semester' => $semester,
+            'offering' => $offering,
+            'sections' => $sections ?: [],
+        ],
+    ]);
+}
+
+// ─── Instructor My Classes: subjects with nested sections ───────────────────
+
+function handleInstructorClasses() {
+    $userId = Auth::id();
+    $semRow = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
+    $semId  = $semRow ? (int)$semRow['semester_id'] : 0;
+
+    $subjects = db()->fetchAll(
+        "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name, s.units,
+                so.subject_offered_id, p.program_code, p.program_name
+         FROM subject_offered so
+         JOIN subject s ON s.subject_id = so.subject_id
+         LEFT JOIN program p ON p.program_id = s.program_id
+         WHERE so.user_teacher_id = ? AND so.status = 'open'
+           AND (? = 0 OR so.semester_id = ?)
+         ORDER BY s.subject_code",
+        [$userId, $semId, $semId]
+    );
+
+    foreach ($subjects as &$sub) {
+        $sub['sections'] = db()->fetchAll(
+            "SELECT sec.section_id, sec.section_name, sec.enrollment_code,
+                    sec.max_students, sec.status,
+                    ss.section_subject_id, ss.subject_offered_id, ss.schedule, ss.room,
+                    COUNT(DISTINCT st.user_student_id) AS student_count
+             FROM section_subject ss
+             JOIN section sec ON sec.section_id = ss.section_id
+             LEFT JOIN student_subject st ON st.section_id = sec.section_id
+                  AND st.subject_offered_id = ss.subject_offered_id
+                  AND st.status = 'enrolled'
+             WHERE ss.subject_offered_id = ? AND ss.status = 'active'
+             GROUP BY ss.section_subject_id, ss.subject_offered_id, sec.section_id, sec.section_name,
+                      sec.enrollment_code, sec.max_students, sec.status,
+                      ss.schedule, ss.room
+             ORDER BY sec.section_name",
+            [$sub['subject_offered_id']]
+        );
+    }
+    unset($sub);
+
+    echo json_encode(['success' => true, 'data' => $subjects]);
+}
+
+// ─── Create section for a subject (section name + schedule + room) ───────────
+
+function handleCreateForSubject() {
+    $data             = json_decode(file_get_contents('php://input'), true) ?? [];
+    $subjectId        = (int)($data['subject_id'] ?? 0);
+    $subjectOfferedId = (int)($data['subject_offered_id'] ?? 0);
+    $sectionName      = trim($data['section_name'] ?? '');
+    $schedule         = trim($data['schedule'] ?? '');
+    $room             = trim($data['room'] ?? '');
+    $maxStudents      = max(1, (int)($data['max_students'] ?? 40));
+
+    if (!$sectionName) {
+        echo json_encode(['success' => false, 'message' => 'Section name is required']);
+        return;
+    }
+    if (!$schedule) {
+        echo json_encode(['success' => false, 'message' => 'Schedule is required']);
+        return;
+    }
+
+    $userId = Auth::id();
+
+    if (!$subjectOfferedId && $subjectId) {
+        if (Auth::role() === 'instructor') {
+            $row = db()->fetchOne(
+                "SELECT subject_offered_id FROM subject_offered
+                 WHERE subject_id = ? AND user_teacher_id = ? AND status = 'open'
+                 ORDER BY subject_offered_id DESC LIMIT 1",
+                [$subjectId, $userId]
+            );
+            $subjectOfferedId = $row ? (int)$row['subject_offered_id'] : 0;
+        } else {
+            $semId = (int)($data['semester_id'] ?? 0);
+            if ($semId) {
+                $row = db()->fetchOne(
+                    "SELECT subject_offered_id FROM subject_offered
+                     WHERE subject_id = ? AND semester_id = ? AND status != 'cancelled'
+                     ORDER BY subject_offered_id DESC LIMIT 1",
+                    [$subjectId, $semId]
+                );
+                $subjectOfferedId = $row ? (int)$row['subject_offered_id'] : 0;
+            }
+        }
+    }
+
+    if (!$subjectOfferedId) {
+        $msg = Auth::role() === 'instructor'
+            ? 'Subject not assigned to you'
+            : 'Open this subject for the selected semester first';
+        echo json_encode(['success' => false, 'message' => $msg]);
+        return;
+    }
+
+    $role = Auth::role();
+    if ($role === 'instructor') {
+        $owns = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered
+             WHERE subject_offered_id = ? AND user_teacher_id = ? AND status = 'open'",
+            [$subjectOfferedId, $userId]
+        );
+        if (!$owns) {
+            echo json_encode(['success' => false, 'message' => 'You can only create sections for your assigned subjects']);
+            return;
+        }
+    } elseif (!in_array($role, ['dean', 'admin'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Not authorized']);
+        return;
+    }
+
+    $offeringRow = db()->fetchOne(
+        "SELECT so.semester_id, s.program_id FROM subject_offered so
+         JOIN subject s ON s.subject_id = so.subject_id WHERE so.subject_offered_id = ?",
+        [$subjectOfferedId]
+    );
+    $programId  = $offeringRow ? (int)($offeringRow['program_id'] ?? 0) : null;
+    $semesterId = $offeringRow ? (int)($offeringRow['semester_id'] ?? 0) : null;
+    if (!$programId || !$semesterId) {
+        $instrUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [$userId]);
+        if ($instrUser && $instrUser['program_id']) {
+            $programId = (int)$instrUser['program_id'];
+        }
+        $active = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
+        if ($active) {
+            $semesterId = (int)$active['semester_id'];
+        }
+    }
+
+    $code = generateEnrollmentCode();
+
+    try {
+        $pdo = pdo();
+        $pdo->beginTransaction();
+
+        $pdo->prepare(
+            "INSERT INTO section (section_name, program_id, year_level, semester_id, enrollment_code, max_students, status)
+             VALUES (?, ?, NULL, ?, ?, ?, 'active')"
+        )->execute([$sectionName, $programId, $semesterId, $code, $maxStudents]);
+
+        $sectionId = (int)$pdo->lastInsertId();
+
+        $pdo->prepare(
+            "INSERT INTO section_subject (section_id, subject_offered_id, schedule, room, status)
+             VALUES (?, ?, ?, ?, 'active')"
+        )->execute([$sectionId, $subjectOfferedId, $schedule, $room]);
+
+        $sectionSubjectId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Section created',
+            'data' => [
+                'section_id'         => $sectionId,
+                'enrollment_code'    => $code,
+                'section_subject_id' => $sectionSubjectId,
+            ]
+        ]);
+    } catch (Exception $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('Create section for subject: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to create section']);
+    }
+}
+
 // ─── Instructor-scoped list: sections containing the instructor's subjects ──
 
 function handleInstructorList() {
@@ -941,7 +1218,7 @@ function handleStudents() {
     $students = db()->fetchAll(
         "SELECT ss.student_subject_id, ss.user_student_id, ss.subject_offered_id, ss.status,
                 u.first_name, u.last_name, u.student_id,
-                s.subject_code, s.subject_name
+                s.subject_id, s.subject_code, s.subject_name
          FROM student_subject ss
          JOIN users u ON u.users_id = ss.user_student_id
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
@@ -1015,6 +1292,265 @@ function handleDepartments() {
 }
 
 // ─── Unenroll a student from a subject in a section ────────────────────────
+
+// ─── Verify instructor can manage a section (optional subject scope) ─────────
+
+function verifyInstructorSectionAccess($sectionId, $userId, $subjectOfferedId = 0) {
+    $sectionId = (int)$sectionId;
+    $subjectOfferedId = (int)$subjectOfferedId;
+    if (!$sectionId) return null;
+
+    $params = [$sectionId, $userId];
+    $offeringFilter = '';
+    if ($subjectOfferedId > 0) {
+        $offeringFilter = ' AND so.subject_offered_id = ?';
+        $params[] = $subjectOfferedId;
+    }
+
+    return db()->fetchOne(
+        "SELECT sec.section_id, sec.section_name, sec.enrollment_code, sec.max_students,
+                so.subject_offered_id, so.subject_id,
+                (SELECT COUNT(DISTINCT st.user_student_id) FROM student_subject st
+                 WHERE st.section_id = sec.section_id AND st.status = 'enrolled') AS current_enrollment
+         FROM section sec
+         JOIN section_subject ss ON ss.section_id = sec.section_id AND ss.status = 'active'
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE sec.section_id = ? AND so.user_teacher_id = ? AND so.status = 'open' {$offeringFilter}
+         LIMIT 1",
+        $params
+    );
+}
+
+function resolveStudentsFromIdentifiers(array $studentIds, array $emails) {
+    $resolved = [];
+    $notFound = [];
+
+    foreach ($studentIds as $sid) {
+        $sid = strtoupper(trim($sid));
+        if ($sid === '') continue;
+        $user = db()->fetchOne(
+            "SELECT users_id, student_id, first_name, last_name, email
+             FROM users WHERE role = 'student' AND UPPER(student_id) = ? AND status = 'active' LIMIT 1",
+            [$sid]
+        );
+        if ($user) {
+            $resolved[(int)$user['users_id']] = $user;
+        } else {
+            $notFound[] = ['value' => $sid, 'type' => 'student_id'];
+        }
+    }
+
+    foreach ($emails as $email) {
+        $email = strtolower(trim($email));
+        if ($email === '') continue;
+        $user = db()->fetchOne(
+            "SELECT users_id, student_id, first_name, last_name, email
+             FROM users WHERE role = 'student' AND LOWER(email) = ? AND status = 'active' LIMIT 1",
+            [$email]
+        );
+        if ($user) {
+            $resolved[(int)$user['users_id']] = $user;
+        } else {
+            $notFound[] = ['value' => $email, 'type' => 'email'];
+        }
+    }
+
+    return [$resolved, $notFound];
+}
+
+function enrollStudentInSectionOffering($studentUserId, $sectionRow) {
+    $sectionId = (int)$sectionRow['section_id'];
+    $offeredId = (int)$sectionRow['subject_offered_id'];
+
+    if ($sectionRow['max_students'] > 0 && $sectionRow['current_enrollment'] >= $sectionRow['max_students']) {
+        return ['ok' => false, 'reason' => 'Section is full'];
+    }
+
+    $exists = db()->fetchOne(
+        "SELECT student_subject_id FROM student_subject
+         WHERE user_student_id = ? AND subject_offered_id = ? AND section_id = ? AND status = 'enrolled'",
+        [$studentUserId, $offeredId, $sectionId]
+    );
+    if ($exists) {
+        return ['ok' => false, 'reason' => 'Already enrolled'];
+    }
+
+    $otherSubject = db()->fetchOne(
+        "SELECT ss2.student_subject_id FROM student_subject ss2
+         JOIN subject_offered so2 ON so2.subject_offered_id = ss2.subject_offered_id
+         WHERE ss2.user_student_id = ? AND so2.subject_id = ? AND ss2.status = 'enrolled'",
+        [$studentUserId, $sectionRow['subject_id']]
+    );
+    if ($otherSubject) {
+        return ['ok' => false, 'reason' => 'Already enrolled in this subject (another section)'];
+    }
+
+    pdo()->prepare(
+        "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
+         VALUES (?, ?, ?, 'enrolled', NOW())"
+    )->execute([$studentUserId, $offeredId, $sectionId]);
+
+    return ['ok' => true];
+}
+
+function handlePreviewImportStudents() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+
+    $sectionId = (int)($_POST['section_id'] ?? 0);
+    $subjectOfferedId = (int)($_POST['subject_offered_id'] ?? 0);
+    $userId = Auth::id();
+
+    $section = verifyInstructorSectionAccess($sectionId, $userId, $subjectOfferedId);
+    if (!$section) {
+        echo json_encode(['success' => false, 'message' => 'Section not found or access denied']);
+        return;
+    }
+
+    try {
+        $parsed = selfParseStudentListInput();
+        [$resolved, $notFound] = resolveStudentsFromIdentifiers($parsed['student_ids'], $parsed['emails']);
+
+        $preview = [];
+        foreach ($resolved as $u) {
+            $preview[] = [
+                'users_id'    => (int)$u['users_id'],
+                'student_id'  => $u['student_id'],
+                'name'        => trim($u['first_name'] . ' ' . $u['last_name']),
+                'email'       => $u['email'],
+            ];
+        }
+
+        echo json_encode([
+            'success' => true,
+            'data' => [
+                'section_name'     => $section['section_name'],
+                'enrollment_code'  => $section['enrollment_code'],
+                'parsed_count'     => count($parsed['student_ids']) + count($parsed['emails']),
+                'parsed_ids'       => $parsed['student_ids'] ?? [],
+                'parsed_emails'    => $parsed['emails'] ?? [],
+                'sources'          => $parsed['sources'] ?? [],
+                'matched'          => $preview,
+                'not_found'        => $notFound,
+            ]
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+}
+
+function handleBulkImportStudents() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+
+    $sectionId = (int)($_POST['section_id'] ?? 0);
+    $subjectOfferedId = (int)($_POST['subject_offered_id'] ?? 0);
+    $userId = Auth::id();
+
+    $section = verifyInstructorSectionAccess($sectionId, $userId, $subjectOfferedId);
+    if (!$section) {
+        echo json_encode(['success' => false, 'message' => 'Section not found or access denied']);
+        return;
+    }
+
+    try {
+        $parsed = selfParseStudentListInput();
+        [$resolved, $notFound] = resolveStudentsFromIdentifiers($parsed['student_ids'], $parsed['emails']);
+
+        $added = [];
+        $skipped = [];
+
+        $pdo = pdo();
+        $pdo->beginTransaction();
+
+        foreach ($resolved as $studentUserId => $u) {
+            $freshSection = verifyInstructorSectionAccess($sectionId, $userId, $subjectOfferedId);
+            $result = enrollStudentInSectionOffering($studentUserId, $freshSection ?: $section);
+            if ($result['ok']) {
+                $added[] = [
+                    'users_id'   => $studentUserId,
+                    'student_id' => $u['student_id'],
+                    'name'       => trim($u['first_name'] . ' ' . $u['last_name']),
+                ];
+                $section['current_enrollment'] = ($section['current_enrollment'] ?? 0) + 1;
+            } else {
+                $skipped[] = [
+                    'student_id' => $u['student_id'],
+                    'name'       => trim($u['first_name'] . ' ' . $u['last_name']),
+                    'reason'     => $result['reason'],
+                ];
+            }
+        }
+
+        $pdo->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => count($added) . ' student(s) added' . (count($skipped) ? ', ' . count($skipped) . ' skipped' : ''),
+            'data' => [
+                'added'      => $added,
+                'skipped'    => $skipped,
+                'not_found'  => $notFound,
+            ]
+        ]);
+    } catch (Exception $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+}
+
+function selfParseStudentListInput() {
+    $combined = ['student_ids' => [], 'emails' => [], 'raw_lines' => 0, 'sources' => []];
+    $hasInput = false;
+
+    if (!empty($_FILES['file']['tmp_name']) && ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        $fileParsed = StudentListParser::parseUploadedFile($_FILES['file']);
+        $combined = StudentListParser::mergeParsed($combined, $fileParsed);
+        $combined['sources'][] = [
+            'type' => 'file',
+            'name' => $fileParsed['source_file'] ?? ($_FILES['file']['name'] ?? ''),
+            'format' => $fileParsed['source_type'] ?? '',
+            'ids_found' => count($fileParsed['student_ids'] ?? []) + count($fileParsed['emails'] ?? []),
+        ];
+        $hasInput = true;
+    }
+
+    $paste = trim($_POST['student_list'] ?? '');
+    if ($paste !== '') {
+        $textParsed = StudentListParser::parseText($paste);
+        $combined = StudentListParser::mergeParsed($combined, $textParsed);
+        $combined['sources'][] = [
+            'type' => 'paste',
+            'name' => 'Pasted list',
+            'format' => 'text',
+            'ids_found' => count($textParsed['student_ids'] ?? []) + count($textParsed['emails'] ?? []),
+        ];
+        $hasInput = true;
+    }
+
+    $manual = array_filter(array_map('trim', explode(',', $_POST['student_ids'] ?? '')));
+    if (!empty($manual)) {
+        $manualParsed = StudentListParser::parseText(implode("\n", $manual));
+        $combined = StudentListParser::mergeParsed($combined, $manualParsed);
+        $hasInput = true;
+    }
+
+    if (!$hasInput) {
+        throw new InvalidArgumentException('Upload a file or paste a student list');
+    }
+
+    if (empty($combined['student_ids']) && empty($combined['emails'])) {
+        throw new InvalidArgumentException('No student IDs or emails were found in the file. Check the format and try again.');
+    }
+
+    return $combined;
+}
 
 function handleUnenroll() {
     $data = json_decode(file_get_contents('php://input'), true) ?? [];

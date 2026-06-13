@@ -362,8 +362,7 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
 .alert-success {
     background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
     color: #065f46;
-    border-left: 4px solid #10b981;
-}
+    }
 
 /* Actions Dropdown */
 .actions-cell {

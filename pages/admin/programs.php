@@ -604,14 +604,12 @@ include __DIR__ . '/../../includes/sidebar.php';
 .alert-success {
     background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
     color: #065f46;
-    border-left: 4px solid #10b981;
-}
+    }
 
 .alert-danger {
     background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
     color: #991b1b;
-    border-left: 4px solid #ef4444;
-}
+    }
 
 @media (max-width: 768px) {
     .form-row { grid-template-columns: 1fr; }

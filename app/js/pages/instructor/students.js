@@ -12,7 +12,7 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .st-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:28px 32px; margin-bottom:24px; position:relative; overflow:hidden; }
+            .st-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .st-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .st-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .st-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
@@ -39,11 +39,11 @@ export async function render(container) {
             .data-table tr:hover td { background:#f9fffe; }
 
             .user-cell { display:flex; align-items:center; gap:10px; }
-            .user-av { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#1B4D3E,#2D6A4F); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0; }
+            .user-av { width:36px; height:36px; border-radius:50%; background:#1B4D3E; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0; }
             .user-name { font-weight:600; color:#111827; }
 
             .progress-bar { background:#e2e8f0; height:6px; border-radius:3px; overflow:hidden; width:80px; display:inline-block; vertical-align:middle; margin-right:6px; }
-            .progress-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#1B4D3E,#2D6A4F); }
+            .progress-fill { height:100%; border-radius:3px; background:#1B4D3E; }
             .progress-text { font-size:12px; color:#9ca3af; }
 
             .score-badge { padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600; }

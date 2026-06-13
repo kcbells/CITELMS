@@ -1,0 +1,154 @@
+/**
+ * Flat UI — solid color surfaces, no decorative borders.
+ * Loaded after style.css on dashboard.html only (not the login page).
+ */
+
+:root {
+    --primary-gradient: #00461B;
+    --flat-surface: #FFFFFF;
+    --flat-muted: #F3F4F6;
+    --flat-border: transparent;
+}
+
+/* ── Shell ── */
+.sidebar {
+    background: #00461B !important;
+    box-shadow: none;
+}
+
+.sidebar-header {
+    border-bottom: none;
+}
+
+.topbar {
+    border-bottom: none !important;
+    box-shadow: none;
+}
+
+/* ── Shared components (style.css) ── */
+.card,
+.stat-card {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.card:hover,
+.stat-card:hover {
+    border: none !important;
+    box-shadow: none !important;
+    transform: none;
+    background: var(--gray-50);
+}
+
+.card-header,
+.card-footer {
+    border: none !important;
+    background: var(--flat-muted);
+}
+
+.stat-card::before {
+    display: none;
+}
+
+.stat-icon.green { background: #D1FAE5 !important; }
+.stat-icon.blue { background: #DBEAFE !important; }
+.stat-icon.yellow { background: #FEF3C7 !important; }
+.stat-icon.purple { background: #EDE9FE !important; }
+
+/* ── Page content: flatten cards & panels ── */
+.page-content [class*="-card"],
+.page-content [class*="-stat"]:not([class*="status"]),
+.page-content [class*="-module"],
+.page-content [class*="-panel"]:not([class*="modal"]),
+.page-content [class*="dr-card"],
+.page-content [class*="dn-stat"],
+.page-content [class*="rp-role-card"],
+.page-content [class*="rp-module"],
+.page-content [class*="rp-toolbar"],
+.page-content [class*="set-card"],
+.page-content [class*="set-nav"],
+.page-content [class*="pr-card"],
+.page-content [class*="pr-panel"],
+.page-content [class*="sc-rail-card"] {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.page-content [class*="-card"]:hover,
+.page-content [class*="-stat"]:hover {
+    box-shadow: none !important;
+}
+
+/* Toolbars & search rows — muted fill only */
+.page-content [class*="-toolbar"],
+.page-content [class*="ms-toolbar"],
+.page-content [class*="mc-toolbar"] {
+    border: none !important;
+    background: var(--flat-muted) !important;
+}
+
+/* Form fields — filled, no outline */
+.page-content input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="hidden"]):not([type="file"]),
+.page-content select,
+.page-content textarea {
+    border: none !important;
+    background: var(--flat-muted) !important;
+}
+
+.page-content input:focus,
+.page-content select:focus,
+.page-content textarea:focus {
+    outline: 2px solid #00461B;
+    outline-offset: 0;
+    box-shadow: none !important;
+}
+
+/* Outline / ghost buttons → solid muted */
+.page-content [class*="outline"],
+.page-content [class*="-outline"] {
+    border: none !important;
+}
+
+/* Dividers: use spacing + background, not lines */
+.page-content [class*="-card-ann"],
+.page-content [class*="card-header"],
+.page-content [class*="card-hd"],
+.page-content [class*="module-head"],
+.page-content [class*="rp-module-head"] {
+    border: none !important;
+}
+
+.page-content [class*="rp-module-head"] {
+    background: var(--flat-muted) !important;
+}
+
+/* Chips on heroes — solid translucent, no ring */
+.page-content [class*="-chip"],
+.page-content [class*="-badge"]:not([class*="sidebar"]) {
+    border: none !important;
+}
+
+/* Modals keep structure but flat headers */
+.modal-content,
+[class*="-modal"]:not([class*="overlay"]) {
+    border: none !important;
+}
+
+/* Tables — row separators via background only */
+.page-content table th,
+.page-content table td {
+    border-color: transparent !important;
+}
+
+.page-content table tbody tr:nth-child(even) {
+    background: var(--flat-muted);
+}
+
+/* Less “floating card” motion */
+.page-content [class*="-card"] {
+    transition: background .15s ease;
+}
+
+.page-content [class*="-card"]:hover {
+    transform: none !important;
+}

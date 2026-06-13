@@ -81,7 +81,7 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .an-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:28px 32px; margin-bottom:24px; position:relative; overflow:hidden; }
+            .an-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .an-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .an-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .an-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
@@ -113,10 +113,10 @@ export async function render(container) {
             .bar-label { min-width:58px; font-size:12px; font-weight:700; color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
             .bar-track { flex:1; background:#e2e8f0; height:10px; border-radius:5px; overflow:hidden; }
             .bar-fill { height:100%; border-radius:5px; transition:width .65s cubic-bezier(.4,0,.2,1); }
-            .bar-fill.green { background:linear-gradient(90deg,#1B4D3E,#40916C); }
-            .bar-fill.yellow { background:linear-gradient(90deg,#B45309,#f59e0b); }
-            .bar-fill.red { background:linear-gradient(90deg,#b91c1c,#ef4444); }
-            .bar-fill.slate { background:linear-gradient(90deg,#94a3b8,#cbd5e1); }
+            .bar-fill.green { background:#1B4D3E; }
+            .bar-fill.yellow { background:#B45309; }
+            .bar-fill.red { background:#b91c1c; }
+            .bar-fill.slate { background:#94a3b8; }
             .bar-value { min-width:38px; text-align:right; font-size:12px; font-weight:700; color:#111827; }
 
             /* Stat pairs */
@@ -352,7 +352,7 @@ export async function render(container) {
                         ${subjectAnalytics.map(sa => {
                             const cls_ = classes.find(c => c.subject_code === sa.code);
                             const pct = sa.avgScore !== '—' ? parseFloat(sa.avgScore) : 0;
-                            const fillColor = sa.avgScore === '—' ? '#e2e8f0' : pct >= 75 ? 'linear-gradient(90deg,#1B4D3E,#40916C)' : pct >= 50 ? 'linear-gradient(90deg,#B45309,#f59e0b)' : 'linear-gradient(90deg,#b91c1c,#ef4444)';
+                            const fillColor = sa.avgScore === '—' ? '#e2e8f0' : pct >= 75 ? '#1B4D3E' : pct >= 50 ? '#B45309' : '#b91c1c';
                             return `<tr>
                                 <td>
                                     <span class="subj-tag">${esc(sa.code)}</span>

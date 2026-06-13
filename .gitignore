@@ -2,6 +2,8 @@
 /.vscode
 /.idea
 /.env
+/config/email.local.php
+/config/database.local.php
 
 # Ignore database dumps
 /database/*.sql

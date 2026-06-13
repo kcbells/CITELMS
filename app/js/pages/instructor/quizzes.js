@@ -3,6 +3,11 @@
  * CRUD for quiz management
  */
 import { Api } from '../../api.js';
+import { L, icon } from '../../utils/action-labels.js';
+import { openQuizModal } from '../../components/quiz-modal.js';
+import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects          = [];
 let closeMenusHandler = null;
@@ -20,7 +25,7 @@ async function renderList(container, filterSubject = '') {
 
     container.innerHTML = `
         <style>
-            .qz-banner { background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 60%,#40916C 100%); border-radius:16px; padding:28px 32px; margin-bottom:24px; position:relative; overflow:hidden; }
+            .qz-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .qz-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .qz-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .qz-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
@@ -96,7 +101,6 @@ async function renderList(container, filterSubject = '') {
                         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         My Classes
                     </a>
-                    <button class="btn-ai" id="btn-ai-gen">🤖 AI Generate</button>
                     <button class="btn-primary" id="btn-add">+ Create Quiz</button>
                 </div>
             </div>
@@ -122,9 +126,9 @@ async function renderList(container, filterSubject = '') {
                             <div class="quiz-kebab-wrap">
                                 <button class="quiz-kebab" title="More actions">⋮</button>
                                 <div class="quiz-kebab-menu">
-                                    <button class="quiz-kebab-item" data-questions="${q.quiz_id}">📋 Questions</button>
-                                    <button class="quiz-kebab-item" data-edit="${q.quiz_id}">✏️ Edit</button>
-                                    <button class="quiz-kebab-item danger" data-delete="${q.quiz_id}" data-name="${esc(q.quiz_title)}">🗑 Delete</button>
+                                    <button class="quiz-kebab-item" data-questions="${q.quiz_id}">${icon('clipboard', inl)} Questions</button>
+                                    <button class="quiz-kebab-item" data-edit="${q.quiz_id}">${L.edit}</button>
+                                    <button class="quiz-kebab-item danger" data-delete="${q.quiz_id}" data-name="${esc(q.quiz_title)}">${icon('trash', inl)} Delete</button>
                                 </div>
                             </div>
                         </div>
@@ -134,14 +138,21 @@ async function renderList(container, filterSubject = '') {
                         <div class="qs-item"><span class="qs-num">${q.attempt_count||0}</span><span class="qs-label">Attempts</span></div>
                         <div class="qs-item"><span class="qs-num">${q.avg_score||'—'}</span><span class="qs-label">Avg Score</span></div>
                         <div class="qs-item"><span class="qs-num">${q.time_limit}m</span><span class="qs-label">Time</span></div>
+                        <div class="qs-item"><span class="qs-num">${(q.max_attempts || 0) > 0 ? q.max_attempts : '∞'}</span><span class="qs-label">Attempts</span></div>
                     </div>
                 </div>
             `).join('')}
           </div>`}
     `;
 
-    container.querySelector('#btn-ai-gen').addEventListener('click', () => { window.location.hash = '#instructor/quiz-ai-generate'; });
-    container.querySelector('#btn-add').addEventListener('click', () => openModal(container, filterSubject));
+    container.querySelector('#btn-add').addEventListener('click', () => {
+        openQuizCreatePicker({
+            presetSubjectId: filterSubject || '',
+            lockSubject: !!filterSubject,
+            backTarget: 'quizzes',
+            onSuccess: () => renderList(container, filterSubject),
+        });
+    });
     container.querySelector('#filter-subject').addEventListener('change', (e) => renderList(container, e.target.value));
 
     // Kebab: close on outside click
@@ -169,7 +180,7 @@ async function renderList(container, filterSubject = '') {
     container.querySelectorAll('[data-edit]').forEach(btn => {
         btn.addEventListener('click', async () => {
             const q = quizzes.find(q => q.quiz_id == btn.dataset.edit);
-            if (q) openModal(container, filterSubject, q);
+            if (q) openQuizModal({ quiz: q, onSuccess: () => renderList(container, filterSubject) });
         });
     });
 
@@ -180,76 +191,6 @@ async function renderList(container, filterSubject = '') {
             if (res.success) renderList(container, filterSubject);
             else alert(res.message);
         });
-    });
-}
-
-function openModal(container, filterSubject, quiz = null) {
-    const isEdit = !!quiz;
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    const subjOpts = subjects.map(s => `<option value="${s.subject_id}" ${quiz?quiz.subject_id==s.subject_id?'selected':'':filterSubject==s.subject_id?'selected':''}>${esc(s.subject_code)} - ${esc(s.subject_name)}</option>`).join('');
-
-    overlay.innerHTML = `
-        <div class="modal">
-            <div class="modal-header"><h3>${isEdit?'Edit':'Create'} Quiz</h3><button class="modal-close">&times;</button></div>
-            <div class="modal-body">
-                <div id="modal-alert"></div>
-                <div class="form-group"><label class="form-label">Subject *</label><select class="form-select" id="m-subject" ${isEdit?'disabled':''}><option value="">Select</option>${subjOpts}</select></div>
-                <div class="form-group"><label class="form-label">Quiz Title *</label><input class="form-input" id="m-title" value="${esc(quiz?.quiz_title||'')}"></div>
-                <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="m-desc" rows="2">${esc(quiz?.quiz_description||'')}</textarea></div>
-                <div class="form-grid">
-                    <div class="form-group"><label class="form-label">Time Limit (min)</label><input type="number" class="form-input" id="m-time" value="${quiz?.time_limit||30}" min="1"></div>
-                    <div class="form-group"><label class="form-label">Passing Rate (%)</label><input type="number" class="form-input" id="m-pass" value="${quiz?.passing_rate||60}" min="0" max="100"></div>
-                    <div class="form-group"><label class="form-label">Max Attempts</label><input type="number" class="form-input" id="m-attempts" value="${quiz?.max_attempts||3}" min="1"></div>
-                    <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="m-status"><option value="draft" ${quiz?.status==='draft'||!quiz?'selected':''}>Draft</option><option value="published" ${quiz?.status==='published'?'selected':''}>Published</option></select></div>
-                </div>
-                <div style="border:1px solid #e8e8e8;border-radius:10px;padding:14px 16px;margin-top:4px;">
-                    <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;">Quiz Behavior</div>
-                    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:10px;">
-                        <input type="checkbox" id="m-randomize" style="margin-top:2px;width:15px;height:15px;accent-color:#1B4D3E;flex-shrink:0;" ${quiz?.is_randomized?'checked':''}>
-                        <div>
-                            <div style="font-size:13px;font-weight:600;color:#111827;">Randomize questions &amp; answers</div>
-                            <div style="font-size:11px;color:#9ca3af;margin-top:1px;">Shuffle question order and answer choices for each student — prevents answer sharing</div>
-                        </div>
-                    </label>
-                    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
-                        <input type="checkbox" id="m-one-at-a-time" style="margin-top:2px;width:15px;height:15px;accent-color:#1B4D3E;flex-shrink:0;" ${quiz?.one_at_a_time?'checked':''}>
-                        <div>
-                            <div style="font-size:13px;font-weight:600;color:#111827;">One question at a time</div>
-                            <div style="font-size:11px;color:#9ca3af;margin-top:1px;">Students see only one question and cannot go back to previous ones</div>
-                        </div>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary modal-cancel">Cancel</button>
-                <button class="btn-primary" id="modal-save">${isEdit?'Update':'Create'} Quiz</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
-    overlay.querySelector('.modal-cancel').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-    overlay.querySelector('#modal-save').addEventListener('click', async () => {
-        const payload = {
-            subject_id:    isEdit ? quiz.subject_id : overlay.querySelector('#m-subject').value,
-            quiz_title:    overlay.querySelector('#m-title').value,
-            quiz_description: overlay.querySelector('#m-desc').value,
-            time_limit:    parseInt(overlay.querySelector('#m-time').value),
-            passing_rate:  parseInt(overlay.querySelector('#m-pass').value),
-            max_attempts:  parseInt(overlay.querySelector('#m-attempts').value),
-            status:        overlay.querySelector('#m-status').value,
-            is_randomized: overlay.querySelector('#m-randomize').checked ? 1 : 0,
-            one_at_a_time: overlay.querySelector('#m-one-at-a-time').checked ? 1 : 0,
-        };
-        if (isEdit) payload.quiz_id = quiz.quiz_id;
-        const action = isEdit ? 'update' : 'create';
-        const res = await Api.post(`/QuizzesAPI.php?action=${action}`, payload);
-        if (res.success) { overlay.remove(); renderList(container, filterSubject); }
-        else overlay.querySelector('#modal-alert').innerHTML = `<div class="alert alert-error">${res.message}</div>`;
     });
 }
 

@@ -3,6 +3,7 @@
  * Full CRUD for department management
  */
 import { Api } from '../../api.js';
+import { L } from '../../utils/action-labels.js';
 
 let campuses = [];
 
@@ -21,7 +22,7 @@ async function renderList(container) {
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
             .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .btn-primary { background:linear-gradient(135deg,#00461B,#006428); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
             .table-wrap { border:2px solid #1B4D3E; border-radius:12px; overflow:hidden; background:#fff; }
@@ -36,7 +37,7 @@ async function renderList(container) {
             .dept-desc { font-size:12px; color:#737373; margin-top:2px; }
             .program-badge { background:#DBEAFE; color:#1E40AF; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .dean-cell { display:flex; align-items:center; gap:9px; }
-            .dean-avatar { flex-shrink:0; width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#1B4D3E,#2D6A4F); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+            .dean-avatar { flex-shrink:0; width:30px; height:30px; border-radius:50%; background:#1B4D3E; color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
             .dean-name-text { font-size:13px; font-weight:600; color:#262626; }
             .dean-email-text { font-size:11.5px; color:#9ca3af; }
             .dean-unassigned { font-size:12.5px; color:#9ca3af; font-style:italic; }
@@ -118,11 +119,11 @@ async function renderList(container) {
                         <td class="actions-cell">
                             <button class="btn-actions" data-id="${d.department_id}">⋮</button>
                             <div class="actions-dropdown" data-dropdown="${d.department_id}">
-                                <a href="#admin/programs?department_id=${d.department_id}" data-programs="${d.department_id}">📋 Programs</a>
+                                <a href="#admin/programs?department_id=${d.department_id}" data-programs="${d.department_id}">${L.programs}</a>
                                 <div class="divider"></div>
-                                <a href="#" data-edit='${JSON.stringify({id:d.department_id,campus_id:d.campus_id,department_code:d.department_code,department_name:d.department_name,description:d.description||'',status:d.status})}'>✏️ Edit</a>
+                                <a href="#" data-edit='${JSON.stringify({id:d.department_id,campus_id:d.campus_id,department_code:d.department_code,department_name:d.department_name,description:d.description||'',status:d.status})}'>${L.edit}</a>
                                 <div class="divider"></div>
-                                <a href="#" class="danger" data-delete="${d.department_id}" data-name="${esc(d.department_name)}">🗑️ Deactivate</a>
+                                <a href="#" class="danger" data-delete="${d.department_id}" data-name="${esc(d.department_name)}">${L.deactivate}</a>
                             </div>
                         </td>
                     </tr>

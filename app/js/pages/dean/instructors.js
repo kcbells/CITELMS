@@ -3,6 +3,9 @@
  * View and filter instructors in dean's department
  */
 import { Api } from '../../api.js';
+import { icon, iconLg } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 let allInstructors = [];
 let programsList = [];
@@ -49,7 +52,7 @@ export async function render(container) {
             .di-table tr:hover td { background:#f9fffe; }
 
             .di-user { display:flex; align-items:center; gap:12px; }
-            .di-av { width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#1e40af,#3b82f6); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
+            .di-av { width:40px; height:40px; border-radius:50%; background:#1e40af; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
             .di-name { font-weight:600; color:#262626; display:block; }
             .di-email { font-size:12px; color:#a0a0a0; display:block; margin-top:1px; }
             .di-empid { font-family:monospace; font-size:13px; color:#404040; }
@@ -78,21 +81,21 @@ export async function render(container) {
 
         <div class="di-stats">
             <div class="di-stat">
-                <div class="di-stat-icon blue">👨‍🏫</div>
+                <div class="di-stat-icon blue">${icon('instructor', { size: 22 })}</div>
                 <div>
                     <div class="di-stat-val">${allInstructors.length}</div>
                     <div class="di-stat-label">Total Instructors</div>
                 </div>
             </div>
             <div class="di-stat">
-                <div class="di-stat-icon green">✓</div>
+                <div class="di-stat-icon green">${icon('check', { size: 22 })}</div>
                 <div>
                     <div class="di-stat-val">${allInstructors.filter(i => i.status === 'active').length}</div>
                     <div class="di-stat-label">Active</div>
                 </div>
             </div>
             <div class="di-stat">
-                <div class="di-stat-icon amber">📚</div>
+                <div class="di-stat-icon amber">${icon('book', { size: 22 })}</div>
                 <div>
                     <div class="di-stat-val">${instructorPrograms.length}</div>
                     <div class="di-stat-label">Programs</div>
@@ -161,7 +164,7 @@ function renderRows(list) {
     if (list.length === 0) {
         return `<tr><td colspan="4">
             <div class="di-empty">
-                <div class="di-empty-icon">👨‍🏫</div>
+                <div class="di-empty-icon">${iconLg('instructor')}</div>
                 <div class="di-empty-text">No instructors found</div>
             </div>
         </td></tr>`;

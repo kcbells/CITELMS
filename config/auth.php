@@ -141,13 +141,16 @@ class Auth {
         }
 
         return [
-            'id' => $_SESSION['user_id'],
-            'name' => $_SESSION['user_name'],
-            'first_name' => $_SESSION['first_name'] ?? '',
-            'last_name' => $_SESSION['last_name'] ?? '',
-            'email' => $_SESSION['user_email'],
-            'role' => $_SESSION['user_role'],
-            'avatar' => self::avatar()
+            'id'          => $_SESSION['user_id'],
+            'users_id'    => $_SESSION['user_id'],
+            'name'        => $_SESSION['user_name'],
+            'first_name'  => $_SESSION['first_name'] ?? '',
+            'last_name'   => $_SESSION['last_name'] ?? '',
+            'email'       => $_SESSION['user_email'],
+            'role'        => $_SESSION['user_role'],
+            'student_id'  => $_SESSION['student_id'] ?? null,
+            'employee_id' => $_SESSION['employee_id'] ?? null,
+            'avatar'      => self::avatar()
         ];
     }
     
@@ -184,7 +187,70 @@ class Auth {
         // Load RBAC permissions for this role into session
         self::loadPermissions($user['role']);
 
+        // One active browser tab per login
+        self::issueTabLease();
+
         return true;
+    }
+
+    /**
+     * Issue a new tab lease (invalidates other tabs on next API call).
+     *
+     * @return string
+     */
+    public static function issueTabLease() {
+        $lease = bin2hex(random_bytes(16));
+        $_SESSION['tab_lease'] = $lease;
+        return $lease;
+    }
+
+    /**
+     * Claim the active tab lease for this browser session.
+     *
+     * @param string $lease
+     * @return string
+     */
+    public static function claimTabLease($lease) {
+        $lease = trim($lease);
+        if ($lease === '' || strlen($lease) < 16) {
+            $lease = bin2hex(random_bytes(16));
+        }
+        $_SESSION['tab_lease'] = $lease;
+        return $lease;
+    }
+
+    /**
+     * Get the current tab lease stored in session.
+     *
+     * @return string|null
+     */
+    public static function tabLease() {
+        return $_SESSION['tab_lease'] ?? null;
+    }
+
+    /**
+     * Reject API calls when another tab has claimed the session.
+     */
+    public static function rejectIfTabLeaseInvalid() {
+        if (!self::check() || empty($_SESSION['tab_lease'])) {
+            return;
+        }
+
+        $header = $_SERVER['HTTP_X_TAB_LEASE'] ?? '';
+        if ($header === '') {
+            return;
+        }
+
+        if (!hash_equals($_SESSION['tab_lease'], $header)) {
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'message' => 'You were signed out because this account is active in another tab.',
+                'code'    => 'SESSION_SUPERSEDED',
+            ]);
+            exit;
+        }
     }
 
     // ----------------------------------------------------------------
@@ -418,18 +484,11 @@ class Auth {
      * @return string
      */
     public static function dashboardUrl() {
-        switch (self::role()) {
-            case 'admin':
-                return BASE_URL . '/pages/admin/dashboard.php';
-            case 'dean':
-                return BASE_URL . '/pages/dean/dashboard.php';
-            case 'instructor':
-                return BASE_URL . '/pages/instructor/dashboard.php';
-            case 'student':
-                return BASE_URL . '/pages/student/dashboard.php';
-            default:
-                return BASE_URL . '/pages/auth/login.php';
+        $role = self::role();
+        if (!$role) {
+            return BASE_URL . '/app/index.html';
         }
+        return BASE_URL . '/app/dashboard.html#' . $role . '/dashboard';
     }
     
     /**
@@ -492,5 +551,19 @@ class Auth {
      */
     public static function csrfField() {
         return '<input type="hidden" name="csrf_token" value="' . self::csrfToken() . '">';
+    }
+}
+
+// Enforce single-tab sessions on JSON API routes (skip public auth actions).
+if (php_sapi_name() !== 'cli') {
+    $script = $_SERVER['SCRIPT_NAME'] ?? '';
+    $isApi  = str_contains($script, '/api/');
+    $action = $_GET['action'] ?? '';
+    $skipTabLease = !$isApi || in_array($action, [
+        'login', 'register', 'captcha', 'signup-catalog', 'claim-tab', 'logout', 'check',
+    ], true);
+
+    if (!$skipTabLease) {
+        Auth::rejectIfTabLeaseInvalid();
     }
 }

@@ -528,7 +528,6 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
     padding: 12px 16px;
     border-radius: var(--border-radius);
     margin-bottom: 16px;
-    border-left: 4px solid #dc2626;
     font-size: 14px;
 }
 

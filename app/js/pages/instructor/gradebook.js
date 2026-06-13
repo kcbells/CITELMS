@@ -1,691 +1,813 @@
 /**
- * Instructor Gradebook Page
- * View quiz scores per subject/section with pass/fail tracking
+ * Instructor Gradebook — class record navigation
+ * Subjects (boxes) → Sections (boxes) → Class record table (curriculum style)
  */
 import { Api } from '../../api.js';
+import { icon, iconLg } from '../../utils/icons.js';
+import { subjectColor } from '../../utils/subject-colors.js';
+import { curriculumTableCss, esc } from '../../utils/classroom-ui.js';
+import {
+    GRADING_PERIODS, buildPeriodGroups, periodQuizSubtotal, isItemMissing,
+    gradingPeriodTableCss, periodMeta,
+} from '../../utils/gradebook-periods.js';
 
-let subjects = [];
+const inl = { size: 14, className: 'ui-icon-inline' };
+const G = '#00461B';
+const G2 = '#006428';
+const GL = '#E8F5EC';
+const BORDER = '#E5E7EB';
+
+let classesData = [];
 
 export async function render(container) {
-    const subjRes = await Api.get('/LessonsAPI.php?action=subjects');
-    subjects = subjRes.success ? subjRes.data : [];
-    renderPage(container);
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    await renderGradebook(container, {
+        subjectId: hashParams.get('subject_id') || '',
+        sectionId: hashParams.get('section_id') || '',
+        embedded: false,
+    });
 }
 
-async function renderPage(container, filterSubject = '', searchVal = '') {
+/** Embed inside open class Gradebook tab */
+export async function mountInstructorGradebook(host, { subjectId } = {}) {
+    await renderGradebook(host, {
+        subjectId: subjectId || '',
+        sectionId: '',
+        embedded: true,
+        lockSubject: !!subjectId,
+    });
+}
+
+async function renderGradebook(container, opts = {}) {
     container.innerHTML = `
-        <style>
-            /* ── Grade color system ── */
-            :root {
-                --grade-a:  #059669; --grade-a-bg: #d1fae5;
-                --grade-b:  #0284c7; --grade-b-bg: #dbeafe;
-                --grade-c:  #b45309; --grade-c-bg: #fef3c7;
-                --grade-d:  #ea580c; --grade-d-bg: #ffedd5;
-                --grade-f:  #dc2626; --grade-f-bg: #fee2e2;
-                --grade-p:  #6b7280; --grade-p-bg: #f3f4f6;
-            }
-
-            /* ── Banner ── */
-            .gb-banner {
-                background: linear-gradient(135deg, #00461B 0%, #006428 55%, #40916C 100%);
-                border-radius: 18px; padding: 0; margin-bottom: 20px;
-                position: relative; overflow: hidden;
-                box-shadow: 0 4px 20px rgba(0,70,27,.2);
-            }
-            .gb-banner::before {
-                content:''; position:absolute; top:-60px; right:-60px;
-                width:240px; height:240px; border-radius:50%;
-                background:rgba(255,255,255,.06); pointer-events:none;
-            }
-            .gb-banner::after {
-                content:''; position:absolute; bottom:-80px; left:80px;
-                width:280px; height:280px; border-radius:50%;
-                background:rgba(255,255,255,.04); pointer-events:none;
-            }
-            .gb-banner-top {
-                display:flex; align-items:center; justify-content:space-between;
-                padding: 24px 28px 20px; gap:16px; flex-wrap:wrap; position:relative; z-index:1;
-            }
-            .gb-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 3px; letter-spacing:-.3px; }
-            .gb-banner-sub   { font-size:13px; color:rgba(255,255,255,.7); margin:0; }
-            .gb-banner-btns  { display:flex; gap:8px; flex-wrap:wrap; }
-            .gb-btn {
-                display:inline-flex; align-items:center; gap:6px;
-                padding:8px 14px; border-radius:9px; font-size:12px; font-weight:600;
-                border: 1px solid rgba(255,255,255,.22);
-                background:rgba(255,255,255,.12); color:#fff;
-                text-decoration:none; transition:background .15s;
-                cursor:pointer; white-space:nowrap;
-            }
-            .gb-btn:hover { background:rgba(255,255,255,.22); }
-
-            /* Stats strip inside banner */
-            .gb-stats-strip {
-                display:grid; grid-template-columns:repeat(5,1fr);
-                border-top:1px solid rgba(255,255,255,.12);
-                position:relative; z-index:1;
-            }
-            .gb-stat-pill {
-                display:flex; flex-direction:column; align-items:center;
-                padding:14px 8px; border-right:1px solid rgba(255,255,255,.1);
-                text-align:center;
-            }
-            .gb-stat-pill:last-child { border-right:none; }
-            .gb-stat-val {
-                font-size:22px; font-weight:800; color:#fff; line-height:1;
-                margin-bottom:3px;
-            }
-            .gb-stat-lbl {
-                font-size:10px; font-weight:600; color:rgba(255,255,255,.6);
-                text-transform:uppercase; letter-spacing:.6px;
-            }
-
-            /* ── Filter bar ── */
-            .gb-filter {
-                display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; align-items:center;
-            }
-            .gb-filter select, .gb-filter input {
-                padding:9px 14px; border:1.5px solid #e8e8e8; border-radius:10px;
-                font-size:13px; font-family:inherit; color:#374151; background:#fff;
-                outline:none; transition:border-color .15s, box-shadow .15s;
-                box-shadow:0 1px 2px rgba(0,0,0,.04);
-            }
-            .gb-filter select { min-width:220px; }
-            .gb-filter input  { flex:1; min-width:200px; }
-            .gb-filter select:focus, .gb-filter input:focus {
-                border-color:#00461B; box-shadow:0 0 0 3px rgba(0,70,27,.08);
-            }
-            .gb-filter-icon { color:#9ca3af; display:flex; align-items:center; }
-
-            /* ── Charts row ── */
-            .gb-charts {
-                display:grid; grid-template-columns:200px 1fr 200px;
-                gap:14px; margin-bottom:24px;
-            }
-            .gb-chart-card {
-                background:#fff; border:1px solid #e8e8e8; border-radius:14px;
-                overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06);
-            }
-            .gb-chart-head {
-                padding:12px 16px; font-size:12px; font-weight:700; color:#374151;
-                border-bottom:1px solid #f3f4f6; background:#fafbfc;
-                text-transform:uppercase; letter-spacing:.5px;
-            }
-            .gb-chart-body { padding:16px; }
-
-            /* Donut chart */
-            .gb-donut-wrap {
-                display:flex; flex-direction:column; align-items:center; gap:14px;
-            }
-            .gb-donut-svg-wrap { position:relative; width:120px; height:120px; flex-shrink:0; }
-            .gb-donut-svg-wrap svg { transform:rotate(-90deg); }
-            .gb-donut-center {
-                position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                text-align:center; pointer-events:none;
-            }
-            .gb-donut-pct { font-size:22px; font-weight:800; color:#00461B; line-height:1; }
-            .gb-donut-lbl { font-size:10px; color:#9ca3af; font-weight:600; letter-spacing:.3px; }
-            .gb-donut-legend { display:flex; flex-direction:column; gap:7px; width:100%; }
-            .gb-legend-row { display:flex; align-items:center; gap:8px; }
-            .gb-legend-dot { width:9px; height:9px; border-radius:3px; flex-shrink:0; }
-            .gb-legend-txt { font-size:11px; color:#6b7280; flex:1; }
-            .gb-legend-num { font-size:12px; font-weight:700; color:#111827; }
-
-            /* Score bars chart */
-            .gb-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
-            .gb-bar-row:last-child { margin-bottom:0; }
-            .gb-bar-label {
-                font-size:11px; color:#374151; font-weight:500;
-                white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-                min-width:70px; max-width:120px;
-            }
-            .gb-bar-track { flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden; }
-            .gb-bar-fill  { height:100%; border-radius:4px; transition:width .5s cubic-bezier(.4,0,.2,1); }
-            .gb-bar-pct   { font-size:11px; font-weight:700; color:#374151; min-width:32px; text-align:right; }
-
-            /* Distribution */
-            .gb-dist-row  { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
-            .gb-dist-row:last-child { margin-bottom:0; }
-            .gb-dist-chip {
-                font-size:10px; font-weight:700; padding:2px 7px; border-radius:4px;
-                min-width:38px; text-align:center; flex-shrink:0;
-            }
-            .gb-dist-track { flex:1; background:#f1f5f9; height:10px; border-radius:5px; overflow:hidden; }
-            .gb-dist-fill  { height:100%; border-radius:5px; transition:width .5s; }
-            .gb-dist-cnt   { font-size:12px; font-weight:700; color:#111827; min-width:22px; text-align:right; }
-
-            /* ── Quiz section header ── */
-            .quiz-section { margin-bottom:24px; }
-            .quiz-section-hd {
-                display:flex; align-items:center; gap:10px;
-                margin-bottom:12px; padding:14px 18px;
-                background:#fff; border:1px solid #e8e8e8; border-radius:12px 12px 0 0;
-                border-bottom:2px solid #00461B;
-            }
-            .qs-icon {
-                width:36px; height:36px; background:#e8f5e9; border-radius:10px;
-                display:flex; align-items:center; justify-content:center; flex-shrink:0;
-            }
-            .qs-title { font-size:15px; font-weight:700; color:#111827; flex:1; }
-            .qs-meta  { font-size:12px; color:#6b7280; display:flex; gap:10px; flex-wrap:wrap; }
-            .qs-chip  {
-                background:#f3f4f6; color:#374151; padding:3px 9px;
-                border-radius:20px; font-size:11px; font-weight:600;
-            }
-            .qs-chip.green { background:#d1fae5; color:#059669; }
-            .qs-chip.blue  { background:#dbeafe; color:#1e40af; }
-
-            /* ── Student table ── */
-            .gb-table-wrap {
-                background:#fff; border:2px solid #1B4D3E; border-radius:0 0 12px 12px;
-                overflow:hidden;
-            }
-            .gb-table { width:100%; border-collapse:collapse; }
-            .gb-table thead tr {
-                background:#f7f7f7; border-bottom:1px solid #ccc;
-            }
-            .gb-table th {
-                padding:10px 14px; font-size:12px; font-weight:700; color:#404040;
-                text-align:left;
-            }
-            .gb-table th:not(:first-child) { text-align:center; }
-
-            /* Student row */
-            .gb-student-row {
-                cursor:pointer; transition:background .12s;
-                border-bottom:1px solid #f0f0f0;
-            }
-            .gb-student-row:hover { background:#f9fffe; }
-            .gb-student-row:last-of-type { border-bottom:none; }
-            .gb-student-row td {
-                padding:10px 14px; font-size:13px; vertical-align:middle;
-            }
-            .gb-student-row td:not(:first-child) { text-align:center; }
-
-            /* Left colored border by grade */
-            .gb-student-row td:first-child {
-                border-left:4px solid transparent;
-                display:flex; align-items:center; gap:9px;
-            }
-            .gb-student-row.grade-a td:first-child { border-left-color:#059669; }
-            .gb-student-row.grade-b td:first-child { border-left-color:#0284c7; }
-            .gb-student-row.grade-c td:first-child { border-left-color:#b45309; }
-            .gb-student-row.grade-d td:first-child { border-left-color:#ea580c; }
-            .gb-student-row.grade-f td:first-child { border-left-color:#dc2626; }
-
-            .gb-expand-arrow {
-                font-size:10px; color:#d1d5db; transition:transform .2s, color .15s;
-                flex-shrink:0;
-            }
-            .gb-student-row.open .gb-expand-arrow { transform:rotate(90deg); color:#00461B; }
-            .gb-student-name { font-weight:600; color:#111827; }
-            .gb-student-id   { font-size:11px; color:#9ca3af; }
-
-            /* Grade pill */
-            .grade-pill {
-                display:inline-flex; align-items:center; gap:4px;
-                padding:4px 10px; border-radius:20px;
-                font-size:11px; font-weight:700; letter-spacing:.2px;
-            }
-            .grade-pill.a { background:var(--grade-a-bg); color:var(--grade-a); }
-            .grade-pill.b { background:var(--grade-b-bg); color:var(--grade-b); }
-            .grade-pill.c { background:var(--grade-c-bg); color:var(--grade-c); }
-            .grade-pill.d { background:var(--grade-d-bg); color:var(--grade-d); }
-            .grade-pill.f { background:var(--grade-f-bg); color:var(--grade-f); }
-            .grade-pill.p { background:var(--grade-p-bg); color:var(--grade-p); }
-
-            /* Score bar inline */
-            .score-inline { display:flex; align-items:center; gap:6px; justify-content:center; }
-            .score-bar-sm { width:60px; height:5px; background:#e8e8e8; border-radius:3px; overflow:hidden; display:inline-block; }
-            .score-bar-fill { height:100%; border-radius:3px; }
-            .score-bar-fill.a { background:#059669; }
-            .score-bar-fill.b { background:#0284c7; }
-            .score-bar-fill.c { background:#b45309; }
-            .score-bar-fill.d { background:#ea580c; }
-            .score-bar-fill.f { background:#dc2626; }
-
-            /* Attempt detail row */
-            .gb-detail-row { display:none; }
-            .gb-detail-row.open { display:table-row; }
-            .gb-detail-inner {
-                background:#f9fffe;
-                border-left:4px solid #00461B;
-                padding:14px 20px 14px 28px;
-            }
-            .gb-detail-table { width:100%; border-collapse:collapse; }
-            .gb-detail-table th {
-                padding:7px 12px; font-size:10px; font-weight:600; color:#9ca3af;
-                text-transform:uppercase; letter-spacing:.5px; text-align:left;
-                background:#f0fdf4; border-bottom:1px solid #d1fae5;
-            }
-            .gb-detail-table td {
-                padding:9px 12px; font-size:12px; color:#374151;
-                border-bottom:1px solid #f0faf4;
-            }
-            .gb-detail-table tr:last-child td { border-bottom:none; }
-            .gb-detail-table tr:hover td { background:#f0fdf4; }
-            .attempt-best { font-weight:700; color:#059669; font-size:10px; margin-left:6px; }
-
-            /* Status badge */
-            .status-badge {
-                display:inline-flex; align-items:center; gap:3px;
-                padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600;
-            }
-            .status-badge.passed { background:#d1fae5; color:#059669; }
-            .status-badge.failed { background:#fee2e2; color:#dc2626; }
-            .status-badge.pending { background:#fef3c7; color:#b45309; }
-
-            /* Empty state */
-            .gb-empty {
-                padding:48px 24px; text-align:center; color:#9ca3af;
-                background:#fff; border:1px solid #e8e8e8; border-radius:0 0 12px 12px;
-            }
-            .gb-empty-icon { font-size:40px; margin-bottom:12px; }
-            .gb-empty h4 { font-size:15px; font-weight:600; color:#374151; margin:0 0 6px; }
-            .gb-empty p  { font-size:13px; margin:0; }
-
-            @media(max-width:960px) { .gb-charts { grid-template-columns:1fr 1fr; } }
-            @media(max-width:600px) {
-                .gb-charts { grid-template-columns:1fr; }
-                .gb-stats-strip { grid-template-columns:repeat(3,1fr); }
-            }
-        </style>
-
-        <!-- ── Banner ── -->
-        <div class="gb-banner">
-            <div class="gb-banner-top">
-                <div>
-                    <h2 class="gb-banner-title">Gradebook</h2>
-                    <p class="gb-banner-sub">Track student quiz scores and class performance</p>
-                </div>
-                <div class="gb-banner-btns">
-                    <a href="#instructor/analytics" class="gb-btn">
-                        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-                        Analytics
-                    </a>
-                    <a href="#instructor/essay-grading" class="gb-btn">
-                        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
-                        Essay Grading
-                    </a>
-                </div>
-            </div>
-            <!-- Stats strip — populated after data loads -->
-            <div class="gb-stats-strip" id="gb-stats-strip">
-                ${['—','—','—','—','—'].map((v,i) => `
-                    <div class="gb-stat-pill">
-                        <div class="gb-stat-val">${v}</div>
-                        <div class="gb-stat-lbl">${['Quizzes','Attempts','Passed','Failed','Avg Score'][i]}</div>
-                    </div>`).join('')}
-            </div>
-        </div>
-
-        <!-- ── Filter bar ── -->
-        <div class="gb-filter">
-            <span class="gb-filter-icon">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
-            </span>
-            <select id="filter-subject">
-                <option value="">All Subjects</option>
-                ${subjects.map(s => `<option value="${s.subject_id}" ${filterSubject == s.subject_id ? 'selected' : ''}>${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
-            </select>
-            <input type="text" id="gb-search" placeholder="Search student name…" value="${esc(searchVal)}">
-        </div>
-
-        <!-- ── Charts (shown after data loads) ── -->
-        <div id="gb-charts" style="display:none"></div>
-
-        <!-- ── Grade sections ── -->
-        <div id="gb-content">
-            <div style="display:flex;justify-content:center;padding:48px">
-                <div style="width:32px;height:32px;border:3px solid #e8e8e8;border-top-color:#00461B;border-radius:50%;animation:gb-spin .75s linear infinite"></div>
-            </div>
-        </div>
-        <style>@keyframes gb-spin { to { transform:rotate(360deg); } }</style>
+        <div class="gb-loading"><div class="gb-spin"></div></div>
+        <style>${pageCss()}</style>
     `;
 
-    // Events
-    container.querySelector('#filter-subject').addEventListener('change', e => {
-        renderPage(container, e.target.value, container.querySelector('#gb-search').value);
-    });
-    container.querySelector('#gb-search').addEventListener('input', e => {
-        filterStudentRows(container, e.target.value);
+    const res = await Api.get('/SectionsAPI.php?action=instructor-classes');
+    classesData = res.success ? (res.data || []) : [];
+
+    const subjectId = opts.subjectId || '';
+    const sectionId = opts.sectionId || '';
+
+    if (sectionId && subjectId) {
+        await renderClassRecord(container, opts);
+    } else if (subjectId) {
+        renderSectionsView(container, opts);
+    } else {
+        renderSubjectsView(container, opts);
+    }
+}
+
+function navigate(container, opts, { subjectId = '', sectionId = '' } = {}) {
+    const next = { ...opts, subjectId, sectionId };
+    if (!opts.embedded) {
+        const p = new URLSearchParams();
+        if (subjectId) p.set('subject_id', subjectId);
+        if (sectionId) p.set('section_id', sectionId);
+        const hash = p.toString() ? `#instructor/gradebook?${p}` : '#instructor/gradebook';
+        if (window.location.hash !== hash) {
+            history.replaceState(null, '', hash);
+        }
+    }
+    return renderGradebook(container, next);
+}
+
+/* ─── Level 1: Subject boxes ───────────────────────────────── */
+
+function renderSubjectsView(container, opts) {
+    const subjects = classesData;
+
+    container.innerHTML = `
+        <style>${pageCss()}${curriculumTableCss()}</style>
+        <div class="gb-page ${opts.embedded ? 'gb-embedded' : ''}">
+            ${opts.embedded ? '' : renderBanner('Class Record', 'Select a subject to view section grade records')}
+            <div class="gb-toolbar">
+                <div class="gb-search-wrap">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    <input type="search" id="gb-search" class="gb-search" placeholder="Search subjects…" autocomplete="off">
+                </div>
+                <span class="gb-count">${subjects.length} subject${subjects.length !== 1 ? 's' : ''}</span>
+            </div>
+            ${subjects.length === 0 ? emptyBox('No subjects assigned yet.') : `
+                <div class="gb-subj-grid" id="gb-subj-grid">
+                    ${subjects.map(s => subjectCard(s, opts)).join('')}
+                </div>
+                <p class="gb-no-results" id="gb-no-results" hidden>No subjects match your search.</p>
+            `}
+        </div>
+    `;
+
+    container.querySelectorAll('[data-gb-subject]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigate(container, opts, { subjectId: el.dataset.gbSubject });
+        });
     });
 
-    // Load quiz data
-    const params = filterSubject ? '&subject_id=' + filterSubject : '';
-    const quizRes = await Api.get('/QuizzesAPI.php?action=instructor-list' + params);
-    const quizzes = quizRes.success ? quizRes.data : [];
+    const search = container.querySelector('#gb-search');
+    const cards = [...container.querySelectorAll('.gb-subj-card')];
+    search?.addEventListener('input', () => {
+        const q = search.value.toLowerCase().trim();
+        let n = 0;
+        cards.forEach(c => {
+            const show = !q || c.dataset.search.includes(q);
+            c.hidden = !show;
+            if (show) n++;
+        });
+        const nr = container.querySelector('#gb-no-results');
+        const grid = container.querySelector('#gb-subj-grid');
+        if (nr) nr.hidden = n > 0;
+        if (grid) grid.style.display = n === 0 ? 'none' : '';
+    });
+}
+
+function subjectCard(s, opts) {
+    const color = subjectColor(s.subject_id);
+    const sections = s.sections || [];
+    const studentTotal = sections.reduce((n, x) => n + Number(x.student_count || 0), 0);
+    const search = [s.subject_code, s.subject_name, s.program_code].filter(Boolean).join(' ').toLowerCase();
+
+    return `
+        <a href="#" class="gb-subj-card" data-gb-subject="${s.subject_id}" data-search="${esc(search)}">
+            <div class="gb-subj-top" style="background:${color}">
+                <span class="gb-subj-card-code">${esc(s.subject_code)}</span>
+                <h3>${esc(s.subject_name)}</h3>
+            </div>
+            <div class="gb-subj-body">
+                <div class="gb-stat-row">${icon('school', inl)} <strong>${sections.length}</strong> section${sections.length !== 1 ? 's' : ''}</div>
+                <div class="gb-stat-row">${icon('users', inl)} <strong>${studentTotal}</strong> student${studentTotal !== 1 ? 's' : ''}</div>
+                <span class="gb-subj-link">View class records →</span>
+            </div>
+        </a>
+    `;
+}
+
+/* ─── Level 2: Section boxes ───────────────────────────────── */
+
+function renderSectionsView(container, opts) {
+    const subject = classesData.find(s => String(s.subject_id) === String(opts.subjectId));
+    if (!subject) {
+        container.innerHTML = `<style>${pageCss()}</style><div class="gb-page">${emptyBox('Subject not found.', true)}</div>`;
+        container.querySelector('#gb-empty-back')?.addEventListener('click', () => navigate(container, opts));
+        return;
+    }
+
+    const sections = subject.sections || [];
+    const color = subjectColor(subject.subject_id);
+    const backAction = opts.lockSubject && opts.embedded
+        ? null
+        : () => navigate(container, opts, { subjectId: '' });
+
+    container.innerHTML = `
+        <style>${pageCss()}${curriculumTableCss()}</style>
+        <div class="gb-page ${opts.embedded ? 'gb-embedded' : ''}">
+            ${backAction ? `<button type="button" class="gb-back" id="gb-back-subjects">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                All Subjects
+            </button>` : ''}
+            <header class="gb-subj-hero">
+                <div class="gb-subj-hero-band" style="background:${color}">
+                    <span class="gb-subj-code">${esc(subject.subject_code)}</span>
+                    <h1>${esc(subject.subject_name)}</h1>
+                    ${subject.program_code ? `<span class="gb-subj-prog">${esc(subject.program_code)}</span>` : ''}
+                </div>
+                <div class="gb-subj-hero-meta">
+                    <p>${sections.length} section${sections.length !== 1 ? 's' : ''} · Select a section to open its class record</p>
+                    <span class="gb-role-pill">${icon('gradebook', inl)} Class Record</span>
+                </div>
+            </header>
+            ${sections.length === 0
+                ? emptyBox('No sections for this subject yet.')
+                : `<div class="gb-sec-grid">${sections.map(sec => sectionCard(subject, sec, opts)).join('')}</div>`
+            }
+        </div>
+    `;
+
+    container.querySelector('#gb-back-subjects')?.addEventListener('click', backAction);
+    container.querySelectorAll('[data-gb-section]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigate(container, opts, {
+                subjectId: subject.subject_id,
+                sectionId: el.dataset.gbSection,
+            });
+        });
+    });
+}
+
+function sectionCard(subject, sec, opts) {
+    const pct = sec.max_students > 0
+        ? Math.round((Number(sec.student_count) / Number(sec.max_students)) * 100)
+        : 0;
+
+    return `
+        <article class="gb-sec-card">
+            <a href="#" class="gb-sec-card-link" data-gb-section="${sec.section_id}">
+                <div class="gb-sec-head">
+                    <div>
+                        <h3 class="gb-sec-name">${esc(sec.section_name)}</h3>
+                        <span class="gb-sec-hint">Open class record</span>
+                    </div>
+                    <span class="gb-sec-badge">${esc(sec.status || 'active')}</span>
+                </div>
+                <div class="gb-sec-meta">
+                    ${sec.schedule ? `<div>${icon('clock', inl)} ${esc(sec.schedule)}</div>` : ''}
+                    ${sec.room ? `<div>${icon('pin', inl)} ${esc(sec.room)}</div>` : ''}
+                    <div>${icon('users', inl)} ${Number(sec.student_count || 0)} enrolled</div>
+        </div>
+                <div class="gb-sec-bar"><div class="gb-sec-fill" style="width:${pct}%"></div></div>
+                <span class="gb-subj-link">View grades table →</span>
+            </a>
+        </article>
+    `;
+}
+
+/* ─── Level 3: Class record table ──────────────────────────── */
+
+async function renderClassRecord(container, opts) {
+    const subject = classesData.find(s => String(s.subject_id) === String(opts.subjectId));
+    const section = subject?.sections?.find(sec => String(sec.section_id) === String(opts.sectionId));
+
+    if (!subject || !section) {
+        container.innerHTML = `<style>${pageCss()}</style><div class="gb-page">${emptyBox('Section not found.', true)}</div>`;
+        container.querySelector('#gb-empty-back')?.addEventListener('click', () =>
+            navigate(container, opts, { subjectId: opts.subjectId, sectionId: '' })
+        );
+        return;
+    }
+
+    container.innerHTML = `
+        <style>${pageCss()}${curriculumTableCss()}</style>
+        <div class="gb-page ${opts.embedded ? 'gb-embedded' : ''}">
+            <button type="button" class="gb-back" id="gb-back-sections">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                ${opts.lockSubject && opts.embedded ? 'All Sections' : esc(subject.subject_code)}
+            </button>
+            <div id="gb-record-host">
+                <div class="gb-loading inline"><div class="gb-spin"></div><p>Loading class record…</p></div>
+            </div>
+        </div>
+    `;
+
+    container.querySelector('#gb-back-sections')?.addEventListener('click', () => {
+        navigate(container, opts, { subjectId: subject.subject_id, sectionId: '' });
+    });
+
+    const host = container.querySelector('#gb-record-host');
+    try {
+        const record = await loadClassRecord(subject, section);
+        const paint = () => {
+            host.innerHTML = renderClassRecordTable(subject, section, record);
+            host.querySelector('#gb-export-csv')?.addEventListener('click', () =>
+                exportClassRecordCsv(subject, section, record)
+            );
+            host.querySelector('#gb-period-select')?.addEventListener('change', async (e) => {
+                const sel = e.target;
+                const period = sel.value;
+                sel.disabled = true;
+                const res = await Api.post('/GradebookAPI.php?action=set-current-period', {
+                    subject_id: subject.subject_id,
+                    section_id: section.section_id,
+                    period,
+                });
+                sel.disabled = false;
+                if (res.success) {
+                    record.currentPeriod = res.data?.current_period || period;
+                    paint();
+                } else {
+                    sel.value = record.currentPeriod;
+                    alert(res.message || 'Could not update the current term.');
+                }
+            });
+        };
+        paint();
+    } catch (err) {
+        console.error('Class record load error:', err);
+        host.innerHTML = emptyBox('Could not load class record. Please try again.');
+    }
+}
+
+async function loadClassRecord(subject, section) {
+    const offeredId = String(section.subject_offered_id || subject.subject_offered_id || '');
+
+    const [quizRes, studRes, lessonRes, progressRes] = await Promise.all([
+        Api.get(`/QuizzesAPI.php?action=instructor-list&subject_id=${subject.subject_id}`),
+        Api.get(`/SectionsAPI.php?action=students&section_id=${section.section_id}`),
+        Api.get(`/LessonsAPI.php?action=instructor-lessons&subject_id=${subject.subject_id}`),
+        Api.get(`/GradebookAPI.php?action=lesson-progress&subject_id=${subject.subject_id}&section_id=${section.section_id}`),
+    ]);
+
+    let quizzes = (quizRes.success ? quizRes.data : []).filter(q => quizAppliesToSection(q, section.section_id));
+    quizzes = quizzes.filter(q => q.status === 'published');
+    quizzes = quizzes.sort((a, b) => String(a.quiz_title).localeCompare(String(b.quiz_title)));
+
+    const lessons = (lessonRes.success ? lessonRes.data : []).filter(l => quizAppliesToSection(l, section.section_id));
+    const lessonProgress = progressRes.success ? (progressRes.data?.progress || {}) : {};
+    const currentPeriod = progressRes.success ? (progressRes.data?.current_period || 'P1') : 'P1';
+    const periodGroups = buildPeriodGroups(quizzes, lessons, section.section_id);
+
+    const studRows = studRes.success ? studRes.data : [];
+    const enrolled = offeredId
+        ? studRows.filter(r => String(r.subject_offered_id) === offeredId)
+        : studRows.filter(r => String(r.subject_id) === String(subject.subject_id));
+
+    const students = [];
+    const seen = new Set();
+    for (const r of enrolled) {
+        const uid = r.user_student_id;
+        if (seen.has(uid)) continue;
+        seen.add(uid);
+        students.push({
+            user_student_id: uid,
+            student_id: r.student_id || '',
+            first_name: r.first_name || '',
+            last_name: r.last_name || '',
+            name: `${r.last_name || ''}, ${r.first_name || ''}`.replace(/^,\s*|,\s*$/g, '').trim() || 'Student',
+        });
+    }
+    students.sort((a, b) => {
+        const ln = (a.last_name || '').localeCompare(b.last_name || '');
+        return ln !== 0 ? ln : (a.first_name || '').localeCompare(b.first_name || '');
+    });
 
     const scoreResults = await Promise.all(
         quizzes.map(q =>
-            Api.get('/QuizAttemptsAPI.php?action=quiz-scores&quiz_id=' + q.quiz_id)
-               .then(r => ({ quiz: q, scores: r.success ? r.data : [] }))
+            Api.get(`/QuizAttemptsAPI.php?action=quiz-scores&quiz_id=${q.quiz_id}`)
+                .then(r => ({ quiz: q, scores: r.success ? (r.data || []) : [] }))
                .catch(() => ({ quiz: q, scores: [] }))
         )
     );
 
-    buildStats(container, quizzes, scoreResults);
-    buildCharts(container, scoreResults);
-    buildContent(container, scoreResults, searchVal);
-}
-
-/* ─── Stats strip ─────────────────────────────────────────── */
-function buildStats(container, quizzes, scoreResults) {
-    let attempts = 0, passed = 0, failed = 0, scoreSum = 0;
-    scoreResults.forEach(sr => sr.scores.forEach(sc => {
-        attempts++;
-        scoreSum += parseFloat(sc.percentage || 0);
-        if (sc.passed == 1) passed++; else failed++;
-    }));
-    const avg = attempts > 0 ? (scoreSum / attempts).toFixed(1) + '%' : '—';
-
-    const strip = container.querySelector('#gb-stats-strip');
-    const vals  = [quizzes.length, attempts, passed, failed, avg];
-    const lbls  = ['Quizzes','Attempts','Passed','Failed','Avg Score'];
-    strip.innerHTML = vals.map((v, i) => `
-        <div class="gb-stat-pill">
-            <div class="gb-stat-val">${v}</div>
-            <div class="gb-stat-lbl">${lbls[i]}</div>
-        </div>`).join('');
-}
-
-/* ─── Charts ──────────────────────────────────────────────── */
-function buildCharts(container, scoreResults) {
-    let passed = 0, failed = 0;
-    const dist = { a: 0, b: 0, c: 0, d: 0, f: 0 };
-    const quizStats = [];
-
-    scoreResults.forEach(sr => {
-        const cnt = sr.scores.length;
-        if (!cnt) return;
-        let sum = 0;
-        sr.scores.forEach(sc => {
-            const p = parseFloat(sc.percentage || 0);
-            sum += p;
-            if (sc.passed == 1) passed++; else failed++;
-            if (p >= 90) dist.a++; else if (p >= 80) dist.b++; else if (p >= 70) dist.c++; else if (p >= 60) dist.d++; else dist.f++;
+    const matrix = new Map();
+    students.forEach(st => {
+        matrix.set(st.student_id || `u${st.user_student_id}`, {
+            ...st,
+            quizScores: {},
+            lessonStatus: {},
+            rawEarned: 0,
+            rawPossible: 0,
+            periodTotals: {},
         });
-        quizStats.push({ title: sr.quiz.quiz_title, avg: parseFloat((sum / cnt).toFixed(1)), cnt });
     });
 
-    const total  = passed + failed;
-    if (!total) return;
+    scoreResults.forEach(({ quiz, scores }) => {
+        const byStudent = new Map();
+        scores.forEach(sc => {
+            const key = sc.student_id || `${sc.first_name}_${sc.last_name}`;
+            if (!byStudent.has(key)) byStudent.set(key, []);
+            byStudent.get(key).push(sc);
+        });
 
-    const circ    = 282.74;
-    const passArc = total > 0 ? (passed / total) * circ : 0;
-    const failArc = circ - passArc;
-    const passRate = total > 0 ? ((passed / total) * 100).toFixed(0) : 0;
-    const maxAvg   = Math.max(...quizStats.map(q => q.avg), 1);
-    const maxDist  = Math.max(dist.a, dist.b, dist.c, dist.d, dist.f, 1);
+        for (const [, st] of matrix) {
+            const schoolId = st.student_id;
+            const attempts = schoolId
+                ? (byStudent.get(schoolId) || [])
+                : [...byStudent.values()].flat().filter(a =>
+                    a.first_name === st.first_name && a.last_name === st.last_name
+                );
+            if (!attempts.length) {
+                st.quizScores[quiz.quiz_id] = null;
+                continue;
+            }
+            const best = attempts.reduce((a, b) =>
+                parseFloat(a.earned_points || 0) >= parseFloat(b.earned_points || 0) ? a : b
+            );
+            const earned = parseFloat(best.earned_points || 0);
+            const total = parseFloat(best.total_points || 0);
+            const passed = attempts.some(a => a.passed == 1);
+            st.quizScores[quiz.quiz_id] = { earned, total, passed };
+        }
+    });
 
-    const distData = [
-        { key:'a', label:'A  90–100%', color:'#059669', bg:'#d1fae5' },
-        { key:'b', label:'B  80–89%',  color:'#0284c7', bg:'#dbeafe' },
-        { key:'c', label:'C  70–79%',  color:'#b45309', bg:'#fef3c7' },
-        { key:'d', label:'D  60–69%',  color:'#ea580c', bg:'#ffedd5' },
-        { key:'f', label:'F  0–59%',   color:'#dc2626', bg:'#fee2e2' },
-    ];
+    for (const [, st] of matrix) {
+        st.lessonStatus = lessonProgress[st.user_student_id] || {};
+        let rawEarned = 0;
+        let rawPossible = 0;
+        const periodTotals = {};
+        for (const period of GRADING_PERIODS) {
+            const sub = periodQuizSubtotal(st.quizScores, periodGroups.groups[period.code]);
+            periodTotals[period.code] = sub;
+            rawEarned += sub.earned;
+            rawPossible += sub.possible;
+        }
+        st.rawEarned = rawEarned;
+        st.rawPossible = rawPossible;
+        st.periodTotals = periodTotals;
+    }
 
-    container.querySelector('#gb-charts').style.display = '';
-    container.querySelector('#gb-charts').innerHTML = `
-        <div class="gb-charts">
-            <!-- Donut: Pass vs Fail -->
-            <div class="gb-chart-card">
-                <div class="gb-chart-head">Pass vs Fail</div>
-                <div class="gb-chart-body">
-                    <div class="gb-donut-wrap">
-                        <div class="gb-donut-svg-wrap">
-                            <svg width="120" height="120" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="#f1f5f9" stroke-width="14"/>
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="#fee2e2" stroke-width="14"
-                                    stroke-dasharray="${failArc.toFixed(2)} ${circ}"
-                                    stroke-dashoffset="${(-passArc).toFixed(2)}"
-                                    stroke-linecap="round"/>
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="#059669" stroke-width="14"
-                                    stroke-dasharray="${passArc.toFixed(2)} ${circ}"
-                                    stroke-linecap="round"/>
-                            </svg>
-                            <div class="gb-donut-center">
-                                <div class="gb-donut-pct">${passRate}%</div>
-                                <div class="gb-donut-lbl">Pass Rate</div>
-                            </div>
-                        </div>
-                        <div class="gb-donut-legend">
-                            <div class="gb-legend-row">
-                                <div class="gb-legend-dot" style="background:#059669"></div>
-                                <span class="gb-legend-txt">Passed</span>
-                                <span class="gb-legend-num">${passed}</span>
-                            </div>
-                            <div class="gb-legend-row">
-                                <div class="gb-legend-dot" style="background:#dc2626"></div>
-                                <span class="gb-legend-txt">Failed</span>
-                                <span class="gb-legend-num">${failed}</span>
-                            </div>
-                            <div class="gb-legend-row">
-                                <div class="gb-legend-dot" style="background:#e8e8e8"></div>
-                                <span class="gb-legend-txt">Total</span>
-                                <span class="gb-legend-num">${total}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+    return { quizzes, lessons, periodGroups, currentPeriod, students: [...matrix.values()], lessonProgress, scoreResults };
+}
+
+function renderStudentItemCell(st, item) {
+    if (item.kind === 'quiz') {
+        const cell = st.quizScores[item.id];
+        if (cell === null || cell === undefined) {
+            const missing = isItemMissing(item);
+            const label = missing ? 'Missing' : '—';
+            const cls = missing ? 'gc-cur-badge-missing' : 'gc-cur-badge-none';
+            return `<td class="td-num"><span class="${cls}">${label}</span></td>`;
+        }
+        return `<td class="td-num"><span class="gc-cur-badge-raw">${cell.earned}${cell.total ? ` / ${cell.total}` : ''}</span></td>`;
+    }
+    const status = st.lessonStatus?.[item.id];
+    if (status === 'completed') {
+        return `<td class="td-num"><span class="gc-cur-badge-pass">Done</span></td>`;
+    }
+    if (isItemMissing(item)) {
+        return `<td class="td-num"><span class="gc-cur-badge-missing">Missing</span></td>`;
+    }
+    return `<td class="td-num"><span class="gc-cur-badge-none">—</span></td>`;
+}
+
+function renderPeriodTableHeaders(periodGroups, periods) {
+    let periodRow = '<th rowspan="2">#</th><th rowspan="2" class="th-left">Student ID</th><th rowspan="2" class="th-left">Name</th>';
+    let itemRow = '';
+
+    for (const period of periods) {
+        const items = periodGroups.groups[period.code];
+        const colCount = Math.max(items.length, 1);
+        periodRow += `<th colspan="${colCount}" class="gb-period-th gb-period-th--${period.code.toLowerCase()}">${period.label}<span class="gb-period-sub">${period.title}</span></th>`;
+        periodRow += `<th rowspan="2" class="gb-period-subtotal-th">${period.label} Σ</th>`;
+        if (items.length) {
+            for (const item of items) {
+                const typeLabel = item.kind === 'quiz' ? 'Quiz' : 'Activity';
+                const short = item.title.length > 16 ? `${item.title.slice(0, 14)}…` : item.title;
+                const pts = item.kind === 'quiz' && item.totalPoints ? ` · ${item.totalPoints}pts` : '';
+                itemRow += `<th class="gb-item-th" title="${esc(item.title)} (${typeLabel})${pts}">
+                    <span class="gb-item-type ${item.kind === 'quiz' ? 'quiz' : 'activity'}">${typeLabel}</span>
+                    <span class="gb-item-name">${esc(short)}</span>
+                </th>`;
+            }
+        } else {
+            itemRow += `<th class="gb-item-th gb-item-th--empty">—</th>`;
+        }
+    }
+
+    periodRow += '<th rowspan="2">Total</th><th rowspan="2">Remarks</th>';
+    return { periodRow, itemRow };
+}
+
+function periodSelectorHtml(currentPeriod) {
+    const meta = periodMeta(currentPeriod);
+    return `
+        <div class="gb-term-picker">
+            <label class="gb-term-label" for="gb-period-select">Current term (released to students)</label>
+            <select class="gb-term-select" id="gb-period-select">
+                ${GRADING_PERIODS.map(p => `<option value="${p.code}" ${p.code === meta.code ? 'selected' : ''}>${p.label} — ${p.title}</option>`).join('')}
+            </select>
+        </div>`;
+}
+
+function renderClassRecordTable(subject, section, { periodGroups, students, currentPeriod = 'P1' }) {
+    const meta = [
+        esc(subject.subject_code),
+        esc(section.section_name),
+        section.schedule ? esc(section.schedule) : '',
+        section.room ? esc(section.room) : '',
+    ].filter(Boolean).join(' · ');
+
+    const current = periodMeta(currentPeriod);
+    const periods = GRADING_PERIODS.filter(p => p.code === current.code);
+    const dispItems = periods.flatMap(p => periodGroups.groups[p.code]);
+    const totalItems = dispItems.length;
+
+    const headHtml = `
+        <div class="gb-record-head">
+            <span class="gb-role-pill">${icon('gradebook', inl)} Instructor view</span>
+            <h2>Class Record</h2>
+            <p>${meta}</p>
+            ${periodSelectorHtml(current.code)}
+            <p class="gb-period-legend">Showing <strong>${current.label} — ${current.title}</strong> only (current term). Switch the term above to release the next period. Activities show completion; quizzes show raw points.</p>
+            <div class="gb-record-stats">
+                <span><strong>${students.length}</strong> students</span>
+                <span><strong>${totalItems}</strong> item${totalItems !== 1 ? 's' : ''} in ${current.label}</span>
+                <button type="button" class="gb-export-btn" id="gb-export-csv">${icon('download', inl)} Export CSV</button>
             </div>
+        </div>`;
 
-            <!-- Bar: Quiz Avg Scores -->
-            <div class="gb-chart-card">
-                <div class="gb-chart-head">Quiz Average Scores</div>
-                <div class="gb-chart-body">
-                    ${quizStats.length === 0
-                        ? '<div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px">No attempts yet</div>'
-                        : quizStats.map(q => {
-                            const cls = q.avg >= 90 ? 'a' : q.avg >= 80 ? 'b' : q.avg >= 70 ? 'c' : q.avg >= 60 ? 'd' : 'f';
-                            const colors = { a:'#059669', b:'#0284c7', c:'#b45309', d:'#ea580c', f:'#dc2626' };
-                            return `
-                            <div class="gb-bar-row">
-                                <div class="gb-bar-label" title="${esc(q.title)}">${esc(q.title.length > 24 ? q.title.substring(0,24)+'…' : q.title)}</div>
-                                <div class="gb-bar-track">
-                                    <div class="gb-bar-fill" style="width:${(q.avg/maxAvg)*100}%;background:${colors[cls]}"></div>
-                                </div>
-                                <div class="gb-bar-pct">${q.avg}%</div>
-                            </div>`;
-                        }).join('')}
-                </div>
-            </div>
+    if (!students.length && !periodGroups.flat.length) {
+        return `${headHtml}${emptyBox('No students or assessments yet for this section.')}`;
+    }
 
-            <!-- Distribution by grade range -->
-            <div class="gb-chart-card">
-                <div class="gb-chart-head">Grade Distribution</div>
-                <div class="gb-chart-body">
-                    ${distData.map(d => `
-                    <div class="gb-dist-row">
-                        <span class="gb-dist-chip" style="background:${d.bg};color:${d.color}">${d.label.split(' ')[0]}</span>
-                        <div class="gb-dist-track">
-                            <div class="gb-dist-fill" style="width:${(dist[d.key]/maxDist)*100}%;background:${d.color}"></div>
-                        </div>
-                        <span class="gb-dist-cnt">${dist[d.key]}</span>
-                    </div>`).join('')}
-                </div>
+    const { periodRow, itemRow } = renderPeriodTableHeaders(periodGroups, periods);
+
+    const rows = students.map((st, i) => {
+        const missingCount = countMissingItems(st, dispItems);
+        let itemCells = '';
+        let dispEarned = 0;
+        let dispPossible = 0;
+        for (const period of periods) {
+            const items = periodGroups.groups[period.code];
+            if (items.length) {
+                itemCells += items.map(item => renderStudentItemCell(st, item)).join('');
+            } else {
+                itemCells += '<td class="td-num"><span class="gc-cur-badge-none">—</span></td>';
+            }
+            const sub = st.periodTotals?.[period.code] || { earned: 0, possible: 0 };
+            dispEarned += sub.earned;
+            dispPossible += sub.possible;
+            const subLabel = sub.possible > 0
+                ? `<strong>${sub.earned} / ${sub.possible}</strong>`
+                : '<span class="gc-cur-badge-none">—</span>';
+            itemCells += `<td class="td-num gb-period-subtotal-cell">${subLabel}</td>`;
+        }
+
+        const totalLabel = dispPossible > 0
+            ? `<strong>${dispEarned} / ${dispPossible}</strong>`
+            : '<span class="gc-cur-badge-none">—</span>';
+        const quizItems = dispItems.filter(x => x.kind === 'quiz');
+        const allPassed = quizItems.length > 0 && quizItems.every(q => {
+            const c = st.quizScores[q.id];
+            return c && c.passed;
+        });
+        const anyScore = dispPossible > 0;
+        const belowPass = anyScore && dispEarned / dispPossible < 0.6;
+        const atRisk = belowPass || missingCount >= 2;
+        const remark = !anyScore && missingCount > 0 ? 'At risk'
+            : !anyScore ? '—'
+            : allPassed ? 'Passed'
+            : atRisk ? 'At risk' : 'In progress';
+
+        return `
+            <tr class="${atRisk ? 'gb-at-risk' : ''}">
+                <td class="td-rank">${i + 1}</td>
+                <td class="td-id">${esc(st.student_id || '—')}</td>
+                <td class="td-name">${esc(st.name)}${atRisk ? ' <span class="gb-risk-tag">!</span>' : ''}</td>
+                ${itemCells}
+                <td class="td-num">${totalLabel}</td>
+                <td class="td-pass"><span class="${atRisk && anyScore ? 'gc-cur-badge-fail' : 'gc-cur-badge-pass'}">${remark}</span></td>
+            </tr>
+        `;
+    }).join('');
+
+    const footerCells = [];
+    for (const period of periods) {
+        const items = periodGroups.groups[period.code];
+        if (items.length) {
+            for (const item of items) {
+                if (item.kind === 'quiz') {
+                    const vals = students
+                        .map(st => st.quizScores[item.id]?.earned)
+                        .filter(v => v !== null && v !== undefined);
+                    footerCells.push(vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—');
+                } else {
+                    const done = students.filter(st => st.lessonStatus?.[item.id] === 'completed').length;
+                    footerCells.push(done ? `${done}/${students.length}` : '—');
+                }
+            }
+        } else {
+            footerCells.push('—');
+        }
+        footerCells.push('');
+    }
+
+    const footerItemCells = footerCells.map(a => `<td class="td-num" style="font-weight:700;background:#f7f7f7;">${a}</td>`).join('');
+
+    return `
+        ${headHtml}
+        <div class="gc-cur-wrap">
+            <div class="gc-cur-label">CLASS RECORD — ${esc(subject.subject_code)} / ${esc(section.section_name)} · ${current.label} ${current.title}</div>
+            <div class="gb-table-scroll">
+                <table class="gc-cur-table gb-record-table gb-period-table">
+                    <thead>
+                        <tr>${periodRow}</tr>
+                        <tr>${itemRow}</tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                    ${totalItems ? `
+                    <tfoot>
+                        <tr class="gb-record-avg-row">
+                            <td colspan="3" class="td-name" style="font-weight:700;text-align:right;padding-right:12px;">Class avg / completion</td>
+                            ${footerItemCells}
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>` : ''}
+                </table>
             </div>
         </div>
     `;
 }
 
-/* ─── Grade sections + student rows ──────────────────────── */
-function buildContent(container, scoreResults, searchVal) {
-    const content = container.querySelector('#gb-content');
+function quizAppliesToSection(quiz, sectionId) {
+    if (quiz.all_sections == 1 || quiz.all_sections === true) return true;
+    const ids = (quiz.section_ids || []).map(Number);
+    if (!ids.length) return true;
+    return ids.includes(Number(sectionId));
+}
 
-    if (scoreResults.length === 0) {
-        content.innerHTML = `
-            <div class="gb-empty">
-                <div class="gb-empty-icon">📋</div>
-                <h4>No Quizzes Found</h4>
-                <p>Create and publish quizzes to start tracking student grades.</p>
-            </div>`;
-        return;
+function countMissingItems(student, items) {
+    return items.filter(item => {
+        if (item.kind === 'quiz') {
+            return isItemMissing(item) && !student.quizScores[item.id];
+        }
+        const done = student.lessonStatus?.[item.id] === 'completed';
+        return isItemMissing(item) && !done;
+    }).length;
+}
+
+function exportClassRecordCsv(subject, section, { periodGroups, students, currentPeriod = 'P1' }) {
+    const current = periodMeta(currentPeriod);
+    const periods = GRADING_PERIODS.filter(p => p.code === current.code);
+    const dispItems = periods.flatMap(p => periodGroups.groups[p.code]);
+
+    const headers = ['#', 'Student ID', 'Name'];
+    for (const period of periods) {
+        const items = periodGroups.groups[period.code];
+        for (const item of items) {
+            const prefix = item.kind === 'quiz' ? 'Quiz' : 'Activity';
+            headers.push(`${period.code} ${prefix}: ${item.title}`);
+        }
+        if (!items.length) headers.push(`${period.code} (empty)`);
+        headers.push(`${period.code} Subtotal`);
     }
+    headers.push('Total Score', 'Remarks');
 
-    let html = '';
-    let rowIdx = 0;
+    const body = students.map((st, i) => {
+        const missingCount = countMissingItems(st, dispItems);
+        let dispEarned = 0;
+        let dispPossible = 0;
+        for (const period of periods) {
+            const sub = st.periodTotals?.[period.code] || { earned: 0, possible: 0 };
+            dispEarned += sub.earned;
+            dispPossible += sub.possible;
+        }
+        const belowPass = dispPossible > 0 && dispEarned / dispPossible < 0.6;
+        const atRisk = belowPass || missingCount >= 2;
+        const quizItems = dispItems.filter(x => x.kind === 'quiz');
+        const allPassed = quizItems.length > 0 && quizItems.every(q => st.quizScores[q.id]?.passed);
+        const remark = !dispPossible && missingCount > 0 ? 'At risk'
+            : !dispPossible ? ''
+            : allPassed ? 'Passed'
+            : atRisk ? 'At risk' : 'In progress';
 
-    scoreResults.forEach(sr => {
-        const q      = sr.quiz;
-        const scores = sr.scores;
-
-        // Quiz section stats
-        let qPassed = 0, qSum = 0;
-        scores.forEach(sc => {
-            if (sc.passed == 1) qPassed++;
-            qSum += parseFloat(sc.percentage || 0);
-        });
-        const qAvg = scores.length ? (qSum / scores.length).toFixed(1) : null;
-
-        html += `
-        <div class="quiz-section">
-            <div class="quiz-section-hd">
-                <div class="qs-icon">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#00461B" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c.98 0 1.813.626 2.122 1.5"/></svg>
-                </div>
-                <a href="#instructor/quizzes?subject_id=${q.subject_id || ''}" class="qs-title" style="text-decoration:none;color:inherit;" title="View quiz">${esc(q.quiz_title)}</a>
-                <div class="qs-meta">
-                    <span class="qs-chip blue">${esc(q.subject_code || '')}</span>
-                    <span class="qs-chip">${scores.length} attempt${scores.length !== 1 ? 's' : ''}</span>
-                    ${qAvg !== null ? `<span class="qs-chip green">Avg ${qAvg}%</span>` : ''}
-                    ${scores.length ? `<span class="qs-chip green">${qPassed}/${scores.length} passed</span>` : ''}
-                </div>
-            </div>`;
-
-        if (scores.length === 0) {
-            html += `<div class="gb-empty" style="border-radius:0 0 12px 12px;border-top:none">
-                <div class="gb-empty-icon" style="font-size:28px">📭</div>
-                <h4>No Attempts Yet</h4>
-                <p>Students haven't attempted this quiz.</p>
-            </div>`;
-        } else {
-            // Group by student
-            const byStudent = new Map();
-            scores.forEach(sc => {
-                const key = sc.student_id || (sc.first_name + '_' + sc.last_name);
-                if (!byStudent.has(key)) byStudent.set(key, { ...sc, attempts: [] });
-                byStudent.get(key).attempts.push(sc);
-            });
-
-            html += `<div class="gb-table-wrap"><table class="gb-table">
-                <thead><tr>
-                    <th>Student</th>
-                    <th>Best Score</th>
-                    <th>Percentage</th>
-                    <th>Status</th>
-                    <th>Attempts</th>
-                    <th>Last Attempt</th>
-                </tr></thead>
-                <tbody>`;
-
-            for (const [, st] of byStudent) {
-                const best   = st.attempts.reduce((a, b) => parseFloat(a.percentage) >= parseFloat(b.percentage) ? a : b);
-                const pct    = parseFloat(best.percentage || 0);
-                const passed = st.attempts.some(a => a.passed == 1);
-                const gradeClass = pct >= 90 ? 'a' : pct >= 80 ? 'b' : pct >= 70 ? 'c' : pct >= 60 ? 'd' : 'f';
-                const gradeLabel = pct >= 90 ? 'A' : pct >= 80 ? 'B' : pct >= 70 ? 'C' : pct >= 60 ? 'D' : 'F';
-                const detailId   = `detail-${q.quiz_id}-${rowIdx++}`;
-                const nameLower  = (st.first_name + ' ' + st.last_name).toLowerCase();
-                const totalSwitches = st.attempts.reduce((s, a) => s + parseInt(a.tab_switch_count || 0), 0);
-
-                html += `
-                <tr class="gb-student-row grade-${gradeClass}" data-name="${nameLower}" data-target="${detailId}">
-                    <td>
-                        <span class="gb-expand-arrow">▶</span>
-                        <div>
-                            <div class="gb-student-name" style="display:flex;align-items:center;gap:8px;">
-                                ${esc(st.first_name)} ${esc(st.last_name)}
-                                ${totalSwitches > 0 ? `<span title="${totalSwitches} tab switch${totalSwitches>1?'es':''} detected across all attempts"
-                                    style="display:inline-flex;align-items:center;gap:3px;background:#FEE2E2;color:#b91c1c;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;cursor:default;">
-                                    🚨 ${totalSwitches} switch${totalSwitches>1?'es':''}
-                                </span>` : ''}
-                            </div>
-                            ${st.student_id ? `<div class="gb-student-id">${esc(st.student_id)}</div>` : ''}
-                        </div>
-                    </td>
-                    <td style="font-weight:700;color:#111827">${best.earned_points}/${best.total_points}</td>
-                    <td>
-                        <div class="score-inline">
-                            <div class="score-bar-sm"><div class="score-bar-fill ${gradeClass}" style="width:${pct}%"></div></div>
-                            <span class="grade-pill ${gradeClass}">${gradeLabel} ${pct.toFixed(1)}%</span>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="status-badge ${passed ? 'passed' : 'failed'}">
-                            ${passed ? '✓ Passed' : '✕ Failed'}
-                        </span>
-                    </td>
-                    <td style="color:#374151;font-weight:600">${st.attempts.length}</td>
-                    <td style="color:#9ca3af;font-size:12px">
-                        ${best.completed_at ? new Date(best.completed_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—'}
-                    </td>
-                </tr>
-                <tr class="gb-detail-row" id="${detailId}">
-                    <td colspan="6" style="padding:0;border-bottom:1px solid #f3f4f6">
-                        <div class="gb-detail-inner">
-                            <table class="gb-detail-table">
-                                <thead><tr><th>#</th><th>Score</th><th>Percentage</th><th>Status</th><th>Date & Time</th><th>Integrity</th></tr></thead>
-                                <tbody>
-                                    ${st.attempts.map((a, idx) => {
-                                        const ap      = parseFloat(a.percentage || 0);
-                                        const aCls    = ap >= 90 ? 'a' : ap >= 80 ? 'b' : ap >= 70 ? 'c' : ap >= 60 ? 'd' : 'f';
-                                        const aLbl    = ap >= 90 ? 'A' : ap >= 80 ? 'B' : ap >= 70 ? 'C' : ap >= 60 ? 'D' : 'F';
-                                        const isBest  = a === best;
-                                        const sw      = parseInt(a.tab_switch_count || 0);
-                                        return `<tr>
-                                            <td style="color:#9ca3af">Attempt ${a.attempt_number || idx + 1}${isBest ? '<span class="attempt-best">★ Best</span>' : ''}</td>
-                                            <td style="font-weight:600">${a.earned_points}/${a.total_points}</td>
-                                            <td><span class="grade-pill ${aCls}" style="font-size:10px">${aLbl} ${ap.toFixed(1)}%</span></td>
-                                            <td><span class="status-badge ${a.passed == 1 ? 'passed' : 'failed'}" style="font-size:10px">${a.passed == 1 ? '✓ Passed' : '✕ Failed'}</span></td>
-                                            <td style="color:#9ca3af">${a.completed_at ? new Date(a.completed_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
-                                            <td>${sw > 0
-                                                ? `<span title="${sw} tab switch${sw>1?'es':''}" style="display:inline-flex;align-items:center;gap:3px;background:#FEE2E2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">🚨 ${sw} switch${sw>1?'es':''}</span>`
-                                                : `<span style="color:#d1d5db;font-size:11px;">—</span>`
-                                            }</td>
-                                        </tr>`;
-                                    }).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </td>
-                </tr>`;
+        const row = [i + 1, st.student_id || '', st.name];
+        for (const period of periods) {
+            const items = periodGroups.groups[period.code];
+            if (items.length) {
+                for (const item of items) {
+                    if (item.kind === 'quiz') {
+                        const c = st.quizScores[item.id];
+                        if (c) row.push(c.total ? `${c.earned}/${c.total}` : String(c.earned));
+                        else row.push(isItemMissing(item) ? 'Missing' : '');
+                    } else {
+                        const done = st.lessonStatus?.[item.id] === 'completed';
+                        row.push(done ? 'Done' : (isItemMissing(item) ? 'Missing' : ''));
+                    }
+                }
+            } else {
+                row.push('');
             }
-
-            html += `</tbody></table></div>`;
+            const sub = st.periodTotals?.[period.code];
+            row.push(sub?.possible > 0 ? `${sub.earned}/${sub.possible}` : '');
         }
-
-        html += `</div>`;
+        row.push(dispPossible > 0 ? `${dispEarned}/${dispPossible}` : '', remark);
+        return row;
     });
 
-    content.innerHTML = html;
+    const csv = [headers, ...body]
+        .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
 
-    // Expand/collapse handlers
-    content.querySelectorAll('.gb-student-row').forEach(row => {
-        row.addEventListener('click', () => {
-            const detail = content.querySelector('#' + row.dataset.target);
-            if (!detail) return;
-            const isOpen = detail.classList.toggle('open');
-            row.classList.toggle('open', isOpen);
-        });
-    });
-
-    // Apply initial search filter if any
-    if (searchVal) filterStudentRows(container, searchVal);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `class-record_${subject.subject_code}_${section.section_name}.csv`.replace(/[^\w.-]+/g, '_');
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
-/* ─── Search filter ───────────────────────────────────────── */
-function filterStudentRows(container, q) {
-    const term = q.toLowerCase();
-    container.querySelectorAll('.gb-student-row').forEach(row => {
-        const show = !term || row.dataset.name.includes(term);
-        row.style.display = show ? '' : 'none';
-        if (!show) {
-            const detail = container.querySelector('#' + row.dataset.target);
-            if (detail) { detail.classList.remove('open'); row.classList.remove('open'); }
-        }
-    });
+/* ─── Shared UI ────────────────────────────────────────────── */
+
+function renderBanner(title, sub) {
+    return `
+        <header class="gb-hero">
+                        <div>
+                <span class="gb-role-pill light">${icon('instructor', inl)} Instructor view</span>
+                <h1 class="gb-hero-title">${esc(title)}</h1>
+                <p class="gb-hero-sub">${esc(sub)}</p>
+                            </div>
+        </header>
+    `;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+function emptyBox(msg, showBack = false) {
+    return `
+        <div class="gb-empty-state">
+            <div class="gb-empty-icon">${iconLg('clipboard')}</div>
+            <p>${esc(msg)}</p>
+            ${showBack ? '<button type="button" class="gb-btn-primary" id="gb-empty-back">Go back</button>' : ''}
+                        </div>
+    `;
+}
+
+function pageCss() {
+    return `
+        ${gradingPeriodTableCss()}
+        .gb-page { width:100%; min-height:${''}; background:transparent; }
+        .gb-embedded { padding:0; }
+        .gb-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:280px; color:#9CA3AF; font-size:13px; }
+        .gb-loading.inline { min-height:200px; }
+        .gb-spin { width:40px; height:40px; border:3px solid #eee; border-top-color:${G}; border-radius:50%; animation:gbSpin .75s linear infinite; }
+        @keyframes gbSpin { to { transform:rotate(360deg); } }
+
+        .gb-hero { padding:24px 28px; margin-bottom:20px; border-radius:16px; color:#fff; background:${G};
+            box-shadow:0 4px 16px rgba(0,70,27,.15); }
+        .gb-hero-title { font-size:24px; font-weight:800; margin:8px 0 4px; }
+        .gb-hero-sub { font-size:13px; opacity:.85; margin:0; }
+
+        .gb-role-pill {
+            display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
+            font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+            background:${GL}; color:${G};
+        }
+        .gb-role-pill.light { background:rgba(255,255,255,.18); color:#fff; }
+
+        .gb-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600;
+            color:${G}; background:none; border:none; cursor:pointer; margin-bottom:16px; padding:0; }
+        .gb-back:hover { text-decoration:underline; }
+
+        .gb-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding:14px 16px;
+            background:#F3F4F6; border-radius:12px; }
+        .gb-search-wrap { flex:1; position:relative; }
+        .gb-search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9CA3AF; }
+        .gb-search { width:100%; padding:10px 14px 10px 38px; border:none; background:#ECEFF1; border-radius:8px; font-size:14px; }
+        .gb-count { font-size:12px; font-weight:700; color:${G}; background:${GL}; padding:8px 14px; border-radius:20px; }
+
+        .gb-subj-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:20px; }
+        .gb-subj-card { text-decoration:none; color:inherit; border-radius:14px; overflow:hidden; background:#fff;
+            border:1px solid ${BORDER}; display:flex; flex-direction:column; transition:box-shadow .15s, transform .15s; cursor:pointer; }
+        .gb-subj-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
+        .gb-subj-top { padding:20px 18px; min-height:100px; display:flex; flex-direction:column; justify-content:flex-end; }
+        .gb-subj-card-code { font-size:11px; font-weight:700; font-family:monospace; color:rgba(255,255,255,.9); }
+        .gb-subj-top h3 { font-size:17px; font-weight:700; color:#fff; margin:6px 0 0; line-height:1.3; }
+        .gb-subj-body { padding:16px 18px; flex:1; display:flex; flex-direction:column; gap:8px; }
+        .gb-stat-row { font-size:13px; color:#374151; display:flex; align-items:center; gap:8px; }
+        .gb-subj-link { margin-top:auto; font-size:12px; font-weight:700; color:${G}; padding-top:10px; }
+
+        .gb-subj-hero { display:flex; gap:0; border-radius:14px; overflow:hidden; margin-bottom:24px; background:#fff; border:1px solid ${BORDER}; }
+        .gb-subj-hero-band { padding:24px 28px; color:#fff; min-width:220px; }
+        .gb-subj-code { font-size:11px; font-weight:700; font-family:monospace; opacity:.9; }
+        .gb-subj-hero-band h1 { font-size:22px; font-weight:800; margin:6px 0 4px; }
+        .gb-subj-prog { font-size:12px; opacity:.85; }
+        .gb-subj-hero-meta { flex:1; padding:24px 28px; display:flex; flex-direction:column; justify-content:center; gap:10px; }
+        .gb-subj-hero-meta p { margin:0; color:#6B7280; font-size:14px; }
+
+        .gb-sec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; }
+        .gb-sec-card { border:1px solid ${BORDER}; border-radius:14px; background:#fff; overflow:hidden;
+            transition:box-shadow .15s, transform .15s; }
+        .gb-sec-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
+        .gb-sec-card-link { display:block; padding:18px; text-decoration:none; color:inherit; }
+        .gb-sec-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px; }
+        .gb-sec-name { font-size:17px; font-weight:700; color:#111; margin:0 0 4px; }
+        .gb-sec-hint { font-size:11px; color:#9CA3AF; }
+        .gb-sec-badge { font-size:10px; font-weight:700; text-transform:uppercase; padding:4px 8px; border-radius:6px; background:${GL}; color:${G}; }
+        .gb-sec-meta { font-size:13px; color:#6B7280; display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+        .gb-sec-meta div { display:flex; align-items:center; gap:6px; }
+        .gb-sec-bar { height:5px; background:#f0f0f0; border-radius:3px; overflow:hidden; margin-bottom:12px; }
+        .gb-sec-fill { height:100%; background:${G}; }
+
+        .gb-record-head { margin-bottom:16px; }
+        .gb-record-head h2 { font-size:20px; font-weight:800; color:#111; margin:8px 0 4px; }
+        .gb-record-head p { font-size:13px; color:#6B7280; margin:0 0 10px; }
+        .gb-period-legend { font-size:12px !important; color:#00461B !important; background:#E8F5EC;
+            padding:8px 12px; border-radius:8px; margin-bottom:10px !important; }
+        .gb-period-subtotal-cell { background:#f8fdf9 !important; }
+        .gb-term-picker { display:flex; flex-direction:column; gap:6px; margin:10px 0; max-width:320px; }
+        .gb-term-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:#00461B; }
+        .gb-term-select { padding:10px 14px; border:1.5px solid #00461B; border-radius:10px; font-size:14px;
+            font-weight:700; color:#00461B; background:#F8FDF9; font-family:inherit; cursor:pointer; }
+        .gb-term-select:disabled { opacity:.6; cursor:wait; }
+        .gb-record-stats { display:flex; flex-wrap:wrap; gap:16px; align-items:center; font-size:13px; color:#374151; }
+        .gb-record-stats strong { color:${G}; }
+        .gb-export-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:8px 16px;
+            border-radius:8px; border:1.5px solid ${G}; background:#fff; color:${G}; font-size:12px; font-weight:700; cursor:pointer; }
+        .gb-export-btn:hover { background:${GL}; }
+
+        .gb-at-risk { background:#FEF2F2 !important; }
+        .gb-at-risk:hover { background:#FEE2E2 !important; }
+        .gb-risk-tag { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
+            border-radius:50%; background:#FEE2E2; color:#B91C1C; font-size:10px; font-weight:800; margin-left:4px; }
+        .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;
+            background:#FEF3C7; color:#B45309; }
+        .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
+
+        .gb-table-scroll { overflow-x:auto; }
+        .gb-record-table { min-width:640px; }
+        .gb-record-table tfoot .gb-record-avg-row td { border-top:2px solid #1B4D3E; font-size:11px; }
+
+        .gb-empty-state { text-align:center; padding:48px 24px; border:2px dashed ${BORDER}; border-radius:16px; background:#FAFAFA; }
+        .gb-empty-icon { margin-bottom:12px; color:#9CA3AF; }
+        .gb-empty-state p { color:#6B7280; margin:0 0 16px; }
+        .gb-no-results { text-align:center; color:#9CA3AF; padding:24px; }
+        .gb-btn-primary { background:${G}; color:#fff; border:none; padding:10px 18px; border-radius:10px;
+            font-size:13px; font-weight:700; cursor:pointer; }
+        .gb-btn-primary:hover { background:${G2}; }
+
+        @media(max-width:640px) {
+            .gb-subj-hero { flex-direction:column; }
+            .gb-subj-hero-band { min-width:0; }
+        }
+    `;
+}

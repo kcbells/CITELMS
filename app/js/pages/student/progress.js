@@ -3,6 +3,9 @@
  * Track lesson completion and quiz scores per subject
  */
 import { Api } from '../../api.js';
+import { icon, iconLg } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -21,7 +24,7 @@ export async function render(container) {
             .sp-select:focus { outline:none; border-color:#1B4D3E; }
 
             /* ─── Subject Banner ─── */
-            .sp-banner { background:linear-gradient(135deg, #1B4D3E 0%, #2D6A4F 100%); border-radius:14px; padding:28px 32px; margin-bottom:24px; color:#fff; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+            .sp-banner { background:#00461B; border-radius:14px; padding:28px 32px; margin-bottom:24px; color:#fff; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
             .sp-banner-left h3 { font-size:20px; font-weight:700; margin:0 0 4px; }
             .sp-banner-left p { font-size:14px; margin:0; opacity:.85; }
             .sp-banner-ring { position:relative; width:90px; height:90px; flex-shrink:0; }
@@ -93,9 +96,9 @@ export async function render(container) {
             .sp-bar-label { font-size:13px; font-weight:600; color:#404040; width:140px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
             .sp-bar-track { flex:1; height:24px; background:#f5f5f5; border-radius:12px; overflow:hidden; position:relative; }
             .sp-bar-fill { height:100%; border-radius:12px; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; font-size:11px; font-weight:700; color:#fff; min-width:fit-content; transition:width .5s ease; }
-            .sp-bar-fill.high { background:linear-gradient(90deg, #1B4D3E, #2D6A4F); }
-            .sp-bar-fill.mid { background:linear-gradient(90deg, #B45309, #D97706); }
-            .sp-bar-fill.low { background:linear-gradient(90deg, #b91c1c, #DC2626); }
+            .sp-bar-fill.high { background:#1B4D3E; }
+            .sp-bar-fill.mid { background:#B45309; }
+            .sp-bar-fill.low { background:#b91c1c; }
             .sp-bar-val { font-size:12px; font-weight:700; color:#404040; width:52px; text-align:right; flex-shrink:0; }
 
             /* ─── Empty & Loading ─── */
@@ -138,7 +141,7 @@ export async function render(container) {
             <div id="sp-content">
                 ${filterSubject ? '<div class="sp-loading">Loading progress...</div>' :
                   `<div class="sp-empty">
-                      <div class="sp-empty-icon">📊</div>
+                      <div class="sp-empty-icon">${iconLg('chart')}</div>
                       <div class="sp-empty-text">Select a subject to view your progress</div>
                       <div class="sp-empty-sub">Choose from the dropdown above to get started</div>
                   </div>`}
@@ -158,7 +161,7 @@ async function loadProgress(container, subjectId) {
     const res = await Api.get('/ProgressAPI.php?action=subject-progress&subject_id=' + subjectId);
 
     if (!res.success) {
-        content.innerHTML = '<div class="sp-empty"><div class="sp-empty-icon">⚠</div><div class="sp-empty-text">Failed to load progress</div></div>';
+        content.innerHTML = `<div class="sp-empty"><div class="sp-empty-icon">${iconLg('warning')}</div><div class="sp-empty-text">Failed to load progress</div></div>`;
         return;
     }
 
@@ -191,35 +194,35 @@ async function loadProgress(container, subjectId) {
         <!-- Stat Cards -->
         <div class="sp-stats">
             <div class="sp-stat">
-                <div class="sp-stat-icon green">📖</div>
+                <div class="sp-stat-icon green">${icon('lessons', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${completedLessons}/${totalLessons}</div>
                     <div class="sp-stat-label">Lessons Done</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon blue">📝</div>
+                <div class="sp-stat-icon blue">${icon('quiz', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${quizzesAttempted}/${totalQuizzes}</div>
                     <div class="sp-stat-label">Quizzes Taken</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon green">✓</div>
+                <div class="sp-stat-icon green">${icon('check', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${quizzesPassed}</div>
                     <div class="sp-stat-label">Quizzes Passed</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon purple">📊</div>
+                <div class="sp-stat-icon purple">${icon('chart', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${avgScore !== null ? avgScore + '%' : '—'}</div>
                     <div class="sp-stat-label">Avg Quiz Score</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon amber">🎯</div>
+                <div class="sp-stat-icon amber">${icon('checkCircle', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${lessonPct}%</div>
                     <div class="sp-stat-label">Lesson Progress</div>
@@ -232,7 +235,7 @@ async function loadProgress(container, subjectId) {
             <!-- Lesson Timeline -->
             <div class="sp-section">
                 <div class="sp-section-head">
-                    <span class="sp-section-title">📖 Learning Path</span>
+                    <span class="sp-section-title">${icon('lessons', inl)} Learning Path</span>
                     <span class="sp-section-badge">${completedLessons}/${totalLessons} done</span>
                 </div>
                 <div class="sp-section-body">
@@ -243,7 +246,7 @@ async function loadProgress(container, subjectId) {
                               const done = l.is_completed == 1;
                               return `
                               <div class="sp-tl-item">
-                                  <div class="sp-tl-dot ${done ? 'done' : 'pending'}">${done ? '✓' : l.lesson_order}</div>
+                                  <div class="sp-tl-dot ${done ? 'done' : 'pending'}">${done ? icon('check', { size: 12 }) : l.lesson_order}</div>
                                   <div class="sp-tl-content">
                                       <div class="sp-tl-title ${done ? 'done-text' : ''}">${esc(l.lesson_title)}</div>
                                       ${done && l.completed_at ?
@@ -260,7 +263,7 @@ async function loadProgress(container, subjectId) {
             <!-- Quiz Scores -->
             <div class="sp-section">
                 <div class="sp-section-head">
-                    <span class="sp-section-title">📝 Quiz Results</span>
+                    <span class="sp-section-title">${icon('quiz', inl)} Quiz Results</span>
                     <span class="sp-section-badge">${quizzesPassed}/${totalQuizzes} passed</span>
                 </div>
                 <div class="sp-section-body">
@@ -303,7 +306,7 @@ async function loadProgress(container, subjectId) {
         ${quizzes.filter(q => q.best_score !== null).length > 0 ? `
         <div class="sp-section sp-perf-section">
             <div class="sp-section-head">
-                <span class="sp-section-title">📈 Quiz Performance Overview</span>
+                <span class="sp-section-title">${icon('chart', inl)} Quiz Performance Overview</span>
             </div>
             <div class="sp-section-body">
                 <div class="sp-perf-bars">

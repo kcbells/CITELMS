@@ -1,372 +1,513 @@
 /**
- * Student Dashboard — green/cream theme, SVG icons only, no emojis
+ * Student Dashboard — white background, compact to-do boxes
  */
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
+import { subjectColor } from '../../utils/subject-colors.js';
+import { icon } from '../../utils/icons.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
+const G  = '#00461B';
+const G2 = '#006428';
+const GL = '#E8F5EC';
+const BORDER = '#E5E7EB';
+
+let _todoPollTimer = null;
 
 export async function render(container) {
-    container.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div style="width:40px;height:40px;border:3px solid #e8e4d9;border-top-color:#1B4D3E;border-radius:50%;animation:spin .8s linear infinite"></div></div>';
+    container.innerHTML = `<div class="sd-loading"><div class="sd-spin"></div></div>`;
 
-    const [res, semRes] = await Promise.all([
+    const [res, semRes, annRes] = await Promise.all([
         Api.get('/DashboardAPI.php?action=student'),
-        Api.get('/SemesterAPI.php?action=list')
+        Api.get('/SemesterAPI.php?action=list'),
+        Api.get('/AnnouncementsAPI.php?action=student-list')
     ]);
+
+    await Auth.getUser();
+    const user = Auth.user() || {};
     const data = res.success ? res.data : {};
-    const stats          = data.stats           || {};
-    const subjects       = data.subjects        || [];
+    const stats = data.stats || {};
+    const subjects = data.subjects || [];
+    const todos = data.todos || { due_today: [], no_due_date: [], missing: [], done: [] };
+    const allAnnouncements = annRes.success ? annRes.data : [];
+    const annBySubject = groupAnnouncements(allAnnouncements);
 
-    // Active semester
-    const semesters   = semRes.success ? semRes.data : [];
-    const activeSem   = semesters.find(s => s.status === 'active') || null;
-    const upcomingSem = !activeSem ? semesters.find(s => s.status === 'upcoming') : null;
-    const pendingQuizzes = data.pending_quizzes || [];
-    const user           = Auth.user();
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.status === 'active') || null;
 
-    const hour     = new Date().getHours();
+    const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
-    const today    = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const lessonPct = stats.total_lessons > 0
+        ? Math.round((stats.lessons_completed / stats.total_lessons) * 100) : 0;
 
-    // ── Subject cards ──────────────────────────────────────────────────────
-    const subjectCards = subjects.length === 0
-        ? `<div class="sd-empty">No enrolled subjects yet. <a href="#student/enroll" style="color:#1B4D3E;font-weight:600;">Enroll in a section →</a></div>`
-        : subjects.map(s => {
-            const pct    = s.progress || 0;
-            const qDone  = parseInt(s.completed_quizzes || 0);
-            const qTotal = parseInt(s.total_quizzes    || 0);
-            const barColor = pct >= 75 ? '#1B4D3E' : pct >= 40 ? '#7A6010' : '#d1d5c8';
-            return `
-            <div class="sd-subj-card">
-                <div class="sd-subj-top">
-                    <span class="sd-subj-code">${esc(s.subject_code)}</span>
-                    <span class="sd-subj-units">${s.units || 0} units</span>
-                </div>
-                <div class="sd-subj-name">${esc(s.subject_name)}</div>
-                <div class="sd-subj-meta">
-                    <span class="sd-meta-row">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
-                        ${esc(s.instructor_name || 'TBA')}
-                    </span>
-                    ${s.schedule ? `<span class="sd-meta-row">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        ${esc(s.schedule)}
-                    </span>` : ''}
-                    ${s.room ? `<span class="sd-meta-row">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
-                        ${esc(s.room)}
-                    </span>` : ''}
-                    ${s.section_name ? `<span class="sd-meta-row">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>
-                        ${esc(s.section_name)}
-                    </span>` : ''}
-                </div>
-                <div class="sd-subj-progress-row">
-                    <span>Lessons</span>
-                    <span>${s.completed_lessons}/${s.total_lessons} &bull; ${pct}%</span>
-                </div>
-                <div class="sd-subj-track"><div class="sd-subj-fill" style="width:${pct}%;background:${barColor}"></div></div>
-                <div class="sd-subj-footer">
-                    <span class="sd-quiz-stat">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15a2.25 2.25 0 012.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
-                        ${qDone}/${qTotal} quizzes done
-                    </span>
-                    <a href="#student/quizzes" class="sd-subj-link">Quizzes →</a>
-                </div>
-            </div>`;
-        }).join('');
+    const pendingTotal = (todos.due_today?.length || 0) + (todos.no_due_date?.length || 0) + (todos.missing?.length || 0);
 
-    // ── Pending quizzes ────────────────────────────────────────────────────
-    const todoRows = pendingQuizzes.length === 0 ? '' :
-        pendingQuizzes.map(q => `
-        <div class="sd-todo-row">
-            <span class="sd-todo-code">${esc(q.subject_code)}</span>
-            <div class="sd-todo-info">
-                <span class="sd-todo-title">${esc(q.quiz_title)}</span>
-                <span class="sd-todo-sub">${q.time_limit ? q.time_limit + ' min' : 'No time limit'}</span>
-            </div>
-            <a href="#student/quizzes" class="sd-todo-btn">Take Quiz</a>
-        </div>`).join('');
+    const programDisplay = user.program_name
+        ? (user.program_code ? `${user.program_name} (${user.program_code})` : user.program_name)
+        : (user.program_code || '—');
+    const academicYear = activeSem?.academic_year || '—';
+    const semesterName = activeSem?.semester_name || (semesters.find(s => s.status === 'upcoming')?.semester_name) || 'No active semester';
+    const yearLevel    = user.year_level ? `Year ${user.year_level}` : '—';
 
     container.innerHTML = `
         <style>
-            /* ── Banner ─────────────────────────────────── */
-            .sd-banner {
-                background:linear-gradient(135deg,#1B4D3E 0%,#2D6A4F 55%,#3A7A5C 100%);
-                border-radius:16px; padding:32px 36px; color:#fff;
-                margin-bottom:24px; position:relative; overflow:hidden;
+            .sd-wrap { background:#fff; min-height:100%; }
+            .page-content.sd-page-white { background:#fff !important; }
+
+            .sd-loading { display:flex; justify-content:center; padding:80px; background:#fff; }
+            .sd-spin {
+                width:40px; height:40px; border:3px solid #eee; border-top-color:${G};
+                border-radius:50%; animation:sdSpin .8s linear infinite;
             }
-            .sd-banner::before {
-                content:''; position:absolute; right:-60px; top:-60px;
-                width:260px; height:260px; border-radius:50%;
-                background:rgba(255,255,255,0.04);
+            @keyframes sdSpin { to { transform:rotate(360deg); } }
+
+            /* ── Header card ── */
+            .sd-header {
+                background:#fff; border:1px solid #EBEBEB; border-radius:16px;
+                padding:28px 32px; margin-bottom:24px;
+                display:flex; justify-content:space-between; align-items:center; gap:24px; flex-wrap:wrap;
+                box-shadow:0 2px 12px rgba(0,70,27,.06);
             }
-            .sd-banner::after {
-                content:''; position:absolute; right:60px; bottom:-80px;
-                width:180px; height:180px; border-radius:50%;
-                background:rgba(255,255,255,0.03);
+            .sd-header h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; letter-spacing:-.4px; }
+            .sd-header-sub { font-size:14px; color:#6B7280; margin:0 0 16px; }
+
+            .sd-academic {
+                display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+                padding-top:16px; border-top:1px solid ${BORDER}; margin-top:4px;
             }
-            .sd-banner-inner { position:relative; z-index:1; }
-            .sd-banner h2 { font-size:24px; font-weight:800; margin:0 0 5px; letter-spacing:-.3px; }
-            .sd-banner p  { margin:0; opacity:.65; font-size:13px; }
-            .sd-banner-pills { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }
-            .sd-banner-rule {
-                display:inline-flex; align-items:center; gap:6px;
-                background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.18);
-                border-radius:20px; padding:5px 14px; font-size:12px; font-weight:500; opacity:.9;
+            .sd-academic-item {
+                background:#fff; border:1px solid ${BORDER}; border-radius:8px; padding:12px 14px;
+            }
+            .sd-academic-label {
+                display:block; font-size:10px; font-weight:700; text-transform:uppercase;
+                letter-spacing:.8px; color:#9CA3AF; margin-bottom:4px;
+            }
+            .sd-academic-value {
+                display:block; font-size:14px; font-weight:700; color:${G}; line-height:1.35;
+            }
+            .sd-academic-value--sm { font-size:13px; color:#374151; font-weight:600; }
+
+            .sd-chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+            .sd-chip {
+                font-size:12px; font-weight:600; padding:5px 12px; border-radius:4px;
+                background:#fff; color:${G}; border:1px solid ${G};
+            }
+            .sd-chip--muted { color:#374151; border-color:${BORDER}; }
+
+            .sd-ring {
+                width:72px; height:72px; position:relative; flex-shrink:0;
+            }
+            .sd-ring svg { transform:rotate(-90deg); }
+            .sd-ring-val {
+                position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                font-size:15px; font-weight:800; color:${G};
             }
 
-            /* ── Stats ──────────────────────────────────── */
-            .sd-stats {
-                display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:22px;
+            /* ── To-Do compact boxes ── */
+            .sd-todo-section {
+                margin-bottom:22px;
+                background:#fff; border:1px solid ${BORDER}; border-radius:12px;
+                padding:14px 16px 16px;
+                box-shadow:0 1px 4px rgba(0,0,0,.04);
             }
-            .sd-stat {
-                background:#fff; border:1px solid #e8e4d9; border-radius:14px;
-                padding:20px 22px; display:flex; align-items:center; gap:16px;
-                transition:box-shadow .2s;
+            .sd-todo-hdr {
+                display:flex; align-items:center; justify-content:space-between;
+                margin-bottom:10px;
             }
-            .sd-stat:hover { box-shadow:0 4px 16px rgba(27,77,62,0.08); }
-            .sd-stat-icon {
-                width:46px; height:46px; border-radius:12px; flex-shrink:0;
-                background:#EDF5ED; color:#1B4D3E;
-                display:flex; align-items:center; justify-content:center;
-            }
-            .sd-stat-val { font-size:30px; font-weight:800; color:#1a2e1a; line-height:1; }
-            .sd-stat-val sub { font-size:16px; color:#7a8a7a; font-weight:500; vertical-align:baseline; }
-            .sd-stat-lbl { font-size:12px; color:#7a8a7a; font-weight:500; margin-top:3px; }
+            .sd-todo-hdr h2 { font-size:15px; font-weight:800; color:#111; margin:0; }
+            .sd-todo-hdr span { font-size:12px; color:#6B7280; }
 
-            /* ── Quick Actions ──────────────────────────── */
-            .sd-actions {
-                display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;
+            .sd-todo-boxes {
+                display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;
+                margin-bottom:10px;
             }
-            .sd-action {
-                display:flex; align-items:center; gap:14px;
-                padding:17px 20px; background:#fff; border:1px solid #e8e4d9;
-                border-radius:14px; text-decoration:none; color:#2d3d2d; transition:all .2s;
+            .sd-todo-box {
+                display:flex; flex-direction:column; align-items:center; justify-content:center;
+                gap:2px; padding:8px 6px; min-height:52px;
+                background:#FAFAFA; border:1px solid ${BORDER}; border-radius:8px;
+                cursor:pointer; font-family:inherit; text-align:center;
+                transition:border-color .15s, background .15s;
             }
-            .sd-action:hover {
-                border-color:#1B4D3E; background:#F2F8F2;
-                transform:translateY(-2px); box-shadow:0 6px 18px rgba(27,77,62,0.1);
+            .sd-todo-box:hover { border-color:#C5D9CB; background:#fff; }
+            .sd-todo-box.active {
+                border-color:${G}; background:${GL};
             }
-            .sd-action-icon {
-                width:42px; height:42px; border-radius:11px; flex-shrink:0;
-                background:#EDF5ED; color:#1B4D3E;
-                display:flex; align-items:center; justify-content:center;
+            .sd-todo-box-count {
+                font-size:18px; font-weight:800; color:#111; line-height:1;
             }
-            .sd-action-text { font-size:13px; font-weight:700; color:#1a2e1a; }
-            .sd-action-sub  { font-size:11px; color:#9aaa9a; margin-top:2px; }
+            .sd-todo-box.active .sd-todo-box-count { color:${G}; }
+            .sd-todo-box-label {
+                font-size:10px; font-weight:600; color:#6B7280;
+                line-height:1.2;
+            }
+            .sd-todo-box.active .sd-todo-box-label { color:${G}; }
+            .sd-todo-box--miss.active { border-color:#B91C1C; background:#FEF2F2; }
+            .sd-todo-box--miss.active .sd-todo-box-count,
+            .sd-todo-box--miss.active .sd-todo-box-label { color:#B91C1C; }
+            .sd-todo-box--done.active { border-color:#0369A1; background:#F0F9FF; }
+            .sd-todo-box--done.active .sd-todo-box-count,
+            .sd-todo-box--done.active .sd-todo-box-label { color:#0369A1; }
 
-            /* ── Section headers ────────────────────────── */
-            .sd-section-hdr {
-                display:flex; align-items:center; gap:10px; margin-bottom:14px;
+            .sd-todo-list {
+                display:flex; flex-direction:column; gap:5px;
+                max-height:200px; overflow-y:auto;
             }
-            .sd-section-hdr h3 { font-size:15px; font-weight:700; color:#1a2e1a; margin:0; }
-            .sd-pill {
-                background:#EDF5ED; color:#1B4D3E; font-size:11px; font-weight:700;
-                padding:3px 10px; border-radius:20px;
-            }
-            .sd-pill.warn { background:#FEE2E2; color:#b91c1c; }
-
-            /* ── To-Do card ─────────────────────────────── */
-            .sd-todo-card {
-                background:#fff; border:1px solid #e8e4d9; border-radius:14px;
-                overflow:hidden; margin-bottom:24px;
-            }
+            .sd-todo-list[hidden] { display:none !important; }
             .sd-todo-row {
-                display:flex; align-items:center; gap:14px;
-                padding:14px 20px; border-bottom:1px solid #f5f1eb;
+                display:flex; align-items:center; justify-content:space-between; gap:8px;
+                padding:8px 10px; background:#FAFAFA;
+                border:1px solid ${BORDER}; border-radius:10px;
+                text-decoration:none; color:inherit;
+                transition:border-color .15s, box-shadow .15s;
             }
-            .sd-todo-row:last-child { border-bottom:none; }
-            .sd-todo-code {
-                flex-shrink:0; font-size:11px; font-weight:800;
-                background:#EDF5ED; color:#1B4D3E; padding:3px 9px;
-                border-radius:7px; font-family:'Consolas','Monaco',monospace;
+            .sd-todo-row:hover { border-color:#C5D9CB; box-shadow:0 2px 8px rgba(0,70,27,.06); }
+            .sd-todo-row-main { flex:1; min-width:0; }
+            .sd-todo-row-top {
+                display:flex; align-items:center; gap:8px; margin-bottom:2px;
             }
-            .sd-todo-info { flex:1; min-width:0; }
-            .sd-todo-title { display:block; font-size:13px; font-weight:600; color:#1a2e1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-            .sd-todo-sub   { font-size:11px; color:#9aaa9a; }
-            .sd-todo-btn {
-                flex-shrink:0; padding:7px 16px; background:#1B4D3E; color:#fff;
-                border-radius:8px; font-size:12px; font-weight:700; text-decoration:none; transition:background .2s;
+            .sd-todo-row-code {
+                font-size:10px; font-weight:800; font-family:monospace;
+                color:${G}; background:#E8F5EC; padding:2px 6px; border-radius:4px;
+                flex-shrink:0;
             }
-            .sd-todo-btn:hover { background:#2D6A4F; }
+            .sd-todo-row-title {
+                font-size:13px; font-weight:600; color:#111;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            }
+            .sd-todo-row-sub { font-size:11px; color:#9CA3AF; }
+            .sd-todo-row-end { display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex-shrink:0; }
+            .sd-todo-row-due { font-size:11px; font-weight:600; color:#6B7280; }
+            .sd-todo-row-due--late, .sd-todo-row-due--today { color:${G}; }
+            .sd-todo-row-action { font-size:11px; font-weight:700; color:${G}; }
+            .sd-todo-row-score { font-size:12px; font-weight:800; color:${G}; }
+            .sd-todo-empty {
+                padding:24px 12px; text-align:center; font-size:13px; color:#9CA3AF;
+                background:#fff; border:1px dashed ${BORDER}; border-radius:10px;
+            }
 
-            /* ── Subjects grid ──────────────────────────── */
-            .sd-subjects-grid {
-                display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
-                gap:16px; margin-bottom:28px;
+            /* ── Subjects ── */
+            .sd-panel {
+                background:#fff; border:1px solid #EBEBEB; border-radius:14px;
+                box-shadow:0 1px 6px rgba(0,0,0,.04); overflow:hidden;
             }
-            .sd-subj-card {
-                background:#fff; border:1px solid #e8e4d9; border-radius:14px;
-                padding:18px; display:flex; flex-direction:column; gap:9px;
-                transition:box-shadow .2s, transform .2s;
+            .sd-panel-hdr {
+                padding:16px 20px; border-bottom:1px solid #F0F0F0;
+                display:flex; align-items:center; justify-content:space-between;
             }
-            .sd-subj-card:hover {
-                box-shadow:0 6px 20px rgba(27,77,62,0.1); transform:translateY(-2px);
+            .sd-panel-hdr h3 { font-size:15px; font-weight:700; color:#111; margin:0; }
+            .sd-panel-hdr a { font-size:12px; font-weight:600; color:${G}; text-decoration:none; }
+            .sd-panel-hdr a:hover { text-decoration:underline; }
+
+            .sd-subj-grid {
+                display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+                gap:16px; padding:16px 20px 20px; align-items:stretch;
             }
-            .sd-subj-top { display:flex; align-items:center; justify-content:space-between; }
+            .sd-subj {
+                display:flex; flex-direction:column; min-height:260px; height:100%;
+                text-decoration:none; color:inherit; cursor:pointer;
+                border-radius:14px; overflow:hidden; background:#fff;
+                border:1px solid #E5E7EB;
+                box-shadow:0 1px 3px rgba(0,0,0,.06);
+                transition:transform .2s, box-shadow .2s, border-color .2s;
+            }
+            .sd-subj:hover {
+                transform:translateY(-3px);
+                border-color:#C5D9CB;
+                box-shadow:0 8px 20px rgba(0,70,27,.1);
+            }
+            .sd-subj-band {
+                padding:16px 16px 14px; min-height:96px;
+                display:flex; flex-direction:column; justify-content:flex-end;
+                position:relative;
+            }
             .sd-subj-code {
-                font-size:12px; font-weight:800; color:#1B4D3E;
-                background:#EDF5ED; padding:3px 10px; border-radius:7px;
-                font-family:'Consolas','Monaco',monospace; letter-spacing:.4px;
+                font-size:10px; font-weight:700; font-family:ui-monospace, monospace;
+                color:rgba(255,255,255,.9); margin-bottom:4px; position:relative;
             }
-            .sd-subj-units { font-size:11px; color:#9aaa9a; }
-            .sd-subj-name  { font-size:15px; font-weight:700; color:#1a2e1a; line-height:1.3; }
-            .sd-subj-meta  { display:flex; flex-direction:column; gap:4px; }
-            .sd-meta-row   { display:flex; align-items:center; gap:6px; font-size:12px; color:#6b7a6b; }
-            .sd-meta-row svg { flex-shrink:0; color:#3A7A5C; }
-            .sd-subj-progress-row {
-                display:flex; justify-content:space-between; font-size:11px; color:#7a8a7a; margin-top:2px;
+            .sd-subj-name {
+                font-size:15px; font-weight:700; color:#fff; line-height:1.3;
+                display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                overflow:hidden; position:relative; margin:0;
             }
-            .sd-subj-track { height:6px; background:#F0EDE6; border-radius:3px; overflow:hidden; }
-            .sd-subj-fill  { height:100%; border-radius:3px; transition:width .5s; }
-            .sd-subj-footer {
-                display:flex; align-items:center; justify-content:space-between; margin-top:2px;
+            .sd-subj-body {
+                flex:1; padding:12px 14px 14px; display:flex; flex-direction:column; gap:4px;
             }
-            .sd-quiz-stat {
-                display:flex; align-items:center; gap:5px;
-                font-size:12px; color:#7a8a7a;
+            .sd-subj-teacher {
+                font-size:12px; font-weight:600; color:#374151;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
             }
-            .sd-quiz-stat svg { color:#3A7A5C; }
-            .sd-subj-link {
-                font-size:12px; font-weight:700; color:#1B4D3E; text-decoration:none;
+            .sd-subj-meta {
+                font-size:11px; color:#6B7280; line-height:1.35;
             }
-            .sd-subj-link:hover { text-decoration:underline; }
+            .sd-subj-ann { margin-top:auto; padding-top:10px; border-top:1px solid #F0F0F0; min-height:48px; }
+            .sd-subj-ann-label {
+                font-size:9px; font-weight:700; text-transform:uppercase;
+                letter-spacing:.6px; color:#9CA3AF; margin-bottom:4px;
+            }
+            .sd-subj-ann-msg {
+                font-size:11px; color:#6B7280; line-height:1.4; margin:0;
+                display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+            }
+            .sd-subj-ann-msg strong { color:#111827; font-weight:600; }
 
-            /* ── Empty ──────────────────────────────────── */
-            .sd-empty { padding:28px; text-align:center; color:#9aaa9a; font-size:13px; }
+            .sd-empty { padding:32px; text-align:center; color:#9CA3AF; font-size:13px; }
+            .sd-empty a { color:${G}; font-weight:600; }
 
-            /* ── Responsive ─────────────────────────────── */
-            @media(max-width:1100px){
-                .sd-stats   { grid-template-columns:repeat(2,1fr); }
-                .sd-actions { grid-template-columns:repeat(2,1fr); }
-            }
-            @media(max-width:640px){
-                .sd-stats           { grid-template-columns:1fr; }
-                .sd-actions         { grid-template-columns:1fr; }
-                .sd-subjects-grid   { grid-template-columns:1fr; }
+            @media(max-width:700px){
+                .sd-academic { grid-template-columns:1fr; }
+                .sd-todo-boxes { grid-template-columns:repeat(2, 1fr); }
             }
         </style>
 
-        <!-- Banner -->
-        <div class="sd-banner">
-            <div class="sd-banner-inner">
-                <h2>${greeting}, ${esc(user.first_name)}</h2>
-                <p>Here's your learning overview for today.</p>
-                <div class="sd-banner-pills">
-                    <span class="sd-banner-rule">
-                        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                        ${today}
-                    </span>
-                    ${activeSem
-                        ? `<span style="display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:5px 16px;font-size:12px;font-weight:700;">
-                               <span style="width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.7);flex-shrink:0;"></span>
-                               📅 ${esc(activeSem.semester_name)} · AY ${esc(activeSem.academic_year)}
-                           </span>`
-                        : upcomingSem
-                            ? `<span style="display:inline-flex;align-items:center;gap:7px;background:rgba(251,191,36,0.2);border:1px solid rgba(251,191,36,0.4);border-radius:20px;padding:5px 16px;font-size:12px;font-weight:600;color:#fef3c7;">
-                                   ⏳ Upcoming: ${esc(upcomingSem.semester_name)} · AY ${esc(upcomingSem.academic_year)}
-                               </span>`
-                            : `<span style="display:inline-flex;align-items:center;gap:7px;background:rgba(251,191,36,0.2);border:1px solid rgba(251,191,36,0.4);border-radius:20px;padding:5px 16px;font-size:12px;font-weight:600;color:#fef3c7;">⚠️ No active semester</span>`
-                    }
-                </div>
-            </div>
-        </div>
+        <div class="sd-wrap">
 
-        <!-- Stats -->
-        <div class="sd-stats">
-            <div class="sd-stat">
-                <div class="sd-stat-icon">
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+            <!-- Header -->
+            <div class="sd-header">
+                <div style="flex:1">
+                    <h1>${greeting}, ${esc(user.first_name || 'Student')}</h1>
+                    <p class="sd-header-sub">${todayStr}</p>
+                    <div class="sd-chips">
+                        <span class="sd-chip sd-chip--muted">Student ID: ${esc(user.student_id || '—')}</span>
+                        <span class="sd-chip">${esc(yearLevel)}</span>
+                    </div>
+                    <div class="sd-academic">
+                        <div class="sd-academic-item">
+                            <span class="sd-academic-label">Program / Course</span>
+                            <span class="sd-academic-value">${esc(programDisplay)}</span>
+                        </div>
+                        <div class="sd-academic-item">
+                            <span class="sd-academic-label">Academic Year</span>
+                            <span class="sd-academic-value">${esc(academicYear)}</span>
                 </div>
-                <div>
-                    <div class="sd-stat-val">${stats.subjects || 0}</div>
-                    <div class="sd-stat-lbl">Enrolled Subjects</div>
-                </div>
-            </div>
-            <div class="sd-stat">
-                <div class="sd-stat-icon">
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>
-                </div>
-                <div>
-                    <div class="sd-stat-val">${stats.lessons_completed || 0}<sub>/${stats.total_lessons || 0}</sub></div>
-                    <div class="sd-stat-lbl">Lessons Done</div>
-                </div>
-            </div>
-            <div class="sd-stat">
-                <div class="sd-stat-icon">
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15a2.25 2.25 0 012.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
-                </div>
-                <div>
-                    <div class="sd-stat-val">${stats.total_quizzes || 0}</div>
-                    <div class="sd-stat-lbl">Quizzes Available</div>
-                </div>
-            </div>
-            <div class="sd-stat">
-                <div class="sd-stat-icon">
-                    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-                </div>
-                <div>
-                    <div class="sd-stat-val">${stats.avg_score || 0}%</div>
-                    <div class="sd-stat-lbl">Average Score</div>
-                </div>
+                        <div class="sd-academic-item">
+                            <span class="sd-academic-label">Current Semester</span>
+                            <span class="sd-academic-value">${esc(semesterName)}</span>
             </div>
         </div>
+                </div>
+                <div class="sd-ring">
+                    <svg width="72" height="72" viewBox="0 0 72 72">
+                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F0F0F0" stroke-width="6"/>
+                        <circle cx="36" cy="36" r="30" fill="none" stroke="${G}" stroke-width="6"
+                            stroke-dasharray="${lessonPct * 1.885} 188.5" stroke-linecap="round"/>
+                    </svg>
+                    <div class="sd-ring-val">${lessonPct}%</div>
+                </div>
+            </div>
 
-        <!-- Quick Actions -->
-        <div class="sd-actions">
-            <a href="#student/enroll" class="sd-action">
-                <div class="sd-action-icon">
-                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+            <!-- To-Do -->
+            <div class="sd-todo-section" id="sd-todo-section">
+                <div class="sd-todo-hdr">
+                    <h2>My To-Do</h2>
+                    <span>${pendingTotal} pending</span>
                 </div>
-                <div>
-                    <div class="sd-action-text">Enroll in Section</div>
-                    <div class="sd-action-sub">Join a new class</div>
+                <div class="sd-todo-boxes" id="sd-todo-boxes">
+                    ${todoBox('today', 'Due Today', todos.due_today)}
+                    ${todoBox('miss', 'Missing', todos.missing, 'miss')}
+                    ${todoBox('nodue', 'Assigned', todos.no_due_date)}
+                    ${todoBox('done', 'Done', todos.done, 'done')}
                 </div>
-            </a>
-            <a href="#student/lessons" class="sd-action">
-                <div class="sd-action-icon">
-                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+                <div id="sd-todo-lists">
+                    ${todoList('today', todos.due_today)}
+                    ${todoList('miss', todos.missing)}
+                    ${todoList('nodue', todos.no_due_date)}
+                    ${todoList('done', todos.done, true)}
                 </div>
-                <div>
-                    <div class="sd-action-text">My Lessons</div>
-                    <div class="sd-action-sub">Continue learning</div>
-                </div>
-            </a>
-            <a href="#student/grades" class="sd-action">
-                <div class="sd-action-icon">
-                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
-                </div>
-                <div>
-                    <div class="sd-action-text">View Grades</div>
-                    <div class="sd-action-sub">Check your scores</div>
-                </div>
-            </a>
-            <a href="#student/progress" class="sd-action">
-                <div class="sd-action-icon">
-                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
-                </div>
-                <div>
-                    <div class="sd-action-text">My Progress</div>
-                    <div class="sd-action-sub">Track your learning</div>
-                </div>
-            </a>
-        </div>
+            </div>
 
-        <!-- Pending Quizzes -->
-        ${pendingQuizzes.length > 0 ? `
-        <div class="sd-section-hdr">
-            <h3>To-Do</h3>
-            <span class="sd-pill warn">${pendingQuizzes.length} quiz${pendingQuizzes.length !== 1 ? 'zes' : ''} pending</span>
+            <!-- Subjects -->
+            <div class="sd-panel">
+                <div class="sd-panel-hdr">
+                    <h3>My Subjects</h3>
+                    <a href="#student/my-subjects">View all</a>
+                </div>
+                ${subjects.length === 0
+                    ? `<div class="sd-empty">No subjects enrolled. <a href="#student/my-subjects?join=1">Join a subject</a></div>`
+                    : `<div class="sd-subj-grid">${subjects.map(s => subjCard(s, annBySubject)).join('')}</div>`
+                }
+            </div>
         </div>
-        <div class="sd-todo-card">${todoRows}</div>
-        ` : ''}
-
-        <!-- My Subjects -->
-        <div class="sd-section-hdr">
-            <h3>My Subjects</h3>
-            <span class="sd-pill">${subjects.length}</span>
-        </div>
-        <div class="sd-subjects-grid">${subjectCards}</div>
     `;
+
+    // To-do: tap a box to show its list
+    const todoBoxes = container.querySelectorAll('.sd-todo-box');
+
+    function showTodoList(key) {
+        container.querySelectorAll('.sd-todo-list').forEach(el => {
+            el.hidden = el.dataset.col !== key;
+        });
+        todoBoxes.forEach(box => {
+            box.classList.toggle('active', box.dataset.col === key);
+        });
+    }
+
+    const defaultKey = firstTodoGroupWithItems(todos);
+    showTodoList(defaultKey);
+
+    todoBoxes.forEach(box => {
+        box.addEventListener('click', () => showTodoList(box.dataset.col));
+    });
+
+    // Force white page background (overrides app cream)
+    container.style.background = '#fff';
+    const pageContent = container.closest('.page-content');
+    if (pageContent) {
+        pageContent.style.background = '#fff';
+        pageContent.classList.add('sd-page-white');
+    }
+
+    clearInterval(_todoPollTimer);
+    _todoPollTimer = setInterval(async () => {
+        if (!document.getElementById('sd-todo-section')) return;
+        const fresh = await Api.get('/DashboardAPI.php?action=student');
+        if (!fresh.success) return;
+        refreshTodoSection(container, fresh.data.todos || {});
+    }, 15000);
+}
+
+function refreshTodoSection(container, todos) {
+    const pendingTotal = (todos.due_today?.length || 0) + (todos.no_due_date?.length || 0) + (todos.missing?.length || 0);
+    const hdrSpan = container.querySelector('.sd-todo-hdr span');
+    if (hdrSpan) hdrSpan.textContent = `${pendingTotal} pending`;
+
+    TODO_GROUPS.forEach(g => {
+        const key = todoListKey(g.key);
+        const items = todos[key] || [];
+        const countEl = container.querySelector(`.sd-todo-box[data-col="${g.key}"] .sd-todo-box-count`);
+        if (countEl) countEl.textContent = items.length;
+        const listEl = container.querySelector(`.sd-todo-list[data-col="${g.key}"]`);
+        if (listEl) {
+            listEl.innerHTML = items.length
+                ? items.map(item => todoRow(item, g.key === 'done')).join('')
+                : `<div class="sd-todo-empty">Nothing in this list</div>`;
+        }
+    });
+}
+
+/* ── Helpers ── */
+
+function groupAnnouncements(list) {
+    const bySubject = {};
+    for (const a of list) {
+        const sid = a.subject_id;
+        if (!sid) continue;
+        if (!bySubject[sid]) bySubject[sid] = [];
+        bySubject[sid].push(a);
+    }
+    return bySubject;
+}
+
+const TODO_GROUPS = [
+    { key: 'today', label: 'Due Today' },
+    { key: 'miss', label: 'Missing' },
+    { key: 'nodue', label: 'Assigned' },
+    { key: 'done', label: 'Done' },
+];
+
+function todoListKey(groupKey) {
+    return groupKey === 'nodue' ? 'no_due_date' : groupKey;
+}
+
+function firstTodoGroupWithItems(todos) {
+    for (const g of TODO_GROUPS) {
+        if ((todos[todoListKey(g.key)] || []).length > 0) return g.key;
+    }
+    return 'today';
+}
+
+function todoBox(key, label, items, variant = '') {
+    const count = (items || []).length;
+    const cls = variant ? ` sd-todo-box--${variant}` : '';
+    return `<button type="button" class="sd-todo-box${cls}" data-col="${key}" aria-label="${label}, ${count} items">
+        <span class="sd-todo-box-count">${count}</span>
+        <span class="sd-todo-box-label">${label}</span>
+    </button>`;
+}
+
+function todoList(key, items, isDone = false) {
+    const list = items || [];
+    const body = list.length === 0
+        ? `<div class="sd-todo-empty">Nothing in this list</div>`
+        : list.map(item => todoRow(item, isDone)).join('');
+    return `<div class="sd-todo-list" data-col="${key}" hidden>${body}</div>`;
+}
+
+function todoRow(item, isDone) {
+    const href = item.subject_id
+        ? `#student/subject?subject_id=${item.subject_id}&work=quiz&work_id=${item.quiz_id}`
+        : `#student/take-quiz?quiz_id=${item.quiz_id}`;
+
+    if (isDone) {
+        return `<a class="sd-todo-row" href="${href}">
+            <div class="sd-todo-row-main">
+                <div class="sd-todo-row-top">
+                    <span class="sd-todo-row-code">${esc(item.subject_code)}</span>
+                    <span class="sd-todo-row-title">${esc(item.quiz_title)}</span>
+                </div>
+                <span class="sd-todo-row-sub">Completed ${formatDate(item.completed_at)}</span>
+                </div>
+            <div class="sd-todo-row-end">
+                <span class="sd-todo-row-score">${item.last_score != null ? item.last_score + '%' : 'Done'}</span>
+                </div>
+        </a>`;
+    }
+
+    const due = item.due_date;
+    let dueLabel = 'No due date';
+    let dueCls = '';
+    if (due) {
+        const d = new Date(due + 'T00:00:00');
+        const now = new Date(); now.setHours(0, 0, 0, 0);
+        dueLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (d < now) { dueCls = 'sd-todo-row-due--late'; dueLabel = 'Overdue'; }
+        else if (d.getTime() === now.getTime()) { dueCls = 'sd-todo-row-due--today'; dueLabel = 'Due today'; }
+    }
+
+    return `<a class="sd-todo-row" href="${href}">
+        <div class="sd-todo-row-main">
+            <div class="sd-todo-row-top">
+                <span class="sd-todo-row-code">${esc(item.subject_code)}</span>
+                <span class="sd-todo-row-title">${esc(item.quiz_title)}</span>
+                </div>
+            <span class="sd-todo-row-sub">${item.time_limit ? item.time_limit + ' min' : 'No time limit'}</span>
+                </div>
+        <div class="sd-todo-row-end">
+            <span class="sd-todo-row-due ${dueCls}">${dueLabel}</span>
+            <span class="sd-todo-row-action">Start →</span>
+        </div>
+    </a>`;
+}
+
+function subjCard(s, annBySubject) {
+    const color = subjectColor(s.subject_id);
+    const anns = annBySubject[s.subject_id] || [];
+    const latest = anns[0];
+
+    const annHtml = latest
+        ? `<div class="sd-subj-ann">
+            <div class="sd-subj-ann-label">Announcement</div>
+            <p class="sd-subj-ann-msg"><strong>${esc(latest.title)}</strong> — ${esc(truncate(latest.content, 60))}</p>
+           </div>`
+        : `<div class="sd-subj-ann"><p class="sd-subj-ann-msg" style="font-style:italic;color:#BDC1C6">No announcements</p></div>`;
+
+    return `<a class="sd-subj" href="#student/subject?subject_id=${s.subject_id}">
+        <div class="sd-subj-band" style="background:${color}">
+            <div class="sd-subj-code">${esc(s.subject_code)}</div>
+            <div class="sd-subj-name">${esc(s.subject_name)}</div>
+        </div>
+        <div class="sd-subj-body">
+            <div class="sd-subj-teacher">${icon('user', inl)} ${esc(s.instructor_name || 'Instructor TBA')}</div>
+            ${s.schedule ? `<div class="sd-subj-meta">${icon('clock', inl)} ${esc(s.schedule)}</div>` : ''}
+            ${s.room ? `<div class="sd-subj-meta">${icon('pin', inl)} ${esc(s.room)}</div>` : ''}
+            ${annHtml}
+        </div>
+    </a>`;
 }
 
 function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+function truncate(s, n) { const t = (s||'').replace(/\s+/g,' ').trim(); return t.length > n ? t.slice(0,n)+'…' : t; }
+function formatDate(dt) {
+    if (!dt) return '';
+    return new Date(dt).toLocaleDateString('en-US', { month:'short', day:'numeric' });
+}

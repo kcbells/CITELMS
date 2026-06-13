@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/BankAccessHelper.php';
 
 header('Content-Type: application/json');
 
@@ -53,8 +54,14 @@ function browseBank() {
     $search   = trim($_GET['search']   ?? '');
     $subjectId = (int)($_GET['subject_id'] ?? 0);
 
-    $where  = "(lb.visibility = 'public' OR lb.created_by = ?)";
-    $params = [$userId];
+    $handled = bankSubjectInClause($userId);
+    if ($handled['sql'] === '0') {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+
+    $where  = "lb.visibility = 'public' AND lb.subject_id IN ({$handled['sql']})";
+    $params = $handled['params'];
 
     if ($search) {
         $where  .= " AND (lb.lesson_title LIKE ? OR lb.lesson_description LIKE ? OR lb.tags LIKE ?)";
@@ -231,13 +238,9 @@ function copyLesson() {
         return;
     }
 
-    // Verify the bank lesson is accessible
-    $bankLesson = db()->fetchOne(
-        "SELECT * FROM lesson_bank WHERE bank_id = ? AND (visibility = 'public' OR created_by = ?)",
-        [$bankId, $userId]
-    );
-    if (!$bankLesson) {
-        echo json_encode(['success' => false, 'message' => 'Lesson not found in bank']);
+    $bankLesson = db()->fetchOne("SELECT * FROM lesson_bank WHERE bank_id = ?", [$bankId]);
+    if (!$bankLesson || !canAccessBankItem($userId, $bankLesson['created_by'], $bankLesson['visibility'], $bankLesson['subject_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Lesson not found or not shared for your subjects']);
         return;
     }
 
@@ -296,13 +299,18 @@ function copyLesson() {
 
 function bankSubjects() {
     $userId = Auth::id();
+    $handled = bankSubjectInClause($userId);
+    if ($handled['sql'] === '0') {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
     $subjects = db()->fetchAll(
         "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name
          FROM lesson_bank lb
          JOIN subject s ON lb.subject_id = s.subject_id
-         WHERE lb.visibility = 'public' OR lb.created_by = ?
+         WHERE lb.visibility = 'public' AND lb.subject_id IN ({$handled['sql']})
          ORDER BY s.subject_code",
-        [$userId]
+        $handled['params']
     );
     echo json_encode(['success' => true, 'data' => $subjects ?: []]);
 }

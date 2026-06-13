@@ -3,13 +3,17 @@
  * Display quiz attempt results with score and answer review
  */
 import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
+import { subjectHash } from './quizzes.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const attemptId = params.get('attempt_id');
 
     if (!attemptId) {
-        container.innerHTML = '<div style="text-align:center;padding:60px;color:#737373">No attempt selected. <a href="#student/quizzes" style="color:#1B4D3E">Go to Quizzes</a></div>';
+        container.innerHTML = '<div style="text-align:center;padding:60px;color:#737373">No attempt selected. <a href="#student/my-subjects" style="color:#1B4D3E">Go to My Subjects</a></div>';
         return;
     }
 
@@ -34,8 +38,8 @@ export async function render(container) {
             .result-container { max-width:800px; margin:0 auto; }
 
             .result-hero { border-radius:16px; padding:40px; text-align:center; margin-bottom:24px; color:#fff; }
-            .result-hero.pass { background:linear-gradient(135deg,#1B4D3E,#2D6A4F); }
-            .result-hero.fail { background:linear-gradient(135deg,#7f1d1d,#b91c1c); }
+            .result-hero.pass { background:#00461B; }
+            .result-hero.fail { background:#b91c1c; }
             .score-circle { width:100px; height:100px; border-radius:50%; background:rgba(255,255,255,.15); display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
             .score-num { font-size:32px; font-weight:800; }
             .result-label { font-size:20px; font-weight:700; margin-bottom:4px; }
@@ -87,12 +91,11 @@ export async function render(container) {
             </div>
 
             <div class="actions-row">
+                ${attempt.subject_id ? `<a class="btn" href="${subjectHash(attempt.subject_id, 'classwork', { type: 'quiz', id: attempt.quiz_id })}">${icon('quiz', inl)} Back to Classwork</a>` : ''}
                 ${passed ? `
-                    ${lessonsId ? `<a class="btn primary" href="#student/lessons">✅ Continue to Next Lesson</a>` : `<a class="btn primary" href="#student/lessons">Back to Lessons</a>`}
-                    <a class="btn" href="#student/grades">View Grades</a>
+                    ${lessonsId ? `<a class="btn primary" href="#student/lessons">${icon('checkCircle', inl)} Continue to Next Lesson</a>` : `<a class="btn primary" href="#student/lessons">Back to Lessons</a>`}
                 ` : `
-                    ${lessonsId ? `<a class="btn" style="background:#fff3cd;border-color:#f59e0b;color:#92400E" href="#student/lesson-view?id=${lessonsId}">📖 Re-study: ${esc(lessonTitle || 'Lesson')} <span style="font-size:10px;opacity:.7;">(${esc(attempt.subject_code)})</span></a>` : `<a class="btn" style="background:#fff3cd;border-color:#f59e0b;color:#92400E" href="#student/lessons">📖 Back to Lessons</a>`}
-                    <a class="btn" href="#student/grades">View Grades</a>
+                    ${lessonsId ? `<a class="btn" style="background:#fff3cd;border-color:#f59e0b;color:#92400E" href="#student/lesson-view?id=${lessonsId}">${icon('lessons', inl)} Re-study: ${esc(lessonTitle || 'Lesson')} <span style="font-size:10px;opacity:.7;">(${esc(attempt.subject_code)})</span></a>` : `<a class="btn" style="background:#fff3cd;border-color:#f59e0b;color:#92400E" href="#student/lessons">${icon('lessons', inl)} Back to Lessons</a>`}
                 `}
             </div>
             ${!passed ? `<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#92400E;text-align:center;">
@@ -120,9 +123,9 @@ export async function render(container) {
                                 const isCorrectOpt = o.is_correct == 1;
                                 let cls = 'neutral';
                                 let indicator = '';
-                                if (isSelected && isCorrectOpt) { cls = 'correct-selected'; indicator = '✓ Your answer'; }
-                                else if (isSelected && !isCorrectOpt) { cls = 'wrong-selected'; indicator = '✗ Your answer'; }
-                                else if (isCorrectOpt) { cls = 'correct-answer'; indicator = '✓ Correct'; }
+                                if (isSelected && isCorrectOpt) { cls = 'correct-selected'; indicator = `${icon('check', inl)} Your answer`; }
+                                else if (isSelected && !isCorrectOpt) { cls = 'wrong-selected'; indicator = `${icon('close', inl)} Your answer`; }
+                                else if (isCorrectOpt) { cls = 'correct-answer'; indicator = `${icon('check', inl)} Correct`; }
                                 return `<div class="ac-option ${cls}">
                                     <span>${esc(o.option_text)}</span>
                                     ${indicator ? `<span class="ac-indicator">${indicator}</span>` : ''}

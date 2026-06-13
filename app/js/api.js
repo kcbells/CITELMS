@@ -3,7 +3,15 @@
  * Handles auth, errors, and base URL
  */
 
-const BASE_URL = '/COC-LMS';
+import { getTabLease } from './utils/tab-lease-store.js';
+
+// Auto-detect project folder from URL (works for /COC_LMS(2), /COC-LMS, etc.)
+function detectBaseUrl() {
+    const match = window.location.pathname.match(/^\/([^/]+)/);
+    return match ? '/' + match[1] : '/COC-LMS';
+}
+
+const BASE_URL = detectBaseUrl();
 const API_URL = BASE_URL + '/api';
 
 export const Api = {
@@ -22,6 +30,8 @@ export const Api = {
         const headers = { 'Accept': 'application/json', ...extra };
         const token = this._getToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
+        const lease = getTabLease();
+        if (lease) headers['X-Tab-Lease'] = lease;
         return headers;
     },
 
@@ -67,13 +77,29 @@ export const Api = {
      * Handle response - parse JSON and check for auth errors
      */
     async _handleResponse(response) {
-        const data = await response.json();
+        const raw = await response.text();
+        let data;
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            console.error('[API] Non-JSON response:', raw.slice(0, 300));
+            return {
+                success: false,
+                message: 'Server returned an invalid response. Please refresh and try again.',
+                _parseError: true,
+            };
+        }
 
-        // 401 — session expired, force re-login
+        // 401 — session expired or superseded by another tab
         if (response.status === 401) {
-            localStorage.removeItem('jwt_token');
-            window.location.href = BASE_URL + '/app/login.html';
-            return data;
+            const superseded = data?.code === 'SESSION_SUPERSEDED';
+            if (!superseded) localStorage.removeItem('jwt_token');
+            const onLoginPage = /\/app\/(index|login)\.html$/i.test(window.location.pathname);
+            if (!onLoginPage) {
+                const suffix = superseded ? '?reason=superseded' : '';
+                window.location.href = BASE_URL + '/app/index.html' + suffix;
+            }
+            return { ...data, _superseded: superseded };
         }
 
         // 403 — authenticated but not allowed; surface clearly without redirecting

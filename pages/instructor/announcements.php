@@ -284,8 +284,7 @@ include __DIR__ . '/../../includes/instructor_sidebar.php';
 .ann-alert-success {
     background: #E8F5E9;
     color: #1B4D3E;
-    border-left: 4px solid #1B4D3E;
-}
+    }
 
 /* Stats Summary */
 .ann-stats-row {

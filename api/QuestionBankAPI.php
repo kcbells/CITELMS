@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/BankAccessHelper.php';
 
 header('Content-Type: application/json');
 
@@ -71,8 +72,14 @@ function browseBank() {
     $subjectId = (int)($_GET['subject_id'] ?? 0);
     $type      = trim($_GET['type']      ?? '');
 
-    $where  = "(qb.visibility = 'public' OR qb.created_by = ?)";
-    $params = [$userId];
+    $handled = bankSubjectInClause($userId);
+    if ($handled['sql'] === '0') {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+
+    $where  = "qb.visibility = 'public' AND qb.subject_id IN ({$handled['sql']})";
+    $params = $handled['params'];
 
     if ($search) {
         $where  .= " AND qb.question_text LIKE ?";
@@ -243,13 +250,9 @@ function copyQuestion() {
         return;
     }
 
-    // Verify accessible bank question
-    $bankQ = db()->fetchOne(
-        "SELECT * FROM question_bank WHERE qbank_id = ? AND (visibility = 'public' OR created_by = ?)",
-        [$qbankId, $userId]
-    );
-    if (!$bankQ) {
-        echo json_encode(['success' => false, 'message' => 'Question not found in bank']);
+    $bankQ = db()->fetchOne("SELECT * FROM question_bank WHERE qbank_id = ?", [$qbankId]);
+    if (!$bankQ || !canAccessBankItem($userId, $bankQ['created_by'], $bankQ['visibility'], $bankQ['subject_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Question not found or not shared for your subjects']);
         return;
     }
 
@@ -357,13 +360,18 @@ function deleteQuestion() {
 
 function bankSubjects() {
     $userId = Auth::id();
+    $handled = bankSubjectInClause($userId);
+    if ($handled['sql'] === '0') {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
     $subjects = db()->fetchAll(
         "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name
          FROM question_bank qb
          JOIN subject s ON qb.subject_id = s.subject_id
-         WHERE qb.visibility = 'public' OR qb.created_by = ?
+         WHERE qb.visibility = 'public' AND qb.subject_id IN ({$handled['sql']})
          ORDER BY s.subject_code",
-        [$userId]
+        $handled['params']
     );
     echo json_encode(['success' => true, 'data' => $subjects ?: []]);
 }

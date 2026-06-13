@@ -2,6 +2,9 @@
  * Student Lessons Page — Redesigned
  */
 import { Api } from '../../api.js';
+import { L, icon, iconLg } from '../../utils/action-labels.js';
+
+const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -108,9 +111,9 @@ function renderGroups(content, groups, filterSubject) {
     if (filtered.length === 0) {
         content.innerHTML = `
             <div class="lp-empty">
-                <div class="lp-empty-icon">📚</div>
+                <div class="lp-empty-icon">${iconLg('book')}</div>
                 <h3>No subjects enrolled</h3>
-                <p><a href="#student/enroll">Enroll in a section</a> to start learning.</p>
+                <p><a href="#student/my-subjects?join=1">Join a subject</a> to start learning.</p>
             </div>`;
         return;
     }
@@ -190,7 +193,7 @@ function renderGroups(content, groups, filterSubject) {
                                 <div class="lp-card-body">
                                     <div class="lp-card-title">${esc(l.title)}</div>
                                     <div class="lp-card-meta">
-                                        ${l.estimated_time ? `<span class="lp-meta-chip">⏱ ${l.estimated_time} min</span>` : ''}
+                                        ${l.estimated_time ? `<span class="lp-meta-chip">${icon('timer', inl)} ${l.estimated_time} min</span>` : ''}
                                         ${l.difficulty ? `<span class="lp-meta-chip diff-${l.difficulty}">${l.difficulty.charAt(0).toUpperCase() + l.difficulty.slice(1)}</span>` : ''}
                                         ${l.description ? `<span class="lp-card-desc">${esc(l.description)}</span>` : ''}
                                     </div>
@@ -212,7 +215,7 @@ function renderGroups(content, groups, filterSubject) {
                                             Locked
                                         </span>
                                     ` : l.linked_quiz_id ? `
-                                        <span class="lp-status-badge quiz">📝 Has Quiz</span>
+                                        <span class="lp-status-badge quiz">${L.hasQuiz}</span>
                                         <span class="lp-open-arrow">→</span>
                                     ` : `
                                         <button class="lp-btn-complete" data-lesson="${l.lessons_id}">Mark Complete</button>
@@ -236,7 +239,7 @@ function css() {
 
     /* Banner */
     .lp-banner {
-        background: linear-gradient(135deg, #00461B 0%, #006428 55%, #2D6A4F 100%);
+        background: #00461B;
         border-radius: 18px; padding: 0; margin-bottom: 24px;
         overflow: hidden; box-shadow: 0 4px 20px rgba(0,70,27,.18);
     }
@@ -277,7 +280,7 @@ function css() {
     .lp-group { margin-bottom: 32px; }
 
     .lp-group-hdr {
-        background: linear-gradient(135deg, #1B4D3E 0%, #2D6A4F 100%);
+        background: #00461B;
         border-radius: 14px 14px 0 0; padding: 20px 24px;
         display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
@@ -300,7 +303,7 @@ function css() {
 
     /* Progress bar */
     .lp-prog-bar  { height: 5px; background: #e8e8e8; border-radius: 0; overflow: hidden; }
-    .lp-prog-fill { height: 100%; background: linear-gradient(90deg, #1B4D3E, #40916C); transition: width .6s ease; }
+    .lp-prog-fill { height: 100%; background: #1B4D3E; transition: width .6s ease; }
     .lp-prog-label { font-size: 12px; color: #9ca3af; padding: 6px 24px 14px; background: #fff; border-left: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; }
 
     /* Lessons container */

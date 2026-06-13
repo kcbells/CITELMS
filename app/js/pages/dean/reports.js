@@ -3,6 +3,7 @@
  * Department performance overview — instructor activity, student performance, enrollment
  */
 import { Api } from '../../api.js';
+import { icon } from '../../utils/icons.js';
 
 export async function render(container) {
     container.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div style="width:40px;height:40px;border:3px solid #e8e8e8;border-top-color:#1B4D3E;border-radius:50%;animation:spin .8s linear infinite"></div></div>';
@@ -27,7 +28,7 @@ export async function render(container) {
         <style>
             /* ===== Banner ===== */
             .dr-banner {
-                background: linear-gradient(135deg, #1B4D3E 0%, #2D6A4F 60%, #40916C 100%);
+                background: #00461B;
                 border-radius: 16px; padding: 28px 32px;
                 display: flex; justify-content: space-between; align-items: center;
                 margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
@@ -93,7 +94,7 @@ export async function render(container) {
             .dr-fac-info { display: flex; align-items: center; gap: 10px; }
             .dr-fac-av {
                 width: 36px; height: 36px; border-radius: 10px;
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F); color: #fff;
+                background: #1B4D3E; color: #fff;
                 display: flex; align-items: center; justify-content: center;
                 font-weight: 700; font-size: 12px; flex-shrink: 0;
             }
@@ -118,7 +119,7 @@ export async function render(container) {
             .dr-enroll-bar-wrap { flex: 1; height: 28px; background: #f3f4f6; border-radius: 8px; overflow: hidden; position: relative; }
             .dr-enroll-bar {
                 height: 100%; border-radius: 8px;
-                background: linear-gradient(90deg, #1B4D3E, #2D6A4F);
+                background: #1B4D3E;
                 transition: width 0.6s ease; min-width: 2px;
             }
             .dr-enroll-bar-text {
@@ -130,7 +131,7 @@ export async function render(container) {
             .dr-prog-perf { display: grid; grid-template-columns: 80px 1fr 60px 80px; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; }
             .dr-prog-perf:last-child { border-bottom: none; }
             .dr-prog-code {
-                background: linear-gradient(135deg, #1B4D3E, #2D6A4F); color: #fff;
+                background: #1B4D3E; color: #fff;
                 padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 700;
                 text-align: center;
             }
@@ -150,9 +151,9 @@ export async function render(container) {
             /* ===== Progress Bar ===== */
             .dr-bar { position: relative; height: 22px; background: #f3f4f6; border-radius: 11px; overflow: hidden; }
             .dr-bar-fill { height: 100%; border-radius: 11px; transition: width 0.5s ease; min-width: 2px; }
-            .dr-bar-fill.good { background: linear-gradient(90deg, #10b981, #059669); }
-            .dr-bar-fill.mid { background: linear-gradient(90deg, #f59e0b, #d97706); }
-            .dr-bar-fill.low { background: linear-gradient(90deg, #ef4444, #dc2626); }
+            .dr-bar-fill.good { background: #10b981; }
+            .dr-bar-fill.mid { background: #f59e0b; }
+            .dr-bar-fill.low { background: #ef4444; }
             .dr-bar-text {
                 position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
                 font-size: 11px; font-weight: 700; color: #374151;
@@ -182,7 +183,7 @@ export async function render(container) {
 
             /* ===== Utilization ===== */
             .dr-util { background: #f3f4f6; height: 10px; border-radius: 5px; overflow: hidden; margin: 6px 0; }
-            .dr-util-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #1B4D3E, #2D6A4F); }
+            .dr-util-fill { height: 100%; border-radius: 5px; background: #1B4D3E; }
 
             /* ===== Empty ===== */
             .dr-empty { text-align: center; padding: 36px 20px; color: #9ca3af; font-size: 14px; }
@@ -214,12 +215,12 @@ export async function render(container) {
 
         <!-- Department Overview Stats -->
         <div class="dr-stats">
-            ${statCard('#1B4D3E', '#E8F5E9', '#1B4D3E', stats.instructors, 'Instructors', '&#128100;')}
-            ${statCard('#2563EB', '#DBEAFE', '#1E40AF', stats.students, 'Enrolled Students', '&#128101;')}
-            ${statCard('#7C3AED', '#EDE9FE', '#5B21B6', stats.subjects, 'Subjects', '&#128218;')}
-            ${statCard('#0D9488', '#CCFBF1', '#0D9488', stats.offerings, 'Active Offerings', '&#128197;')}
-            ${statCard('#B45309', '#FEF3C7', '#92400E', stats.total_quizzes, 'Total Quizzes', '&#128221;')}
-            ${statCard('#059669', '#D1FAE5', '#065F46', stats.published_lessons + ' / ' + stats.total_lessons, 'Lessons (Pub)', '&#128214;')}
+            ${statCard('#1B4D3E', '#E8F5E9', '#1B4D3E', stats.instructors, 'Instructors', icon('instructor', { size: 18 }))}
+            ${statCard('#2563EB', '#DBEAFE', '#1E40AF', stats.students, 'Enrolled Students', icon('users', { size: 18 }))}
+            ${statCard('#7C3AED', '#EDE9FE', '#5B21B6', stats.subjects, 'Subjects', icon('book', { size: 18 }))}
+            ${statCard('#0D9488', '#CCFBF1', '#0D9488', stats.offerings, 'Active Offerings', icon('calendar', { size: 18 }))}
+            ${statCard('#B45309', '#FEF3C7', '#92400E', stats.total_quizzes, 'Total Quizzes', icon('quiz', { size: 18 }))}
+            ${statCard('#059669', '#D1FAE5', '#065F46', stats.published_lessons + ' / ' + stats.total_lessons, 'Lessons (Pub)', icon('lessons', { size: 18 }))}
         </div>
 
         <div class="dr-grid">
