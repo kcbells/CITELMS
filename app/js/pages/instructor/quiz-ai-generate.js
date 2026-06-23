@@ -2,13 +2,30 @@
  * Instructor AI Quiz Generator
  * 4-step flow: Configure → Upload PDF/DOCX → Question Settings → Review & Edit
  */
-import { Api } from '../../api.js';
+import { Api, BASE_URL } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
 import { showMcPopup } from '../../utils/mc-popup.js';
 import { gradingOptionsHtml, readGradingPayload, ensureGradingOptionStyles } from '../../utils/quiz-grading-options.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
+
+// Modal shell styles (for openAiQuizModal)
+const AI_MODAL_SHELL_CSS = `
+    .qzai-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
+        display:flex; align-items:center; justify-content:center; z-index:2600; padding:20px; }
+    .qzai-modal { background:#fff; border-radius:18px; width:100%; max-width:740px; max-height:92vh;
+        overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 48px rgba(0,0,0,.2);
+        animation:qzaiIn .22s ease; }
+    @keyframes qzaiIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+    .qzai-modal-hdr { padding:20px 24px; background:#00461B; color:#fff; flex-shrink:0;
+        display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .qzai-modal-hdr h3 { font-size:18px; font-weight:800; margin:0 0 3px; }
+    .qzai-modal-hdr p { font-size:12px; margin:0; opacity:.85; }
+    .qzai-modal-close { background:rgba(255,255,255,.15); border:none; color:#fff; width:32px; height:32px;
+        border-radius:8px; font-size:20px; cursor:pointer; flex-shrink:0; line-height:1; }
+    .qzai-modal-body { overflow-y:auto; flex:1; padding:20px 24px; }
+`;
 
 let currentStep = 1;
 let extractedText = '';
@@ -17,7 +34,7 @@ let formState = {
     subject_id: '', lessons_id: '', quiz_title: '', quiz_type: 'graded',
     all_sections: true, section_ids: [],
     publish_mode: 'draft', availability_start: '', due_date: '',
-    objective_grading_mode: 'auto', subjective_grading_mode: 'ai_auto',
+    objective_grading_mode: 'auto', subjective_grading_mode: 'ai_review',
 };
 let questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
 let linkedQuizId = null;
@@ -25,9 +42,11 @@ let linkedQuizTitle = '';
 let lockSubject = false;
 let presetSectionId = null;
 let subjectSections = [];
-let backHref = '#instructor/quizzes';
-let successBackHref = '#instructor/quizzes';
+let backHref = '#instructor/my-classes';
+let successBackHref = '#instructor/my-classes';
 let classesDataForModal = [];
+let isModalMode = false;
+let modalCloseCallback = null;
 
 export async function render(container, params = {}) {
     // Reset state
@@ -51,7 +70,7 @@ export async function render(container, params = {}) {
         availability_start: '',
         due_date: '',
         objective_grading_mode: 'auto',
-        subjective_grading_mode: 'ai_auto',
+        subjective_grading_mode: 'ai_review',
     };
     questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
 
@@ -76,7 +95,7 @@ export async function render(container, params = {}) {
         backHref = `#instructor/subject?subject_id=${presetSubjectId}${presetSectionId ? `&section_id=${presetSectionId}` : ''}`;
         successBackHref = backHref;
     } else {
-        backHref = presetSubjectId ? `#instructor/quizzes?subject_id=${presetSubjectId}` : '#instructor/quizzes';
+        backHref = presetSubjectId ? `#instructor/subject?subject_id=${presetSubjectId}` : '#instructor/my-classes';
         successBackHref = backHref;
     }
 
@@ -316,6 +335,7 @@ function renderStep1(container, subjects) {
     });
 
     panel.querySelector('#ai-go-manual')?.addEventListener('click', () => {
+        if (isModalMode && modalCloseCallback) modalCloseCallback();
         openQuizModal({
             presetSubjectId: formState.subject_id,
             presetSectionId: presetSectionId,
@@ -722,6 +742,10 @@ function renderStep4(container, subjects) {
 
             ${allQ.length === 0 ? '<div style="text-align:center;padding:24px;color:#737373">No questions generated. Go back and try again.</div>' : ''}
 
+            <div style="text-align:center;margin:16px 0;">
+                <button class="btn" id="btn-manual-add-q" style="border-style:dashed;font-size:13px;padding:10px 20px;">+ Add Question Manually</button>
+            </div>
+
             ${!linkedQuizId ? `
             <div style="margin-top:20px;padding:16px 18px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;">
                 <div style="font-size:13px;font-weight:700;color:#00461B;margin-bottom:12px;">Release to Students</div>
@@ -771,6 +795,11 @@ function renderStep4(container, subjects) {
         </div>
     `;
 
+    // Manual add question
+    panel.querySelector('#btn-manual-add-q')?.addEventListener('click', () => {
+        openManualAddModal(container, subjects);
+    });
+
     // Delete question handlers
     panel.querySelectorAll('.btn-del-q').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -799,14 +828,23 @@ function renderStep4(container, subjects) {
 }
 
 function renderQuestionCard(q, idx) {
-    const typeLabels = { multiple_choice: 'Multiple Choice', true_false: 'True/False', fill_blank: 'Fill in Blank', short_answer: 'Short Answer', essay: 'Essay' };
-    const typeCls = { multiple_choice: 'mc', true_false: 'tf', fill_blank: 'fib', short_answer: 'sa', essay: 'essay' };
+    const typeLabels = { multiple_choice:'Multiple Choice', checkboxes:'Checkboxes', true_false:'True/False', dropdown:'Dropdown', fill_blank:'Fill in Blank', short_answer:'Short Answer', essay:'Essay' };
+    const typeCls   = { multiple_choice:'mc', checkboxes:'mc', true_false:'tf', dropdown:'mc', fill_blank:'fib', short_answer:'sa', essay:'essay' };
 
     let optionsHtml = '';
-    if (q.type === 'multiple_choice' && q.options) {
+    if ((q.type === 'multiple_choice' || q.type === 'dropdown') && q.options) {
         optionsHtml = q.options.map((opt, oi) => `
             <div class="opt-row">
                 <input type="radio" name="correct-${idx}" value="${oi}" ${oi===q.correct_index?'checked':''} data-qidx="${idx}">
+                <input type="text" value="${esc(opt)}" data-qidx="${idx}" data-oidx="${oi}" class="opt-text-input">
+                <span class="opt-label">${String.fromCharCode(65+oi)}</span>
+            </div>
+        `).join('');
+    } else if (q.type === 'checkboxes' && q.options) {
+        const correctSet = new Set(q.correct_indices || []);
+        optionsHtml = q.options.map((opt, oi) => `
+            <div class="opt-row">
+                <input type="checkbox" name="chk-${idx}" value="${oi}" ${correctSet.has(oi)?'checked':''} data-qidx="${idx}" data-ci="${oi}">
                 <input type="text" value="${esc(opt)}" data-qidx="${idx}" data-oidx="${oi}" class="opt-text-input">
                 <span class="opt-label">${String.fromCharCode(65+oi)}</span>
             </div>
@@ -827,6 +865,14 @@ function renderQuestionCard(q, idx) {
         `;
     }
 
+    const mediaHtml = (() => {
+        if (!q.media_type || q.media_type === 'none' || !q.media_url) return '';
+        if (q.media_type === 'image') return `<div style="margin:8px 0;"><img src="${esc(q.media_url)}" style="max-width:220px;max-height:140px;border-radius:8px;object-fit:cover;border:1px solid #e8e8e8;display:block;"></div>`;
+        if (q.media_type === 'audio') return `<div style="margin:8px 0;"><audio controls src="${esc(q.media_url)}" style="width:100%;max-width:300px;"></audio></div>`;
+        if (q.media_type === 'link') return `<div style="margin:8px 0;font-size:12px;"><a href="${esc(q.media_url)}" target="_blank" style="color:#1B4D3E;font-weight:600;display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>${esc(q.media_name || q.media_url)}</a></div>`;
+        return '';
+    })();
+
     return `
         <div class="q-card" data-qidx="${idx}">
             <div class="q-card-header">
@@ -835,6 +881,7 @@ function renderQuestionCard(q, idx) {
                 <button class="btn-del-q" data-idx="${idx}" title="Delete">${icon('close', inl)}</button>
             </div>
             <textarea class="q-text-input" data-qidx="${idx}" rows="2">${esc(q.question)}</textarea>
+            ${mediaHtml}
             ${optionsHtml}
             <div class="pts-row">
                 <label>Points:</label>
@@ -862,10 +909,17 @@ async function doSave(container, subjects, panel) {
         const idx = parseInt(inp.dataset.qidx);
         if (allQ[idx]) allQ[idx].points = parseInt(inp.value) || 1;
     });
-    // Update correct answers for MC
+    // Update correct answers for MC / dropdown
     panel.querySelectorAll('input[type="radio"][name^="correct-"]:checked').forEach(r => {
         const idx = parseInt(r.dataset.qidx);
         if (allQ[idx]) allQ[idx].correct_index = parseInt(r.value);
+    });
+    // Update checkboxes correct indices
+    allQ.forEach((q, idx) => {
+        if (q.type === 'checkboxes') {
+            const checked = [...panel.querySelectorAll(`input[name="chk-${idx}"]:checked`)].map(cb => parseInt(cb.dataset.ci));
+            q.correct_indices = checked;
+        }
     });
     // Update TF answers
     panel.querySelectorAll('input[type="radio"][name^="tf-"]:checked').forEach(r => {
@@ -879,7 +933,7 @@ async function doSave(container, subjects, panel) {
     });
 
     // Rebuild objective/subjective
-    const objective = allQ.filter(q => ['multiple_choice','true_false','fill_blank'].includes(q.type));
+    const objective = allQ.filter(q => ['multiple_choice','checkboxes','dropdown','true_false','fill_blank'].includes(q.type));
     const subjective = allQ.filter(q => ['short_answer','essay'].includes(q.type));
 
     if (!linkedQuizId) {
@@ -974,7 +1028,19 @@ async function doSave(container, subjects, panel) {
                 </div>
             `;
             if (!linkedQuizId) {
-                panel.querySelector('#btn-new')?.addEventListener('click', () => render(container));
+                panel.querySelector('#btn-new')?.addEventListener('click', () => {
+                    if (isModalMode) {
+                        currentStep = 1; extractedText = ''; generatedQuestions = null;
+                        formState = { subject_id: formState.subject_id, lessons_id: '', quiz_title: '',
+                            quiz_type: 'graded', all_sections: true, section_ids: [],
+                            publish_mode: 'draft', availability_start: '', due_date: '',
+                            objective_grading_mode: 'auto', subjective_grading_mode: 'ai_review' };
+                        questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
+                        renderStep1(container, subjects);
+                    } else {
+                        render(container);
+                    }
+                });
             }
         } else {
             saveBtn.disabled = false;
@@ -986,6 +1052,494 @@ async function doSave(container, subjects, panel) {
         saveBtn.innerHTML = linkedQuizId ? `Add ${allQ.length} Questions to Quiz` : `Save Quiz (${allQ.length} questions)`;
         showMcPopup(err.message || 'Could not save quiz', { title: 'Save error', type: 'error' });
     }
+}
+
+/* ==================== MODAL ENTRY POINT ==================== */
+/**
+ * Open the AI quiz generator as a modal dialog.
+ * @param {Object} options
+ * @param {string|number} [options.presetSubjectId]
+ * @param {string|number} [options.presetSectionId]
+ * @param {boolean} [options.lockSubject]
+ * @param {string} [options.backTarget]
+ */
+export async function openAiQuizModal(options = {}) {
+    isModalMode = true;
+    currentStep = 1;
+    extractedText = '';
+    generatedQuestions = null;
+    linkedQuizId = null;
+    linkedQuizTitle = '';
+
+    const presetSubjectId = options.presetSubjectId ? String(options.presetSubjectId) : '';
+    presetSectionId = options.presetSectionId ? parseInt(options.presetSectionId, 10) : null;
+    lockSubject = !!options.lockSubject && !!presetSubjectId;
+
+    formState = {
+        subject_id: presetSubjectId,
+        lessons_id: '',
+        quiz_title: '',
+        quiz_type: 'graded',
+        all_sections: !presetSectionId,
+        section_ids: presetSectionId ? [presetSectionId] : [],
+        publish_mode: 'draft',
+        availability_start: '',
+        due_date: '',
+        objective_grading_mode: 'auto',
+        subjective_grading_mode: 'ai_review',
+    };
+    questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
+
+    const [subjRes, classesRes] = await Promise.all([
+        Api.get('/AIQuizAPI.php?action=subjects'),
+        presetSubjectId ? Api.get('/SectionsAPI.php?action=instructor-classes') : Promise.resolve({ success: false }),
+    ]);
+    const subjects = subjRes.success ? subjRes.data : [];
+    classesDataForModal = classesRes.success ? (classesRes.data || []) : [];
+
+    if (presetSubjectId && classesRes.success) {
+        const subj = classesDataForModal.find(s => String(s.subject_id) === String(presetSubjectId));
+        subjectSections = subj?.sections || [];
+    } else {
+        subjectSections = [];
+    }
+
+    // Inject AI page styles to head
+    if (!document.getElementById('aiq-page-styles')) {
+        const style = document.createElement('style');
+        style.id = 'aiq-page-styles';
+        style.textContent = document.querySelector('style[data-aiq]')?.textContent || '';
+        document.head.appendChild(style);
+    }
+    // Inject modal shell styles
+    if (!document.getElementById('qzai-shell-styles')) {
+        const style = document.createElement('style');
+        style.id = 'qzai-shell-styles';
+        style.textContent = AI_MODAL_SHELL_CSS;
+        document.head.appendChild(style);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'qzai-overlay';
+    overlay.innerHTML = `
+        <div class="qzai-modal" role="dialog" aria-modal="true">
+            <div class="qzai-modal-hdr">
+                <div>
+                    <h3 style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>AI Quiz Generator</h3>
+                    <p>Upload a PDF/DOCX or paste text — AI generates quiz questions for you</p>
+                </div>
+                <button type="button" class="qzai-modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="qzai-modal-body">
+                <style>
+                    .stepper { display:flex; gap:4px; margin-bottom:20px; }
+                    .step { flex:1; text-align:center; padding:10px 6px; border-radius:10px; background:#f5f5f5; border:2px solid transparent; transition:all .2s; }
+                    .step .step-num { width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; background:#e0e0e0; color:#737373; margin-bottom:3px; }
+                    .step .step-label { font-size:10px; font-weight:600; color:#737373; display:block; }
+                    .step.active { background:#E8F5E9; border-color:#1B4D3E; }
+                    .step.active .step-num { background:#1B4D3E; color:#fff; }
+                    .step.active .step-label { color:#1B4D3E; }
+                    .step.done { background:#f0fdf4; }
+                    .step.done .step-num { background:#2D6A4F; color:#fff; }
+                    .step.done .step-label { color:#2D6A4F; }
+                    .step-panel { background:#fff; border:1px solid #e8e8e8; border-radius:14px; padding:24px; }
+                    .panel-title { font-size:17px; font-weight:700; color:#262626; margin-bottom:4px; }
+                    .panel-desc { font-size:13px; color:#737373; margin-bottom:18px; }
+                    .form-group { margin-bottom:16px; }
+                    .form-group label { display:block; font-size:13px; font-weight:600; color:#404040; margin-bottom:6px; }
+                    .form-group select, .form-group input[type="text"] { width:100%; padding:10px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; background:#fff; box-sizing:border-box; }
+                    .form-group select:focus, .form-group input:focus { border-color:#1B4D3E; outline:none; box-shadow:0 0 0 3px rgba(27,77,62,.1); }
+                    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+                    .type-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+                    .type-opt { padding:10px; border:2px solid #e8e8e8; border-radius:10px; text-align:center; cursor:pointer; transition:all .15s; }
+                    .type-opt:hover { border-color:#1B4D3E; }
+                    .type-opt.selected { border-color:#1B4D3E; background:#E8F5E9; }
+                    .type-opt .t-label { font-size:12px; font-weight:600; display:block; }
+                    .type-opt .t-desc { font-size:10px; color:#737373; }
+                    .drop-zone { border:2px dashed #d0d0d0; border-radius:12px; padding:36px 20px; text-align:center; cursor:pointer; transition:all .2s; }
+                    .drop-zone:hover, .drop-zone.drag-over { border-color:#1B4D3E; background:#f0fdf4; }
+                    .drop-zone .dz-icon { font-size:36px; margin-bottom:8px; }
+                    .drop-zone .dz-text { font-size:14px; font-weight:600; color:#404040; }
+                    .drop-zone .dz-hint { font-size:12px; color:#737373; margin-top:4px; }
+                    .file-info { display:flex; align-items:center; gap:12px; padding:12px; background:#E8F5E9; border-radius:10px; margin-top:12px; }
+                    .file-info .fi-name { font-size:13px; font-weight:600; color:#1B4D3E; flex:1; }
+                    .file-info .fi-size { font-size:12px; color:#737373; }
+                    .file-info .fi-remove { background:none; border:none; color:#b91c1c; cursor:pointer; font-size:18px; font-weight:700; }
+                    .text-preview { margin-top:12px; background:#fafafa; border:1px solid #e8e8e8; border-radius:8px; padding:10px; max-height:150px; overflow-y:auto; font-size:12px; color:#404040; white-space:pre-wrap; line-height:1.5; }
+                    .char-count { font-size:11px; color:#737373; margin-top:4px; }
+                    .or-divider { text-align:center; color:#737373; font-size:13px; margin:14px 0; }
+                    .qty-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+                    .qty-item { background:#fafafa; border:1px solid #e8e8e8; border-radius:10px; padding:12px; text-align:center; }
+                    .qty-item label { font-size:12px; font-weight:600; color:#404040; display:block; margin-bottom:6px; }
+                    .qty-item input[type="number"] { width:56px; text-align:center; padding:6px; border:1px solid #e0e0e0; border-radius:6px; font-size:15px; font-weight:700; }
+                    .diff-group { display:flex; gap:8px; margin-top:14px; }
+                    .diff-btn { flex:1; padding:9px; border:2px solid #e8e8e8; border-radius:8px; text-align:center; cursor:pointer; font-size:13px; font-weight:600; background:#fff; transition:all .15s; }
+                    .diff-btn:hover { border-color:#1B4D3E; }
+                    .diff-btn.selected { border-color:#1B4D3E; background:#E8F5E9; color:#1B4D3E; }
+                    .total-strip { display:flex; justify-content:space-between; align-items:center; background:#E8F5E9; padding:10px 14px; border-radius:8px; margin-top:14px; font-size:14px; font-weight:700; color:#1B4D3E; }
+                    .q-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:16px; margin-bottom:12px; }
+                    .q-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+                    .q-card-num { font-size:12px; font-weight:700; color:#1B4D3E; }
+                    .q-card-type { font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:12px; }
+                    .q-card-type.mc { background:#DBEAFE; color:#1E40AF; }
+                    .q-card-type.tf { background:#FEF3C7; color:#B45309; }
+                    .q-card-type.fib { background:#E8F5E9; color:#1B4D3E; }
+                    .q-card-type.sa { background:#FEE2E2; color:#b91c1c; }
+                    .q-card-type.essay { background:#E8F5E9; color:#2D6A4F; }
+                    .q-card textarea { width:100%; border:1px solid #e8e8e8; border-radius:8px; padding:9px; font-size:13px; resize:vertical; min-height:46px; font-family:inherit; box-sizing:border-box; }
+                    .q-card textarea:focus { border-color:#1B4D3E; outline:none; }
+                    .q-card .opt-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+                    .q-card .opt-row input[type="text"] { flex:1; padding:7px 10px; border:1px solid #e8e8e8; border-radius:6px; font-size:13px; }
+                    .q-card .opt-row input[type="radio"], .q-card .opt-row input[type="checkbox"] { accent-color:#1B4D3E; }
+                    .q-card .opt-label { font-size:11px; color:#737373; }
+                    .q-card .pts-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+                    .q-card .pts-row label { font-size:12px; color:#737373; }
+                    .q-card .pts-row input[type="number"] { width:48px; padding:4px; border:1px solid #e8e8e8; border-radius:4px; text-align:center; font-size:13px; }
+                    .q-card .btn-del-q { background:none; border:none; color:#b91c1c; cursor:pointer; font-size:13px; font-weight:700; }
+                    .btn-row { display:flex; justify-content:space-between; margin-top:20px; }
+                    .btn { padding:10px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid #e0e0e0; background:#fff; color:#404040; transition:all .15s; }
+                    .btn:hover { background:#f5f5f5; }
+                    .btn:disabled { opacity:.4; cursor:not-allowed; }
+                    .btn-purple { background:#00461B; color:#fff; border-color:#1B4D3E; }
+                    .btn-purple:hover { box-shadow:0 4px 12px rgba(27,77,62,.3); }
+                    .btn-green { background:#00461B; color:#fff; border-color:#1B4D3E; }
+                    .spinner { display:inline-block; width:16px; height:16px; border:3px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:6px; }
+                    @keyframes spin { to { transform:rotate(360deg); } }
+                    .gen-status { text-align:center; padding:40px 20px; }
+                    .gen-status .gs-icon { font-size:40px; margin-bottom:10px; }
+                    .gen-status .gs-text { font-size:15px; font-weight:600; color:#404040; }
+                    .gen-status .gs-sub { font-size:13px; color:#737373; margin-top:4px; }
+                    .save-result { text-align:center; padding:40px; }
+                    .save-result h3 { font-size:19px; font-weight:700; margin-bottom:8px; }
+                    .save-result p { font-size:14px; color:#737373; margin-bottom:14px; }
+                    .ai-sec-panel { border:1.5px solid #e5e7eb; border-radius:12px; overflow:hidden; background:#fafafa; margin-top:4px; }
+                    .ai-sec-opt { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; background:#fff; border-bottom:1px solid #f0f0f0; }
+                    .ai-sec-opt:last-of-type { border-bottom:none; }
+                    .ai-sec-opt input { accent-color:#1B4D3E; width:16px; height:16px; }
+                    .ai-sec-opt-text { font-size:13px; font-weight:600; color:#111827; display:block; }
+                    .ai-sec-opt-sub { font-size:11px; color:#9ca3af; display:block; margin-top:1px; }
+                    .ai-sec-checks { padding:11px 14px; background:#fff; border-top:1px solid #e5e7eb; display:flex; flex-direction:column; gap:8px; }
+                    .ai-sec-check { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #e5e7eb; border-radius:8px; cursor:pointer; font-size:13px; }
+                    .ai-sec-check input { accent-color:#1B4D3E; }
+                    .ai-subj-badge { padding:10px 14px; background:#E8F5E9; border-radius:8px; font-size:14px; font-weight:700; color:#1B4D3E; }
+                    @media(max-width:600px) { .form-row, .type-grid, .qty-grid { grid-template-columns:1fr; } .stepper { flex-direction:column; } }
+                </style>
+                <div class="stepper" id="stepper">
+                    <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Configure</span></div>
+                    <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Content</span></div>
+                    <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Settings</span></div>
+                    <div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Review</span></div>
+                </div>
+                <div id="step-content"></div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); isModalMode = false; modalCloseCallback = null; };
+    modalCloseCallback = close;
+    overlay.querySelector('.qzai-modal-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    ensureGradingOptionStyles();
+    renderStep1(overlay, subjects);
+}
+
+/* ==================== MANUAL ADD QUESTION MODAL (step 4) ==================== */
+function openManualAddModal(container, subjects) {
+    const TYPE_DEFS = [
+        ['multiple_choice','⊙','Multiple Choice'],
+        ['true_false','◐','True / False'],
+        ['fill_blank','___','Fill in the Blank'],
+        ['short_answer','—','Short Answer'],
+        ['essay','¶','Essay'],
+    ];
+
+    // Use same Google Forms style as quiz-questions.js openQuestionModal
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:3000;padding:16px;backdrop-filter:blur(2px);';
+    overlay.innerHTML = `
+        <style>
+            .mam-card { background:#fff;border-radius:12px;border:1px solid #dde3ea;border-top:6px solid #00461B; }
+            .mam-q-text { width:100%;font-size:16px;font-weight:500;color:#202124;border:none;border-bottom:2px solid #e0e0e0;border-radius:0;padding:8px 4px 6px;resize:none;min-height:52px;font-family:inherit;background:transparent;outline:none;transition:border-color .15s;box-sizing:border-box;line-height:1.45; }
+            .mam-q-text:focus { border-bottom-color:#00461B; }
+            .mam-q-text::placeholder { color:#9aa0a6; }
+            .mam-type-sel { width:100%;padding:10px 12px;border:1px solid #dadce0;border-radius:8px;font-size:13px;font-weight:600;color:#202124;background:#fff;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;font-family:inherit; }
+            .mam-type-sel:focus { outline:none;border-color:#00461B; }
+            .mam-media-tab { display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;border:1.5px solid #e0e0e0;font-size:12px;font-weight:600;color:#5f6368;cursor:pointer;background:#fff;transition:all .15s; }
+            .mam-media-tab:hover { border-color:#00461B;color:#00461B; }
+            .mam-media-tab.act { border-color:#00461B;color:#00461B;background:#E8F5EC; }
+            .mam-opt-row { display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:8px; }
+            .mam-opt-row:hover { background:#f8f9fa; }
+            .mam-opt-dot { width:20px;height:20px;flex-shrink:0;border-radius:50%;border:2px solid #dadce0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .15s; }
+            .mam-opt-dot.correct { background:#00461B;border-color:#00461B;color:#fff; }
+            .mam-opt-inp { flex:1;border:none;border-bottom:1.5px solid transparent;padding:5px 4px;font-size:14px;font-family:inherit;color:#202124;background:transparent;outline:none;transition:border-color .15s; }
+            .mam-opt-inp:focus { border-bottom-color:#00461B; }
+            .mam-opt-inp::placeholder { color:#9aa0a6; }
+            .mam-opt-del { width:28px;height:28px;border:none;background:transparent;color:#9aa0a6;cursor:pointer;font-size:18px;border-radius:50%;display:flex;align-items:center;justify-content:center; }
+            .mam-opt-del:hover { background:#f1f3f4;color:#5f6368; }
+            .mam-add-opt { display:flex;align-items:center;gap:8px;padding:8px 4px;cursor:pointer;font-size:13px;font-weight:600;color:#00461B;background:none;border:none;margin-top:2px; }
+            .mam-answer-key { background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:14px 16px; }
+            .mam-answer-ta { width:100%;border:none;border-bottom:1.5px solid #bbf7d0;padding:6px 4px;font-size:14px;font-family:inherit;background:transparent;resize:none;outline:none;min-height:44px;color:#202124;box-sizing:border-box; }
+            .mam-answer-ta:focus { border-bottom-color:#00461B; }
+            .mam-text-hint { padding:12px 16px;background:#f8f9fa;border:1.5px dashed #dadce0;border-radius:8px;font-size:13px;color:#9aa0a6;font-style:italic;margin-bottom:12px; }
+            .mam-alert { background:#FEE2E2;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:10px; }
+            .mam-btn-cancel { background:#fff;color:#5f6368;border:1.5px solid #dadce0;padding:9px 20px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer; }
+            .mam-btn-save { background:#00461B;color:#fff;border:none;padding:9px 22px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer; }
+            .mam-btn-save:hover { background:#006428; }
+        </style>
+        <div style="background:#f0f4f9;border-radius:14px;width:100%;max-width:680px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.22);animation:gfIn .2s ease;">
+            <div style="padding:16px 22px;background:#00461B;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <h3 style="margin:0;font-size:16px;font-weight:700;">Add Question</h3>
+                <button id="mam-close" style="background:rgba(255,255,255,.15);border:none;color:#fff;width:30px;height:30px;border-radius:7px;font-size:20px;cursor:pointer;">&times;</button>
+            </div>
+            <div style="overflow-y:auto;flex:1;padding:14px;display:flex;flex-direction:column;gap:12px;">
+                <div id="mam-alert"></div>
+                <div class="mam-card">
+                    <div style="padding:20px 22px;">
+                        <!-- Question text + type selector -->
+                        <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:18px;">
+                            <div style="flex:1;min-width:0;">
+                                <textarea class="mam-q-text" id="mam-qtext" placeholder="Question" rows="2"></textarea>
+                            </div>
+                            <div style="flex-shrink:0;width:185px;">
+                                <select class="mam-type-sel" id="mam-qtype">
+                                    ${TYPE_DEFS.map(([v, ic, lb]) => `<option value="${v}">${ic} ${lb}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Media bar -->
+                        <div style="display:flex;align-items:center;gap:6px;padding:8px 0 14px;border-bottom:1px solid #f1f3f4;margin-bottom:14px;flex-wrap:wrap;">
+                            <span style="font-size:11px;font-weight:700;color:#5f6368;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Attach:</span>
+                            <button type="button" class="mam-media-tab act" data-mtype="none">None</button>
+                            <button type="button" class="mam-media-tab" data-mtype="image"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 15l-5-5L5 21"/></svg> Image</button>
+                            <button type="button" class="mam-media-tab" data-mtype="audio"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"/></svg> Audio</button>
+                            <button type="button" class="mam-media-tab" data-mtype="link"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg> Link</button>
+                        </div>
+                        <div id="mam-media-content"></div>
+                        <!-- Options / Answer area -->
+                        <div id="mam-options-area"></div>
+                    </div>
+                    <div style="display:flex;align-items:center;padding:12px 22px;border-top:1px solid #f1f3f4;">
+                        <span style="font-size:13px;font-weight:600;color:#5f6368;margin-right:8px;">Points</span>
+                        <input type="number" id="mam-pts" value="1" min="1" max="100" style="width:60px;padding:6px 10px;border:1.5px solid #dadce0;border-radius:8px;font-size:14px;font-weight:700;text-align:center;">
+                    </div>
+                </div>
+            </div>
+            <div style="padding:12px 20px;border-top:1px solid #dde3ea;background:#fff;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0;">
+                <button class="mam-btn-cancel" id="mam-cancel">Cancel</button>
+                <button class="mam-btn-save" id="mam-save">Add to Quiz</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#mam-close').addEventListener('click', close);
+    overlay.querySelector('#mam-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    // ── Media ──
+    let mediaState = { type: 'none', url: '', name: '' };
+    let uploading = false;
+
+    function renderMediaContent() {
+        const wrap = overlay.querySelector('#mam-media-content');
+        overlay.querySelectorAll('.mam-media-tab').forEach(b => b.classList.toggle('act', b.dataset.mtype === mediaState.type));
+        if (mediaState.type === 'none') { wrap.innerHTML = ''; return; }
+        if (mediaState.type === 'link') {
+            wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+                <input type="url" id="mam-url-inp" placeholder="https://…" value="${esc(mediaState.url)}" style="width:100%;padding:9px 12px;border:1.5px solid #dadce0;border-radius:8px;font-size:13px;box-sizing:border-box;">
+                <input type="text" id="mam-name-inp" placeholder="Label (optional)" value="${esc(mediaState.name)}" style="width:100%;padding:9px 12px;border:1.5px solid #dadce0;border-radius:8px;font-size:13px;box-sizing:border-box;">
+            </div>`;
+            wrap.querySelector('#mam-url-inp').addEventListener('input', e => { mediaState.url = e.target.value.trim(); });
+            wrap.querySelector('#mam-name-inp').addEventListener('input', e => { mediaState.name = e.target.value.trim(); });
+            return;
+        }
+        const accept = mediaState.type === 'image' ? 'image/*' : 'audio/*';
+        if (mediaState.url) {
+            const preview = mediaState.type === 'image'
+                ? `<img src="${esc(mediaState.url)}" style="max-width:100%;max-height:160px;border-radius:8px;display:block;margin-top:8px;border:1px solid #e8e8e8;object-fit:cover;">`
+                : `<audio controls src="${esc(mediaState.url)}" style="width:100%;margin-top:8px;"></audio>`;
+            wrap.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#E8F5EC;border-radius:8px;font-size:13px;font-weight:600;color:#1B4D3E;margin-bottom:4px;">${mediaState.type === 'image' ? '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 15l-5-5L5 21"/></svg>' : '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"/></svg>'} ${esc(mediaState.name || mediaState.url.split('/').pop())}<button id="mam-rm" style="background:none;border:none;color:#b91c1c;cursor:pointer;font-size:18px;margin-left:auto;line-height:1;">×</button></div>${preview}`;
+            wrap.querySelector('#mam-rm').addEventListener('click', () => { mediaState.url = ''; mediaState.name = ''; renderMediaContent(); });
+        } else {
+            wrap.innerHTML = `<div id="mam-dz" style="border:2px dashed #dadce0;border-radius:10px;padding:22px;text-align:center;cursor:pointer;margin-bottom:8px;transition:all .2s;"><div style="display:flex;justify-content:center;margin-bottom:6px;">${mediaState.type === 'image' ? '<svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#9ca3af" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 15l-5-5L5 21"/></svg>' : '<svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="#9ca3af" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"/></svg>'}</div><div style="font-size:13px;font-weight:600;color:#374151;">Click or drag to upload ${mediaState.type === 'image' ? 'image' : 'audio'}</div><div style="font-size:11px;color:#9aa0a6;margin-top:3px;">${mediaState.type === 'image' ? 'JPG, PNG, GIF, WEBP' : 'MP3, WAV, OGG, AAC'} · max 10 MB</div></div><input type="file" id="mam-fi" accept="${accept}" style="display:none;"><div id="mam-upst"></div>`;
+            const dz = wrap.querySelector('#mam-dz');
+            const fi = wrap.querySelector('#mam-fi');
+            dz.addEventListener('click', () => fi.click());
+            dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = '#00461B'; dz.style.background = '#f0fdf4'; });
+            dz.addEventListener('dragleave', () => { dz.style.borderColor = ''; dz.style.background = ''; });
+            dz.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]); });
+            fi.addEventListener('change', () => { if (fi.files[0]) doUpload(fi.files[0]); });
+        }
+    }
+
+    async function doUpload(file) {
+        if (uploading) return;
+        const st = overlay.querySelector('#mam-upst');
+        if (st) st.innerHTML = '<div style="font-size:12px;color:#737373;padding:6px 0;">Uploading…</div>';
+        uploading = true;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('media_type', mediaState.type);
+        const res = await Api.postForm('/QuizzesAPI.php?action=upload-question-media', fd);
+        uploading = false;
+        if (res.success) { mediaState.url = BASE_URL + '/' + res.url; mediaState.name = res.name || file.name; renderMediaContent(); }
+        else if (st) st.innerHTML = `<div style="color:#b91c1c;font-size:12px;margin-top:4px;">${esc(res.message || 'Upload failed')}</div>`;
+    }
+
+    overlay.querySelectorAll('.mam-media-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.mtype === mediaState.type) return;
+            mediaState = { type: btn.dataset.mtype, url: '', name: '' };
+            renderMediaContent();
+        });
+    });
+
+    // ── Options (Google Forms style) ──
+    let options = [
+        { option_text: '', is_correct: false },
+        { option_text: '', is_correct: false },
+        { option_text: '', is_correct: false },
+        { option_text: '', is_correct: false },
+    ];
+
+    const typeSelect = overlay.querySelector('#mam-qtype');
+
+    function syncOpts() {
+        overlay.querySelectorAll('.mam-opt-inp').forEach(inp => {
+            const i = parseInt(inp.dataset.oi);
+            if (!isNaN(i)) options[i].option_text = inp.value;
+        });
+    }
+
+    function repaintOpts(type) {
+        const list = overlay.querySelector('#mam-opts');
+        if (!list) return;
+        list.innerHTML = options.map((o, i) => `
+            <div class="mam-opt-row" data-oi="${i}">
+                <div class="mam-opt-dot ${o.is_correct ? 'correct' : ''}" data-mark="${i}">${o.is_correct ? '✓' : ''}</div>
+                <input class="mam-opt-inp" type="text" data-oi="${i}" value="${esc(o.option_text || '')}"
+                    placeholder="${type === 'true_false' ? (o.option_text || 'Option ' + (i+1)) : 'Option ' + (i+1)}"
+                    ${type === 'true_false' ? 'readonly style="color:#5f6368;"' : ''}>
+                ${(type !== 'true_false' && options.length > 2) ? `<button class="mam-opt-del" data-del="${i}">×</button>` : '<div style="width:28px;"></div>'}
+            </div>
+        `).join('');
+        list.querySelectorAll('[data-mark]').forEach(dot => {
+            dot.addEventListener('click', () => {
+                syncOpts();
+                const i = parseInt(dot.dataset.mark);
+                options.forEach((o, idx) => { o.is_correct = idx === i; });
+                repaintOpts(type);
+            });
+        });
+        list.querySelectorAll('.mam-opt-inp').forEach(inp => {
+            inp.addEventListener('input', () => { options[parseInt(inp.dataset.oi)].option_text = inp.value; });
+        });
+        list.querySelectorAll('[data-del]').forEach(btn => {
+            btn.addEventListener('click', () => { syncOpts(); options.splice(parseInt(btn.dataset.del), 1); repaintOpts(type); });
+        });
+    }
+
+    function renderOptionsArea(type) {
+        const area = overlay.querySelector('#mam-options-area');
+        if (type === 'multiple_choice' || type === 'true_false') {
+            area.innerHTML = `<div id="mam-opts" style="display:flex;flex-direction:column;gap:4px;"></div>
+                ${type === 'multiple_choice' ? `<button class="mam-add-opt" id="mam-add-opt">+ Add option</button>` : ''}`;
+            repaintOpts(type);
+            overlay.querySelector('#mam-add-opt')?.addEventListener('click', () => {
+                syncOpts(); options.push({ option_text:'', is_correct:false }); repaintOpts(type);
+                const inps = overlay.querySelectorAll('.mam-opt-inp'); inps[inps.length-1]?.focus();
+            });
+        } else if (type === 'fill_blank') {
+            area.innerHTML = `<div class="mam-text-hint">Students will type their answer in a blank: <span style="display:inline-block;border-bottom:2px solid #00461B;min-width:100px;height:20px;"></span></div>
+                <div class="mam-answer-key">
+                    <div style="font-size:11px;font-weight:700;color:#1B4D3E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">✓ Correct Answer</div>
+                    <textarea class="mam-answer-ta" id="mam-model" rows="2" placeholder="Type the exact word or phrase…"></textarea>
+                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Case-insensitive. AI grading can accept near-matches.</div>
+                </div>`;
+        } else if (type === 'short_answer') {
+            area.innerHTML = `<div class="mam-text-hint">Students write a short response (1–3 sentences).</div>
+                <div class="mam-answer-key">
+                    <div style="font-size:11px;font-weight:700;color:#1B4D3E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">✓ Model Answer (for grading)</div>
+                    <textarea class="mam-answer-ta" id="mam-model" rows="3" placeholder="Key points expected in a correct answer…"></textarea>
+                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">AI will compare student answers against this.</div>
+                </div>`;
+        } else if (type === 'essay') {
+            area.innerHTML = `<div class="mam-text-hint">Students write a full paragraph or essay response.</div>
+                <div class="mam-answer-key">
+                    <div style="font-size:11px;font-weight:700;color:#1B4D3E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">✓ Model Answer / Rubric</div>
+                    <textarea class="mam-answer-ta" id="mam-model" rows="4" placeholder="Describe what a complete, correct answer should include…"></textarea>
+                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Used by AI to evaluate completeness and accuracy.</div>
+                </div>`;
+        }
+    }
+
+    typeSelect.addEventListener('change', () => {
+        const t = typeSelect.value;
+        if (t === 'true_false') options = [{ option_text:'True', is_correct:true }, { option_text:'False', is_correct:false }];
+        else if (t === 'multiple_choice' && options.length < 2) options = [{ option_text:'', is_correct:false },{ option_text:'', is_correct:false },{ option_text:'', is_correct:false },{ option_text:'', is_correct:false }];
+        renderOptionsArea(t);
+    });
+
+    renderMediaContent();
+    renderOptionsArea('multiple_choice');
+
+    // ── Save ──
+    overlay.querySelector('#mam-save').addEventListener('click', () => {
+        const alertEl = overlay.querySelector('#mam-alert');
+        const type    = typeSelect.value;
+        const text    = overlay.querySelector('#mam-qtext').value.trim();
+        const pts     = parseInt(overlay.querySelector('#mam-pts').value) || 1;
+        alertEl.innerHTML = '';
+
+        if (!text) { alertEl.innerHTML = '<div class="mam-alert">Question text is required.</div>'; return; }
+
+        // Sync option text from DOM
+        syncOpts();
+
+        const subjective = ['short_answer','essay','fill_blank'].includes(type);
+        let newQ;
+
+        if (subjective) {
+            const modelAns = overlay.querySelector('#mam-model').value.trim();
+            newQ = { type, question: text, answer: modelAns, points: pts };
+        } else {
+            const finalOpts = options.filter(o => o.option_text !== '');
+            if (finalOpts.length < 2) { alertEl.innerHTML = '<div class="mam-alert">Add at least 2 options.</div>'; return; }
+            if (!finalOpts.some(o => o.is_correct)) { alertEl.innerHTML = '<div class="mam-alert">Mark at least one correct answer.</div>'; return; }
+
+            const optTexts = finalOpts.map(o => o.option_text);
+            const correctIndex = finalOpts.findIndex(o => o.is_correct);
+            newQ = { type, question: text, options: optTexts, correct_index: correctIndex, points: pts };
+            if (type === 'true_false') newQ.answer = optTexts[correctIndex] === 'True';
+        }
+
+        // Attach media
+        if (mediaState.type !== 'none' && mediaState.url) {
+            newQ.media_type = mediaState.type;
+            newQ.media_url  = mediaState.url;
+            newQ.media_name = mediaState.name || '';
+        } else if (mediaState.type === 'link' && !mediaState.url) {
+            alertEl.innerHTML = '<div class="mam-alert">Enter a URL for the link attachment, or set attachment to None.</div>';
+            return;
+        }
+
+        // Add to generatedQuestions
+        if (subjective) {
+            if (!generatedQuestions.subjective) generatedQuestions.subjective = [];
+            generatedQuestions.subjective.push(newQ);
+        } else {
+            if (!generatedQuestions.objective) generatedQuestions.objective = [];
+            generatedQuestions.objective.push(newQ);
+        }
+
+        overlay.remove();
+        renderStep4(container, subjects);
+    });
 }
 
 /* ==================== HELPERS ==================== */

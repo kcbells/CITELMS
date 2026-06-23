@@ -2,6 +2,7 @@
 /**
  * Classroom API — teacher, classmates, class comments
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
@@ -33,6 +34,9 @@ switch ($action) {
     case 'record-view':       recordContentView(); break;
     case 'content-views':     getContentViews();  break;
     case 'view-summary':      getViewSummary();   break;
+    case 'new-replies':       getNewCommentReplies();    break;
+    case 'enrolled-students': getEnrolledStudents();     break;
+    case 'grade-submission':  gradeSubmission();          break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -429,6 +433,20 @@ function addComment() {
     }
 }
 
+function ensureSubmissionGradeColumn() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $col = db()->fetchOne("SHOW COLUMNS FROM student_work_files LIKE 'points_earned'");
+        if (!$col) {
+            pdo()->exec("ALTER TABLE student_work_files ADD COLUMN points_earned DECIMAL(8,2) NULL DEFAULT NULL");
+        }
+    } catch (Exception $e) {
+        error_log('points_earned column: ' . $e->getMessage());
+    }
+}
+
 function ensureWorkFilesTable() {
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS student_work_files (
@@ -493,10 +511,11 @@ function getSubmissions() {
             ? 'COALESCE(c.submitted_at, c.created_at) ASC, c.user_student_id ASC, c.file_id ASC'
             : 'c.created_at ASC';
 
+        ensureSubmissionGradeColumn();
         $files = db()->fetchAll(
             "SELECT c.file_id, c.user_student_id, c.subject_id, c.lessons_id, c.quiz_id,
                     c.file_name, c.original_name, c.file_path, c.file_type, c.file_size,
-                    c.is_submitted, c.submitted_at, c.created_at,
+                    c.is_submitted, c.submitted_at, c.created_at, c.points_earned,
                     CONCAT(u.first_name, ' ', u.last_name) AS student_name,
                     u.student_id,
                     (c.user_student_id = ?) AS is_mine
@@ -619,7 +638,7 @@ function uploadSubmission() {
 
         echo json_encode(['success' => true, 'data' => $row]);
     } catch (InvalidArgumentException $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[ClassroomAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Exception $e) {
         error_log('uploadSubmission: ' . $e->getMessage());
         http_response_code(500);
@@ -661,6 +680,43 @@ function deleteSubmission() {
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Database error']);
+    }
+}
+
+function gradeSubmission() {
+    $input        = json_decode(file_get_contents('php://input'), true) ?: [];
+    $subjectId    = (int)($input['subject_id'] ?? 0);
+    $studentId    = (int)($input['student_id'] ?? 0);
+    $lessonsId    = isset($input['lessons_id']) && $input['lessons_id'] !== '' ? (int)$input['lessons_id'] : null;
+    $pointsEarned = $input['points_earned'] !== null && $input['points_earned'] !== ''
+        ? (float)$input['points_earned'] : null;
+    $userId = Auth::id();
+
+    if (!$subjectId || !$studentId || !$lessonsId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id, student_id, and lessons_id are required']);
+        return;
+    }
+
+    try {
+        $access = requireClassAccess($subjectId, $userId);
+        if (empty($access['is_instructor'])) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Instructor only']);
+            return;
+        }
+
+        ensureSubmissionGradeColumn();
+        pdo()->prepare(
+            "UPDATE student_work_files SET points_earned = ?
+             WHERE subject_id = ? AND lessons_id = ? AND user_student_id = ?"
+        )->execute([$pointsEarned, $subjectId, $lessonsId, $studentId]);
+
+        ob_clean();
+        echo json_encode(['success' => true, 'points_earned' => $pointsEarned]);
+    } catch (Exception $e) {
+        error_log('gradeSubmission: ' . $e->getMessage());
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'Failed to save grade']);
     }
 }
 
@@ -720,7 +776,7 @@ function submitWork() {
 
         echo json_encode(['success' => true, 'message' => 'Work submitted to your instructor']);
     } catch (InvalidArgumentException $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[ClassroomAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Exception $e) {
         error_log('submitWork: ' . $e->getMessage());
         http_response_code(500);
@@ -992,4 +1048,60 @@ function getViewSummary() {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Database error']);
     }
+}
+
+// ─── New private comment replies for the current student ──────────────────
+function getNewCommentReplies() {
+    $me      = Auth::id();
+    $sinceRaw = trim($_GET['since'] ?? '');
+    $since    = $sinceRaw !== ''
+        ? date('Y-m-d H:i:s', strtotime($sinceRaw))
+        : date('Y-m-d H:i:s', strtotime('-7 days'));
+
+    // Replies posted by someone else on private threads where I am the thread_user_id
+    $replies = db()->fetchAll(
+        "SELECT c.comment_id, c.subject_id, c.lessons_id, c.quiz_id,
+                c.content, c.created_at,
+                CONCAT(u.first_name, ' ', u.last_name) AS replier_name,
+                s.subject_code, s.subject_name
+         FROM class_comments c
+         JOIN users u ON u.users_id = c.user_id
+         JOIN subject s ON s.subject_id = c.subject_id
+         WHERE c.is_private = 1
+           AND c.thread_user_id = ?
+           AND c.user_id != ?
+           AND c.created_at > ?
+         ORDER BY c.created_at DESC
+         LIMIT 15",
+        [$me, $me, $since]
+    );
+
+    echo json_encode(['success' => true, 'data' => $replies ?? []]);
+}
+
+function getEnrolledStudents() {
+    $userId    = Auth::id();
+    $subjectId = (int)($_GET['subject_id'] ?? 0);
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+    $access = requireClassAccess($subjectId, $userId);
+    if (empty($access['is_instructor'])) {
+        echo json_encode(['success' => false, 'message' => 'Instructor access required']);
+        return;
+    }
+    $students = db()->fetchAll(
+        "SELECT u.users_id, u.first_name, u.last_name, u.student_id,
+                sec.section_name, sec.section_id
+         FROM student_subject ss
+         JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
+         JOIN users u ON ss.user_student_id = u.users_id
+         LEFT JOIN section sec ON ss.section_id = sec.section_id
+         WHERE so.subject_id = ? AND ss.status = 'enrolled'
+         ORDER BY sec.section_name, u.last_name, u.first_name",
+        [$subjectId]
+    );
+    ob_clean();
+    echo json_encode(['success' => true, 'data' => $students ?: []]);
 }

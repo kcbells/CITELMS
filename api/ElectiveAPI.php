@@ -1,0 +1,168 @@
+<?php
+/**
+ * ElectiveAPI — elective tracks and subject assignments (dean only, scoped to own dept)
+ */
+require_once __DIR__ . '/../config/cors.php';
+header('Content-Type: application/json');
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/auth.php';
+
+if (!Auth::check()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Not authenticated']);
+    exit;
+}
+
+$isDean  = Auth::role() === 'dean';
+$isAdmin = Auth::role() === 'admin';
+if (!$isDean && !$isAdmin) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Dean or admin access required']);
+    exit;
+}
+
+$action = $_GET['action'] ?? '';
+switch ($action) {
+    case 'list':           handleList();          break;
+    case 'add_track':      handleAddTrack();      break;
+    case 'delete_track':   handleDeleteTrack();   break;
+    case 'add_subject':    handleAddSubject();    break;
+    case 'remove_subject': handleRemoveSubject(); break;
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+// ── Dean info ──────────────────────────────────────────────────────────────
+
+function deanInfo(): array {
+    return db()->fetchOne(
+        "SELECT program_id, department_id, campus_id FROM users WHERE users_id = ?",
+        [Auth::id()]
+    ) ?: ['program_id' => 0, 'department_id' => 0, 'campus_id' => 0];
+}
+
+function resolveProgram(): int {
+    global $isDean;
+    if ($isDean) return (int)(deanInfo()['program_id'] ?? 0);
+    return (int)($_GET['program_id'] ?? $_POST['program_id'] ?? 0);
+}
+
+// ── Ownership check: does this track belong to the dean's program? ──────────
+
+function canAccessTrack(int $trackId): bool {
+    global $isDean;
+    if (!$isDean) return true;
+    $info = deanInfo();
+    $row  = db()->fetchOne("SELECT program_id FROM elective_track WHERE track_id=?", [$trackId]);
+    return $row && (int)$row['program_id'] === (int)$info['program_id'];
+}
+
+// ── List tracks + subjects for a program ──────────────────────────────────
+
+function handleList() {
+    $programId = resolveProgram();
+    if (!$programId) { echo json_encode(['success' => false, 'message' => 'program_id required']); return; }
+
+    $tracks = db()->fetchAll(
+        "SELECT track_id, track_name, department_id, program_id
+         FROM elective_track WHERE program_id = ? AND status = 'active' ORDER BY track_id",
+        [$programId]
+    );
+
+    foreach ($tracks as &$t) {
+        $t['subjects'] = db()->fetchAll(
+            "SELECT es.id, s.subject_id, s.subject_code, s.subject_name, s.units
+             FROM elective_subject es
+             JOIN subject s ON s.subject_id = es.subject_id
+             WHERE es.track_id = ?
+             ORDER BY s.subject_code",
+            [$t['track_id']]
+        );
+    }
+
+    echo json_encode(['success' => true, 'data' => $tracks]);
+}
+
+// ── Add track ──────────────────────────────────────────────────────────────
+
+function handleAddTrack() {
+    global $isDean;
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    $name = trim($data['track_name'] ?? '');
+    if (!$name) { echo json_encode(['success' => false, 'message' => 'track_name required']); return; }
+
+    if ($isDean) {
+        $info = deanInfo();
+        $programId    = (int)$info['program_id'];
+        $departmentId = (int)$info['department_id'];
+    } else {
+        $programId    = (int)($data['program_id']    ?? 0);
+        $departmentId = (int)($data['department_id'] ?? 0);
+    }
+
+    if (!$programId || !$departmentId) {
+        echo json_encode(['success' => false, 'message' => 'program_id and department_id required']);
+        return;
+    }
+
+    try {
+        pdo()->prepare(
+            "INSERT INTO elective_track (department_id, program_id, track_name)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE status = 'active'"
+        )->execute([$departmentId, $programId, $name]);
+        $row = db()->fetchOne(
+            "SELECT track_id FROM elective_track WHERE program_id=? AND track_name=?",
+            [$programId, $name]
+        );
+        echo json_encode(['success' => true, 'message' => 'Track added', 'track_id' => (int)$row['track_id']]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Failed: ' . $e->getMessage()]);
+    }
+}
+
+// ── Delete track ───────────────────────────────────────────────────────────
+
+function handleDeleteTrack() {
+    $data    = json_decode(file_get_contents('php://input'), true) ?? [];
+    $trackId = (int)($data['track_id'] ?? 0);
+    if (!$trackId) { echo json_encode(['success' => false, 'message' => 'track_id required']); return; }
+    if (!canAccessTrack($trackId)) { http_response_code(403); echo json_encode(['success' => false, 'message' => 'Access denied']); return; }
+
+    pdo()->prepare("UPDATE elective_track SET status='inactive' WHERE track_id=?")->execute([$trackId]);
+    echo json_encode(['success' => true, 'message' => 'Track removed']);
+}
+
+// ── Add subject to track ───────────────────────────────────────────────────
+
+function handleAddSubject() {
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $trackId   = (int)($data['track_id']   ?? 0);
+    $subjectId = (int)($data['subject_id'] ?? 0);
+    if (!$trackId || !$subjectId) { echo json_encode(['success' => false, 'message' => 'track_id and subject_id required']); return; }
+    if (!canAccessTrack($trackId)) { http_response_code(403); echo json_encode(['success' => false, 'message' => 'Access denied']); return; }
+
+    try {
+        pdo()->prepare("INSERT IGNORE INTO elective_subject (track_id, subject_id) VALUES (?,?)")
+             ->execute([$trackId, $subjectId]);
+        echo json_encode(['success' => true, 'message' => 'Subject added to track']);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Failed: ' . $e->getMessage()]);
+    }
+}
+
+// ── Remove subject from track ──────────────────────────────────────────────
+
+function handleRemoveSubject() {
+    $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    $id   = (int)($data['id'] ?? 0);
+    if (!$id) { echo json_encode(['success' => false, 'message' => 'id required']); return; }
+
+    $row = db()->fetchOne("SELECT track_id FROM elective_subject WHERE id=?", [$id]);
+    if (!$row || !canAccessTrack((int)$row['track_id'])) {
+        http_response_code(403); echo json_encode(['success' => false, 'message' => 'Access denied']); return;
+    }
+
+    pdo()->prepare("DELETE FROM elective_subject WHERE id=?")->execute([$id]);
+    echo json_encode(['success' => true, 'message' => 'Subject removed']);
+}

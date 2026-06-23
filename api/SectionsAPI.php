@@ -3,6 +3,7 @@
  * Sections API - CRUD for section management
  * Each section can hold multiple subjects (via section_subject junction table)
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -102,13 +103,13 @@ function handleList() {
     $params     = [];
     if ($semesterId) { $conditions[] = 'sec.semester_id = ?'; $params[] = $semesterId; }
     if ($programId)  { $conditions[] = 'sec.program_id = ?';  $params[] = $programId;  }
-    // Dean: scope to sections under their department's programs
+    // Dean: scope to their own program only
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deptId   = $deanUser['department_id'] ?? null;
-        if ($deptId) {
-            $conditions[] = 'sec.program_id IN (SELECT program_id FROM department_program WHERE department_id = ?)';
-            $params[]     = $deptId;
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $progId   = $deanUser['program_id'] ?? null;
+        if ($progId) {
+            $conditions[] = 'sec.program_id = ?';
+            $params[]     = $progId;
         }
     }
     $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
@@ -179,19 +180,20 @@ function handleCreate() {
         return;
     }
 
-    // Dean: verify program belongs to their department
+    // Dean: verify program is their own
     if (Auth::role() === 'dean' && $programId) {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deptId   = $deanUser['department_id'] ?? null;
-        $allowed  = $deptId ? db()->fetchOne(
-            "SELECT 1 FROM department_program WHERE program_id = ? AND department_id = ?",
-            [$programId, $deptId]
-        ) : null;
-        if (!$allowed) {
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deanProg = (int)($deanUser['program_id'] ?? 0);
+        if (!$deanProg || $deanProg !== $programId) {
             http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Access denied: program not in your department']);
+            echo json_encode(['success' => false, 'message' => 'Access denied: program not in your scope']);
             return;
         }
+    }
+    // Dean: if no program_id supplied, default to their own program
+    if (Auth::role() === 'dean' && !$programId) {
+        $deanUser  = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $programId = (int)($deanUser['program_id'] ?? 0);
     }
 
     // For instructors: auto-fill program_id from their profile if not provided
@@ -653,17 +655,11 @@ function handleSubjectSections() {
     }
 
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanDeptId = $deanUser['department_id'] ?? null;
-        if ($deanDeptId && $subject['program_id']) {
-            $inDept = db()->fetchOne(
-                "SELECT 1 FROM department_program WHERE department_id = ? AND program_id = ? LIMIT 1",
-                [$deanDeptId, $subject['program_id']]
-            );
-            if (!$inDept) {
-                echo json_encode(['success' => false, 'message' => 'Subject not in your department']);
-                return;
-            }
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deanProg = (int)($deanUser['program_id'] ?? 0);
+        if ($deanProg && (int)($subject['program_id'] ?? 0) !== $deanProg) {
+            echo json_encode(['success' => false, 'message' => 'Subject not in your program']);
+            return;
         }
     }
 
@@ -727,19 +723,16 @@ function handleSubjectSections() {
 
 function handleInstructorClasses() {
     $userId = Auth::id();
-    $semRow = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
-    $semId  = $semRow ? (int)$semRow['semester_id'] : 0;
 
     $subjects = db()->fetchAll(
         "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name, s.units,
-                so.subject_offered_id, p.program_code, p.program_name
+                so.subject_offered_id, so.status AS offering_status, p.program_code, p.program_name
          FROM subject_offered so
          JOIN subject s ON s.subject_id = so.subject_id
          LEFT JOIN program p ON p.program_id = s.program_id
-         WHERE so.user_teacher_id = ? AND so.status = 'open'
-           AND (? = 0 OR so.semester_id = ?)
-         ORDER BY s.subject_code",
-        [$userId, $semId, $semId]
+         WHERE so.user_teacher_id = ? AND so.status IN ('open', 'archived')
+         ORDER BY so.status ASC, s.subject_code",
+        [$userId]
     );
 
     foreach ($subjects as &$sub) {
@@ -1246,42 +1239,41 @@ function handleSemesters() {
 // ─── List active programs (for section create/edit modal) ──────────────────
 
 function handlePrograms() {
-    // Dean: always scope to their department only
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deptId   = (int)($deanUser['department_id'] ?? 0);
+        // Dean: return only their own program
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $progId   = (int)($deanUser['program_id'] ?? 0);
+        $programs = $progId ? db()->fetchAll(
+            "SELECT program_id, program_code, program_name FROM program WHERE program_id = ? AND status = 'active'",
+            [$progId]
+        ) : [];
     } else {
         $deptId = (int)($_GET['department_id'] ?? 0);
-    }
-
-    if ($deptId) {
-        $programs = db()->fetchAll(
-            "SELECT p.program_id, p.program_code, p.program_name
-             FROM program p
-             JOIN department_program dp ON dp.program_id = p.program_id
-             WHERE p.status = 'active' AND dp.department_id = ?
-             ORDER BY p.program_code",
-            [$deptId]
-        );
-    } else {
-        $programs = db()->fetchAll(
-            "SELECT program_id, program_code, program_name
-             FROM program WHERE status = 'active' ORDER BY program_code"
-        );
+        if ($deptId) {
+            $programs = db()->fetchAll(
+                "SELECT program_id, program_code, program_name FROM program WHERE status = 'active' AND department_id = ? ORDER BY program_code",
+                [$deptId]
+            );
+        } else {
+            $programs = db()->fetchAll(
+                "SELECT program_id, program_code, program_name FROM program WHERE status = 'active' ORDER BY program_code"
+            );
+        }
     }
     echo json_encode(['success' => true, 'data' => $programs]);
 }
 
 function handleDepartments() {
-    // Dean: only return their own department
+    // Dean: return only the department of their program
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne(
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $progId   = (int)($deanUser['program_id'] ?? 0);
+        $depts = $progId ? db()->fetchAll(
             "SELECT d.department_id, d.department_name, d.department_code
-             FROM users u JOIN department d ON d.department_id = u.department_id
-             WHERE u.users_id = ?",
-            [Auth::id()]
-        );
-        $depts = $deanUser ? [$deanUser] : [];
+             FROM department d JOIN program p ON p.department_id = d.department_id
+             WHERE p.program_id = ? AND d.status = 'active'",
+            [$progId]
+        ) : [];
     } else {
         $depts = db()->fetchAll(
             "SELECT department_id, department_name, department_code
@@ -1437,7 +1429,7 @@ function handlePreviewImportStudents() {
             ]
         ]);
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[SectionsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 
@@ -1501,7 +1493,7 @@ function handleBulkImportStudents() {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[SectionsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 

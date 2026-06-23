@@ -2,7 +2,7 @@
  * Student Take Quiz Page
  * Professional quiz-taking interface with timer, navigator, and submit
  */
-import { Api } from '../../api.js';
+import { Api, BASE_URL } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { subjectHash } from './quizzes.js';
 import {
@@ -158,7 +158,30 @@ export async function render(container) {
 
     const res = await Api.get('/QuizzesAPI.php?action=questions&id=' + quizId);
     if (!res.success) {
-        container.innerHTML = `<div style="text-align:center;padding:60px;color:#b91c1c">${res.message || 'Failed to load quiz'}</div>`;
+        injectPreQuizStyles();
+        const msg = res.message || 'Failed to load quiz';
+        const alreadySubmitted = /already submitted/i.test(msg);
+        if (alreadySubmitted) {
+            let viewHref = '#student/my-subjects';
+            let backLabel = 'Back to classwork';
+            try {
+                const historyRes = await Api.get('/QuizAttemptsAPI.php?action=history&quiz_id=' + quizId);
+                const latest = historyRes.success && historyRes.data?.length ? historyRes.data[0] : null;
+                if (latest?.attempt_id) {
+                    viewHref = `#student/quiz-result?attempt_id=${latest.attempt_id}`;
+                }
+            } catch (_) { /* ignore */ }
+            showProctorNotice(container, {
+                variant: 'info',
+                title: 'Work submitted',
+                message: 'You have already turned in this activity. Retakes are not allowed.',
+                details: ['Your instructor can view your submission.', 'You can review your answers from the result page.'],
+                backHref: viewHref,
+                backLabel: viewHref.includes('quiz-result') ? 'View submission' : backLabel,
+            });
+            return;
+        }
+        container.innerHTML = `<div style="text-align:center;padding:60px;color:#b91c1c">${msg}</div>`;
         return;
     }
 
@@ -420,6 +443,37 @@ export async function render(container) {
         panel.querySelector('#tq-submit-inline')?.addEventListener('click', () => showSubmitConfirm());
     }
 
+    function persistCurrentAnswer() {
+        const q = questions[currentQ];
+        if (!q) return;
+        const inp = container.querySelector('#tq-text-ans');
+        if (inp) {
+            answers[q.questions_id] = inp.value;
+        }
+    }
+
+    function countAnswered() {
+        return questions.filter(q => {
+            const ans = answers[q.questions_id];
+            if (ans === undefined || ans === null) return false;
+            if (Array.isArray(ans)) return ans.length > 0;
+            return String(ans).trim() !== '';
+        }).length;
+    }
+
+    let autoSubmitTimer = null;
+    function maybeAutoSubmit() {
+        if (quizEnded || proctorEnded) return;
+        persistCurrentAnswer();
+        if (countAnswered() < questions.length) return;
+        clearTimeout(autoSubmitTimer);
+        autoSubmitTimer = setTimeout(() => {
+            if (!quizEnded && !proctorEnded && countAnswered() >= questions.length) {
+                submitQuiz('', { auto: true });
+            }
+        }, 500);
+    }
+
     function showQuestion(idx) {
         currentQ = idx;
         const q = questions[idx];
@@ -428,6 +482,8 @@ export async function render(container) {
 
         const typeLabelMap = {
             multiple_choice:    'Multiple Choice',
+            checkboxes:         'Checkboxes',
+            dropdown:           'Dropdown',
             true_false:         'True / False',
             fill_blank:         'Fill in the Blank',
             fill_in_the_blank:  'Fill in the Blank',
@@ -438,6 +494,18 @@ export async function render(container) {
         const cleanText  = cleanQuestionText(q.question_text);
         const curAnswer  = answers[q.questions_id] ?? '';
         const isTextType = ['fill_blank','fill_in_the_blank','short_answer','essay'].includes(q.question_type);
+        const isCheckbox = q.question_type === 'checkboxes';
+
+        // Media attachment HTML — resolve relative paths (uploads/questions/...) to absolute
+        const resolveMediaUrl = url => (!url || /^https?:\/\//i.test(url) || url.startsWith('/')) ? url : BASE_URL + '/' + url;
+        const mediaHtml = (() => {
+            if (!q.media_type || q.media_type === 'none' || !q.media_url) return '';
+            const mUrl = resolveMediaUrl(q.media_url);
+            if (q.media_type === 'image') return `<div style="margin:12px 0;"><img src="${esc(mUrl)}" alt="${esc(q.media_name || 'Question image')}" style="max-width:100%;max-height:320px;border-radius:10px;object-fit:cover;display:block;border:1px solid #e8e8e8;"></div>`;
+            if (q.media_type === 'audio') return `<div style="margin:12px 0;"><audio controls src="${esc(mUrl)}" style="width:100%;max-width:480px;"></audio></div>`;
+            if (q.media_type === 'link') return `<div style="margin:12px 0;"><a href="${esc(mUrl)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;color:#1B4D3E;font-weight:600;font-size:14px;text-decoration:underline;"><svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>${esc(q.media_name || q.media_url)}</a></div>`;
+            return '';
+        })();
 
         // Build answer area based on type
         let answerHtml = '';
@@ -495,6 +563,33 @@ export async function render(container) {
                         <span id="tq-char-num">${String(curAnswer).length}</span>/${charMax} characters
                     </div>
                 </div>`;
+        } else if (isCheckbox) {
+            const curSelected = Array.isArray(curAnswer) ? curAnswer.map(String) : (curAnswer ? [String(curAnswer)] : []);
+            answerHtml = `
+                <div class="tq-type-hint" style="background:#EDE9FE;color:#5B21B6;border-left:3px solid #7C3AED;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:5px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Select ALL correct answers
+                </div>
+                <div class="tq-options tq-checkboxes">
+                    ${q.choices.map((c, ci) => `
+                        <label class="tq-opt tq-chk-opt ${curSelected.includes(String(c.option_id)) ? 'selected' : ''}" data-oid="${c.option_id}" style="cursor:pointer;">
+                            <div class="tq-opt-radio" style="border-radius:4px;"></div>
+                            <div class="tq-opt-letter">${letters[ci] || ci + 1}</div>
+                            <div class="tq-opt-text">${esc(c.option_text)}</div>
+                            <input type="checkbox" style="display:none;" value="${c.option_id}" ${curSelected.includes(String(c.option_id)) ? 'checked' : ''}>
+                        </label>
+                    `).join('')}
+                </div>`;
+        } else if (q.question_type === 'dropdown') {
+            answerHtml = `
+                <div class="tq-type-hint" style="background:#fafafa;color:#374151;border-left:3px solid #e5e7eb;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;">
+                    ▾ Select the correct answer from the dropdown
+                </div>
+                <div style="margin-top:4px;">
+                    <select id="tq-dropdown-ans" style="width:100%;max-width:400px;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;cursor:pointer;">
+                        <option value="">— Select an answer —</option>
+                        ${q.choices.map(c => `<option value="${c.option_id}" ${String(answers[q.questions_id]) === String(c.option_id) ? 'selected' : ''}>${esc(c.option_text)}</option>`).join('')}
+                    </select>
+                </div>`;
         } else {
             // Multiple choice / True-False
             answerHtml = `
@@ -516,6 +611,7 @@ export async function render(container) {
                 <span class="tq-q-type">${typeLabel}</span>
             </div>
             <div class="tq-q-text">${q._inlineBlankHtml || esc(cleanText)}</div>
+            ${mediaHtml}
             <div class="tq-q-points">${q.points} point${q.points > 1 ? 's' : ''}</div>
             ${answerHtml}
             <div class="tq-nav-btns">
@@ -559,6 +655,7 @@ export async function render(container) {
             inp.addEventListener('input', () => {
                 answers[q.questions_id] = inp.value;
                 updateNavigator();
+                maybeAutoSubmit();
                 if (q.question_type === 'short_answer') {
                     panel.querySelector('#tq-char-num').textContent = inp.value.length;
                 } else if (q.question_type === 'essay') {
@@ -593,6 +690,25 @@ export async function render(container) {
             if (q.question_type === 'fill_blank' || q.question_type === 'fill_in_the_blank') {
                 setTimeout(() => inp?.focus(), 50);
             }
+        } else if (isCheckbox) {
+            panel.querySelectorAll('.tq-chk-opt').forEach(opt => {
+                opt.addEventListener('click', () => {
+                    const cb = opt.querySelector('input[type="checkbox"]');
+                    if (cb) cb.checked = !cb.checked;
+                    opt.classList.toggle('selected', cb?.checked);
+                    const selected = [...panel.querySelectorAll('.tq-chk-opt input:checked')].map(c => parseInt(c.value));
+                    answers[q.questions_id] = selected;
+                    updateNavigator();
+                    maybeAutoSubmit();
+                });
+            });
+        } else if (q.question_type === 'dropdown') {
+            const sel = panel.querySelector('#tq-dropdown-ans');
+            sel?.addEventListener('change', () => {
+                answers[q.questions_id] = sel.value ? parseInt(sel.value) : '';
+                updateNavigator();
+                maybeAutoSubmit();
+            });
         } else {
             panel.querySelectorAll('.tq-opt').forEach(opt => {
                 opt.addEventListener('click', () => {
@@ -600,6 +716,7 @@ export async function render(container) {
                     opt.classList.add('selected');
                     answers[q.questions_id] = parseInt(opt.dataset.oid);
                     updateNavigator();
+                    maybeAutoSubmit();
                 });
             });
         }
@@ -614,7 +731,7 @@ export async function render(container) {
     }
 
     function updateNavigator() {
-        const answered = Object.keys(answers).length;
+        const answered = countAnswered();
         const pct      = Math.round((answered / questions.length) * 100);
 
         container.querySelector('#tq-answered-count').textContent = `${answered} / ${questions.length}`;
@@ -657,7 +774,8 @@ export async function render(container) {
 
     function showSubmitConfirm() {
         if (quizEnded || proctorEnded) return;
-        const answered = Object.keys(answers).length;
+        persistCurrentAnswer();
+        const answered = countAnswered();
         const unanswered = questions.length - answered;
         const overlay = document.createElement('div');
         overlay.className = 'tq-modal-overlay';
@@ -681,8 +799,11 @@ export async function render(container) {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     }
 
-    async function submitQuiz(reason = '') {
+    async function submitQuiz(reason = '', { auto = false } = {}) {
         if (quizEnded) return;
+        clearTimeout(autoSubmitTimer);
+        persistCurrentAnswer();
+
         quizEnded = true;
         if (reason) endedReason = reason;
 
@@ -715,19 +836,43 @@ export async function render(container) {
 
             const res = await Api.post('/QuizAttemptsAPI.php?action=submit', submitData);
             if (res.success && res.data?.attempt_id) {
+                if (subjectId) {
+                    sessionStorage.setItem('coc_quiz_turned_in', JSON.stringify({
+                        quizId: quiz.quiz_id,
+                        attemptId: res.data.attempt_id,
+                        percentage: res.data.percentage,
+                        earned_points: res.data.earned_points,
+                        total_points: res.data.total_points,
+                        passed: res.data.passed,
+                    }));
+                    window.location.hash = subjectHash(subjectId, 'classwork', { type: 'quiz', id: quiz.quiz_id });
+                    return;
+                }
                 window.location.hash = `#student/quiz-result?attempt_id=${res.data.attempt_id}`;
             } else if (res.success) {
                 // Fallback: fetch latest attempt
                 const historyRes = await Api.get('/QuizAttemptsAPI.php?action=history&quiz_id=' + quiz.quiz_id);
                 if (historyRes.success && historyRes.data?.length > 0) {
-                    window.location.hash = `#student/quiz-result?attempt_id=${historyRes.data[0].attempt_id}`;
+                    const attemptId = historyRes.data[0].attempt_id;
+                    if (subjectId) {
+                        sessionStorage.setItem('coc_quiz_turned_in', JSON.stringify({
+                            quizId: quiz.quiz_id,
+                            attemptId,
+                        }));
+                        window.location.hash = subjectHash(subjectId, 'classwork', { type: 'quiz', id: quiz.quiz_id });
+                        return;
+                    }
+                    window.location.hash = `#student/quiz-result?attempt_id=${attemptId}`;
                 } else {
+                    quizEnded = false;
                     window.location.hash = quizzesBack;
                 }
             } else {
+                quizEnded = false;
                 showError(friendlyError(res.message || 'Failed to submit quiz'));
             }
         } catch (err) {
+            quizEnded = false;
             showError(friendlyError(err.message));
         }
     }
@@ -740,16 +885,19 @@ export async function render(container) {
     }
 
     function showError(msg) {
+        quizEnded = false;
+        proctorEnded = false;
+        clearQuizProctoring();
         showProctorNotice(container, {
             variant: 'danger',
             title: 'Could Not Submit Quiz',
             message: friendlyError(msg),
             details: [
                 'Your answers may not have been saved.',
-                'Check your quiz history or contact your instructor if this keeps happening.'
+                'Open the quiz again and try submitting once more.'
             ],
-            backHref: quizzesBack,
-            backLabel: 'Back to Quizzes'
+            backHref: `#student/take-quiz?quiz_id=${quiz.quiz_id}`,
+            backLabel: 'Try again'
         });
     }
 

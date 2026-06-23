@@ -32,13 +32,28 @@ function roleGreeting() {
     const ctx = getAssistantContext();
     if (role === 'student') {
         if (ctx.work_title) {
-            return `I can see you're on "${ctx.work_title}". Ask me to explain or summarize it — or highlight text in the lesson and tap Ask Ali.`;
+            return `I can see you're on <strong>${esc(ctx.work_title)}</strong>. Try one of the quick actions below, or ask me anything about this lesson.`;
         }
         return 'Ask me to explain a lesson, summarize content, or clarify a concept. Highlight text in a lesson to ask about it.';
     }
     if (role === 'instructor') return 'Ask for teaching ideas, quiz tips, or topic explanations.';
     if (role === 'dean') return 'Ask about curriculum, faculty, or academic planning.';
     return 'Ask anything about using CIT-LMS.';
+}
+
+function renderWelcomeActions(ctx) {
+    if (!ctx.lessons_id) return '';
+    const title = ctx.work_title || 'this lesson';
+    const actions = [
+        { label: 'Summarize this lesson',  msg: `Please give me a clear, organized summary of "${title}". Cover all the important points.` },
+        { label: 'Explain key concepts',   msg: `What are the key concepts and main ideas I need to understand from "${title}"? Explain each one in simple terms.` },
+        { label: 'Important terms',        msg: `List and define the important terms and vocabulary from "${title}" so I can remember them.` },
+        { label: 'Quiz me on this lesson', msg: `Give me 5 practice questions based on "${title}" to test my understanding. Show me the questions one at a time, starting with the first one.` },
+    ];
+    return `<div class="fa-quick-actions">
+        <p class="fa-quick-label">Quick actions</p>
+        ${actions.map(a => `<button type="button" class="fa-quick-btn" data-msg="${esc(a.msg)}">${a.label}</button>`).join('')}
+    </div>`;
 }
 
 function renderContextChip() {
@@ -64,23 +79,25 @@ function injectStyles() {
     style.id = 'fa-styles';
     style.textContent = `
         #fa-root {
-            position: fixed; bottom: 24px; right: 96px; z-index: 955;
+            position: fixed; bottom: 24px; right: 24px; z-index: 955;
             font-family: inherit;
         }
-        body:not(.fm-mounted) #fa-root { right: 24px; }
         #fa-root * { box-sizing: border-box; }
 
         .fa-fab {
             width: 58px; height: 58px; border-radius: 50%;
             background: ${G};
-            color: #fff; border: none; cursor: pointer;
+            color: #fff; border: none; cursor: grab;
             box-shadow: 0 6px 24px rgba(0,70,27,.4);
             display: flex; align-items: center; justify-content: center;
             transition: transform .15s, box-shadow .15s;
             position: relative;
         }
         .fa-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,70,27,.5); }
-        .fa-fab svg { width: 28px; height: 28px; }
+        .fa-fab svg { width: 28px; height: 28px; pointer-events: none; }
+        #fa-root.fa-dragging .fa-fab { cursor: grabbing; }
+        .fa-head { cursor: grab; }
+        #fa-root.fa-dragging .fa-head { cursor: grabbing; }
 
         .fa-panel {
             display: none; flex-direction: column;
@@ -176,9 +193,30 @@ function injectStyles() {
             border-radius: 10px; padding: 10px 12px; font-size: 12.5px; align-self: stretch;
         }
 
+        .fa-greeting strong { font-weight: 600; color: #1f2937; }
+        .fa-quick-actions {
+            padding: 4px 16px 12px;
+        }
+        .fa-quick-label {
+            font-size: 11px; font-weight: 600; color: #9ca3af;
+            text-transform: uppercase; letter-spacing: .04em;
+            margin: 0 0 8px;
+        }
+        .fa-quick-btn {
+            display: block; width: 100%;
+            text-align: left; border: 1px solid #e5e7eb;
+            background: #fff; border-radius: 10px;
+            padding: 9px 12px; font-size: 13px; color: #1f2937;
+            cursor: pointer; margin-bottom: 6px; line-height: 1.4;
+            transition: border-color .15s, background .15s;
+        }
+        .fa-quick-btn:hover {
+            border-color: ${G}; background: #f0fdf4; color: ${G};
+        }
+        .fa-quick-btn:last-child { margin-bottom: 0; }
+
         @media (max-width: 640px) {
             #fa-root { bottom: 16px; right: 16px; }
-            body:not(.fm-mounted) #fa-root { right: 16px; }
             .fa-panel {
                 width: calc(100vw - 20px); right: -4px;
                 height: calc(100dvh - 80px); max-height: none;
@@ -193,11 +231,16 @@ function renderMessages() {
     if (!body) return;
 
     if (history.length === 0) {
+        const ctx = getAssistantContext();
         body.innerHTML = `
             <div class="fa-welcome">
                 <strong>Ali</strong>
-                Your free AI study helper, powered by Groq.<br>${esc(roleGreeting())}
-            </div>`;
+                Your free AI study helper, powered by Groq.<br><span class="fa-greeting">${roleGreeting()}</span>
+            </div>
+            ${renderWelcomeActions(ctx)}`;
+        body.querySelectorAll('.fa-quick-btn').forEach(btn => {
+            btn.addEventListener('click', () => sendMessage(btn.dataset.msg));
+        });
         return;
     }
 
@@ -313,6 +356,90 @@ function toggle() {
     else expand();
 }
 
+const FA_POS_KEY = 'fa-pos';
+
+function makeDraggable() {
+    const fab    = rootEl.querySelector('.fa-fab');
+    const header = rootEl.querySelector('.fa-head');
+
+    let startX, startY, startLeft, startTop;
+    let dragging = false;
+    let moved    = false;
+
+    function currentPos() {
+        const r = rootEl.getBoundingClientRect();
+        return { left: r.left, top: r.top };
+    }
+
+    function applyPos(left, top) {
+        const w = rootEl.offsetWidth  || 58;
+        const h = rootEl.offsetHeight || 58;
+        left = Math.max(0, Math.min(window.innerWidth  - w, left));
+        top  = Math.max(0, Math.min(window.innerHeight - h, top));
+        rootEl.style.right  = 'auto';
+        rootEl.style.bottom = 'auto';
+        rootEl.style.left   = left + 'px';
+        rootEl.style.top    = top  + 'px';
+    }
+
+    function onMove(e) {
+        if (!dragging) return;
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        if (Math.abs(cx - startX) > 4 || Math.abs(cy - startY) > 4) moved = true;
+        if (moved) applyPos(startLeft + (cx - startX), startTop + (cy - startY));
+    }
+
+    function onUp() {
+        if (!dragging) return;
+        dragging = false;
+        rootEl.classList.remove('fa-dragging');
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend',  onUp);
+
+        if (moved) {
+            // Swallow the upcoming click so the FAB doesn't toggle
+            document.addEventListener('click', e => e.stopPropagation(), { capture: true, once: true });
+            const r = rootEl.getBoundingClientRect();
+            try { localStorage.setItem(FA_POS_KEY, JSON.stringify({ left: r.left, top: r.top })); } catch (_) {}
+        }
+    }
+
+    function onDown(e) {
+        // Allow clicks on buttons/inputs inside the header (minimize, etc.) to work normally
+        if (e.target.closest('button, textarea, input, a') && e.target !== fab) return;
+        const pos  = currentPos();
+        startX     = e.touches ? e.touches[0].clientX : e.clientX;
+        startY     = e.touches ? e.touches[0].clientY : e.clientY;
+        startLeft  = pos.left;
+        startTop   = pos.top;
+        dragging   = true;
+        moved      = false;
+        rootEl.classList.add('fa-dragging');
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup',   onUp);
+        document.addEventListener('touchmove', onMove, { passive: true });
+        document.addEventListener('touchend',  onUp);
+    }
+
+    fab.addEventListener('mousedown',  onDown);
+    fab.addEventListener('touchstart', onDown, { passive: true });
+    header?.addEventListener('mousedown',  onDown);
+    header?.addEventListener('touchstart', onDown, { passive: true });
+
+    // Restore saved position
+    try {
+        const saved = JSON.parse(localStorage.getItem(FA_POS_KEY) || 'null');
+        if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+            requestAnimationFrame(() => applyPos(saved.left, saved.top));
+        }
+    } catch (_) {}
+}
+
 function bindEvents() {
     getEl('fa-bubble')?.addEventListener('click', toggle);
     rootEl?.querySelector('.fa-minimize-btn')?.addEventListener('click', minimize);
@@ -329,6 +456,7 @@ function bindEvents() {
         }
     });
     getEl('fa-send')?.addEventListener('click', sendMessage);
+    makeDraggable();
 }
 
 export function mountFloatingAssistant() {

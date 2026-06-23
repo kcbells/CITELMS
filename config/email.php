@@ -58,7 +58,7 @@ if (!defined('MAIL_DEV_LOG')) {
     define('MAIL_DEV_LOG', true);
 }
 
-/** Password OTP validity — 1 minute */
+/** Password OTP validity — 10 minutes */
 if (!defined('PASSWORD_OTP_TTL')) {
-    define('PASSWORD_OTP_TTL', (int)(getenv('PASSWORD_OTP_TTL') ?: 60));
+    define('PASSWORD_OTP_TTL', (int)(getenv('PASSWORD_OTP_TTL') ?: 600));
 }

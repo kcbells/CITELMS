@@ -1,4 +1,4 @@
-/**
+﻿/**
  * App.js - Main entry point & Router
  * Handles authentication check, routing, and page loading
  */
@@ -21,6 +21,12 @@ import {
 import { Api } from './api.js';
 import { icon, iconLg } from './utils/icons.js';
 
+// ── Page-transition blade spinner ────────────────────────────
+function pagePencilHTML() {
+    const blades = '<div class="spinner-blade"></div>'.repeat(12);
+    return `<div class="page-spinner"><div class="spinner">${blades}</div><p class="page-spinner-text">Loading</p></div>`;
+}
+
 // ── Permission map: page → required permission slug ───────────
 // null = no permission required (always accessible)
 const PAGE_PERMISSIONS = {
@@ -37,11 +43,9 @@ const PAGE_PERMISSIONS = {
     'admin/subject-offerings':   'subject_offerings.view',
     'admin/faculty-assignments': 'faculty_assignments.view',
     // Dean — academic pages are role-intrinsic (no RBAC gate needed)
-    'dean/subjects':             null,
     'dean/curriculum':           null,
     'dean/sections':             null,
-    'dean/subject-offerings':    null,
-    'dean/faculty-assignments':  null,
+    'dean/faculty':              null,
     'dean/instructors':          null,
     'dean/reports':              null,
     // Instructor
@@ -53,7 +57,7 @@ const PAGE_PERMISSIONS = {
     'instructor/my-classes':     'subjects.view',
     'instructor/subject':        'subjects.view',
     'instructor/content-bank':   'lessons.view',
-    'instructor/quizzes':        'quizzes.view',
+    // 'instructor/quizzes' removed — quizzes are now managed inside each subject's Classwork tab
     'instructor/gradebook':      'grades.view',
     'instructor/reports':        'reports.view',
     'instructor/analytics':      'analytics.view',
@@ -69,6 +73,10 @@ const PAGE_PERMISSIONS = {
     'instructor/messages':       null,
 };
 
+const PAGE_TITLES = {
+    dashboard: 'Home',
+};
+
 // ── Page aliases: when a role doesn't have its own page file,
 //    load an existing one from another role instead.
 //    Format: 'role/page' → 'actual-role/actual-page'
@@ -80,6 +88,7 @@ const PAGE_ALIASES = {
     'instructor/subject-offerings': 'admin/subject-offerings',
     'instructor/faculty-assignments': 'admin/faculty-assignments',
     'instructor/sections':          'instructor/my-classes',
+    'instructor/quizzes':           'instructor/my-classes',
     'instructor/reports':           'dean/reports',
     'instructor/users':             'admin/users',
     'instructor/rbac':              'admin/rbac',
@@ -87,14 +96,14 @@ const PAGE_ALIASES = {
     // Dean accessing shared admin modules
     'dean/departments':             'admin/departments',
     'dean/programs':                'admin/programs',
-    'dean/curriculum':              'admin/curriculum',
     'dean/sections':                'admin/curriculum',
-    'dean/subject-offerings':       'admin/curriculum',
-    'dean/subjects':                'admin/curriculum',
-    'dean/instructors':             'dean/faculty-assignments',
+    'dean/faculty-assignments':     'dean/faculty',
     'dean/users':                   'admin/users',
     'dean/rbac':                    'admin/rbac',
     'dean/settings':                'admin/settings',
+    'dean/messages':                'instructor/messages',
+    // Admin messaging — reuse instructor messages page
+    'admin/messages':               'instructor/messages',
     // Student accessing shared modules if granted
     // (student/announcements has its own page — no alias needed)
 };
@@ -161,17 +170,25 @@ async function loadCurrentPage() {
     }
 
     // Update page title in topbar
-    const pageTitle = route.page.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const pageTitle = PAGE_TITLES[route.page]
+        || route.page.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     document.title = `${pageTitle} | CIT-LMS`;
 
     // Update sidebar active state
     const navPage = route.page === 'subject'
         ? (route.role === 'instructor' ? 'my-classes' : 'my-subjects')
         : route.page;
+    const currentFullHash = window.location.hash.replace('#', '');
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
-        if (item.dataset.page === navPage) {
-            item.classList.add('active');
+        const href = (item.getAttribute('href') || '').replace('#', '');
+        if (href.includes('?')) {
+            // Items with query params (e.g. Archived Classes): must match exactly
+            item.classList.toggle('active', currentFullHash === href || currentFullHash.startsWith(href + '&'));
+        } else if (item.dataset.page === navPage) {
+            // Items without query params: active only when NOT on a query-param variant
+            const onArchivedVariant = currentFullHash.includes('?view=archived') && item.dataset.page === 'my-subjects';
+            item.classList.toggle('active', !onArchivedVariant);
         }
     });
 
@@ -234,7 +251,7 @@ async function loadCurrentPage() {
     const [resolvedRole, resolvedPage] = resolvedKey.split('/');
 
     if (pages[resolvedKey]) {
-        content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner-lg" style="width:36px;height:36px;border:3px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div></div>';
+        content.innerHTML = pagePencilHTML();
         try {
             await pages[resolvedKey](content, route.params);
         } catch (err) {
@@ -244,7 +261,7 @@ async function loadCurrentPage() {
     } else {
         // Try to dynamically import the page module (use resolved role/page)
         try {
-            content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner-lg" style="width:36px;height:36px;border:3px solid var(--gray-200);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div></div>';
+            content.innerHTML = pagePencilHTML();
             const module = await import(`./pages/${resolvedRole}/${resolvedPage}.js?v=${Date.now()}`);
             if (!module.render) {
                 throw new Error(`Page module has no render export: ${pageKey}`);
@@ -306,16 +323,12 @@ function mountRoleWidgets(role) {
     }
 
     mountFloatingAssistant();
+    mountFloatingMessenger();
 
     if (role === 'student') {
         mountStudentEnrollFab();
-        mountFloatingMessenger();
-    } else if (role === 'instructor') {
-        unmountStudentEnrollFab();
-        mountFloatingMessenger();
     } else {
         unmountStudentEnrollFab();
-        unmountFloatingMessenger();
     }
 }
 
@@ -326,8 +339,10 @@ async function boot() {
     const user = await Auth.requireLogin();
     if (!user) return;
 
-    // Show the shell immediately — don't block on secondary API calls
-    document.getElementById('app-loading').style.display = 'none';
+    // Fade out boot loader, show app shell
+    const bootLoader = document.getElementById('app-loading');
+    bootLoader.classList.add('fade-out');
+    bootLoader.addEventListener('transitionend', () => bootLoader.remove(), { once: true });
     document.getElementById('app').style.display = 'flex';
     renderSidebar(document.getElementById('sidebar'));
     renderTopbar(document.getElementById('topbar'));

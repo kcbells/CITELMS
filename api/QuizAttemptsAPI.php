@@ -6,6 +6,8 @@
  * ============================================================
  */
 
+require_once __DIR__ . '/../config/cors.php';
+
 // Buffer ALL output — prevents PHP warnings/errors from corrupting JSON
 ob_start();
 
@@ -48,13 +50,9 @@ function friendlyQuizMessage(Throwable $e, string $fallback = 'Something went wr
 $action = $_GET['action'] ?? '';
 
 if (!Auth::check()) {
-    if ($action === 'submit') {
-        header('Location: ' . BASE_URL . '/pages/auth/login.php');
-    } else {
-        header('Content-Type: application/json');
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    }
+    header('Content-Type: application/json');
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
 
@@ -69,6 +67,8 @@ $_attemptPerms = [
     'attempt-answers'  => 'quizzes.grade',
     'grade-answer'     => 'quizzes.grade',
     'ai-grade-answer'  => 'quizzes.grade',
+    'ai-grade-quiz'    => 'quizzes.grade',
+    'quiz-question-stats' => 'grades.view',
     'finalize-grading' => 'quizzes.grade',
 ];
 if (isset($_attemptPerms[$action]) && !Auth::can($_attemptPerms[$action])) {
@@ -114,9 +114,21 @@ switch ($action) {
         header('Content-Type: application/json');
         aiGradeAnswerById();
         break;
+    case 'ai-grade-quiz':
+        header('Content-Type: application/json');
+        aiGradeQuizPending();
+        break;
+    case 'quiz-question-stats':
+        header('Content-Type: application/json');
+        getQuizQuestionStats();
+        break;
     case 'finalize-grading':
         header('Content-Type: application/json');
         finalizeGrading();
+        break;
+    case 'ai-grade-attempt':
+        header('Content-Type: application/json');
+        aiGradeAttemptPending();
         break;
     default:
         header('Content-Type: application/json');
@@ -165,8 +177,16 @@ function submitQuiz() {
     foreach ($answers as $qId => $val) {
         $cleanId = (int)$qId;
         if ($cleanId < 1) continue;
-        // MC/TF: option_id must be a positive int; essay/fill: string, max 5000 chars
-        if (is_string($val)) {
+        // MC/TF/dropdown: option_id must be a positive int; essay/fill: string, max 5000 chars
+        // checkboxes: array of option IDs
+        if (is_array($val)) {
+            // Checkboxes — array of option IDs
+            $cleanArr = [];
+            foreach ($val as $oid) {
+                if (is_numeric($oid) && (int)$oid > 0) $cleanArr[] = (int)$oid;
+            }
+            $cleanAnswers[$cleanId] = $cleanArr;
+        } elseif (is_string($val)) {
             $cleanAnswers[$cleanId] = mb_substr(strip_tags(trim($val)), 0, 5000);
         } elseif (is_numeric($val)) {
             $cleanAnswers[$cleanId] = (int)$val;
@@ -175,6 +195,7 @@ function submitQuiz() {
     }
     $answers = $cleanAnswers;
 
+    $pdo = null;
     try {
         $quiz = db()->fetchOne(
             "SELECT q.*, s.subject_id FROM quiz q
@@ -222,12 +243,21 @@ function submitQuiz() {
             return;
         }
 
+        if (strtolower((string)($quiz['quiz_type'] ?? '')) !== 'practice' && $attemptCount > 0) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'You have already submitted this work.'
+            ]);
+            return;
+        }
+
         // Get questions from `questions` table via `quiz_questions` junction
         // NOTE: question_option.quiz_question_id is the FK column name (points to questions.questions_id)
         $questions = db()->fetchAll(
             "SELECT q.questions_id, q.question_text, q.question_type, q.points,
                     (SELECT option_id   FROM question_option WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as correct_option_id,
-                    (SELECT option_text FROM question_option WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
+                    (SELECT option_text FROM question_option WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer,
+                    (SELECT GROUP_CONCAT(option_id ORDER BY order_number SEPARATOR ',') FROM question_option WHERE quiz_question_id = q.questions_id AND is_correct = 1) as correct_option_ids
              FROM quiz_questions qq
              JOIN questions q ON qq.questions_id = q.questions_id
              WHERE qq.quiz_id = ?",
@@ -254,8 +284,20 @@ function submitQuiz() {
             $gradingStatus = 'auto_graded';
             $answerText = null;
 
-            if (in_array($q['question_type'], ['multiple_choice', 'true_false'])) {
+            if (in_array($q['question_type'], ['multiple_choice', 'true_false', 'dropdown'])) {
                 $isCorrect = $userAnswer !== null && $userAnswer == $q['correct_option_id'];
+                if ($isCorrect) {
+                    $pointsEarned = (int)$q['points'];
+                    $earnedPoints += $pointsEarned;
+                }
+            } elseif ($q['question_type'] === 'checkboxes') {
+                // All correct options must be selected and no incorrect ones
+                $correctIds = $q['correct_option_ids']
+                    ? array_map('intval', explode(',', $q['correct_option_ids']))
+                    : [];
+                $userIds = is_array($userAnswer) ? array_map('intval', $userAnswer) : [];
+                sort($correctIds); sort($userIds);
+                $isCorrect = ($correctIds === $userIds);
                 if ($isCorrect) {
                     $pointsEarned = (int)$q['points'];
                     $earnedPoints += $pointsEarned;
@@ -327,10 +369,14 @@ function submitQuiz() {
                 }
             }
 
+            $isSubjective  = in_array($q['question_type'], ['essay','short_answer','fill_blank','fill_in_the_blank']);
+            $isCheckboxType = $q['question_type'] === 'checkboxes';
             $answerRecords[] = [
-                'questions_id'     => $q['questions_id'],
-                'selected_option_id' => in_array($q['question_type'], ['essay','short_answer','fill_blank','fill_in_the_blank']) ? null : $userAnswer,
-                'answer_text'      => $answerText,
+                'questions_id'       => $q['questions_id'],
+                'selected_option_id' => ($isSubjective || $isCheckboxType) ? null : ($userAnswer ?? null),
+                'answer_text'        => $isCheckboxType
+                    ? (!empty($userAnswer) ? implode(',', array_map('intval', (array)$userAnswer)) : '')
+                    : $answerText,
                 'is_correct'       => $isCorrect ? 1 : 0,
                 'points_earned'    => $pointsEarned,
                 'grading_status'   => $gradingStatus,
@@ -416,8 +462,8 @@ function submitQuiz() {
             ]
         ]);
 
-    } catch (Exception $e) {
-        try { if ($pdo?->inTransaction()) $pdo->rollBack(); } catch (Exception $_) {}
+    } catch (Throwable $e) {
+        try { if ($pdo && $pdo->inTransaction()) $pdo->rollBack(); } catch (Throwable $_) {}
         $msg = 'We could not submit your quiz. Please try again.';
         if ($endedReason === 'tab_switch') {
             $msg = 'Your quiz was ended because you left this page.';
@@ -485,10 +531,18 @@ function getHistory() {
  * Get all scores for a quiz (instructor gradebook)
  */
 function getQuizScores() {
-    $quizId = $_GET['quiz_id'] ?? 0;
+    $quizId = (int)($_GET['quiz_id'] ?? 0);
 
     if (!$quizId) {
         echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+
+    // Verify the quiz belongs to this instructor
+    $quiz = db()->fetchOne("SELECT user_teacher_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
+    if (!$quiz || (int)$quiz['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
     }
 
@@ -578,7 +632,7 @@ function getAttemptAnswers() {
     }
 
     $attempt = db()->fetchOne(
-        "SELECT sqa.*, q.quiz_title, q.passing_rate, s.subject_code,
+        "SELECT sqa.*, q.quiz_title, q.passing_rate, q.user_teacher_id, s.subject_code,
                 u.first_name, u.last_name, u.student_id
          FROM student_quiz_attempts sqa
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
@@ -591,10 +645,17 @@ function getAttemptAnswers() {
         echo json_encode(['success' => false, 'message' => 'Attempt not found']);
         return;
     }
+    // Verify this attempt belongs to a quiz owned by this instructor
+    if ((int)$attempt['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
 
     $answers = db()->fetchAll(
         "SELECT a.*, a.student_quiz_answer_id AS answer_id,
                 q.question_text, q.question_type, q.points as max_points,
+                q.media_type, q.media_url, q.media_name,
                 (SELECT option_text FROM question_option WHERE option_id = a.selected_option_id LIMIT 1) as selected_option_text,
                 (SELECT option_text FROM question_option WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as correct_answer_text
          FROM student_quiz_answers a
@@ -603,6 +664,18 @@ function getAttemptAnswers() {
          ORDER BY q.question_order, q.questions_id",
         [$attemptId]
     );
+
+    // Attach options list for objective question types so instructor can see all choices
+    foreach ($answers as &$a) {
+        if (in_array($a['question_type'], ['multiple_choice', 'true_false', 'checkboxes', 'dropdown'])) {
+            $a['options'] = db()->fetchAll(
+                "SELECT option_id, option_text, is_correct FROM question_option
+                 WHERE quiz_question_id = ? ORDER BY order_number",
+                [$a['questions_id']]
+            );
+        }
+    }
+    unset($a);
 
     echo json_encode(['success' => true, 'data' => ['attempt' => $attempt, 'answers' => $answers ?: []]]);
 }
@@ -618,24 +691,64 @@ function gradeAnswer() {
     }
 
     $data = json_decode(file_get_contents('php://input'), true);
-    $answerId = (int)($data['answer_id'] ?? 0);
+    $answerId     = (int)($data['answer_id'] ?? 0);
     $pointsEarned = (float)($data['points_earned'] ?? 0);
-    $feedback = trim($data['feedback'] ?? '');
+    $feedback     = trim($data['feedback'] ?? '');
+    // Optional: override is_correct for objective questions
+    $isCorrectOverride = isset($data['is_correct']) ? (int)(bool)$data['is_correct'] : null;
 
     if (!$answerId) {
         echo json_encode(['success' => false, 'message' => 'Answer ID required']);
         return;
     }
 
-    try {
-        pdo()->prepare(
-            "UPDATE student_quiz_answers
-             SET points_earned = ?, grading_status = 'graded', grader_feedback = ?,
-                 graded_by = ?, graded_at = NOW()
-             WHERE student_quiz_answer_id = ?"
-        )->execute([$pointsEarned, $feedback ?: null, Auth::id(), $answerId]);
+    // Verify the answer belongs to a quiz owned by this instructor
+    $ownerCheck = db()->fetchOne(
+        "SELECT sqa.attempt_id, sqa.quiz_id, q.user_teacher_id, q.passing_rate, sqa.total_points
+         FROM student_quiz_answers a
+         JOIN student_quiz_attempts sqa ON a.attempt_id = sqa.attempt_id
+         JOIN quiz q ON sqa.quiz_id = q.quiz_id
+         WHERE a.student_quiz_answer_id = ? LIMIT 1",
+        [$answerId]
+    );
+    if (!$ownerCheck || (int)$ownerCheck['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
 
-        echo json_encode(['success' => true, 'message' => 'Answer graded']);
+    try {
+        if ($isCorrectOverride !== null) {
+            pdo()->prepare(
+                "UPDATE student_quiz_answers
+                 SET points_earned = ?, is_correct = ?, grading_status = 'graded',
+                     grader_feedback = ?, graded_by = ?, graded_at = NOW()
+                 WHERE student_quiz_answer_id = ?"
+            )->execute([$pointsEarned, $isCorrectOverride, $feedback ?: null, Auth::id(), $answerId]);
+        } else {
+            pdo()->prepare(
+                "UPDATE student_quiz_answers
+                 SET points_earned = ?, grading_status = 'graded', grader_feedback = ?,
+                     graded_by = ?, graded_at = NOW()
+                 WHERE student_quiz_answer_id = ?"
+            )->execute([$pointsEarned, $feedback ?: null, Auth::id(), $answerId]);
+        }
+
+        // Recalculate attempt score to reflect the new grade
+        $attemptId   = (int)$ownerCheck['attempt_id'];
+        $totalPoints = (float)$ownerCheck['total_points'];
+        $newEarned   = (float)(db()->fetchOne(
+            "SELECT COALESCE(SUM(points_earned), 0) AS s FROM student_quiz_answers WHERE attempt_id = ?",
+            [$attemptId]
+        )['s'] ?? 0);
+        $passingRate = (float)$ownerCheck['passing_rate'];
+        $newPct      = $totalPoints > 0 ? round($newEarned / $totalPoints * 100, 2) : 0;
+        $passed      = $newPct >= $passingRate ? 1 : 0;
+        pdo()->prepare(
+            "UPDATE student_quiz_attempts SET earned_points = ?, percentage = ?, passed = ? WHERE attempt_id = ?"
+        )->execute([$newEarned, $newPct, $passed, $attemptId]);
+
+        echo json_encode(['success' => true, 'message' => 'Grade saved', 'new_score' => $newEarned, 'new_pct' => $newPct]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to grade answer']);
     }
@@ -677,6 +790,11 @@ function finalizeGrading() {
             echo json_encode(['success' => false, 'message' => 'Attempt not found']);
             return;
         }
+        if ((int)$attempt['user_teacher_id'] !== Auth::id()) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Permission denied']);
+            return;
+        }
 
         $totalPoints = (int)$attempt['total_points'];
         $percentage = $totalPoints > 0 ? ($earnedPoints / $totalPoints) * 100 : 0;
@@ -714,14 +832,15 @@ function aiGradeAnswerById() {
         return;
     }
 
-    // Fetch the answer row + question details
-    // NOTE: expected answer lives in question_option (is_correct=1) via quiz_question_id FK
+    // Fetch the answer row + question details + ownership check
     $row = db()->fetchOne(
         "SELECT a.student_quiz_answer_id, a.answer_text, a.max_points, a.grading_status,
-                q.question_text, q.question_type,
+                q.question_text, q.question_type, qz.user_teacher_id,
                 (SELECT option_text FROM question_option
                  WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
          FROM student_quiz_answers a
+         JOIN student_quiz_attempts sqa ON a.attempt_id = sqa.attempt_id
+         JOIN quiz qz ON sqa.quiz_id = qz.quiz_id
          JOIN questions q ON a.questions_id = q.questions_id
          WHERE a.student_quiz_answer_id = ?",
         [$answerId]
@@ -729,6 +848,12 @@ function aiGradeAnswerById() {
 
     if (!$row) {
         echo json_encode(['success' => false, 'message' => 'Answer not found']);
+        return;
+    }
+
+    if ((int)$row['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
     }
 
@@ -769,6 +894,257 @@ function aiGradeAnswerById() {
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to save AI grade']);
     }
+}
+
+/**
+ * Run AI checker on all pending subjective answers for a quiz.
+ */
+function aiGradeQuizPending() {
+    Auth::requireRole('instructor');
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $quizId = (int)($data['quiz_id'] ?? 0);
+    if (!$quizId) {
+        echo json_encode(['success' => false, 'message' => 'quiz_id required']);
+        return;
+    }
+
+    // Verify quiz belongs to this instructor
+    $quizOwner = db()->fetchOne("SELECT user_teacher_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
+    if (!$quizOwner || (int)$quizOwner['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
+
+    try {
+        $rows = db()->fetchAll(
+            "SELECT a.student_quiz_answer_id, a.attempt_id, a.answer_text, a.max_points,
+                    q.question_text, q.question_type,
+                    (SELECT option_text FROM question_option
+                     WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
+             FROM student_quiz_answers a
+             JOIN questions q ON a.questions_id = q.questions_id
+             JOIN student_quiz_attempts sqa ON a.attempt_id = sqa.attempt_id
+             WHERE sqa.quiz_id = ? AND sqa.status = 'completed'
+               AND a.grading_status = 'pending'
+               AND TRIM(COALESCE(a.answer_text, '')) != ''
+               AND q.question_type IN ('essay','short_answer','fill_blank','fill_in_the_blank')",
+            [$quizId]
+        );
+
+        if (!$rows) {
+            echo json_encode(['success' => true, 'message' => 'No answers need AI checking.', 'graded' => 0, 'failed' => 0]);
+            return;
+        }
+
+        $graded = 0;
+        $failed = 0;
+        $attemptIds = [];
+
+        foreach ($rows as $row) {
+            $answerId = (int)$row['student_quiz_answer_id'];
+            $result = aiGradeAnswer(
+                $row['question_text'] ?? '',
+                $row['expected_answer'] ?? '',
+                $row['answer_text'] ?? '',
+                (float)($row['max_points'] ?? 1),
+                $row['question_type'] ?? 'essay'
+            );
+
+            if (($result['status'] ?? '') === 'pending') {
+                $failed++;
+                continue;
+            }
+
+            pdo()->prepare(
+                "UPDATE student_quiz_answers
+                 SET points_earned = ?, grading_status = 'auto_graded', grader_feedback = ?,
+                     graded_by = NULL, graded_at = NOW()
+                 WHERE student_quiz_answer_id = ?"
+            )->execute([$result['score'], $result['feedback'] ?: null, $answerId]);
+
+            $attemptIds[(int)$row['attempt_id']] = true;
+            $graded++;
+        }
+
+        foreach (array_keys($attemptIds) as $attemptId) {
+            recalculateAttemptScore($attemptId);
+        }
+
+        echo json_encode([
+            'success' => true,
+            'message' => $graded > 0
+                ? "AI checked {$graded} answer(s)." . ($failed ? " {$failed} could not be graded." : '')
+                : 'AI grading unavailable. Check Groq API key in Settings.',
+            'graded' => $graded,
+            'failed' => $failed,
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'AI checker failed']);
+    }
+}
+
+/**
+ * Run AI checker on all pending subjective answers for a SINGLE attempt.
+ * Sets grading_status to 'auto_graded' — instructor must still confirm each one.
+ */
+function aiGradeAttemptPending() {
+    Auth::requireRole('instructor');
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']); return;
+    }
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $attemptId = (int)($data['attempt_id'] ?? 0);
+    if (!$attemptId) {
+        echo json_encode(['success' => false, 'message' => 'attempt_id required']); return;
+    }
+
+    // Verify this attempt belongs to a quiz owned by this instructor
+    $ownerCheck = db()->fetchOne(
+        "SELECT q.user_teacher_id FROM student_quiz_attempts sqa
+         JOIN quiz q ON sqa.quiz_id = q.quiz_id
+         WHERE sqa.attempt_id = ? LIMIT 1",
+        [$attemptId]
+    );
+    if (!$ownerCheck || (int)$ownerCheck['user_teacher_id'] !== Auth::id()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']); return;
+    }
+
+    try {
+        $rows = db()->fetchAll(
+            "SELECT a.student_quiz_answer_id, a.answer_text, a.max_points,
+                    q.question_text, q.question_type,
+                    (SELECT option_text FROM question_option
+                     WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
+             FROM student_quiz_answers a
+             JOIN questions q ON a.questions_id = q.questions_id
+             WHERE a.attempt_id = ?
+               AND a.grading_status = 'pending'
+               AND TRIM(COALESCE(a.answer_text, '')) != ''
+               AND q.question_type IN ('essay','short_answer','fill_blank','fill_in_the_blank')",
+            [$attemptId]
+        );
+
+        if (!$rows) {
+            echo json_encode(['success' => true, 'message' => 'No pending answers to grade.', 'results' => []]); return;
+        }
+
+        $results = [];
+        foreach ($rows as $row) {
+            $aid = (int)$row['student_quiz_answer_id'];
+            $result = aiGradeAnswer(
+                $row['question_text'] ?? '',
+                $row['expected_answer'] ?? '',
+                $row['answer_text'] ?? '',
+                (float)($row['max_points'] ?? 1),
+                $row['question_type'] ?? 'essay'
+            );
+            if (($result['status'] ?? '') === 'pending') {
+                $results[$aid] = ['success' => false, 'answer_id' => $aid];
+                continue;
+            }
+            pdo()->prepare(
+                "UPDATE student_quiz_answers
+                 SET points_earned = ?, grading_status = 'auto_graded', grader_feedback = ?,
+                     graded_by = NULL, graded_at = NOW()
+                 WHERE student_quiz_answer_id = ?"
+            )->execute([$result['score'], $result['feedback'] ?: null, $aid]);
+            $results[$aid] = ['success' => true, 'answer_id' => $aid, 'score' => $result['score'], 'feedback' => $result['feedback']];
+        }
+
+        recalculateAttemptScore($attemptId);
+
+        $graded = count(array_filter($results, fn($r) => $r['success']));
+        echo json_encode([
+            'success' => true,
+            'message' => $graded > 0
+                ? "AI graded {$graded} answer(s). Please confirm each grade below."
+                : 'AI grading failed. Check Groq API key in Settings.',
+            'results' => array_values($results),
+            'graded'  => $graded,
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'AI grading failed: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Question-level stats — where most students miss points.
+ */
+function getQuizQuestionStats() {
+    $quizId = (int)($_GET['quiz_id'] ?? 0);
+    if (!$quizId) {
+        echo json_encode(['success' => false, 'message' => 'quiz_id required']);
+        return;
+    }
+
+    try {
+        $stats = db()->fetchAll(
+            "SELECT q.questions_id, q.question_text, q.question_type, q.points as max_points,
+                    COUNT(a.student_quiz_answer_id) as responses,
+                    SUM(CASE WHEN COALESCE(a.points_earned, 0) >= COALESCE(a.max_points, q.points) THEN 1 ELSE 0 END) as correct_count,
+                    SUM(CASE WHEN COALESCE(a.points_earned, 0) < COALESCE(a.max_points, q.points) THEN 1 ELSE 0 END) as miss_count,
+                    ROUND(AVG(COALESCE(a.points_earned, 0)), 2) as avg_earned
+             FROM quiz_questions qq
+             JOIN questions q ON qq.questions_id = q.questions_id
+             LEFT JOIN student_quiz_answers a ON a.questions_id = q.questions_id
+             LEFT JOIN student_quiz_attempts sqa ON a.attempt_id = sqa.attempt_id
+                 AND sqa.quiz_id = ? AND sqa.status = 'completed'
+             WHERE qq.quiz_id = ?
+             GROUP BY q.questions_id, q.question_text, q.question_type, q.points
+             ORDER BY miss_count DESC, responses DESC, qq.question_order ASC",
+            [$quizId, $quizId]
+        );
+
+        echo json_encode(['success' => true, 'data' => $stats ?: []]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
+    }
+}
+
+function recalculateAttemptScore(int $attemptId): void {
+    $totals = db()->fetchOne(
+        "SELECT SUM(points_earned) as earned FROM student_quiz_answers WHERE attempt_id = ?",
+        [$attemptId]
+    );
+    $earnedPoints = (float)($totals['earned'] ?? 0);
+
+    $attempt = db()->fetchOne(
+        "SELECT sqa.total_points, q.passing_rate
+         FROM student_quiz_attempts sqa
+         JOIN quiz q ON sqa.quiz_id = q.quiz_id
+         WHERE sqa.attempt_id = ?",
+        [$attemptId]
+    );
+    if (!$attempt) return;
+
+    $totalPoints = (float)($attempt['total_points'] ?? 0);
+    $percentage = $totalPoints > 0 ? ($earnedPoints / $totalPoints) * 100 : 0;
+    $passed = $percentage >= (float)($attempt['passing_rate'] ?? 0);
+
+    $pending = db()->fetchOne(
+        "SELECT COUNT(*) as c FROM student_quiz_answers WHERE attempt_id = ? AND grading_status = 'pending'",
+        [$attemptId]
+    );
+
+    pdo()->prepare(
+        "UPDATE student_quiz_attempts
+         SET earned_points = ?, percentage = ?, passed = ?, has_pending_grades = ?
+         WHERE attempt_id = ?"
+    )->execute([
+        $earnedPoints,
+        round($percentage, 2),
+        $passed ? 1 : 0,
+        ((int)($pending['c'] ?? 0) > 0) ? 1 : 0,
+        $attemptId,
+    ]);
 }
 
 // ── AI-powered grading for essay / short_answer / fill_blank ────────────────

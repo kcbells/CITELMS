@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -80,22 +81,45 @@ async function renderList(container) {
             .results-info { font-size:13px; color:#9ca3af; margin-bottom:16px; }
             .results-info strong { color:#374151; }
 
-            /* ── Program Cards ── */
-            .programs-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:18px; }
-            .program-card { background:#fff; border:1px solid #e8e8e8; border-radius:14px; overflow:hidden; transition:all .2s; }
-            .program-card:hover { border-color:#1B4D3E; box-shadow:0 6px 20px rgba(0,0,0,.09); transform:translateY(-2px); }
-            .program-card-header { padding:18px 18px 0; display:flex; justify-content:space-between; align-items:flex-start; }
-            .program-code { background:#E8F5E9; color:#1B4D3E; padding:5px 12px; border-radius:8px; font-family:monospace; font-weight:700; font-size:13.5px; letter-spacing:.5px; }
-            .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-active { background:#E8F5E9; color:#1B4D3E; }
+            /* ── Program Table — same visual as dean checklist ── */
+            .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
+            .badge-active   { background:#E8F5E9; color:#1B4D3E; }
             .badge-inactive { background:#FEE2E2; color:#b91c1c; }
-            .program-card-body { padding:14px 18px 18px; }
-            .program-name { font-size:15.5px; font-weight:700; color:#262626; margin-bottom:4px; line-height:1.35; }
-            .program-dept { font-size:12.5px; color:#9ca3af; margin-bottom:14px; display:flex; align-items:center; gap:6px; }
-            .program-stats { display:flex; gap:10px; }
-            .stat-item { text-align:center; flex:1; padding:10px 8px; background:#f9fafb; border-radius:8px; }
-            .stat-num { display:block; font-size:20px; font-weight:800; color:#262626; }
-            .stat-label { display:block; font-size:11px; color:#9ca3af; margin-top:2px; }
+
+            .prog-table-wrap { overflow-x:auto; }
+            .prog-table {
+                width:100%; border-collapse:collapse;
+                font-size:12.5px; font-family:inherit;
+                background:#fff; border:1.5px solid #374151;
+            }
+
+            /* Banner row */
+            .prog-table .pt-banner {
+                background:#00461B; color:#fff;
+                font-size:13px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+                text-align:center; padding:9px 12px; border:1px solid #003515;
+            }
+            /* Column header row */
+            .prog-table .pt-th {
+                background:#2d6a4f; color:#fff;
+                font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+                text-align:center; padding:8px 10px;
+                border:1px solid #155534; vertical-align:middle; white-space:nowrap;
+            }
+            .prog-table .pt-th.pt-left { text-align:left; }
+
+            /* Body */
+            .prog-table tbody tr:nth-child(even) { background:#f9fafb; }
+            .prog-table tbody tr:hover { background:#f0fdf4; }
+            .prog-table td { border:1px solid #d1d5db; padding:8px 10px; vertical-align:middle; }
+
+            .pt-num   { font-size:11.5px; text-align:center; color:#9ca3af; }
+            .pt-code  { font-family:monospace; font-size:12px; font-weight:700; color:#1B4D3E; white-space:nowrap; text-align:center; }
+            .pt-name  { font-size:13px; font-weight:600; color:#111827; }
+            .pt-dept  { font-size:12px; color:#6b7280; }
+            .pt-ctr   { text-align:center; color:#374151; font-size:12.5px; }
+            .pt-units { text-align:center; font-weight:700; color:#00461B; }
+            .pt-act   { text-align:center; width:40px; padding:4px; }
 
             /* ── Actions ── */
             .actions-cell { position:relative; }
@@ -231,42 +255,49 @@ async function renderList(container) {
         }
 
         wrap.innerHTML = `
-            <div class="programs-grid">
-                ${programs.map(p => `
-                    <div class="program-card">
-                        <div class="program-card-header">
-                            <span class="program-code">${esc(p.program_code)}</span>
-                            <div class="actions-cell">
-                                <button class="btn-actions" data-id="${p.program_id}">⋮</button>
-                                <div class="actions-dropdown" data-dropdown="${p.program_id}">
-                                    <a href="#" data-edit="${p.program_id}">${L.edit}</a>
-                                    <div class="divider"></div>
-                                    <a href="#" class="danger" data-delete="${p.program_id}" data-name="${esc(p.program_name)}">${L.deactivate}</a>
+            <div class="prog-table-wrap">
+                <table class="prog-table">
+                    <thead>
+                        <tr>
+                            <th class="pt-banner" colspan="8">Programs</th>
+                        </tr>
+                        <tr>
+                            <th class="pt-th" style="width:36px;">#</th>
+                            <th class="pt-th">Code</th>
+                            <th class="pt-th pt-left">Program Name</th>
+                            <th class="pt-th pt-left">Department</th>
+                            <th class="pt-th">Total Units</th>
+                            <th class="pt-th">Students</th>
+                            <th class="pt-th">Status</th>
+                            <th class="pt-th"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${programs.map((p, i) => `
+                        <tr>
+                            <td class="pt-num">${i + 1}</td>
+                            <td class="pt-code">${esc(p.program_code)}</td>
+                            <td class="pt-name">${esc(p.program_name)}</td>
+                            <td class="pt-dept">${esc(p.department_name || '—')}</td>
+                            <td class="pt-units">${p.total_units || 0}</td>
+                            <td class="pt-ctr">${p.student_count || 0}</td>
+                            <td class="pt-ctr"><span class="badge badge-${p.status}">${p.status}</span></td>
+                            <td class="pt-act">
+                                <div class="actions-cell">
+                                    <button class="btn-actions" data-id="${p.program_id}">${icon('menu', { size: 15 })}</button>
+                                    <div class="actions-dropdown" data-dropdown="${p.program_id}">
+                                        <a href="#" data-edit="${p.program_id}">${L.edit}</a>
+                                        <div class="divider"></div>
+                                        <a href="#" class="danger" data-archive="${p.program_id}" data-name="${esc(p.program_name)}">${icon('archive', inl)} Archive</a>
+                                        <a href="#" class="danger" data-delete="${p.program_id}" data-name="${esc(p.program_name)}">${L.deactivate}</a>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                        <div class="program-card-body">
-                            <div class="program-name">${esc(p.program_name)}</div>
-                            <div class="program-dept">
-                                ${esc(p.department_name || 'No department')}
-                                <span class="badge badge-${p.status}">${p.status}</span>
-                            </div>
-                            <div class="program-stats">
-                                <div class="stat-item">
-                                    <span class="stat-num">${p.student_count || 0}</span>
-                                    <span class="stat-label">Students</span>
-                                </div>
-                                <div class="stat-item">
-                                    <span class="stat-num">${p.total_units || 0}</span>
-                                    <span class="stat-label">Total Units</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
             </div>`;
 
-        // Bind card events
         wrap.querySelectorAll('.btn-actions').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -274,8 +305,8 @@ async function renderList(container) {
                 const dd = wrap.querySelector(`[data-dropdown="${btn.dataset.id}"]`);
                 if (dd) {
                     const rect = btn.getBoundingClientRect();
-                    dd.style.top   = (rect.bottom + 4) + 'px';
-                    dd.style.right = (window.innerWidth - rect.right) + 'px';
+                    dd.style.top  = (rect.bottom + 4) + 'px';
+                    dd.style.left = Math.max(4, rect.right - 165) + 'px';
                     dd.classList.add('show');
                 }
             });
@@ -289,13 +320,23 @@ async function renderList(container) {
             });
         });
 
+        wrap.querySelectorAll('[data-archive]').forEach(a => {
+            a.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (!await notify.confirm(`Archive "${a.dataset.name}"?\n\nArchived programs are hidden from all views and cannot be enrolled into.`, { danger: true, confirmText: 'Archive' })) return;
+                const res = await Api.post('/ProgramsAPI.php?action=archive', { program_id: parseInt(a.dataset.archive) });
+                if (res.success) renderList(container);
+                else notify.error(res.message);
+            });
+        });
+
         wrap.querySelectorAll('[data-delete]').forEach(a => {
             a.addEventListener('click', async (e) => {
                 e.preventDefault();
-                if (!confirm(`Deactivate "${a.dataset.name}"?`)) return;
+                if (!await notify.confirm(`Deactivate "${a.dataset.name}"?`, { danger: true, confirmText: 'Deactivate' })) return;
                 const res = await Api.post('/ProgramsAPI.php?action=delete', { program_id: parseInt(a.dataset.delete) });
                 if (res.success) renderList(container);
-                else alert(res.message);
+                else notify.error(res.message);
             });
         });
     }

@@ -10,20 +10,18 @@
 
 // Prevent direct access
 if (!defined('BASE_URL')) {
-    
+
+    // Load .env (safe to call multiple times — env.php guards itself)
+    require_once __DIR__ . '/env.php';
+
     // ============================================================
     // APPLICATION SETTINGS
     // ============================================================
-    
+
     /**
-     * Base URL of the application
-     * Change this to match your server setup
-     * Examples:
-     *   - Local XAMPP: '/cit-lms'
-     *   - Subdomain: ''
-     *   - Subfolder: '/myapp/cit-lms'
+     * Base URL — set via .env BASE_URL, falls back to '/COC_LMS(2)'
      */
-    define('BASE_URL', '/COC_LMS(2)');
+    define('BASE_URL', getenv('BASE_URL') ?: '/COC_LMS(2)');
     
     /**
      * Application Information
@@ -241,14 +239,22 @@ if (!defined('BASE_URL')) {
     // ============================================================
     
     /**
-     * Current academic year
+     * Current academic year — derived from today's date (school year starts July)
      */
-    define('CURRENT_ACADEMIC_YEAR', '2024-2025');
-    
+    $_ay_month = (int)date('n');
+    $_ay_year  = (int)date('Y');
+    $_ay_start = $_ay_month >= 7 ? $_ay_year : $_ay_year - 1;
+    define('CURRENT_ACADEMIC_YEAR', $_ay_start . '-' . ($_ay_start + 1));
+    unset($_ay_month, $_ay_year, $_ay_start);
+
     /**
-     * Current semester
+     * Current semester — derived from today's date
+     * 1st: Jul–Nov | 2nd: Dec–Apr | summer: May–Jun
      */
-    define('CURRENT_SEMESTER', '1st');
+    $_sem_month = (int)date('n');
+    define('CURRENT_SEMESTER', ($_sem_month >= 7 && $_sem_month <= 11) ? '1st'
+        : (($_sem_month == 12 || $_sem_month <= 4) ? '2nd' : 'summer'));
+    unset($_sem_month);
     
     /**
      * Semesters
@@ -324,14 +330,15 @@ if (!defined('BASE_URL')) {
     /**
      * Debug mode - set to false in production!
      */
-    define('DEBUG_MODE', true);
-    
+    define('DEBUG_MODE', getenv('APP_ENV') === 'development');
+
     if (DEBUG_MODE) {
         error_reporting(E_ALL);
         ini_set('display_errors', 1);
     } else {
         error_reporting(0);
         ini_set('display_errors', 0);
+        ini_set('log_errors', 1);
     }
     
     /**

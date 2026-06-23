@@ -4,7 +4,7 @@
  * CIT-LMS Subjects API
  * ============================================================
  * Handles subject-related operations
- * 
+ *
  * Endpoints:
  *   GET  ?action=enrolled      - Get student's enrolled subjects
  *   GET  ?action=details&id=X  - Get single subject details
@@ -12,6 +12,7 @@
  * ============================================================
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 
@@ -41,8 +42,27 @@ $_subjPerms = [
     'update'      => 'subjects.edit',
     'delete'      => 'subjects.delete',
 ];
-// Dean has intrinsic access to read subjects (scoped by dept)
-$isDeanSubj = Auth::role() === 'dean' && in_array($action, ['all','list','programs','departments','semesters','by-program','get','details']);
+// Dean has intrinsic access to read and manage subjects (scoped by dept)
+$isDeanSubj = Auth::role() === 'dean' && in_array($action, ['all','list','programs','departments','semesters','by-program','get','details','update','delete']);
+
+// Helper: return the calling dean's program_id, or 0 if not a dean
+function deanDeptId(): int {
+    if (Auth::role() !== 'dean') return 0;
+    $row = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+    return (int)($row['program_id'] ?? 0);
+}
+
+// Helper: verify a subject belongs to the dean's program (or allow if admin)
+function assertDeanOwnsSubject(int $subjectId): bool {
+    if (Auth::role() !== 'dean') return true;
+    $progId = deanDeptId();
+    if (!$progId) return false;
+    $row = db()->fetchOne(
+        "SELECT subject_id FROM subject WHERE subject_id = ? AND program_id = ? LIMIT 1",
+        [$subjectId, $progId]
+    );
+    return (bool)$row;
+}
 if (!$isDeanSubj && isset($_subjPerms[$action]) && !Auth::can($_subjPerms[$action])) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => "Permission denied: {$_subjPerms[$action]}"]);
@@ -344,15 +364,15 @@ function getAllSubjects() {
         return;
     }
 
-    // Dean: scope to their department only
-    $deanDeptId = null;
+    // Dean: scope to their program only
+    $progId = null;
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanDeptId = $deanUser['department_id'] ?? null;
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $progId = $deanUser['program_id'] ?? null;
     }
 
-    $deptCondition = $deanDeptId ? "WHERE dp.department_id = ?" : "";
-    $params = $deanDeptId ? [$deanDeptId] : [];
+    $progCondition = $progId ? "WHERE s.program_id = ?" : "";
+    $params = $progId ? [$progId] : [];
 
     try {
         $subjects = db()->fetchAll(
@@ -364,9 +384,8 @@ function getAllSubjects() {
                 d.department_name
             FROM subject s
             LEFT JOIN program p ON s.program_id = p.program_id
-            LEFT JOIN department_program dp ON p.program_id = dp.program_id
-            LEFT JOIN department d ON dp.department_id = d.department_id
-            $deptCondition
+            LEFT JOIN department d ON d.department_id = p.department_id
+            $progCondition
             ORDER BY s.subject_code",
             $params
         );
@@ -417,9 +436,12 @@ function getSubjectsByProgram() {
 
 function listSubjects() {
     $search = $_GET['search']        ?? '';
-    $deptId = (int)($_GET['department_id'] ?? 0);
     $progId = (int)($_GET['program_id']    ?? 0);
     $semId  = (int)($_GET['semester_id']   ?? 0);
+
+    // Dean is always scoped to their own program — ignore any external filter
+    $deanProgId = Auth::role() === 'dean' ? deanDeptId() : 0; // deanDeptId() returns program_id
+    $deptId     = Auth::role() !== 'dean' ? (int)($_GET['department_id'] ?? 0) : 0;
 
     // Resolve active semester for "This Semester" column only — does NOT restrict rows shown
     $activeSemId = $semId;
@@ -436,6 +458,10 @@ function listSubjects() {
         $params[] = "%$search%";
         $params[] = "%$search%";
     }
+    if ($deanProgId) {
+        $conditions[] = "s.program_id = ?";
+        $params[] = $deanProgId;
+    }
     if ($deptId) {
         $conditions[] = "p.department_id = ?";
         $params[] = $deptId;
@@ -447,7 +473,8 @@ function listSubjects() {
     if ($semId) {
         // Filter rows to subjects whose curriculum semester type matches the selected semester
         // sem_type_id (1=1st, 2=2nd, 3=Summer) maps directly to s.semester values
-        $conditions[] = "s.semester = (SELECT sem_type_id FROM semester WHERE semester_id = $semId)";
+        $conditions[] = "s.semester = (SELECT sem_type_id FROM semester WHERE semester_id = ?)";
+        $params[] = $semId;
     }
     $where = 'WHERE ' . implode(' AND ', $conditions);
 
@@ -456,10 +483,14 @@ function listSubjects() {
         "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'subject_offered' AND COLUMN_NAME = 'semester_id'"
     )['cnt'] ?? 0) > 0;
-    // Each subquery uses a different alias — generate a filter per alias
-    $sf2 = ($soHasSemId && $activeSemId) ? "AND so2.semester_id = $activeSemId" : '';
-    $sf3 = ($soHasSemId && $activeSemId) ? "AND so3.semester_id = $activeSemId" : '';
-    $sf4 = ($soHasSemId && $activeSemId) ? "AND so4.semester_id = $activeSemId" : '';
+    // Each subquery uses a ? placeholder; params are prepended so they bind before $where params
+    $sf2 = ($soHasSemId && $activeSemId) ? "AND so2.semester_id = ?" : '';
+    $sf3 = ($soHasSemId && $activeSemId) ? "AND so3.semester_id = ?" : '';
+    $sf4 = ($soHasSemId && $activeSemId) ? "AND so4.semester_id = ?" : '';
+    // Prepend the three subquery params (sf2, sf3, sf4 appear before $where in the SQL)
+    if ($soHasSemId && $activeSemId) {
+        array_unshift($params, $activeSemId, $activeSemId, $activeSemId);
+    }
 
     try {
         $subjects = pdo()->prepare(
@@ -492,7 +523,7 @@ function listSubjects() {
         $subjects = $subjects->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(['success' => true, 'data' => $subjects]);
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'error' => $e->getMessage(), 'data' => []]);
+        error_log('[SubjectsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 
@@ -536,13 +567,20 @@ function createSubject() {
         pdo()->prepare("INSERT INTO subject (program_id, subject_code, subject_name, units, year_level, semester, description, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,NOW(),NOW())")
             ->execute([$d['program_id'] ?: null, $code, $name, (int)($d['units'] ?? 3), $d['year_level'] ?: null, $d['semester'] ?: null, trim($d['description'] ?? ''), $d['status'] ?? 'active']);
         echo json_encode(['success' => true, 'message' => 'Subject created successfully', 'data' => ['id' => pdo()->lastInsertId()]]);
-    } catch (Exception $e) { error_log('Create subject: '.$e->getMessage()); echo json_encode(['success' => false, 'message' => 'Failed to create subject']); }
+    } catch (Exception $e) {
+        error_log('[SubjectsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
+    }
 }
 
 function updateSubject() {
     $d = json_decode(file_get_contents('php://input'), true);
     $id = (int)($d['subject_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Subject ID required']); return; }
+    if (!assertDeanOwnsSubject($id)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: subject is not in your department']);
+        return;
+    }
     $code = trim($d['subject_code'] ?? ''); $name = trim($d['subject_name'] ?? '');
     if (!$code || !$name) { echo json_encode(['success' => false, 'message' => 'Subject code and name are required']); return; }
     if (db()->fetchOne("SELECT subject_id FROM subject WHERE subject_code = ? AND subject_id != ?", [$code, $id])) {
@@ -552,26 +590,42 @@ function updateSubject() {
         pdo()->prepare("UPDATE subject SET program_id=?, subject_code=?, subject_name=?, units=?, year_level=?, semester=?, description=?, status=?, updated_at=NOW() WHERE subject_id=?")
             ->execute([$d['program_id'] ?: null, $code, $name, (int)($d['units'] ?? 3), $d['year_level'] ?: null, $d['semester'] ?: null, trim($d['description'] ?? ''), $d['status'] ?? 'active', $id]);
         echo json_encode(['success' => true, 'message' => 'Subject updated successfully']);
-    } catch (Exception $e) { error_log('Update subject: '.$e->getMessage()); echo json_encode(['success' => false, 'message' => 'Failed to update subject']); }
+    } catch (Exception $e) {
+        error_log('[SubjectsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
+    }
 }
 
 function deleteSubject() {
     $d = json_decode(file_get_contents('php://input'), true);
     $id = (int)($d['subject_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Subject ID required']); return; }
+    if (!assertDeanOwnsSubject($id)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: subject is not in your department']);
+        return;
+    }
     $count = db()->fetchOne("SELECT COUNT(*) as c FROM subject_offered WHERE subject_id = ? AND status = 'open'", [$id])['c'] ?? 0;
     if ($count > 0) { echo json_encode(['success' => false, 'message' => "Cannot delete subject with $count active offering(s)"]); return; }
     try {
         pdo()->prepare("UPDATE subject SET status='inactive', updated_at=NOW() WHERE subject_id=?")->execute([$id]);
         echo json_encode(['success' => true, 'message' => 'Subject deactivated successfully']);
-    } catch (Exception $e) { error_log('Delete subject: '.$e->getMessage()); echo json_encode(['success' => false, 'message' => 'Failed']); }
+    } catch (Exception $e) {
+        error_log('[SubjectsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
+    }
 }
 
 function getPrograms() {
-    echo json_encode(['success' => true, 'data' => db()->fetchAll(
-        "SELECT p.program_id, p.program_code, p.program_name, p.department_id
-         FROM program p
-         WHERE p.status = 'active'
-         ORDER BY p.program_code"
-    )]);
+    $progId = deanDeptId(); // returns program_id for dean, 0 for others
+    if ($progId) {
+        // Dean: only their own program
+        $data = db()->fetchAll(
+            "SELECT program_id, program_code, program_name, department_id FROM program WHERE program_id = ? AND status = 'active'",
+            [$progId]
+        );
+    } else {
+        $data = db()->fetchAll(
+            "SELECT program_id, program_code, program_name, department_id FROM program WHERE status = 'active' ORDER BY program_code"
+        );
+    }
+    echo json_encode(['success' => true, 'data' => $data]);
 }

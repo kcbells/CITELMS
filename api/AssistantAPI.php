@@ -2,6 +2,7 @@
 /**
  * CIT-LMS AI Assistant API — free Groq-powered study helper for all roles.
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/GroqCurl.php';
@@ -197,8 +198,11 @@ function buildAssistantSystemPrompt(string $role, string $name): string {
         return $base . ' The user is a student'
             . ($name ? " named {$name}" : '')
             . '. Help them understand lessons, summarize lesson content, explain highlighted passages, and clarify concepts. '
-            . 'When they ask about "lesson one" or the current lesson, use the CONTEXT lesson material. '
-            . 'Explain step by step when teaching. Encourage learning rather than giving away answers to graded work.';
+            . 'When they ask about "lesson one", "this lesson", "the lesson", or the current lesson, use the CONTEXT lesson material provided. '
+            . 'When a student asks to "digest", "summarize", or "help me understand" a lesson, provide a structured breakdown: '
+            . '(1) a 2-3 sentence overview, (2) the key concepts as a numbered list, (3) important terms with brief definitions if any, (4) a "What to remember" closing point. '
+            . 'Use simple language and short paragraphs. Explain step by step when teaching. '
+            . 'Encourage learning rather than giving away answers to graded work.';
     }
 
     if ($role === 'instructor') {

@@ -100,12 +100,13 @@ export const Auth = {
         this._permissions = null;
         this._serverTabLease = null;
         clearClientAuth();
+        Api.invalidateAll();
 
         try {
             await Api.get('/AuthAPI.php?action=logout');
         } catch (e) { /* ignore */ }
 
-        window.location.href = BASE_URL + '/app/index.html';
+        window.location.href = BASE_URL + '/index.html';
     },
 
     /**
@@ -117,6 +118,7 @@ export const Auth = {
         this._permissions = null;
         this._serverTabLease = null;
         clearClientAuth();
+        Api.invalidateAll();
         redirectSuperseded();
     },
 
@@ -134,7 +136,7 @@ export const Auth = {
     async requireLogin() {
         const user = await this.check();
         if (!user) {
-            window.location.href = BASE_URL + '/app/index.html';
+            window.location.href = BASE_URL + '/index.html';
             return null;
         }
         return user;

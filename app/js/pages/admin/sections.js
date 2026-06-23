@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -258,12 +259,12 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             container.querySelectorAll('.kebab-menu.open').forEach(m => m.classList.remove('open'));
             const count = parseInt(btn.dataset.count) || 0;
             const warn = count > 0 ? `\n\nThis will also unenroll ${count} enrolled student(s).` : '';
-            if (!confirm(`Delete section "${btn.dataset.name}"?${warn}`)) return;
+            if (!await notify.confirm(`Delete section "${btn.dataset.name}"?${warn}`, { danger: true, confirmText: 'Delete' })) return;
             const res = await Api.post('/SectionsAPI.php?action=delete', { section_id: parseInt(btn.dataset.delete) });
             if (res.success) {
                 const { semId, progId, deptId: curDeptId } = getCurrentFilters();
                 renderList(container, semId, progId, curDeptId);
-            } else alert(res.message);
+            } else notify.error(res.message);
         });
     });
 
@@ -288,14 +289,14 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
     // Remove subject from section
     container.querySelectorAll('[data-remove-secsubj]').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Remove this subject from the section?')) return;
+            if (!await notify.confirm('Remove this subject from the section?', { danger: true, confirmText: 'Remove' })) return;
             const res = await Api.post('/SectionsAPI.php?action=remove-subject', {
                 section_subject_id: parseInt(btn.dataset.removeSecsubj)
             });
             if (res.success) {
                 const { semId, progId, deptId: curDeptId } = getCurrentFilters();
                 renderList(container, semId, progId, curDeptId);
-            } else alert(res.message);
+            } else notify.error(res.message);
         });
     });
 
@@ -687,7 +688,7 @@ async function openBulkSubjectModal(container, sectionId, currentFilters = {}) {
         if (r.success) {
             renderList(container, currentFilters.semId || '', currentFilters.progId || '', currentFilters.deptId || '');
         } else {
-            alert(r.message || 'Failed to add subjects');
+            notify.error(r.message || 'Failed to add subjects');
         }
     });
 }
@@ -801,7 +802,7 @@ async function openManageStudentsModal(container, sectionId, sectionName) {
 
     overlay.querySelectorAll('.btn-unenroll').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Unenroll this student from this subject?')) return;
+            if (!await notify.confirm('Unenroll this student from this subject?', { danger: true, confirmText: 'Unenroll' })) return;
             btn.disabled = true; btn.textContent = '...';
             const r = await Api.post('/SectionsAPI.php?action=unenroll', {
                 student_subject_id: parseInt(btn.dataset.ssid)
@@ -813,7 +814,7 @@ async function openManageStudentsModal(container, sectionId, sectionName) {
                 renderList(container);
             } else {
                 btn.disabled = false; btn.textContent = 'Unenroll';
-                alert(r.message || 'Failed to unenroll');
+                notify.error(r.message || 'Failed to unenroll');
             }
         });
     });

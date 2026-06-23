@@ -55,8 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Both current and new passwords are required.';
         } elseif ($new !== $confirm) {
             $error = 'The new password confirmation does not match.';
-        } elseif (strlen($new) < 6) {
-            $error = 'New password must be at least 6 characters long.';
+        } elseif ($_pwErr = Auth::validatePasswordStrength($new)) {
+            $error = $_pwErr;
         } else {
             $currentUser = db()->fetchOne("SELECT password FROM users WHERE users_id = ?", [$userId]);
 
@@ -197,7 +197,7 @@ if (!empty($user['department_id'])) {
                         <div class="grid-2col">
                             <div class="form-group">
                                 <label class="field-label">New Password</label>
-                                <input type="password" name="new_password" class="field-input" placeholder="Min. 6 characters" required>
+                                <input type="password" name="new_password" class="field-input" placeholder="Min. 8 characters" required>
                             </div>
                             <div class="form-group">
                                 <label class="field-label">Confirm New Password</label>

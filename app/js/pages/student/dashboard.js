@@ -52,8 +52,8 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .sd-wrap { background:#fff; min-height:100%; }
-            .page-content.sd-page-white { background:#fff !important; }
+            .sd-wrap { background:transparent; min-height:100%; }
+            .page-content.sd-page-white { background:#F7F5E8 !important; }
 
             .sd-loading { display:flex; justify-content:center; padding:80px; background:#fff; }
             .sd-spin {
@@ -66,27 +66,10 @@ export async function render(container) {
             .sd-header {
                 background:#fff; border:1px solid #EBEBEB; border-radius:16px;
                 padding:28px 32px; margin-bottom:24px;
-                display:flex; justify-content:space-between; align-items:center; gap:24px; flex-wrap:wrap;
                 box-shadow:0 2px 12px rgba(0,70,27,.06);
             }
             .sd-header h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; letter-spacing:-.4px; }
             .sd-header-sub { font-size:14px; color:#6B7280; margin:0 0 16px; }
-
-            .sd-academic {
-                display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
-                padding-top:16px; border-top:1px solid ${BORDER}; margin-top:4px;
-            }
-            .sd-academic-item {
-                background:#fff; border:1px solid ${BORDER}; border-radius:8px; padding:12px 14px;
-            }
-            .sd-academic-label {
-                display:block; font-size:10px; font-weight:700; text-transform:uppercase;
-                letter-spacing:.8px; color:#9CA3AF; margin-bottom:4px;
-            }
-            .sd-academic-value {
-                display:block; font-size:14px; font-weight:700; color:${G}; line-height:1.35;
-            }
-            .sd-academic-value--sm { font-size:13px; color:#374151; font-weight:600; }
 
             .sd-chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
             .sd-chip {
@@ -95,14 +78,16 @@ export async function render(container) {
             }
             .sd-chip--muted { color:#374151; border-color:${BORDER}; }
 
-            .sd-ring {
-                width:72px; height:72px; position:relative; flex-shrink:0;
+            .sd-academic {
+                display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+                padding-top:16px; border-top:1px solid ${BORDER}; margin-top:16px;
             }
-            .sd-ring svg { transform:rotate(-90deg); }
-            .sd-ring-val {
-                position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-                font-size:15px; font-weight:800; color:${G};
+            .sd-academic-item { background:#fff; border:1px solid ${BORDER}; border-radius:8px; padding:12px 14px; }
+            .sd-academic-label {
+                display:block; font-size:10px; font-weight:700; text-transform:uppercase;
+                letter-spacing:.8px; color:#9CA3AF; margin-bottom:4px;
             }
+            .sd-academic-value { display:block; font-size:14px; font-weight:700; color:${G}; line-height:1.35; }
 
             /* ── To-Do compact boxes ── */
             .sd-todo-section {
@@ -120,7 +105,6 @@ export async function render(container) {
 
             .sd-todo-boxes {
                 display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;
-                margin-bottom:10px;
             }
             .sd-todo-box {
                 display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -129,43 +113,64 @@ export async function render(container) {
                 cursor:pointer; font-family:inherit; text-align:center;
                 transition:border-color .15s, background .15s;
             }
-            .sd-todo-box:hover { border-color:#C5D9CB; background:#fff; }
-            .sd-todo-box.active {
-                border-color:${G}; background:${GL};
-            }
-            .sd-todo-box-count {
-                font-size:18px; font-weight:800; color:#111; line-height:1;
-            }
-            .sd-todo-box.active .sd-todo-box-count { color:${G}; }
-            .sd-todo-box-label {
-                font-size:10px; font-weight:600; color:#6B7280;
-                line-height:1.2;
-            }
-            .sd-todo-box.active .sd-todo-box-label { color:${G}; }
-            .sd-todo-box--miss.active { border-color:#B91C1C; background:#FEF2F2; }
-            .sd-todo-box--miss.active .sd-todo-box-count,
-            .sd-todo-box--miss.active .sd-todo-box-label { color:#B91C1C; }
-            .sd-todo-box--done.active { border-color:#0369A1; background:#F0F9FF; }
-            .sd-todo-box--done.active .sd-todo-box-count,
-            .sd-todo-box--done.active .sd-todo-box-label { color:#0369A1; }
+            .sd-todo-box:hover { border-color:#C5D9CB; background:#fff; box-shadow:0 2px 8px rgba(0,70,27,.06); }
+            .sd-todo-box-count { font-size:18px; font-weight:800; color:#111; line-height:1; }
+            .sd-todo-box-label { font-size:10px; font-weight:600; color:#6B7280; line-height:1.2; }
+            .sd-todo-box--miss:hover { border-color:#FECACA; }
+            .sd-todo-box--done:hover { border-color:#BAE6FD; }
 
-            .sd-todo-list {
-                display:flex; flex-direction:column; gap:5px;
-                max-height:200px; overflow-y:auto;
+            /* ── To-Do modal ── */
+            .sd-tdm-overlay {
+                position:fixed; inset:0; background:rgba(0,0,0,.45);
+                display:flex; align-items:center; justify-content:center;
+                z-index:9000; padding:16px;
+                animation:sdFadeIn .15s ease;
             }
-            .sd-todo-list[hidden] { display:none !important; }
+            @keyframes sdFadeIn { from{opacity:0} to{opacity:1} }
+            @keyframes sdSlideUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+            .sd-tdm {
+                background:#fff; border-radius:16px; width:520px; max-width:100%;
+                max-height:80vh; display:flex; flex-direction:column;
+                box-shadow:0 24px 64px rgba(0,0,0,.22);
+                animation:sdSlideUp .18s cubic-bezier(.4,0,.2,1);
+            }
+            .sd-tdm-header {
+                display:flex; align-items:center; justify-content:space-between;
+                padding:18px 20px 14px; border-bottom:1px solid ${BORDER};
+                flex-shrink:0;
+            }
+            .sd-tdm-title-wrap { display:flex; align-items:center; gap:10px; }
+            .sd-tdm-dot {
+                width:10px; height:10px; border-radius:50%; flex-shrink:0;
+            }
+            .sd-tdm-dot--today  { background:${G}; }
+            .sd-tdm-dot--miss   { background:#DC2626; }
+            .sd-tdm-dot--nodue  { background:#6B7280; }
+            .sd-tdm-dot--done   { background:#0369A1; }
+            .sd-tdm-title { font-size:15px; font-weight:800; color:#111; }
+            .sd-tdm-count {
+                font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;
+                background:#F3F4F6; color:#6B7280;
+            }
+            .sd-tdm-close {
+                width:30px; height:30px; border:none; background:#F3F4F6;
+                border-radius:8px; cursor:pointer; display:flex;
+                align-items:center; justify-content:center; color:#6B7280;
+                font-size:16px; line-height:1; transition:background .12s;
+            }
+            .sd-tdm-close:hover { background:#E5E7EB; color:#111; }
+            .sd-tdm-body { flex:1; overflow-y:auto; padding:12px 16px 16px; display:flex; flex-direction:column; gap:6px; }
+
             .sd-todo-row {
                 display:flex; align-items:center; justify-content:space-between; gap:8px;
-                padding:8px 10px; background:#FAFAFA;
+                padding:10px 12px; background:#FAFAFA;
                 border:1px solid ${BORDER}; border-radius:10px;
                 text-decoration:none; color:inherit;
                 transition:border-color .15s, box-shadow .15s;
             }
-            .sd-todo-row:hover { border-color:#C5D9CB; box-shadow:0 2px 8px rgba(0,70,27,.06); }
+            .sd-todo-row:hover { border-color:#C5D9CB; box-shadow:0 2px 8px rgba(0,70,27,.06); background:#fff; }
             .sd-todo-row-main { flex:1; min-width:0; }
-            .sd-todo-row-top {
-                display:flex; align-items:center; gap:8px; margin-bottom:2px;
-            }
+            .sd-todo-row-top { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
             .sd-todo-row-code {
                 font-size:10px; font-weight:800; font-family:monospace;
                 color:${G}; background:#E8F5EC; padding:2px 6px; border-radius:4px;
@@ -178,12 +183,13 @@ export async function render(container) {
             .sd-todo-row-sub { font-size:11px; color:#9CA3AF; }
             .sd-todo-row-end { display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex-shrink:0; }
             .sd-todo-row-due { font-size:11px; font-weight:600; color:#6B7280; }
-            .sd-todo-row-due--late, .sd-todo-row-due--today { color:${G}; }
+            .sd-todo-row-due--late { color:#DC2626; }
+            .sd-todo-row-due--today { color:#D97706; }
             .sd-todo-row-action { font-size:11px; font-weight:700; color:${G}; }
             .sd-todo-row-score { font-size:12px; font-weight:800; color:${G}; }
             .sd-todo-empty {
-                padding:24px 12px; text-align:center; font-size:13px; color:#9CA3AF;
-                background:#fff; border:1px dashed ${BORDER}; border-radius:10px;
+                padding:32px 12px; text-align:center; font-size:13px; color:#9CA3AF;
+                background:#FAFAFA; border:1px dashed ${BORDER}; border-radius:10px;
             }
 
             /* ── Subjects ── */
@@ -255,8 +261,11 @@ export async function render(container) {
             .sd-empty a { color:${G}; font-weight:600; }
 
             @media(max-width:700px){
-                .sd-academic { grid-template-columns:1fr; }
+                .sd-info-grid, .sd-course-grid { grid-template-columns:1fr; }
+                .sd-info-col:first-child, .sd-course-col:first-child { border-right:none; border-bottom:1px solid #F0F0F0; }
+                .sd-info-row, .sd-course-row { grid-template-columns:120px 1fr; padding:8px 16px; }
                 .sd-todo-boxes { grid-template-columns:repeat(2, 1fr); }
+                .sd-header-top { padding:16px 16px 12px; }
             }
         </style>
 
@@ -264,35 +273,27 @@ export async function render(container) {
 
             <!-- Header -->
             <div class="sd-header">
-                <div style="flex:1">
-                    <h1>${greeting}, ${esc(user.first_name || 'Student')}</h1>
-                    <p class="sd-header-sub">${todayStr}</p>
-                    <div class="sd-chips">
-                        <span class="sd-chip sd-chip--muted">Student ID: ${esc(user.student_id || '—')}</span>
-                        <span class="sd-chip">${esc(yearLevel)}</span>
+                <h1>${greeting}, ${esc(user.first_name || 'Student')}</h1>
+                <p class="sd-header-sub">${todayStr}</p>
+                <div class="sd-chips">
+                    <span class="sd-chip sd-chip--muted">Student ID: ${esc(user.student_id || '—')}</span>
+                    ${user.program_name || user.program_code
+                        ? `<span class="sd-chip">${esc(user.program_name || user.program_code)}</span>`
+                        : ''}
+                </div>
+                <div class="sd-academic">
+                    <div class="sd-academic-item">
+                        <span class="sd-academic-label">College</span>
+                        <span class="sd-academic-value">${esc(user.department_name || '—')}</span>
                     </div>
-                    <div class="sd-academic">
-                        <div class="sd-academic-item">
-                            <span class="sd-academic-label">Program / Course</span>
-                            <span class="sd-academic-value">${esc(programDisplay)}</span>
-                        </div>
-                        <div class="sd-academic-item">
-                            <span class="sd-academic-label">Academic Year</span>
-                            <span class="sd-academic-value">${esc(academicYear)}</span>
-                </div>
-                        <div class="sd-academic-item">
-                            <span class="sd-academic-label">Current Semester</span>
-                            <span class="sd-academic-value">${esc(semesterName)}</span>
-            </div>
-        </div>
-                </div>
-                <div class="sd-ring">
-                    <svg width="72" height="72" viewBox="0 0 72 72">
-                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F0F0F0" stroke-width="6"/>
-                        <circle cx="36" cy="36" r="30" fill="none" stroke="${G}" stroke-width="6"
-                            stroke-dasharray="${lessonPct * 1.885} 188.5" stroke-linecap="round"/>
-                    </svg>
-                    <div class="sd-ring-val">${lessonPct}%</div>
+                    <div class="sd-academic-item">
+                        <span class="sd-academic-label">Academic Year</span>
+                        <span class="sd-academic-value">${esc(academicYear)}</span>
+                    </div>
+                    <div class="sd-academic-item">
+                        <span class="sd-academic-label">Current Semester</span>
+                        <span class="sd-academic-value">${esc(semesterName)}</span>
+                    </div>
                 </div>
             </div>
 
@@ -307,12 +308,6 @@ export async function render(container) {
                     ${todoBox('miss', 'Missing', todos.missing, 'miss')}
                     ${todoBox('nodue', 'Assigned', todos.no_due_date)}
                     ${todoBox('done', 'Done', todos.done, 'done')}
-                </div>
-                <div id="sd-todo-lists">
-                    ${todoList('today', todos.due_today)}
-                    ${todoList('miss', todos.missing)}
-                    ${todoList('nodue', todos.no_due_date)}
-                    ${todoList('done', todos.done, true)}
                 </div>
             </div>
 
@@ -330,23 +325,9 @@ export async function render(container) {
         </div>
     `;
 
-    // To-do: tap a box to show its list
-    const todoBoxes = container.querySelectorAll('.sd-todo-box');
-
-    function showTodoList(key) {
-        container.querySelectorAll('.sd-todo-list').forEach(el => {
-            el.hidden = el.dataset.col !== key;
-        });
-        todoBoxes.forEach(box => {
-            box.classList.toggle('active', box.dataset.col === key);
-        });
-    }
-
-    const defaultKey = firstTodoGroupWithItems(todos);
-    showTodoList(defaultKey);
-
-    todoBoxes.forEach(box => {
-        box.addEventListener('click', () => showTodoList(box.dataset.col));
+    // To-do: tap a box to open modal
+    container.querySelectorAll('.sd-todo-box').forEach(box => {
+        box.addEventListener('click', () => openTodoModal(box.dataset.col, todos));
     });
 
     // Force white page background (overrides app cream)
@@ -372,17 +353,60 @@ function refreshTodoSection(container, todos) {
     if (hdrSpan) hdrSpan.textContent = `${pendingTotal} pending`;
 
     TODO_GROUPS.forEach(g => {
-        const key = todoListKey(g.key);
-        const items = todos[key] || [];
+        const items = todos[todoListKey(g.key)] || [];
         const countEl = container.querySelector(`.sd-todo-box[data-col="${g.key}"] .sd-todo-box-count`);
         if (countEl) countEl.textContent = items.length;
-        const listEl = container.querySelector(`.sd-todo-list[data-col="${g.key}"]`);
-        if (listEl) {
-            listEl.innerHTML = items.length
-                ? items.map(item => todoRow(item, g.key === 'done')).join('')
-                : `<div class="sd-todo-empty">Nothing in this list</div>`;
-        }
     });
+
+    // Refresh open modal if present
+    const openModal = document.querySelector('.sd-tdm-overlay');
+    if (openModal) {
+        const key = openModal.dataset.col;
+        if (key) {
+            const body = openModal.querySelector('.sd-tdm-body');
+            const items = todos[todoListKey(key)] || [];
+            const isDone = key === 'done';
+            if (body) body.innerHTML = renderTodoItems(items, isDone);
+            const countEl = openModal.querySelector('.sd-tdm-count');
+            if (countEl) countEl.textContent = items.length;
+        }
+    }
+}
+
+function openTodoModal(key, todos) {
+    document.querySelector('.sd-tdm-overlay')?.remove();
+
+    const meta = TODO_GROUPS.find(g => g.key === key) || { label: key };
+    const items = todos[todoListKey(key)] || [];
+    const isDone = key === 'done';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'sd-tdm-overlay';
+    overlay.dataset.col = key;
+    overlay.innerHTML = `
+        <div class="sd-tdm" role="dialog" aria-modal="true">
+            <div class="sd-tdm-header">
+                <div class="sd-tdm-title-wrap">
+                    <span class="sd-tdm-dot sd-tdm-dot--${key}"></span>
+                    <span class="sd-tdm-title">${meta.label}</span>
+                    <span class="sd-tdm-count">${items.length}</span>
+                </div>
+                <button class="sd-tdm-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="sd-tdm-body">${renderTodoItems(items, isDone)}</div>
+        </div>`;
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('.sd-tdm-close').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.addEventListener('keydown', function onKey(e) {
+        if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    });
+}
+
+function renderTodoItems(items, isDone) {
+    if (!items.length) return `<div class="sd-todo-empty">Nothing in this list</div>`;
+    return items.map(item => todoRow(item, isDone)).join('');
 }
 
 /* ── Helpers ── */
@@ -409,13 +433,6 @@ function todoListKey(groupKey) {
     return groupKey === 'nodue' ? 'no_due_date' : groupKey;
 }
 
-function firstTodoGroupWithItems(todos) {
-    for (const g of TODO_GROUPS) {
-        if ((todos[todoListKey(g.key)] || []).length > 0) return g.key;
-    }
-    return 'today';
-}
-
 function todoBox(key, label, items, variant = '') {
     const count = (items || []).length;
     const cls = variant ? ` sd-todo-box--${variant}` : '';
@@ -423,14 +440,6 @@ function todoBox(key, label, items, variant = '') {
         <span class="sd-todo-box-count">${count}</span>
         <span class="sd-todo-box-label">${label}</span>
     </button>`;
-}
-
-function todoList(key, items, isDone = false) {
-    const list = items || [];
-    const body = list.length === 0
-        ? `<div class="sd-todo-empty">Nothing in this list</div>`
-        : list.map(item => todoRow(item, isDone)).join('');
-    return `<div class="sd-todo-list" data-col="${key}" hidden>${body}</div>`;
 }
 
 function todoRow(item, isDone) {

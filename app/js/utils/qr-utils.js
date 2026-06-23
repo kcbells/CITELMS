@@ -85,7 +85,7 @@ export function buildStudentJoinUrl(subjectCode, sectionId = 0) {
     const code = normalizeSubjectCode(subjectCode);
     const params = new URLSearchParams({ subject_code: code });
     if (sectionId) params.set('section_id', String(sectionId));
-    return `${window.location.origin}${BASE_URL}/app/index.html?${params.toString()}`;
+    return `${window.location.origin}${BASE_URL}/index.html?${params.toString()}`;
 }
 
 export function buildDashboardJoinHash(subjectCode, sectionId = 0) {

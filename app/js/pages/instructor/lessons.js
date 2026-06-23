@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -259,10 +260,10 @@ async function renderList(container, filterSubject = '') {
     container.querySelectorAll('[data-delete]').forEach(a => {
         a.addEventListener('click', async (e) => {
             e.preventDefault();
-            if (!confirm(`Delete "${a.dataset.name}"? This will also remove student progress.`)) return;
+            if (!await notify.confirm(`Delete "${a.dataset.name}"? This will also remove student progress.`, { danger: true, confirmText: 'Delete' })) return;
             const res = await Api.post('/LessonsAPI.php?action=delete', { lessons_id: parseInt(a.dataset.delete) });
             if (res.success) renderList(container, filterSubject);
-            else alert(res.message);
+            else notify.error(res.message);
         });
     });
 }
@@ -400,10 +401,10 @@ function openModal(container, filterSubject, lesson = null) {
         // Attach delete events
         matList.querySelectorAll('[data-mat-del]').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Delete this material?')) return;
+                if (!await notify.confirm('Delete this material?', { danger: true, confirmText: 'Delete' })) return;
                 const r = await Api.post('/LessonsAPI.php?action=delete-material', { material_id: parseInt(btn.dataset.matDel) });
                 if (r.success) loadMaterials();
-                else alert(r.message);
+                else notify.error(r.message);
             });
         });
     }

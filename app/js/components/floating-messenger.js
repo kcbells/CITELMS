@@ -1,5 +1,5 @@
 /**
- * Floating Messenger — Meta Messenger-style chat bubble (bottom-right)
+ * Floating Messenger — Facebook desktop style, anchored to topbar button.
  * Uses MessagingAPI.php for threads, send, and polling.
  */
 import { Api } from '../api.js';
@@ -8,19 +8,18 @@ import {
     renderMessageBody,
     validateMessageFile,
     bindImagePreview,
-    MSG_MAX_ATTACH,
 } from '../utils/message-ui.js';
 import { icon } from '../utils/icons.js';
+import { notify } from '../utils/notify.js';
 
 const G  = '#00461B';
 const G2 = '#006428';
 const POLL_MS = 5000;
 
-let rootEl      = null;
-let pollTimer   = null;
-let badgeTimer  = null;
+let rootEl        = null;
+let pollTimer     = null;
+let badgeTimer    = null;
 let activeOtherId = null;
-let lastMsgCount  = 0;
 let lastPollAt    = null;
 let pendingFile   = null;
 let isOpen        = false;
@@ -67,8 +66,8 @@ function stopPolling() {
     pollTimer = null;
 }
 
-function updateBubbleBadge(count) {
-    const badge = getEl('fm-fab-badge');
+function updateTopbarBadge(count) {
+    const badge = document.getElementById('fm-topbar-badge');
     if (!badge) return;
     if (count > 0) {
         badge.textContent = count > 99 ? '99+' : String(count);
@@ -81,12 +80,7 @@ function updateBubbleBadge(count) {
 async function refreshUnreadBadge() {
     const res = await Api.get('/MessagingAPI.php?action=unread_count');
     const count = res.success ? res.count : 0;
-    updateBubbleBadge(count);
-    const navBadge = document.getElementById('msg-nav-badge');
-    if (navBadge) {
-        navBadge.textContent = count > 0 ? (count > 99 ? '99+' : count) : '';
-        navBadge.style.display = count > 0 ? 'inline-flex' : 'none';
-    }
+    updateTopbarBadge(count);
 }
 
 function startBadgePolling() {
@@ -103,13 +97,13 @@ function setView(next) {
 function expand() {
     isOpen = true;
     rootEl?.classList.add('fm-open');
-    getEl('fm-panel')?.setAttribute('aria-hidden', 'false');
+    document.getElementById('fm-topbar-btn')?.classList.add('active');
 }
 
 function minimize() {
     isOpen = false;
     rootEl?.classList.remove('fm-open');
-    getEl('fm-panel')?.setAttribute('aria-hidden', 'true');
+    document.getElementById('fm-topbar-btn')?.classList.remove('active');
     stopPolling();
 }
 
@@ -139,15 +133,15 @@ async function loadThreads() {
         const active = activeOtherId === parseInt(t.other_id) ? 'active' : '';
         return `
             <button type="button" class="fm-thread ${active}" data-id="${t.other_id}" data-name="${esc(t.name)}">
-                <div class="fm-thread-av">${initials(t.name)}</div>
+                <div class="fm-av">${initials(t.name)}</div>
                 <div class="fm-thread-body">
                     <div class="fm-thread-top">
-                        <span class="fm-thread-name">${esc(t.name)}</span>
+                        <span class="fm-thread-name ${unread > 0 ? 'unread' : ''}">${esc(t.name)}</span>
                         <span class="fm-thread-time">${relativeTime(t.last_at)}</span>
                     </div>
-                    <div class="fm-thread-preview">${esc((t.last_message || '').slice(0, 42))}</div>
+                    <div class="fm-thread-preview ${unread > 0 ? 'unread' : ''}">${esc((t.last_message || '').slice(0, 42))}</div>
                 </div>
-                ${unread > 0 ? `<span class="fm-thread-badge">${unread}</span>` : ''}
+                ${unread > 0 ? `<span class="fm-thread-dot"></span>` : ''}
             </button>`;
     }).join('');
 
@@ -161,7 +155,6 @@ async function loadThreads() {
 function renderMessageHtml(m, meId) {
     const mine = parseInt(m.sender_id) === parseInt(meId);
     const inner = renderMessageBody(m, meId, esc, { imgClass: 'fm-att-img msg-att-img' });
-
     return `
         <div class="fm-row msg-row ${mine ? 'mine' : 'theirs'}" data-mid="${m.message_id}">
             <div class="fm-msg">${inner}<span class="fm-msg-time">${fmtTime(m.created_at)}</span></div>
@@ -208,13 +201,11 @@ async function loadMessages(otherId, isPolling = false) {
         if (body.querySelector('.fm-empty')) body.innerHTML = '';
         appendMessages(msgs, body, me);
         lastPollAt = msgs[msgs.length - 1].created_at;
-        lastMsgCount += msgs.length;
         await Api.post('/MessagingAPI.php?action=mark_read', { other_user_id: otherId });
         refreshUnreadBadge();
         return;
     }
 
-    lastMsgCount = msgs.length;
     lastPollAt = msgs.length ? msgs[msgs.length - 1].created_at : null;
 
     if (!msgs.length) {
@@ -245,10 +236,7 @@ function clearPendingFile() {
     pendingFile = null;
     const preview = getEl('fm-attach-preview');
     const input = getEl('fm-file');
-    if (preview) {
-        preview.classList.remove('fm-visible');
-        preview.innerHTML = '';
-    }
+    if (preview) { preview.classList.remove('fm-visible'); preview.innerHTML = ''; }
     if (input) input.value = '';
 }
 
@@ -260,10 +248,6 @@ function showPendingFile(file) {
         <span class="fm-att-pending">${icon('attach', { size: 14, className: 'ui-icon-inline' })} ${esc(file.name)} (${(file.size / 1024).toFixed(0)} KB)</span>
         <button type="button" class="fm-att-remove" id="fm-att-remove" title="Remove">&times;</button>`;
     preview.querySelector('#fm-att-remove')?.addEventListener('click', clearPendingFile);
-}
-
-function pickAttachment() {
-    getEl('fm-file')?.click();
 }
 
 async function sendMessage() {
@@ -285,10 +269,7 @@ async function sendMessage() {
         fd.append('attachment', pendingFile);
         res = await Api.postForm('/MessagingAPI.php?action=send', fd);
     } else {
-        res = await Api.post('/MessagingAPI.php?action=send', {
-            receiver_id: activeOtherId,
-            content,
-        });
+        res = await Api.post('/MessagingAPI.php?action=send', { receiver_id: activeOtherId, content });
     }
 
     input.disabled = false;
@@ -302,14 +283,14 @@ async function sendMessage() {
         await loadMessages(activeOtherId);
         loadThreads();
     } else {
-        alert(res.message || 'Failed to send message');
+        notify.error(res.message || 'Failed to send message');
     }
     input.focus();
 }
 
 function bindChatInput() {
     const input = getEl('fm-input');
-    const send = getEl('fm-send');
+    const send  = getEl('fm-send');
     const attach = getEl('fm-attach');
     const fileInput = getEl('fm-file');
     if (!input || !send) return;
@@ -319,52 +300,18 @@ function bindChatInput() {
         input.style.height = Math.min(input.scrollHeight, 96) + 'px';
     });
     input.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
     send.addEventListener('click', sendMessage);
-    attach?.addEventListener('click', pickAttachment);
+    attach?.addEventListener('click', () => getEl('fm-file')?.click());
     fileInput?.addEventListener('change', () => {
         const file = fileInput.files?.[0];
         if (!file) return;
         const check = validateMessageFile(file);
-        if (!check.ok) {
-            alert(check.message);
-            fileInput.value = '';
-            return;
-        }
+        if (!check.ok) { notify.error(check.message); fileInput.value = ''; return; }
         pendingFile = file;
         showPendingFile(file);
     });
-}
-
-async function openChat(otherId, name, role = '') {
-    if (!otherId) return;
-
-    activeOtherId = otherId;
-    lastMsgCount = 0;
-    lastPollAt = null;
-    clearPendingFile();
-    expand();
-    setView('chat');
-
-    const av = getEl('fm-chat-av');
-    const title = getEl('fm-chat-name');
-    const sub = getEl('fm-chat-role');
-    if (av) av.textContent = initials(name);
-    if (title) title.textContent = name || 'Chat';
-    if (sub) sub.textContent = roleLabel(role);
-
-    const body = getEl('fm-chat-body');
-    if (body) body.innerHTML = '<div class="fm-empty">Loading...</div>';
-
-    await loadMessages(otherId);
-    stopPolling();
-    pollTimer = setInterval(() => {
-        if (activeOtherId === otherId && isOpen) loadMessages(otherId, true);
-    }, POLL_MS);
 }
 
 async function openContacts() {
@@ -382,8 +329,8 @@ async function openContacts() {
     }
 
     list.innerHTML = contacts.map(c => `
-        <button type="button" class="fm-contact" data-id="${c.users_id}" data-name="${esc(c.name)}" data-role="${esc(c.role || '')}">
-            <div class="fm-thread-av">${initials(c.name)}</div>
+        <button type="button" class="fm-thread" data-id="${c.users_id}" data-name="${esc(c.name)}" data-role="${esc(c.role || '')}">
+            <div class="fm-av">${initials(c.name)}</div>
             <div class="fm-thread-body">
                 <div class="fm-thread-name">${esc(c.name)}</div>
                 <div class="fm-thread-preview">${esc(c.subject_code ? c.subject_code + ' · ' + c.subject_name : roleLabel(c.role))}</div>
@@ -391,11 +338,36 @@ async function openContacts() {
         </button>
     `).join('');
 
-    list.querySelectorAll('.fm-contact').forEach(btn => {
+    list.querySelectorAll('.fm-thread').forEach(btn => {
         btn.addEventListener('click', () => {
             openChat(parseInt(btn.dataset.id, 10), btn.dataset.name, btn.dataset.role);
         });
     });
+}
+
+async function openChat(otherId, name, role = '') {
+    if (!otherId) return;
+    activeOtherId = otherId;
+    lastPollAt = null;
+    clearPendingFile();
+    expand();
+    setView('chat');
+
+    const av    = getEl('fm-chat-av');
+    const title = getEl('fm-chat-name');
+    const sub   = getEl('fm-chat-role');
+    if (av)    av.textContent    = initials(name);
+    if (title) title.textContent = name || 'Chat';
+    if (sub)   sub.textContent   = roleLabel(role);
+
+    const body = getEl('fm-chat-body');
+    if (body) body.innerHTML = '<div class="fm-empty">Loading...</div>';
+
+    await loadMessages(otherId);
+    stopPolling();
+    pollTimer = setInterval(() => {
+        if (activeOtherId === otherId && isOpen) loadMessages(otherId, true);
+    }, POLL_MS);
 }
 
 function injectStyles() {
@@ -403,271 +375,318 @@ function injectStyles() {
     const style = document.createElement('style');
     style.id = 'fm-styles';
     style.textContent = `
-        body.fm-mounted #sef-root { right: 100px; }
-        @media(max-width:640px) {
-            body.fm-mounted #sef-root { right: 84px; bottom: 16px; }
+        /* ── Topbar messenger button badge ──────────────────────────── */
+        #fm-topbar-btn { position: relative; }
+        #fm-topbar-btn.active { background: rgba(0,70,27,.10); }
+        #fm-topbar-badge {
+            position: absolute; top: 2px; right: 2px;
+            min-width: 18px; height: 18px; padding: 0 4px;
+            background: #EF4444; color: #fff; border-radius: 20px;
+            font-size: 10px; font-weight: 700;
+            display: none; align-items: center; justify-content: center;
+            border: 2px solid #fff; pointer-events: none;
         }
 
+        /* ── Root container ─────────────────────────────────────────── */
         #fm-root {
-            position: fixed; bottom: 24px; right: 24px; z-index: 960;
+            position: fixed;
+            top: 0; right: 0;
+            z-index: 1200;
             font-family: inherit;
         }
         #fm-root * { box-sizing: border-box; }
 
-        .fm-fab {
-            width: 58px; height: 58px; border-radius: 50%;
-            background: ${G};
-            color: #fff; border: none; cursor: pointer;
-            box-shadow: 0 6px 28px rgba(0,70,27,.4);
-            display: flex; align-items: center; justify-content: center;
-            transition: transform .2s, box-shadow .2s;
-            position: relative;
-        }
-        .fm-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,70,27,.5); }
-        .fm-fab svg { width: 28px; height: 28px; }
-        .fm-fab-badge {
-            position: absolute; top: -2px; right: -2px;
-            min-width: 20px; height: 20px; padding: 0 5px;
-            background: #EF4444; color: #fff; border-radius: 20px;
-            font-size: 11px; font-weight: 700;
-            display: none; align-items: center; justify-content: center;
-            border: 2px solid #fff;
-        }
-
+        /* ── Panel ──────────────────────────────────────────────────── */
         .fm-panel {
-            position: absolute; bottom: 72px; right: 0;
-            width: 360px; max-width: calc(100vw - 32px);
-            height: 520px; max-height: calc(100vh - 120px);
-            background: #fff; border-radius: 16px;
-            box-shadow: 0 12px 48px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.06);
-            display: none; flex-direction: column; overflow: hidden;
-            transform-origin: bottom right;
-            animation: fm-pop .22s ease;
+            position: fixed;
+            top: 58px;
+            right: 58px;
+            width: 360px;
+            max-width: calc(100vw - 24px);
+            height: 540px;
+            max-height: calc(100vh - 72px);
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 40px rgba(0,0,0,.22), 0 0 0 1px rgba(0,0,0,.07);
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            transform-origin: top right;
+            animation: fm-pop .18s ease;
         }
         #fm-root.fm-open .fm-panel { display: flex; }
         @keyframes fm-pop {
-            from { opacity: 0; transform: scale(.92) translateY(8px); }
+            from { opacity: 0; transform: scale(.94) translateY(-6px); }
             to   { opacity: 1; transform: scale(1) translateY(0); }
         }
 
+        /* ── Panel header ───────────────────────────────────────────── */
         .fm-head {
-            background: ${G};
-            color: #fff; padding: 14px 16px;
+            padding: 14px 16px 10px;
             display: flex; align-items: center; justify-content: space-between;
-            flex-shrink: 0;
+            flex-shrink: 0; border-bottom: 1px solid #F0F0F0;
         }
         .fm-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-        .fm-head-title { font-size: 15px; font-weight: 700; margin: 0; }
-        .fm-head-sub { font-size: 11px; opacity: .85; margin: 0; }
-        .fm-head-actions { display: flex; gap: 4px; }
+        .fm-head-title { font-size: 20px; font-weight: 800; color: #111827; margin: 0; }
+        .fm-head-sub   { font-size: 12px; color: #6B7280; margin: 0; }
+        .fm-head-actions { display: flex; gap: 4px; flex-shrink: 0; }
         .fm-icon-btn {
-            width: 32px; height: 32px; border-radius: 50%; border: none;
-            background: rgba(255,255,255,.15); color: #fff; cursor: pointer;
+            width: 34px; height: 34px; border-radius: 50%; border: none;
+            background: #F3F4F6; color: #374151; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            font-size: 16px; transition: background .15s;
+            font-size: 16px; transition: background .13s;
         }
-        .fm-icon-btn:hover { background: rgba(255,255,255,.28); }
+        .fm-icon-btn:hover { background: #E5E7EB; }
 
-        .fm-chat-head { display: none; }
-        #fm-root[data-view="chat"] .fm-threads-head { display: none; }
-        #fm-root[data-view="chat"] .fm-chat-head { display: flex; }
-        #fm-root[data-view="contacts"] .fm-threads-head { display: none; }
-        #fm-root[data-view="contacts"] .fm-contacts-head { display: flex; }
+        /* view switching */
+        .fm-chat-head     { display: none; }
         .fm-contacts-head { display: none; }
+        #fm-root[data-view="chat"]     .fm-threads-head  { display: none; }
+        #fm-root[data-view="chat"]     .fm-chat-head     { display: flex; }
+        #fm-root[data-view="contacts"] .fm-threads-head  { display: none; }
+        #fm-root[data-view="contacts"] .fm-contacts-head { display: flex; }
 
+        /* ── Thread / contact list ──────────────────────────────────── */
         .fm-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-        .fm-thread-list {
-            flex: 1; overflow-y: auto; padding: 6px 0;
+
+        .fm-search-wrap {
+            padding: 8px 12px 6px; border-bottom: 1px solid #F3F4F6;
         }
-        .fm-contact-list {
-            display: none; flex: 1; overflow-y: auto; padding: 6px 0;
+        .fm-search {
+            width: 100%; padding: 8px 14px; border: none; border-radius: 20px;
+            background: #F0F2F5; font-size: 13px; font-family: inherit; outline: none;
+            color: #111827;
         }
-        .fm-thread, .fm-contact {
-            width: 100%; display: flex; align-items: center; gap: 10px;
-            padding: 10px 14px; border: none; background: transparent;
+        .fm-search::placeholder { color: #9CA3AF; }
+
+        .fm-thread-list, .fm-contact-list {
+            flex: 1; overflow-y: auto; padding: 4px 0;
+        }
+        .fm-contact-list { display: none; }
+
+        .fm-thread {
+            width: 100%; display: flex; align-items: center; gap: 12px;
+            padding: 8px 12px; border: none; background: transparent;
             cursor: pointer; text-align: left; transition: background .12s;
+            border-radius: 8px; margin: 0 4px; width: calc(100% - 8px);
         }
-        .fm-thread:hover, .fm-contact:hover { background: #F3F4F6; }
-        .fm-thread.active { background: #ECFDF5; }
-        .fm-thread-av {
-            width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-            background: ${G};
-            color: #fff; font-size: 14px; font-weight: 700;
+        .fm-thread:hover  { background: #F0F2F5; }
+        .fm-thread.active { background: #E8F5EC; }
+
+        .fm-av {
+            width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+            background: ${G}; color: #fff; font-size: 15px; font-weight: 700;
             display: flex; align-items: center; justify-content: center;
         }
-        .fm-thread-body { flex: 1; min-width: 0; }
-        .fm-thread-top { display: flex; justify-content: space-between; gap: 8px; }
-        .fm-thread-name { font-size: 13px; font-weight: 700; color: #111; }
-        .fm-thread-time { font-size: 11px; color: #9CA3AF; flex-shrink: 0; }
-        .fm-thread-preview { font-size: 12px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-        .fm-thread-badge {
-            background: ${G}; color: #fff; font-size: 10px; font-weight: 700;
-            min-width: 18px; height: 18px; border-radius: 20px;
-            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        .fm-thread-body  { flex: 1; min-width: 0; }
+        .fm-thread-top   { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+        .fm-thread-name  { font-size: 14px; font-weight: 500; color: #111827; }
+        .fm-thread-name.unread { font-weight: 700; }
+        .fm-thread-time  { font-size: 11px; color: #9CA3AF; flex-shrink: 0; }
+        .fm-thread-preview { font-size: 12.5px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+        .fm-thread-preview.unread { color: #111827; font-weight: 700; }
+        .fm-thread-dot {
+            width: 10px; height: 10px; border-radius: 50%; background: ${G};
+            flex-shrink: 0; margin-left: 4px;
         }
 
-        #fm-root[data-view="chat"] .fm-thread-list,
-        #fm-root[data-view="chat"] .fm-contact-list,
+        /* view switching */
+        #fm-root[data-view="chat"]     .fm-thread-list,
+        #fm-root[data-view="chat"]     .fm-contact-list,
         #fm-root[data-view="contacts"] .fm-thread-list { display: none; }
-        #fm-root[data-view="threads"] .fm-contact-list { display: none; }
-        #fm-root[data-view="threads"] .fm-thread-list { display: block; }
-        #fm-root[data-view="chat"] .fm-chat-wrap { display: flex; }
+        #fm-root[data-view="threads"]  .fm-thread-list { display: block; }
+        #fm-root[data-view="chat"]     .fm-chat-wrap   { display: flex; }
         #fm-root[data-view="contacts"] .fm-contact-list { display: block; }
+
+        /* ── Chat view ──────────────────────────────────────────────── */
         .fm-chat-wrap {
             display: none; flex: 1; flex-direction: column; min-height: 0;
         }
         .fm-chat-body {
-            flex: 1; overflow-y: auto; padding: 14px;
-            background: #F9FAFB; display: flex; flex-direction: column; gap: 8px;
+            flex: 1; overflow-y: auto; padding: 12px 14px;
+            background: #F0F2F5; display: flex; flex-direction: column; gap: 6px;
         }
         .fm-row { display: flex; }
-        .fm-row.mine { justify-content: flex-end; }
+        .fm-row.mine   { justify-content: flex-end; }
         .fm-row.theirs { justify-content: flex-start; }
         .fm-msg {
-            max-width: 78%; padding: 8px 12px; border-radius: 18px;
-            font-size: 13px; line-height: 1.45; word-break: break-word;
+            max-width: 75%; padding: 8px 12px; border-radius: 18px;
+            font-size: 13.5px; line-height: 1.45; word-break: break-word;
             position: relative;
         }
-        .fm-row.mine .fm-msg {
-            background: ${G}; color: #fff;
-            border-bottom-right-radius: 4px;
-        }
-        .fm-row.theirs .fm-msg {
-            background: #fff; color: #111; border: 1px solid #E5E7EB;
-            border-bottom-left-radius: 4px;
-        }
+        .fm-row.mine   .fm-msg { background: ${G}; color: #fff; border-bottom-right-radius: 4px; }
+        .fm-row.theirs .fm-msg { background: #fff; color: #111; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
         .fm-msg-time {
-            display: block; font-size: 10px; opacity: .65; margin-top: 4px; text-align: right;
+            display: block; font-size: 10px; opacity: .55; margin-top: 3px; text-align: right;
         }
-        .fm-date { text-align: center; margin: 6px 0; }
+        .fm-date { text-align: center; margin: 8px 0; }
         .fm-date span {
-            font-size: 11px; color: #6B7280; background: #E5E7EB;
+            font-size: 11px; color: #6B7280; background: rgba(255,255,255,.7);
             padding: 3px 10px; border-radius: 20px;
         }
 
+        /* ── Attach preview ─────────────────────────────────────────── */
         .fm-attach-preview {
-            display:none; padding:8px 12px; background:#F9FAFB;
-            border-top:1px solid #F0F0F0; font-size:12px;
-            align-items:center; justify-content:space-between; gap:8px;
+            display: none; padding: 8px 12px; background: #F9FAFB;
+            border-top: 1px solid #F0F0F0; font-size: 12px;
+            align-items: center; justify-content: space-between; gap: 8px;
         }
-        .fm-attach-preview.fm-visible { display:flex; }
-        .fm-att-pending { color:#374151; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .fm-attach-preview.fm-visible { display: flex; }
+        .fm-att-pending { color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .fm-att-remove {
-            border:none; background:#E5E7EB; width:24px; height:24px;
-            border-radius:50%; cursor:pointer; font-size:16px; line-height:1; flex-shrink:0;
+            border: none; background: #E5E7EB; width: 24px; height: 24px;
+            border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; flex-shrink: 0;
         }
-        .fm-att-img { max-width:min(220px, 100%); max-height:160px; }
-        .fm-row.mine .msg-att-file, .fm-row.mine .msg-att-pdf { color:#fff; }
+        .fm-att-img { max-width: min(220px, 100%); max-height: 160px; border-radius: 8px; }
+        .fm-row.mine .msg-att-file,
+        .fm-row.mine .msg-att-pdf { color: #fff; }
+
+        /* ── Footer / input ─────────────────────────────────────────── */
         .fm-footer {
             padding: 10px 12px; border-top: 1px solid #F0F0F0;
             display: flex; gap: 8px; align-items: flex-end; background: #fff;
         }
         .fm-attach-btn {
-            width:36px; height:36px; border-radius:50%; border:1px solid #E5E7EB;
-            background:#fff; cursor:pointer; flex-shrink:0; font-size:16px;
-            display:flex; align-items:center; justify-content:center;
+            width: 36px; height: 36px; border-radius: 50%; border: 1px solid #E5E7EB;
+            background: #fff; cursor: pointer; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: ${G}; transition: background .12s;
         }
-        .fm-attach-btn:hover { background:#F3F4F6; }
+        .fm-attach-btn:hover { background: #F3F4F6; }
         .fm-input {
-            flex: 1; resize: none; border: 1px solid #E5E7EB;
-            border-radius: 20px; padding: 9px 14px; font-size: 13px;
+            flex: 1; resize: none; border: none; border-radius: 20px;
+            background: #F0F2F5; padding: 9px 14px; font-size: 13.5px;
             font-family: inherit; max-height: 96px; outline: none;
         }
-        .fm-input:focus { border-color: ${G}; }
+        .fm-input:focus { background: #E8EAED; }
         .fm-send {
             width: 36px; height: 36px; border-radius: 50%; border: none;
             background: ${G}; color: #fff; cursor: pointer; flex-shrink: 0;
-            font-size: 15px; display: flex; align-items: center; justify-content: center;
+            display: flex; align-items: center; justify-content: center;
+            transition: background .12s;
         }
+        .fm-send:hover { background: ${G2}; }
         .fm-send:disabled { opacity: .5; cursor: not-allowed; }
 
         .fm-empty {
-            padding: 32px 20px; text-align: center; color: #9CA3AF; font-size: 13px; line-height: 1.5;
+            padding: 32px 20px; text-align: center; color: #9CA3AF; font-size: 13px; line-height: 1.6;
         }
 
-        @media(max-width:768px) {
-            .fm-panel {
-                width:min(100vw - 24px, 360px);
-                height:min(100vh - 88px, 520px);
-                bottom:68px;
-            }
-            .fm-att-img { max-width:100%; max-height:140px; }
+        /* chat avatar in header */
+        .fm-chat-av {
+            width: 36px; height: 36px; border-radius: 50%; background: ${G};
+            color: #fff; font-size: 13px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
-        @media(max-width:480px) {
-            #fm-root { bottom: 16px; right: 16px; }
+
+        /* ── New chat button row under title ───────────────────────── */
+        .fm-action-row {
+            display: flex; gap: 8px; padding: 8px 12px 6px; border-bottom: 1px solid #F3F4F6;
+        }
+        .fm-action-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 14px; border-radius: 20px; border: none;
+            background: #F0F2F5; color: #374151; font-size: 13px; font-weight: 600;
+            cursor: pointer; font-family: inherit; transition: background .12s;
+        }
+        .fm-action-pill:hover { background: #E5E7EB; }
+
+        /* ── Mobile ─────────────────────────────────────────────────── */
+        @media (max-width: 640px) {
             .fm-panel {
-                width:calc(100vw - 20px); right:-4px;
-                height:calc(100dvh - 80px); max-height:none;
+                top: 56px; right: 8px; left: 8px; width: auto;
+                height: calc(100dvh - 72px); max-height: none; border-radius: 12px;
             }
-            body.fm-mounted #sef-root { right: 76px; bottom: 16px; }
         }
     `;
     document.head.appendChild(style);
 }
 
 function bindRootEvents() {
-    getEl('fm-bubble')?.addEventListener('click', toggle);
     rootEl?.querySelectorAll('.fm-minimize-btn').forEach(btn => btn.addEventListener('click', minimize));
+
     getEl('fm-new')?.addEventListener('click', openContacts);
+
     getEl('fm-back')?.addEventListener('click', () => {
         stopPolling();
         activeOtherId = null;
         setView('threads');
         loadThreads();
     });
+
     getEl('fm-back-contacts')?.addEventListener('click', () => {
         setView('threads');
         loadThreads();
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (!isOpen) return;
+        const btn = document.getElementById('fm-topbar-btn');
+        if (rootEl && !rootEl.contains(e.target) && btn && !btn.contains(e.target)) {
+            minimize();
+        }
+    }, true);
+
+    // Topbar button
+    document.getElementById('fm-topbar-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggle();
     });
 }
 
 export function mountFloatingMessenger() {
     if (rootEl) return;
     injectStyles();
-    document.body.classList.add('fm-mounted');
 
     rootEl = document.createElement('div');
     rootEl.id = 'fm-root';
     rootEl.dataset.view = 'threads';
+
     rootEl.innerHTML = `
         <div class="fm-panel" id="fm-panel" aria-hidden="true">
+
+            <!-- Threads header -->
             <div class="fm-head fm-threads-head">
-                <div class="fm-head-left">
-                    <div>
-                        <p class="fm-head-title">Chats</p>
-                        <p class="fm-head-sub">Messages</p>
-                    </div>
-                </div>
+                <p class="fm-head-title">Chats</p>
                 <div class="fm-head-actions">
-                    <button type="button" class="fm-icon-btn" id="fm-new" title="New message">+</button>
-                    <button type="button" class="fm-icon-btn fm-minimize-btn" title="Minimize">&minus;</button>
+                    <button type="button" class="fm-icon-btn" id="fm-new" title="New message">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
+            <div class="fm-search-wrap fm-threads-head">
+                <input type="search" class="fm-search" placeholder="Search Messenger" autocomplete="off">
+            </div>
+
+            <!-- Chat header -->
             <div class="fm-head fm-chat-head">
                 <div class="fm-head-left">
-                    <button type="button" class="fm-icon-btn" id="fm-back" title="Back">&#8592;</button>
-                    <div class="fm-thread-av" id="fm-chat-av">?</div>
+                    <button type="button" class="fm-icon-btn" id="fm-back" title="Back">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <div class="fm-chat-av" id="fm-chat-av">?</div>
                     <div style="min-width:0">
-                        <p class="fm-head-title" id="fm-chat-name">Chat</p>
+                        <p class="fm-head-title" id="fm-chat-name" style="font-size:15px;font-weight:700">Chat</p>
                         <p class="fm-head-sub" id="fm-chat-role">Contact</p>
                     </div>
                 </div>
-                <div class="fm-head-actions">
-                    <button type="button" class="fm-icon-btn fm-minimize-btn" title="Minimize">&minus;</button>
-                </div>
             </div>
+
+            <!-- Contacts header -->
             <div class="fm-head fm-contacts-head">
                 <div class="fm-head-left">
-                    <button type="button" class="fm-icon-btn" id="fm-back-contacts" title="Back">&#8592;</button>
-                    <div>
-                        <p class="fm-head-title">New message</p>
-                        <p class="fm-head-sub">Pick a contact</p>
-                    </div>
-                </div>
-                <div class="fm-head-actions">
-                    <button type="button" class="fm-icon-btn fm-minimize-btn" title="Minimize">&minus;</button>
+                    <button type="button" class="fm-icon-btn" id="fm-back-contacts" title="Back">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <p class="fm-head-title" style="font-size:16px">New message</p>
                 </div>
             </div>
+
+            <!-- Body -->
             <div class="fm-body">
                 <div class="fm-thread-list" id="fm-thread-list"></div>
                 <div class="fm-contact-list" id="fm-contact-list"></div>
@@ -683,10 +702,6 @@ export function mountFloatingMessenger() {
                 </div>
             </div>
         </div>
-        <button type="button" class="fm-fab" id="fm-bubble" aria-label="Open messages">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.15 2 11.25c0 2.91 1.45 5.54 3.78 7.26L4.5 21.5l3.2-1.68c1.12.31 2.31.48 3.55.48 5.52 0 10-4.15 10-9.25S17.52 2 12 2z"/></svg>
-            <span class="fm-fab-badge" id="fm-fab-badge"></span>
-        </button>
     `;
 
     document.body.appendChild(rootEl);
@@ -703,7 +718,6 @@ export function unmountFloatingMessenger() {
     rootEl = null;
     activeOtherId = null;
     isOpen = false;
-    document.body.classList.remove('fm-mounted');
 }
 
 /** Open floating chat with a specific person (from subject People tab, etc.) */

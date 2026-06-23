@@ -3,6 +3,7 @@
  * CIT-LMS Chat API
  * Real-time messaging via AJAX polling
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 

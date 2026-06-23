@@ -3,6 +3,7 @@
  * CIT-LMS Enrollment API
  * Student enrollment via subject code + section
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 
@@ -464,6 +465,7 @@ function getMySubjects() {
         $subjects = db()->fetchAll(
             "SELECT ss.student_subject_id, ss.subject_offered_id, ss.section_id, ss.enrollment_date, ss.status,
                 s.subject_id, s.subject_code, s.subject_name, s.units,
+                so.status AS offering_status,
                 sec.section_name, sec.enrollment_code,
                 secsubj.schedule, secsubj.room,
                 CONCAT(u2.first_name, ' ', u2.last_name) AS instructor_name,

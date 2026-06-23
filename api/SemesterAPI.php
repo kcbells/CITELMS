@@ -2,6 +2,7 @@
 /**
  * Semester API — list, create, update semesters (School Year records)
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -24,9 +25,37 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 
+// ─── Auto-activate semester by today's date ───────────────────────────────
+// Only runs when NO semester is currently active (e.g. fresh install).
+// Never overrides a manually-set active semester.
+
+function autoActivateSemester() {
+    // If admin has already set an active semester, respect that choice
+    $current = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
+    if ($current) return;
+
+    // No active semester — try to find one whose date range covers today
+    $today = date('Y-m-d');
+    $match = db()->fetchOne(
+        "SELECT semester_id FROM semester
+         WHERE start_date IS NOT NULL AND end_date IS NOT NULL
+           AND start_date <= ? AND end_date >= ?
+         ORDER BY start_date DESC LIMIT 1",
+        [$today, $today]
+    );
+
+    if (!$match) return;
+
+    // Activate the date-matched semester
+    pdo()->prepare("UPDATE semester SET status = 'inactive' WHERE semester_id != ?")->execute([$match['semester_id']]);
+    pdo()->prepare("UPDATE semester SET status = 'active'   WHERE semester_id  = ?")->execute([$match['semester_id']]);
+}
+
 // ─── List all semesters (newest first) ────────────────────────────────────
 
 function handleList() {
+    autoActivateSemester();
+
     // GROUP BY deduplicates rows from old migrations that ran multiple times.
     // Promotes 'active' status if any duplicate has it; keeps MIN semester_id.
     $semesters = db()->fetchAll(

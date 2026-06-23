@@ -33,32 +33,47 @@ export async function render(container) {
         return;
     }
 
+    const view = params.get('view') === 'archived' ? 'archived' : 'active';
+
     container.innerHTML = `<div class="ms-loading"><div class="ms-spin"></div></div>`;
 
-    const [res, annRes, semRes] = await Promise.all([
+    const [res, annRes] = await Promise.all([
         Api.get('/EnrollmentAPI.php?action=my-subjects'),
         Api.get('/AnnouncementsAPI.php?action=student-list'),
-        Api.get('/SemesterAPI.php?action=list')
     ]);
 
-    const subjects = res.success ? res.data : [];
+    const allSubjects = res.success ? res.data : [];
+    const activeSubjects   = allSubjects.filter(s => s.offering_status !== 'archived');
+    const archivedSubjects = allSubjects.filter(s => s.offering_status === 'archived');
+    const subjects = view === 'archived' ? archivedSubjects : activeSubjects;
+
     const annBySubject = groupAnnouncements(annRes.success ? annRes.data : []);
-    const activeSem = (semRes.success ? semRes.data : []).find(s => s.status === 'active');
     const sectionNames = [...new Set(subjects.map(s => s.section_name).filter(Boolean))];
+
+    const emptyArchivedHtml = `
+        <div class="ms-empty-state">
+            <div class="ms-empty-icon">${iconLg('book')}</div>
+            <h2>No archived classes</h2>
+            <p>When an instructor archives a subject, it will appear here.</p>
+            <a href="#student/my-subjects" class="ms-join-btn ms-join-btn-lg">Back to Active Subjects</a>
+        </div>
+    `;
+
+    const emptyActiveHtml = `
+        <div class="ms-empty-state">
+            <div class="ms-empty-icon">${iconLg('book')}</div>
+            <h2>No subjects enrolled</h2>
+            <p>Join a class with your subject code to see your subjects here.</p>
+            <button type="button" class="ms-join-btn ms-join-btn-lg" id="ms-join-btn-empty">Join Class</button>
+        </div>
+    `;
 
     container.innerHTML = `
         <style>${styles()}</style>
         <div class="ms-page" id="ms-page-root">
-            ${buildShell(activeSem ? `${esc(activeSem.semester_name)} · AY ${esc(activeSem.academic_year)}` : '')}
+            ${buildShell(activeSubjects.length, archivedSubjects.length, view)}
             <div id="ms-panel-subjects">
-        ${subjects.length === 0 ? `
-                <div class="ms-empty-state">
-                    <div class="ms-empty-icon">${iconLg('book')}</div>
-                    <h2>No subjects enrolled</h2>
-                    <p>Join a class with your subject code to see your subjects here.</p>
-                    <button type="button" class="ms-join-btn ms-join-btn-lg" id="ms-join-btn-empty">Join Class</button>
-            </div>
-        ` : `
+        ${subjects.length === 0 ? (view === 'archived' ? emptyArchivedHtml : emptyActiveHtml) : `
                 <div class="ms-toolbar">
                     <div class="ms-search-box">
                         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -121,19 +136,29 @@ export async function render(container) {
     secFilter?.addEventListener('change', applyFilters);
 }
 
-function buildShell(semBadge) {
+function buildShell(activeCount, archivedCount, view) {
     return `
         <header class="ms-hero">
             <div class="ms-hero-text">
                 <p class="ms-hero-label">Learning</p>
-                <h1 class="ms-hero-title">My Subjects</h1>
-                <p class="ms-hero-sub">Open a class to view classwork, quizzes, classmates, and announcements</p>
-                ${semBadge ? `<span class="ms-hero-badge">${semBadge}</span>` : ''}
+                <h1 class="ms-hero-title">${view === 'archived' ? 'Archived Classes' : 'My Subjects'}</h1>
+                <p class="ms-hero-sub">${view === 'archived' ? 'Subjects archived by your instructor' : 'Open a class to view classwork, quizzes, classmates, and announcements'}</p>
             </div>
-            <button type="button" class="ms-join-btn" id="ms-join-btn">
-                <span class="ms-join-icon">${icon('plus', { size: 18 })}</span>
-                Join Class
-            </button>
+            <div class="ms-hero-right">
+                <div class="ms-tabs">
+                    <a href="#student/my-subjects" class="ms-tab${view !== 'archived' ? ' active' : ''}">
+                        Active${activeCount > 0 ? ` (${activeCount})` : ''}
+                    </a>
+                    <a href="#student/my-subjects?view=archived" class="ms-tab${view === 'archived' ? ' active' : ''}">
+                        Archived${archivedCount > 0 ? ` (${archivedCount})` : ''}
+                    </a>
+                </div>
+                ${view !== 'archived' ? `
+                <button type="button" class="ms-join-btn" id="ms-join-btn">
+                    <span class="ms-join-icon">${icon('plus', { size: 18 })}</span>
+                    Join Class
+                </button>` : ''}
+            </div>
         </header>
     `;
 }
@@ -188,7 +213,7 @@ function styles() {
         .ms-page {
             width: 100%;
             min-height: calc(100vh - 120px);
-            background: #fff;
+            background: #F7F5E8;
         }
         .ms-loading { display:flex; justify-content:center; align-items:center; min-height:320px; background:#fff; }
         .ms-spin {
@@ -205,6 +230,7 @@ function styles() {
             border-radius:16px; color:#fff;
             box-shadow: 0 2px 10px rgba(0,70,27,.1);
         }
+        .ms-hero-text { flex:1; min-width:0; }
         .ms-hero-label {
             font-size:11px; font-weight:700; text-transform:uppercase;
             letter-spacing:1.2px; opacity:.75; margin:0 0 6px;
@@ -232,24 +258,19 @@ function styles() {
         .ms-join-icon svg { stroke:#fff; }
         .ms-join-btn-lg { margin-top:8px; }
 
+        .ms-hero-right { display:flex; flex-direction:column; align-items:flex-end; gap:12px; }
         .ms-tabs {
-            display:flex; gap:8px; flex-wrap:wrap;
-            margin-bottom:22px; padding:4px;
-            background:#F3F4F6; border-radius:12px; width:fit-content; max-width:100%;
+            display:flex; gap:4px; flex-wrap:wrap;
+            padding:4px; background:rgba(255,255,255,.15); border-radius:12px;
         }
         .ms-tab {
-            display:inline-flex; align-items:center; gap:8px;
-            padding:10px 18px; border-radius:9px;
-            font-size:13px; font-weight:700; color:#6B7280;
+            display:inline-flex; align-items:center; gap:6px;
+            padding:8px 16px; border-radius:8px;
+            font-size:13px; font-weight:700; color:rgba(255,255,255,.75);
             text-decoration:none; transition:all .15s;
-            border:1px solid transparent;
         }
-        .ms-tab:hover { color:${G}; background:rgba(255,255,255,.7); }
-        .ms-tab.active {
-            background:#fff; color:${G};
-            border:none;
-            box-shadow:none;
-        }
+        .ms-tab:hover { color:#fff; background:rgba(255,255,255,.15); }
+        .ms-tab.active { background:#fff; color:${G}; }
         .ms-tab-icon { display:flex; align-items:center; }
         .ms-tab.active .ms-tab-icon svg { stroke:${G}; }
 

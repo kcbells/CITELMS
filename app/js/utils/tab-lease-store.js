@@ -31,8 +31,8 @@ export function redirectSuperseded() {
     const match = window.location.pathname.match(/^\/([^/]+)/);
     const base = match ? '/' + match[1] : '/COC-LMS';
     clearClientAuth();
-    const url = base + '/app/index.html?reason=superseded';
-    if (!window.location.href.includes('reason=superseded')) {
+    const url = base + '/index.html';
+    if (!window.location.href.endsWith('/index.html')) {
         window.location.href = url;
     }
 }

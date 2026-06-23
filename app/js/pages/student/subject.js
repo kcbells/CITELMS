@@ -10,7 +10,7 @@ import { openOnlineClass, preloadOnlineClass } from '../../components/online-cla
 import { getFullName, buildClassRoomSlug } from '../../utils/user-display.js';
 import {
     esc, initials, emptyMsg, classroomCss, icon, iconLg, renderClassworkPostCard,
-    renderWorkFocusRailStack,
+    renderWorkFocusRailStack, openGcModal,
     bindPrivateCommentRail, classroomPageFooter,
 } from '../../utils/classroom-ui.js';
 import {
@@ -19,6 +19,8 @@ import {
 import { subjectHash } from './quizzes.js';
 import { mountStudentGrades } from './grades.js';
 import { setAssistantContext, clearAssistantContext } from '../../utils/assistant-context.js';
+import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -69,6 +71,7 @@ export async function render(container, params) {
     const announcements = (annRes.success ? annRes.data : [])
         .filter(a => String(a.subject_id) === String(subjectId));
 
+    const isArchived = subject.offering_status === 'archived';
     const color = subjectColor(subject.subject_id);
     const themeVars = subjectThemeVars(color);
     await Auth.getUser();
@@ -97,8 +100,10 @@ export async function render(container, params) {
         privateReplyTo: null,
         workMaterials: [],
         studentSubmissions: [],
+        calFilter: 'all',
         calYear: now.getFullYear(),
         calMonth: now.getMonth(),
+        calSelectedDay: null,
     };
 
     function renderMainBody() {
@@ -110,6 +115,8 @@ export async function render(container, params) {
         return '';
     }
 
+    let clockInterval = null;
+
     function renderPage() {
         if (renderGen !== activeRenderGen) return;
         const focused = !!state.selectedWork;
@@ -117,28 +124,34 @@ export async function render(container, params) {
         container.innerHTML = `
             <style>${classroomCss(color)}${studentCalendarCss()}${studentClassworkCss()}${materialAttachmentCss()}${focused ? getLessonStyles() : ''}</style>
             <div class="sc-page sc-student-class" style="${themeVars}">
-                <a href="#student/my-subjects" class="sc-back">
+                <a href="${isArchived ? '#student/my-subjects?view=archived' : '#student/my-subjects'}" class="sc-back">
                     <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    My Subjects
+                    ${isArchived ? 'Archived Classes' : 'My Subjects'}
                 </a>
 
-                <header class="sc-hero" style="background:${color}">
+                <header class="sc-hero" style="background:${color}${isArchived ? ';filter:saturate(.55)' : ''}">
                     <div class="sc-hero-main">
                         <span class="sc-hero-code">${esc(subject.subject_code)}</span>
                         <h1 class="sc-hero-title">${esc(subject.subject_name)}</h1>
                         <div class="sc-hero-chips">
+                            ${isArchived ? '<span class="sc-chip sc-chip--archived">Archived</span>' : ''}
                             ${subject.section_name ? `<span class="sc-chip">${esc(subject.section_name)}</span>` : ''}
                             ${subject.schedule ? `<span class="sc-chip">${icon('clock', inl)} ${esc(subject.schedule)}</span>` : ''}
                             ${subject.room ? `<span class="sc-chip">${icon('pin', inl)} ${esc(subject.room)}</span>` : ''}
                             ${subject.instructor_name ? `<span class="sc-chip">${icon('user', inl)} ${esc(subject.instructor_name)}</span>` : ''}
                         </div>
                     </div>
-                    <div class="sc-hero-stats">
-                        <div class="sc-stat"><strong>${lessons.length}</strong><span>Lessons</span></div>
-                        <div class="sc-stat"><strong>${quizzes.length}</strong><span>Assessments</span></div>
-                        <div class="sc-stat"><strong>${countUpcomingEvents()}</strong><span>Upcoming</span></div>
+                    <div class="sc-hero-clock" id="sc-hero-clock">
+                        <div class="sc-clock-time" id="sc-clock-time">--:--:--</div>
+                        <div class="sc-clock-date" id="sc-clock-date">---</div>
                     </div>
                 </header>
+
+                ${isArchived ? `
+                <div class="sc-archived-notice">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                    This subject is archived. You can view lesson materials and past quiz results, but cannot submit work or take quizzes.
+                </div>` : ''}
 
                 <div class="sc-layout ${focused ? 'sc-layout--work-focus' : ''}">
                     <div class="sc-main">
@@ -166,11 +179,27 @@ export async function render(container, params) {
             if (state.selectedWork.type === 'lesson') mountLessonEmbed();
         } else {
             bindEvents();
+            if (state.tab === 'classwork') {
+                announcements.forEach(a => recordContentView('announcement', a.announcement_id));
+            }
             if (state.tab === 'gradebook') {
                 const host = container.querySelector('#sc-grades-host');
                 if (host) mountStudentGrades(host, { subjectId });
             }
         }
+
+        if (clockInterval) clearInterval(clockInterval);
+        function tickClock() {
+            const timeEl = container.querySelector('#sc-clock-time');
+            const dateEl = container.querySelector('#sc-clock-date');
+            if (!timeEl) { clearInterval(clockInterval); clockInterval = null; return; }
+            const d = new Date();
+            timeEl.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()]
+                .map(n => String(n).padStart(2, '0')).join(':');
+            dateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        }
+        tickClock();
+        clockInterval = setInterval(tickClock, 1000);
     }
 
     function renderMessageRailCard() {
@@ -201,7 +230,8 @@ export async function render(container, params) {
     function isWorkSubmitted(w) {
         if (!w) return false;
         if (w.type === 'lesson') return w.data.is_completed == 1;
-        return (w.data.quiz_status || '') === 'passed';
+        const status = w.data.quiz_status || 'none';
+        return status === 'passed' || status === 'attempted' || status === 'exhausted';
     }
 
     function isLessonDone(l) {
@@ -209,7 +239,8 @@ export async function render(container, params) {
     }
 
     function isQuizDone(q) {
-        return (q?.quiz_status || '') === 'passed';
+        const status = q?.quiz_status || '';
+        return status === 'passed' || status === 'attempted' || status === 'exhausted';
     }
 
     function parseCalDate(v) {
@@ -274,7 +305,7 @@ export async function render(container, params) {
         quizzes.forEach(q => {
             const title = q.quiz_title || 'Quiz';
             const done = isQuizDone(q);
-            const attempted = (q.quiz_status || '') === 'attempted' || (q.quiz_status || '') === 'exhausted';
+            const attempted = (q.quiz_status || '') === 'attempted' || (q.quiz_status || '') === 'exhausted' || (q.quiz_status || '') === 'passed';
 
             const opens = parseCalDate(q.availability_start || q.created_at);
             if (opens) {
@@ -332,7 +363,7 @@ export async function render(container, params) {
         if (ev.done) {
             badge = `<span class="sc-cal-event-badge done">${icon('check', inl)} Done</span>`;
         } else if (ev.attempted) {
-            badge = '<span class="sc-cal-event-badge attempted">In progress</span>';
+            badge = '<span class="sc-cal-event-badge attempted">Submitted</span>';
         } else if (ev.kind === 'quiz-due') {
             badge = '<span class="sc-cal-event-badge urgent">Due</span>';
         } else if (ev.kind === 'quiz-opens') {
@@ -416,99 +447,174 @@ export async function render(container, params) {
     }
 
     function renderCalendar() {
-        const events = buildCalendarEvents();
-        const eventsByDay = {};
-        events.forEach(ev => {
-            if (!eventsByDay[ev.key]) eventsByDay[ev.key] = [];
-            eventsByDay[ev.key].push(ev);
-        });
-
+        const allEvents = buildCalendarEvents();
+        const filter = state.calFilter || 'all';
+        const sel = state.calSelectedDay || null;
         const year = state.calYear;
         const month = state.calMonth;
-        const monthLabel = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const firstDow = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        // Build per-day map for grid dots (uses all events regardless of filter)
+        const allByDay = {};
+        allEvents.forEach(ev => {
+            if (!allByDay[ev.key]) allByDay[ev.key] = [];
+            allByDay[ev.key].push(ev);
+        });
+
+        // Filter events for the list
+        const events = filter === 'lesson'      ? allEvents.filter(e => e.kind === 'lesson')
+                     : filter === 'quiz'         ? allEvents.filter(e => e.kind.startsWith('quiz'))
+                     : filter === 'announcement' ? allEvents.filter(e => e.kind === 'announcement')
+                     : allEvents;
+
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(todayStart.getDate()+1);
+        const dayAfter = new Date(todayStart); dayAfter.setDate(todayStart.getDate()+2);
+        const weekEnd = new Date(todayStart); weekEnd.setDate(todayStart.getDate()+7);
         const todayKey = dateKey(new Date());
 
+        // ── Mini calendar grid ─────────────────────────────────────────
+        const monthLabel = new Date(year, month, 1)
+            .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const firstDow = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
         let cells = '';
-        for (let i = 0; i < firstDow; i++) {
-            cells += '<div class="sc-cal-cell sc-cal-cell--empty"></div>';
-        }
-        for (let day = 1; day <= daysInMonth; day++) {
-            const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = eventsByDay[key] || [];
+        for (let i = 0; i < firstDow; i++) cells += '<div class="tdc-cell tdc-cell--empty"></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dayEvs = allByDay[key] || [];
+            const kinds = [...new Set(dayEvs.map(e => e.kind.startsWith('quiz') ? 'quiz' : e.kind))];
             const isToday = key === todayKey;
-            const allDone = dayEvents.length > 0 && dayEvents.every(e => e.done || e.kind === 'announcement');
+            const isSel = key === sel;
             cells += `
-                <button type="button" class="sc-cal-cell ${isToday ? 'today' : ''} ${dayEvents.length ? 'has-events' : ''} ${allDone ? 'all-done' : ''}"
-                    data-cal-day="${key}">
-                    <span class="sc-cal-day-num">${day}</span>
-                    ${renderCalendarPins(dayEvents)}
-                </button>`;
+            <button type="button" class="tdc-cell${isToday?' tdc-today':''}${isSel?' tdc-sel':''}${dayEvs.length?' tdc-has':''}"
+                data-cal-day="${key}">
+                <span class="tdc-num">${d}</span>
+                ${kinds.length?`<span class="tdc-dots">${kinds.map(k=>`<i class="tdc-dot tdc-dot--${k}"></i>`).join('')}</span>`:'<span class="tdc-dots"></span>'}
+            </button>`;
         }
 
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const tomorrowStart = new Date(todayStart);
-        tomorrowStart.setDate(todayStart.getDate() + 1);
-        const weekEnd = new Date(todayStart);
-        weekEnd.setDate(todayStart.getDate() + 7);
-        const dueItems = events.filter(ev => ev.kind === 'quiz-due' || ev.kind === 'lesson');
-        const dueToday = dueItems.filter(ev => ev.date >= todayStart && ev.date < tomorrowStart && !ev.done);
-        const dueWeek = dueItems.filter(ev => ev.date >= tomorrowStart && ev.date <= weekEnd && !ev.done);
+        const miniGrid = `
+        <div class="tdc-wrap">
+            <div class="tdc-nav">
+                <button type="button" class="tdc-nav-btn" id="sc-cal-prev">‹</button>
+                <span class="tdc-month">${esc(monthLabel)}</span>
+                <button type="button" class="tdc-nav-btn" id="sc-cal-next">›</button>
+                <button type="button" class="tdc-today-btn" id="sc-cal-today">Today</button>
+            </div>
+            <div class="tdc-weekdays">${['S','M','T','W','T','F','S'].map(w=>`<span>${w}</span>`).join('')}</div>
+            <div class="tdc-cells">${cells}</div>
+        </div>`;
 
-        const reminderPanel = `
-            <section class="sc-cal-reminders">
-                <div class="sc-cal-reminders-head">
-                    <h3>${icon('clock', inl)} Stay on track</h3>
-                    <span class="sc-cal-reminders-pill">${dueToday.length} due today</span>
+        // ── Task row renderer ──────────────────────────────────────────
+        function taskRow(ev) {
+            const isOverdue = ev.kind==='quiz-due' && ev.date<todayStart && !ev.done;
+            let checkClass='td-check--pending', taskClass='';
+            if (ev.done) { checkClass='td-check--done'; taskClass='td-task--done'; }
+            else if (ev.attempted) { checkClass='td-check--attempted'; taskClass='td-task--attempted'; }
+            else if (isOverdue) { checkClass='td-check--overdue'; taskClass='td-task--overdue'; }
+
+            let badge = '';
+            if (ev.done) badge=`<span class="td-badge td-badge--done">${icon('check',{size:10})} Done</span>`;
+            else if (ev.attempted) badge=`<span class="td-badge td-badge--attempted">Submitted</span>`;
+            else if (isOverdue) badge=`<span class="td-badge td-badge--overdue">Overdue</span>`;
+            else if (ev.kind==='quiz-due') badge=`<span class="td-badge td-badge--due">Due</span>`;
+            else if (ev.kind==='quiz-opens') badge=`<span class="td-badge td-badge--opens">Opens</span>`;
+
+            const timeStr = ev.date.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+            const typeLabel = ev.kind==='lesson'?'Lesson':ev.kind==='announcement'?'Announcement'
+                :ev.kind==='quiz-due'?'Quiz — Due':ev.kind==='quiz-opens'?'Quiz — Opens':'Quiz';
+
+            let checkInner = '';
+            if (ev.done) checkInner=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+            else if (ev.attempted) checkInner=`<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>`;
+
+            const calOpen = ev.kind==='announcement'?'announcement':(ev.kind.startsWith('quiz')?'quiz':'lesson');
+            return `
+            <article class="td-task ${taskClass} td-task--click" data-cal-open="${calOpen}" data-cal-id="${ev.id}">
+                <div class="td-check ${checkClass}">${checkInner}</div>
+                <div class="td-task-icon td-task-icon--${ev.kind}">${icon(ev.icon,{size:15})}</div>
+                <div class="td-task-body">
+                    <div class="td-task-title">${esc(ev.title)}</div>
+                    <div class="td-task-meta">${esc(typeLabel)} · ${esc(timeStr)}</div>
                 </div>
-                <p class="sc-cal-reminders-note">
-                    Email reminders are automatically sent for upcoming deadlines. Open each task early to avoid cramming.
-                </p>
-                <div class="sc-cal-reminders-grid">
-                    <div class="sc-cal-reminder-card">
-                        <strong>${dueToday.length}</strong>
-                        <span>Due today</span>
-                    </div>
-                    <div class="sc-cal-reminder-card">
-                        <strong>${dueWeek.length}</strong>
-                        <span>Due this week</span>
-                    </div>
+                <div class="td-task-right">${badge}<span class="td-chevron">›</span></div>
+            </article>`;
+        }
+
+        function section(label, items, opts={}) {
+            if (!items.length) return '';
+            return `
+            <div class="td-section${opts.variant?' td-section--'+opts.variant:''}">
+                <div class="td-section-hdr">
+                    <span class="td-section-dot${opts.variant?' td-section-dot--'+opts.variant:''}"></span>
+                    <span class="td-section-label">${label}</span>
+                    ${opts.dateStr?`<span class="td-section-date">${esc(opts.dateStr)}</span>`:''}
+                    <span class="td-section-count">${items.length}</span>
                 </div>
-            </section>`;
+                <div class="td-tasks">${items.map(taskRow).join('')}</div>
+            </div>`;
+        }
+
+        // ── List section (day-filtered or grouped) ─────────────────────
+        let listHtml = '';
+        if (sel) {
+            const selDate = new Date(sel + 'T12:00:00');
+            const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+            const selEvs = events.filter(e => e.key === sel).sort((a,b) => a.date - b.date);
+            listHtml = `
+            <div class="td-day-hdr">
+                <div class="td-day-hdr-label">${esc(selLabel)}</div>
+                <span class="td-section-count">${selEvs.length}</span>
+                <button type="button" class="td-clear-day" data-cal-clear>Show all</button>
+            </div>
+            <div class="td-tasks td-tasks--flat">
+                ${selEvs.length
+                    ? selEvs.map(taskRow).join('')
+                    : '<p class="td-empty-day">Nothing scheduled on this day.</p>'}
+            </div>`;
+        } else {
+            const overdue=[], todayEvs=[], tomorrowEvs=[], thisWeek=[], upcoming=[], past=[];
+            events.forEach(ev => {
+                const d = ev.date;
+                if (d>=todayStart && d<tomorrowStart) todayEvs.push(ev);
+                else if (d>=tomorrowStart && d<dayAfter) tomorrowEvs.push(ev);
+                else if (d>=dayAfter && d<weekEnd) thisWeek.push(ev);
+                else if (d>=weekEnd) upcoming.push(ev);
+                else if (ev.kind==='quiz-due' && !ev.done) overdue.push(ev);
+                else past.push(ev);
+            });
+            const asc=(a,b)=>a.date-b.date, desc=(a,b)=>b.date-a.date;
+            overdue.sort(asc); todayEvs.sort(asc); tomorrowEvs.sort(asc);
+            thisWeek.sort(asc); upcoming.sort(asc); past.sort(desc);
+            const todayLabel = todayStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            const tomorrowLabel = tomorrowStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            const totalOverdue = allEvents.filter(e=>e.kind==='quiz-due'&&e.date<todayStart&&!e.done).length;
+            listHtml = `
+            ${totalOverdue>0?`<div class="td-overdue-banner"><span class="td-overdue-pill">${totalOverdue} overdue</span></div>`:''}
+            ${section('Overdue', overdue, {variant:'overdue'})}
+            ${section('Today', todayEvs, {variant:'today', dateStr:todayLabel})}
+            ${section('Tomorrow', tomorrowEvs, {dateStr:tomorrowLabel})}
+            ${section('This Week', thisWeek)}
+            ${section('Upcoming', upcoming)}
+            ${section('Past', past, {variant:'past'})}
+            ${!events.length?`<div class="td-empty">
+                <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#D1D5DB" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <p class="td-empty-msg">No activity yet for this subject.</p>
+            </div>`:''}`;
+        }
 
         return `
-            <div class="sc-calendar">
-                <div class="sc-cal-header">
-                    <div>
-                        <h2 class="sc-cal-title">${esc(subject.subject_name)}</h2>
-                        <p class="sc-cal-sub">${esc(subject.subject_code)}${subject.section_name ? ` · ${esc(subject.section_name)}` : ''}</p>
-                    </div>
-                    <div class="sc-cal-nav">
-                        <button type="button" class="sc-cal-nav-btn" id="sc-cal-prev" aria-label="Previous month">‹</button>
-                        <span class="sc-cal-month">${esc(monthLabel)}</span>
-                        <button type="button" class="sc-cal-nav-btn" id="sc-cal-next" aria-label="Next month">›</button>
-                        <button type="button" class="sc-cal-today-btn" id="sc-cal-today">Today</button>
-                    </div>
-                </div>
-
-                <div class="sc-cal-grid-wrap">
-                    <div class="sc-cal-weekdays">
-                        ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => `<span>${w}</span>`).join('')}
-                    </div>
-                    <div class="sc-cal-grid">${cells}</div>
-                </div>
-                ${reminderPanel}
-
-                <div class="sc-cal-pin-legend">
-                    <span class="sc-cal-legend-item"><span class="sc-cal-pin sc-cal-pin--lesson">${icon('pin', { size: 14 })}</span> Lesson</span>
-                    <span class="sc-cal-legend-item"><span class="sc-cal-pin sc-cal-pin--announcement">${icon('pin', { size: 14 })}</span> Announcement</span>
-                    <span class="sc-cal-legend-item"><span class="sc-cal-pin sc-cal-pin--quiz-opens">${icon('pin', { size: 14 })}</span> Quiz opens</span>
-                    <span class="sc-cal-legend-item"><span class="sc-cal-pin sc-cal-pin--quiz-due">${icon('pin', { size: 14 })}</span> Quiz due</span>
-                    <span class="sc-cal-legend-item"><span class="sc-cal-pin sc-cal-pin--done">${icon('pin', { size: 14 })}</span> Done</span>
-                </div>
-            </div>`;
+        <div class="td-wrap">
+            ${miniGrid}
+            <div class="td-filters">
+                <button class="td-filter${filter==='all'?' td-filter--active':''}" data-td-filter="all">All</button>
+                <button class="td-filter${filter==='lesson'?' td-filter--active':''}" data-td-filter="lesson">Lessons</button>
+                <button class="td-filter${filter==='quiz'?' td-filter--active':''}" data-td-filter="quiz">Quizzes</button>
+                <button class="td-filter${filter==='announcement'?' td-filter--active':''}" data-td-filter="announcement">Announcements</button>
+            </div>
+            <div class="td-sections">${listHtml}</div>
+        </div>`;
     }
 
     function isPastDue(w) {
@@ -518,6 +624,7 @@ export async function render(container, params) {
     }
 
     function canEditAttachments(w) {
+        if (isArchived) return false;
         if (!w || isWorkSubmitted(w) || isPastDue(w)) return false;
         return w.type === 'lesson' || w.type === 'quiz';
     }
@@ -548,6 +655,9 @@ export async function render(container, params) {
 
     function renderRightRail(focused = false) {
         if (focused && state.selectedWork) {
+            if (state.selectedWork.type === 'announcement') {
+                return `<aside class="sc-rail sc-rail--work-focus"><div class="sc-rail-focus-stack"></div></aside>`;
+            }
             return renderWorkFocusRailStack(
                 renderYourWorkCard(state.selectedWork, true),
                 {
@@ -622,7 +732,7 @@ export async function render(container, params) {
         }
         const status = w.data.quiz_status || 'none';
         if (status === 'passed') return { text: 'Submitted', cls: 'done' };
-        if (status === 'attempted') return { text: 'In progress', cls: '' };
+        if (status === 'attempted' || status === 'exhausted') return { text: 'Submitted', cls: 'done' };
         return null;
     }
 
@@ -674,6 +784,7 @@ export async function render(container, params) {
         const items = [
             ...lessons.map(l => ({ type: 'lesson', id: l.lessons_id, data: l })),
             ...quizzes.map(q => ({ type: 'quiz', id: q.quiz_id, data: q })),
+            ...announcements.map(a => ({ type: 'announcement', id: a.announcement_id, data: a })),
         ].sort((a, b) => classworkPostedTime(b.data) - classworkPostedTime(a.data));
 
         const feedInner = !items.length
@@ -698,6 +809,31 @@ export async function render(container, params) {
         const d = item.data;
         const posted = formatPosted(d.created_at || d.updated_at);
 
+        if (item.type === 'announcement') {
+            const title = d.title || 'Announcement';
+            const rawContent = (d.content || '').replace(/<[^>]+>/g, '');
+            const preview = rawContent.length > 200 ? rawContent.slice(0, 200) + '…' : rawContent;
+            return `
+                <article class="gc-post-card gc-post-card--ann" data-ann-id="${d.announcement_id}">
+                    <div class="gc-post-card__row">
+                        <div class="gc-post-card__ann-body">
+                            <header class="gc-post-card__hdr">
+                                <div class="sc-avatar sm teacher-av">${esc(teacherInitials)}</div>
+                                <div class="gc-cw-author-text">
+                                    <span class="gc-cw-author-name">${esc(teacherName)}</span>
+                                    ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                                </div>
+                                <span class="gc-ann-badge">${icon('announce', { size: 13, className: 'ui-icon-inline' })} Announcement</span>
+                            </header>
+                            <div class="gc-ann-content">
+                                <div class="gc-ann-title">${esc(title)}</div>
+                                ${preview ? `<p class="gc-ann-preview">${esc(preview)}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </article>`;
+        }
+
         if (item.type === 'lesson') {
             const locked = d.is_locked == 1;
             const done = d.is_completed == 1;
@@ -717,7 +853,7 @@ export async function render(container, params) {
                 posted,
                 iconName: 'document',
                 title: d.title || d.lesson_title || 'Untitled lesson',
-                typeLabel: 'Ungraded activity',
+                typeLabel: (d.total_points != null && d.total_points !== '') ? `Activity · ${Number(d.total_points)} pts` : 'Activity',
                 rightHtml: right,
                 workType: 'lesson',
                 workId: d.lessons_id,
@@ -733,10 +869,8 @@ export async function render(container, params) {
         if (status === 'scheduled') {
             const opens = formatOpensAt(d.availability_start);
             right = `<span class="gc-cw-status locked">${opens ? `Opens ${esc(opens)}` : 'Scheduled'}</span>`;
-        } else if (status === 'passed') {
-            right = `<span class="gc-cw-status done">${icon('check', inl)} Turned in</span>`;
-        } else if (status === 'attempted') {
-            right = `<span class="gc-cw-status">In progress</span>`;
+        } else if (status === 'passed' || status === 'attempted' || status === 'exhausted') {
+            right = `<span class="gc-cw-status done">${icon('check', inl)} Work submitted</span>`;
         }
         if (pts != null) {
             right = `${right}<span class="gc-cw-points">${pts} pts</span>`;
@@ -766,6 +900,24 @@ export async function render(container, params) {
     }
 
     function renderSubmitAction(w) {
+        // Archived subject — freeze all submissions; only show past results read-only
+        if (isArchived) {
+            if (w.type === 'lesson') {
+                if (w.data.is_completed == 1) {
+                    return `<button type="button" class="gc-submit-btn gc-submit-btn--done" disabled>${icon('checkCircle', inl)} Submitted</button>`;
+                }
+                return `<button type="button" class="gc-submit-btn gc-submit-btn--frozen" disabled>${icon('archive', inl)} Subject archived</button>`;
+            }
+            const q = w.data;
+            const status = q.quiz_status || 'none';
+            const aid = q.best_attempt_id;
+            if (status === 'passed' || status === 'attempted' || status === 'exhausted') {
+                return `<button type="button" class="gc-submit-btn gc-submit-btn--done" disabled>${icon('checkCircle', inl)} Submitted</button>`
+                    + (aid ? `<button type="button" class="gc-submit-btn gc-submit-btn--outline" data-quiz-review="${aid}">${icon('chart', inl)} View result</button>` : '');
+            }
+            return `<button type="button" class="gc-submit-btn gc-submit-btn--frozen" disabled>${icon('archive', inl)} Subject archived</button>`;
+        }
+
         if (w.type === 'lesson') {
             if (w.data.is_completed == 1) {
                 return `<button type="button" class="gc-submit-btn gc-submit-btn--done" disabled>${icon('checkCircle', inl)} Submitted to instructor</button>`;
@@ -784,13 +936,17 @@ export async function render(container, params) {
             ? `${q.attempts_used || 0}/${q.max_attempts} attempts`
             : (q.attempts_used ? `${q.attempts_used} attempt${q.attempts_used !== 1 ? 's' : ''}` : '');
         if (status === 'passed') {
-            return `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="gc-submit-btn gc-submit-btn--outline">View submission</a>`;
+            const aid = q.best_attempt_id;
+            return `<button type="button" class="gc-submit-btn gc-submit-btn--done" disabled>${icon('checkCircle', inl)} Work submitted</button>`
+                + (aid ? `<button type="button" class="gc-submit-btn gc-submit-btn--outline" data-quiz-review="${aid}">${icon('chart', inl)} Where I went wrong</button>` : '');
+        }
+        if (status === 'attempted' || status === 'exhausted') {
+            const aid = q.best_attempt_id;
+            return `<button type="button" class="gc-submit-btn gc-submit-btn--done" disabled>${icon('checkCircle', inl)} Work submitted</button>`
+                + (aid ? `<button type="button" class="gc-submit-btn gc-submit-btn--outline" data-quiz-review="${aid}">${icon('chart', inl)} Where I went wrong</button>` : '');
         }
         if (status === 'exhausted' || (!canTake && q.attempts_remaining === 0 && (q.max_attempts || 0) > 0)) {
             return `<button type="button" class="gc-submit-btn" disabled>No attempts left${attemptsLabel ? ` (${attemptsLabel})` : ''}</button>`;
-        }
-        if (canTake && status === 'attempted') {
-            return `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="gc-submit-btn">${icon('quiz', inl)} Retake Quiz${q.attempts_remaining != null ? ` (${q.attempts_remaining} left)` : ''}</a>`;
         }
         if (canTake) {
             return `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="gc-submit-btn">${icon('quiz', inl)} Take Quiz${q.attempts_remaining != null ? ` (${q.attempts_remaining} left)` : ''}</a>`;
@@ -823,6 +979,21 @@ export async function render(container, params) {
             : 'gc-focus-card gc-focus-card--student-work';
 
         if (w.type === 'quiz') {
+            const turnedInRaw = sessionStorage.getItem('coc_quiz_turned_in');
+            let turnedInNote = '';
+            if (turnedInRaw) {
+                try {
+                    const info = JSON.parse(turnedInRaw);
+                    if (String(info.quizId) === String(w.data.quiz_id)) {
+                        sessionStorage.removeItem('coc_quiz_turned_in');
+                        const raw = info.earned_points != null && info.total_points
+                            ? ` — ${info.earned_points}/${info.total_points} pts`
+                            : (info.percentage != null ? ` — ${parseFloat(info.percentage).toFixed(0)}%` : '');
+                        turnedInNote = `<p class="gc-focus-card-note gc-focus-card-note--success">Quiz submitted${raw}. Your work has been turned in.</p>`;
+                    }
+                } catch (_) { /* ignore */ }
+            }
+            const submitted = isWorkSubmitted(w);
             return `
                 <${wrapTag} class="${wrapCls}">
                     <div class="gc-focus-card-hdr sc-rail-work-submit">
@@ -831,7 +1002,9 @@ export async function render(container, params) {
                             ${statusLbl ? `<span class="gc-work-status ${statusLbl.cls}">${esc(statusLbl.text)}</span>` : ''}
                         </div>
                     </div>
-                    <p class="gc-focus-card-note gc-focus-card-note--muted">Complete the quiz to turn in your work.</p>
+                    ${turnedInNote || (submitted
+                        ? `<p class="gc-focus-card-note gc-focus-card-note--muted">Your quiz has been submitted.</p>`
+                        : `<p class="gc-focus-card-note gc-focus-card-note--muted">Complete the quiz to turn in your work.</p>`)}
                     <div class="gc-rail-submit-wrap">${renderSubmitAction(w)}</div>
                 </${wrapTag}>`;
         }
@@ -839,6 +1012,12 @@ export async function render(container, params) {
         const pastNote = isPastDue(w) && !submitted
             ? '<p class="gc-focus-card-note gc-focus-card-note--warn">Past due — you can no longer attach or submit.</p>'
             : '';
+
+        const earnedPts = state.studentSubmissions?.find(f => f.points_earned != null)?.points_earned ?? null;
+        const totalPts = w.data.total_points != null && w.data.total_points !== '' ? Number(w.data.total_points) : null;
+        const gradeNote = earnedPts != null
+            ? `<div class="gc-work-grade-badge">${icon('check', inl)} Grade: <strong>${earnedPts}${totalPts != null ? ' / ' + totalPts : ''} pts</strong></div>`
+            : (submitted && totalPts != null ? `<p class="gc-focus-card-note gc-focus-card-note--muted">Pending grade — ${totalPts} pts total.</p>` : '');
 
         return `
             <${wrapTag} class="${wrapCls}">
@@ -848,6 +1027,7 @@ export async function render(container, params) {
                         ${statusLbl ? `<span class="gc-work-status ${statusLbl.cls}">${esc(statusLbl.text)}</span>` : ''}
                     </div>
                 </div>
+                ${gradeNote}
                 <div class="gc-work-attach-list" id="gc-student-attach-list">${list}</div>
                 ${addBtn}
                 <div class="gc-rail-submit-wrap">${renderSubmitAction(w)}</div>
@@ -856,15 +1036,56 @@ export async function render(container, params) {
             </${wrapTag}>`;
     }
 
+    function renderAnnouncementFocus() {
+        const w = state.selectedWork;
+        const d = w.data;
+        const posted = formatPosted(d.created_at || d.updated_at);
+        return `
+            <div class="gc-detail gc-detail--stack">
+                <div class="gc-detail-top">
+                    <button type="button" class="gc-back-btn" id="sc-back-cw" aria-label="Back to classwork">
+                        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <span class="gc-breadcrumb">Classwork</span>
+                </div>
+                <div class="gc-detail-stack">
+                    <div class="gc-cw-card-author gc-cw-card-author--detail">
+                        <div class="sc-avatar teacher-av">${esc(teacherInitials)}</div>
+                        <div class="gc-cw-author-text">
+                            <span class="gc-cw-author-name">${esc(teacherName)}</span>
+                            ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="gc-assign-head">
+                        <div class="gc-assign-icon">${icon('announce', { size: 28 })}</div>
+                        <div class="gc-assign-head-text">
+                            <h1 class="gc-detail-title">${esc(d.title || 'Announcement')}</h1>
+                            <p class="gc-detail-type">Announcement</p>
+                        </div>
+                    </div>
+                    <div class="gc-ann-full-body">${esc(d.content || '')}</div>
+                    <section class="gc-focus-card gc-focus-card--comments">
+                        <h3 class="gc-focus-card-title">${icon('messages', inl)} Class comments</h3>
+                        ${commentSection('work')}
+                    </section>
+                </div>
+            </div>`;
+    }
+
     function renderWorkFocus() {
         const w = state.selectedWork;
         if (!w) return '';
+        if (w.type === 'announcement') return renderAnnouncementFocus();
 
         const posted = formatPosted(w.data.created_at || w.data.updated_at);
         const title = w.type === 'lesson'
             ? (w.data.title || w.data.lesson_title || 'Untitled lesson')
             : (w.data.quiz_title || 'Untitled quiz');
-        const typeLabel = w.type === 'lesson' ? 'Ungraded activity' : 'Quiz assignment';
+        const lessonTotalPts = w.type === 'lesson' && w.data.total_points != null && w.data.total_points !== ''
+            ? Number(w.data.total_points) : null;
+        const typeLabel = w.type === 'lesson'
+            ? (lessonTotalPts != null ? `Activity · ${lessonTotalPts} pts` : 'Activity')
+            : 'Quiz assignment';
         const description = w.type === 'quiz' ? (w.data.quiz_description || '') : '';
         const points = workPoints(w);
         const due = formatDue(w.data.due_date);
@@ -875,7 +1096,9 @@ export async function render(container, params) {
                 ${w.data.time_limit ? `${w.data.time_limit} min` : 'No time limit'} ·
                 Pass ${w.data.passing_rate || 0}%
                 ${(w.data.max_attempts || 0) > 0 ? ` · ${w.data.max_attempts} attempt${w.data.max_attempts !== 1 ? 's' : ''} allowed` : ' · Unlimited attempts'}
-                ${w.data.best_score != null ? ` · Best ${parseFloat(w.data.best_score).toFixed(0)}%` : ''}
+                ${w.data.earned_points != null && w.data.total_points != null
+                    ? ` · Score ${parseFloat(w.data.earned_points)}/${parseFloat(w.data.total_points)} pts`
+                    : (w.data.best_score != null ? ` · Best ${parseFloat(w.data.best_score).toFixed(0)}%` : '')}
             </p>` : '';
 
         const lessonHost = w.type === 'lesson'
@@ -1130,7 +1353,7 @@ export async function render(container, params) {
         else if (w.type === 'quiz') fd.append('quiz_id', w.id);
         const res = await Api.postForm('/ClassroomAPI.php?action=upload-submission', fd);
         if (!res.success) {
-            alert(res.message || 'Upload failed');
+            notify.error(res.message || 'Upload failed');
             return;
         }
         state.studentSubmissions.push(res.data);
@@ -1141,7 +1364,7 @@ export async function render(container, params) {
     async function removeStudentFile(fileId) {
         const res = await Api.post('/ClassroomAPI.php?action=delete-submission', { file_id: fileId });
         if (!res.success) {
-            alert(res.message || 'Could not remove file');
+            notify.error(res.message || 'Could not remove file');
             return;
         }
         state.studentSubmissions = state.studentSubmissions.filter(f => String(f.file_id) !== String(fileId));
@@ -1231,7 +1454,7 @@ export async function render(container, params) {
 
         const res = await Api.post('/ClassroomAPI.php?action=add-comment', payload);
         if (!res.success) {
-            alert(res.message || 'Failed to post comment');
+            notify.error(res.message || 'Failed to post comment');
             return;
         }
 
@@ -1313,7 +1536,7 @@ export async function render(container, params) {
                 lessons_id: w.id,
             });
             if (!res.success) {
-                alert(res.message || 'Could not submit work');
+                notify.error(res.message || 'Could not submit work');
                 return;
             }
             const lesson = lessons.find(l => String(l.lessons_id) === String(w.id));
@@ -1351,6 +1574,20 @@ export async function render(container, params) {
         container.querySelectorAll('.gc-post-card__btn[data-work]').forEach(btn => {
             btn.addEventListener('click', () => {
                 openWork(btn.dataset.work, btn.dataset.id);
+            });
+        });
+
+        container.querySelectorAll('.gc-post-card--ann[data-ann-id]').forEach(card => {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', () => {
+                const d = announcements.find(a => String(a.announcement_id) === card.dataset.annId);
+                if (!d) return;
+                state.tab = 'classwork';
+                state.selectedWork = { type: 'announcement', id: card.dataset.annId, data: d };
+                state.workComments = [];
+                state.privateComments = [];
+                state.privateReplyTo = null;
+                renderPage();
             });
         });
 
@@ -1397,18 +1634,40 @@ export async function render(container, params) {
             const t = new Date();
             state.calYear = t.getFullYear();
             state.calMonth = t.getMonth();
+            state.calSelectedDay = dateKey(t);
             renderPage();
-            const todayKey = dateKey(t);
-            const dayEvents = buildCalendarEvents().filter(e => e.key === todayKey);
-            showCalendarDayModal(todayKey, dayEvents);
         });
         container.querySelectorAll('[data-cal-day]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const k = btn.dataset.calDay;
-                const dayEvents = buildCalendarEvents().filter(e => e.key === k);
-                showCalendarDayModal(k, dayEvents);
+                state.calSelectedDay = state.calSelectedDay === k ? null : k;
+                renderPage();
             });
         });
+        container.querySelector('[data-cal-clear]')?.addEventListener('click', () => {
+            state.calSelectedDay = null;
+            renderPage();
+        });
+        container.querySelectorAll('[data-td-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.calFilter = btn.dataset.tdFilter;
+                renderPage();
+            });
+        });
+        container.querySelectorAll('[data-cal-open]').forEach(el => {
+            el.addEventListener('click', () => {
+                const type = el.dataset.calOpen;
+                const id = el.dataset.calId;
+                state.tab = 'classwork';
+                if (type === 'announcement') {
+                    const ann = announcements.find(a => String(a.announcement_id||a.id) === String(id));
+                    if (ann) { state.selectedWork = { type:'announcement', id, data:ann }; renderPage(); }
+                } else {
+                    openWork(type, id);
+                }
+            });
+        });
+        bindQuizReviewTriggers(container);
     }
 
     const workType = params?.work || hashParams.get('work');
@@ -1472,6 +1731,17 @@ function studentClassworkCss() {
 .sc-student-class .gc-focus-card-empty { font-size:13px; color:#9AA0A6; margin:0; font-style:italic; }
 .sc-student-class .gc-focus-card-note { font-size:12px; color:#5F6368; margin:12px 0 0; }
 .sc-student-class .gc-focus-card-note--muted { font-style:italic; }
+.sc-student-class .gc-ann-full-body {
+    font-size:14px; line-height:1.8; color:#374151;
+    white-space:pre-wrap; word-break:break-word;
+    padding:4px 0 8px;
+}
+.sc-student-class .gc-work-grade-badge {
+    display:flex; align-items:center; gap:6px; padding:10px 14px;
+    border-radius:8px; background:#E6F4EA; border:1px solid #b7dfbe;
+    color:#137333; font-size:13px; font-weight:600; margin-bottom:10px;
+}
+.sc-student-class .gc-focus-card-note--success { color:#137333; font-weight:600; }
 .sc-student-class .gc-attach-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
 .sc-student-class .gc-attach-tile {
     display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 10px;
@@ -1492,91 +1762,147 @@ function studentClassworkCss() {
 .sc-student-class .gc-submit-btn:disabled { opacity:.6; cursor:not-allowed; }
 .sc-student-class .gc-submit-btn--done { background:#E6F4EA; color:#137333; }
 .sc-student-class .gc-submit-btn--outline { background:#fff; color:#00461B; border:1px solid #00461B; }
+.sc-student-class .gc-submit-btn--frozen { background:#F1F3F4; color:#5F6368; border:1px solid #E0E0E0; }
 .sc-student-class .gc-work-status.done { color:#137333; background:#E6F4EA; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
 .sc-student-class .sc-empty--inline { padding:40px 20px; }
+.sc-hero-clock {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:10px 24px; border-radius:16px;
+    background:rgba(0,0,0,0.20);
+    backdrop-filter:blur(6px);
+    min-width:210px; text-align:center;
+}
+.sc-clock-time {
+    font-family:'Courier New', Courier, monospace;
+    font-size:38px; font-weight:800;
+    color:#fff; letter-spacing:4px; line-height:1;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 2px 10px rgba(0,0,0,0.35);
+}
+.sc-clock-date {
+    font-size:10.5px; font-weight:600;
+    color:rgba(255,255,255,0.88);
+    letter-spacing:1.5px; text-transform:uppercase;
+    margin-top:6px; line-height:1;
+}
+.sc-chip--archived {
+    display:inline-flex; align-items:center; gap:4px;
+    background:rgba(0,0,0,.35); color:#fff; font-size:11px; font-weight:600;
+    padding:3px 9px; border-radius:10px; letter-spacing:.3px;
+}
+.sc-archived-notice {
+    display:flex; align-items:flex-start; gap:10px;
+    background:#FEF3C7; border:1px solid #FCD34D; border-radius:8px;
+    padding:12px 16px; margin:0 16px 12px; font-size:13px; color:#92400E; line-height:1.5;
+}
+.sc-archived-notice svg { flex-shrink:0; margin-top:2px; stroke:#B45309; }
+.sc-student-class .gc-post-card--ann { border-left: 4px solid #D1D5DB; border-right: 4px solid #D1D5DB; border-top: none; border-bottom: none; }
+.sc-student-class .gc-post-card__ann-body { flex: 1; min-width: 0; padding: 14px 16px; }
+.sc-student-class .gc-post-card--ann .gc-post-card__hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sc-student-class .gc-ann-badge { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--subj, #00461B); background: var(--subj-soft, #E8F5EC); border: 1px solid var(--subj-light, #bbf7d0); border-radius: 20px; padding: 3px 10px; white-space: nowrap; flex-shrink: 0; }
+.sc-student-class .gc-ann-content { padding: 0 2px; }
+.sc-student-class .gc-ann-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 6px; line-height: 1.3; }
+.sc-student-class .gc-ann-preview { font-size: 13.5px; color: #374151; line-height: 1.6; margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
 `;
 }
 
 function studentCalendarCss() {
     return `
-.sc-calendar{display:flex;flex-direction:column;gap:24px;padding:4px 0 8px}
-.sc-cal-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px}
-.sc-cal-title{font-size:20px;font-weight:800;color:#202124;margin:0 0 4px}
-.sc-cal-sub{font-size:13px;color:#5F6368;margin:0}
-.sc-cal-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sc-cal-nav-btn{width:36px;height:36px;border:1px solid #DADCE0;border-radius:8px;background:#fff;font-size:20px;cursor:pointer;color:#202124;line-height:1;font-family:inherit}
-.sc-cal-nav-btn:hover{background:#F8FDF9;border-color:#00461B;color:#00461B}
-.sc-cal-month{font-size:15px;font-weight:700;color:#202124;min-width:140px;text-align:center}
-.sc-cal-today-btn{padding:8px 14px;border-radius:8px;border:1px solid #DADCE0;background:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
-.sc-cal-today-btn:hover{border-color:#00461B;color:#00461B}
-.sc-cal-grid-wrap{border:1px solid #DADCE0;border-radius:12px;overflow:hidden;background:#fff}
-.sc-cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);background:#FAFAFA;border-bottom:1px solid #E8EAED;font-size:11px;font-weight:700;color:#5F6368;text-transform:uppercase}
-.sc-cal-weekdays span{padding:10px 4px;text-align:center}
-.sc-cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
-.sc-cal-cell{min-height:88px;padding:8px;border:none;border-right:1px solid #F0F0F0;border-bottom:1px solid #F0F0F0;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:stretch;gap:6px;font-family:inherit}
-.sc-cal-cell:nth-child(7n){border-right:none}
-.sc-cal-cell--empty{background:#FAFAFA;cursor:default}
-.sc-cal-cell:hover:not(.sc-cal-cell--empty){background:#F8FDF9}
-.sc-cal-cell.today{background:#E8F5EC}
-.sc-cal-cell.today .sc-cal-day-num{color:#00461B;font-weight:700}
-.sc-cal-cell.all-done:not(.today){background:#F6FFF9}
-.sc-cal-day-num{font-size:13px;font-weight:600;color:#202124;align-self:flex-end;line-height:1}
-.sc-cal-pins{display:flex;flex-wrap:wrap;gap:2px 4px;justify-content:center;align-items:center;margin-top:auto;padding:6px 2px 2px;min-height:28px}
-.sc-cal-pin{display:inline-flex;line-height:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.12))}
-.sc-cal-pin svg{display:block}
-.sc-cal-pin--lesson{color:#00461B}
-.sc-cal-pin--announcement{color:#1A73E8}
-.sc-cal-pin--quiz-due{color:#D93025}
-.sc-cal-pin--quiz-opens{color:#E37400}
-.sc-cal-pin--done{color:#137333}
-.sc-cal-pin-more{font-size:10px;font-weight:700;color:#3C4043;background:#E8EAED;border-radius:8px;padding:2px 6px;line-height:1.2}
-.sc-cal-pin-legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:12px;color:#5F6368;padding:4px 2px 0}
-.sc-cal-legend-item{display:inline-flex;align-items:center;gap:5px}
-.sc-cal-legend-item .sc-cal-pin{filter:none}
-.sc-cal-events{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,420px);overflow-y:auto}
-.sc-cal-event{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid #E8EAED;border-radius:10px;background:#FAFAFA}
-.sc-cal-event--click{cursor:pointer;transition:background .12s,border-color .12s}
-.sc-cal-event--click:hover{background:#F8FDF9;border-color:#00461B}
-.sc-cal-event--done{border-color:#CEEAD6;background:#F6FFF9}
-.sc-cal-event--done .sc-cal-event-title{text-decoration:line-through;color:#5F6368}
-.sc-cal-event--attempted{border-color:#FEF7E0;background:#FFFDF5}
-.sc-cal-event-icon{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.sc-cal-event-icon--lesson{background:#E8F5EC;color:#00461B}
-.sc-cal-event-icon--announcement{background:#E8F0FE;color:#1A73E8}
-.sc-cal-event-icon--quiz-due{background:#FCE8E6;color:#D93025}
-.sc-cal-event-icon--quiz-opens{background:#FEF7E0;color:#F9AB00}
-.sc-cal-event-body{flex:1;min-width:0}
-.sc-cal-event-title{font-size:14px;font-weight:600;color:#202124;margin-bottom:2px}
-.sc-cal-event-sub{font-size:12px;color:#5F6368}
-.sc-cal-event-msg{font-size:12px;color:#3C4043;margin:8px 0 0;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.sc-cal-event-badge{font-size:10px;font-weight:700;text-transform:uppercase;padding:3px 8px;border-radius:10px;background:#E8EAED;color:#5F6368;flex-shrink:0;display:inline-flex;align-items:center;gap:4px}
-.sc-cal-event-badge.done{background:#CEEAD6;color:#137333;text-transform:none}
-.sc-cal-event-badge.urgent{background:#FCE8E6;color:#D93025}
-.sc-cal-event-badge.opens{background:#FEF7E0;color:#B06000;text-transform:none}
-.sc-cal-event-badge.attempted{background:#FEF7E0;color:#B06000;text-transform:none}
-.sc-cal-event-chevron{color:#9AA0A6;font-size:18px;flex-shrink:0}
-.sc-cal-empty{font-size:13px;color:#9AA0A6;margin:0;font-style:italic;padding:8px 0}
-.sc-cal-reminders{border:1px solid #E8EAED;border-radius:12px;background:#FAFAFA;padding:14px 16px}
-.sc-cal-reminders-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
-.sc-cal-reminders-head h3{margin:0;font-size:14px;font-weight:700;color:#202124;display:flex;align-items:center;gap:6px}
-.sc-cal-reminders-pill{font-size:10px;font-weight:700;text-transform:uppercase;background:#FEF3C7;color:#B45309;padding:3px 8px;border-radius:999px}
-.sc-cal-reminders-note{margin:0 0 10px;font-size:12px;color:#5F6368;line-height:1.45}
-.sc-cal-reminders-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.sc-cal-reminder-card{background:#fff;border:1px solid #E8EAED;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
-.sc-cal-reminder-card strong{font-size:18px;line-height:1;color:#202124}
-.sc-cal-reminder-card span{font-size:11px;color:#5F6368}
-.sc-cal-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1200;padding:20px}
-.sc-cal-modal{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:min(85vh,640px);display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.18)}
-.sc-cal-modal-hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 20px 12px;border-bottom:1px solid #E8EAED}
-.sc-cal-modal-hdr h3{margin:0;font-size:18px;font-weight:700;color:#202124}
-.sc-cal-modal-sub{margin:4px 0 0;font-size:13px;color:#5F6368}
-.sc-cal-modal-close{border:none;background:none;font-size:28px;line-height:1;cursor:pointer;color:#5F6368;padding:0 4px}
-.sc-cal-modal-close:hover{color:#202124}
-.sc-cal-modal-body{padding:16px 20px 20px;overflow-y:auto}
-@media (max-width:640px){
-.sc-cal-cell{min-height:64px;padding:6px 4px}
-.sc-cal-reminders-grid{grid-template-columns:1fr}
-}
+/* ── Mini calendar grid ──────────────────────── */
+.tdc-wrap{border:1px solid #E8EAED;border-radius:14px;overflow:hidden;background:#fff}
+.tdc-nav{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid #F0F0F0}
+.tdc-month{font-size:14px;font-weight:700;color:#202124;flex:1;text-align:center}
+.tdc-nav-btn{width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:20px;color:#5F6368;border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
+.tdc-nav-btn:hover{background:#F1F3F4;color:#202124}
+.tdc-today-btn{padding:4px 10px;border:1px solid #DADCE0;border-radius:6px;background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151}
+.tdc-today-btn:hover{border-color:#00461B;color:#00461B}
+.tdc-weekdays{display:grid;grid-template-columns:repeat(7,1fr);padding:6px 8px 0}
+.tdc-weekdays span{text-align:center;font-size:10px;font-weight:700;color:#9CA3AF;padding:3px 0;text-transform:uppercase}
+.tdc-cells{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 10px;gap:2px}
+.tdc-cell{min-height:44px;padding:3px 2px;border:none;border-radius:8px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit;transition:background .12s}
+.tdc-cell--empty{cursor:default}
+.tdc-cell:hover:not(.tdc-cell--empty){background:#F1F3F4}
+.tdc-cell.tdc-has:hover{background:#F8FDF9}
+.tdc-cell.tdc-sel{background:#E8F5EC}
+.tdc-num{font-size:12px;font-weight:600;color:#374151;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all .12s}
+.tdc-cell.tdc-today .tdc-num{background:#00461B;color:#fff}
+.tdc-cell.tdc-sel .tdc-num{background:#00461B;color:#fff}
+.tdc-dots{display:flex;gap:2px;justify-content:center;min-height:6px}
+.tdc-dot{width:4px;height:4px;border-radius:50%;display:block}
+.tdc-dot--lesson{background:#00461B}
+.tdc-dot--announcement{background:#1A73E8}
+.tdc-dot--quiz{background:#9334E6}
+/* Day-selected header */
+.td-day-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 8px;border-bottom:1px solid #F0F0F0;margin-bottom:8px}
+.td-day-hdr-label{font-size:13px;font-weight:700;color:#202124;flex:1}
+.td-clear-day{border:none;background:none;font-size:12px;font-weight:600;color:#00461B;cursor:pointer;font-family:inherit;padding:0}
+.td-tasks--flat{border-left:2px solid #86EFAC}
+.td-empty-day{font-size:13px;color:#9CA3AF;font-style:italic;padding:12px 0}
+.td-overdue-banner{padding:2px 0 4px}
+/* ── Todo-list Calendar ──────────────────────── */
+.td-wrap{display:flex;flex-direction:column;gap:16px;padding:4px 0 20px}
+.td-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:4px}
+.td-head-title{font-size:17px;font-weight:800;color:#202124;margin-bottom:2px}
+.td-head-sub{font-size:12px;color:#6B7280}
+.td-overdue-pill{display:inline-flex;align-items:center;background:#FCE8E6;color:#C5221F;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;flex-shrink:0}
+/* Filter tabs */
+.td-filters{display:flex;gap:6px;flex-wrap:wrap}
+.td-filter{padding:6px 14px;border-radius:20px;border:1.5px solid #E8EAED;background:#FAFAFA;font-size:12px;font-weight:600;color:#5F6368;cursor:pointer;font-family:inherit;transition:all .12s}
+.td-filter:hover{border-color:#00461B;color:#00461B;background:#F8FDF9}
+.td-filter--active{background:#00461B;color:#fff;border-color:#00461B}
+/* Sections */
+.td-sections{display:flex;flex-direction:column;gap:0}
+.td-section{margin-bottom:10px}
+.td-section-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 4px}
+.td-section-dot{width:8px;height:8px;border-radius:50%;background:#D1D5DB;flex-shrink:0}
+.td-section-dot--overdue{background:#EF4444}
+.td-section-dot--today{background:#00461B}
+.td-section-dot--past{background:#D1D5DB}
+.td-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#6B7280}
+.td-section-date{font-size:11px;color:#9CA3AF}
+.td-section-count{margin-left:auto;font-size:11px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 7px;border-radius:10px}
+.td-section--overdue .td-section-label{color:#C5221F}
+.td-section--today .td-section-label{color:#00461B}
+.td-section--past .td-section-label{color:#9CA3AF}
+/* Task list track */
+.td-tasks{display:flex;flex-direction:column;gap:4px;padding-left:8px;border-left:2px solid #F0F0F0;margin-left:3px}
+.td-section--overdue .td-tasks{border-left-color:#FCA5A5}
+.td-section--today .td-tasks{border-left-color:#86EFAC}
+/* Task row */
+.td-task{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #F0F0F0;transition:background .12s,border-color .12s}
+.td-task--click{cursor:pointer}
+.td-task--click:hover{background:#F8FDF9;border-color:#86EFAC}
+.td-task--done{background:#FCFFFE}
+.td-task--done .td-task-title{color:#9CA3AF;text-decoration:line-through}
+.td-task--overdue{border-left:3px solid #EF4444}
+.td-task--attempted{border-left:3px solid #F59E0B}
+/* Check circle */
+.td-check{width:20px;height:20px;border-radius:50%;border:2px solid #D1D5DB;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.td-check--done{background:#00461B;border-color:#00461B;color:#fff}
+.td-check--attempted{background:#F59E0B;border-color:#F59E0B;color:#fff}
+.td-check--overdue{border-color:#EF4444}
+.td-task--click:hover .td-check--pending{border-color:#00461B}
+/* Type icon */
+.td-task-icon{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.td-task-icon--lesson{background:#E8F5EC;color:#00461B}
+.td-task-icon--announcement{background:#E8F0FE;color:#1A73E8}
+.td-task-icon--quiz-due,.td-task-icon--quiz-opens,.td-task-icon--quiz{background:#F3E8FD;color:#9334E6}
+/* Body */
+.td-task-body{flex:1;min-width:0}
+.td-task-title{font-size:13px;font-weight:600;color:#202124;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.td-task-meta{font-size:11px;color:#6B7280;margin-top:1px}
+/* Right side */
+.td-task-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.td-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap}
+.td-badge--done{background:#CEEAD6;color:#137333}
+.td-badge--attempted{background:#FEF3C7;color:#B45309}
+.td-badge--overdue{background:#FCE8E6;color:#C5221F;text-transform:uppercase}
+.td-badge--due{background:#E8F0FE;color:#1967D2}
+.td-badge--opens{background:#FEF7E0;color:#B06000}
+.td-chevron{color:#C4C6CA;font-size:18px;font-weight:300;line-height:1}
+/* Empty state */
+.td-empty{text-align:center;padding:48px 20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.td-empty-msg{font-size:13px;color:#9CA3AF;margin:0}
 `;
 }
 

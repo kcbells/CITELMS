@@ -2,8 +2,8 @@
 /**
  * Departments API - CRUD for department management
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -43,18 +43,37 @@ switch ($action) {
 }
 
 function handleList() {
+    $campusId = (int)($_GET['campus_id'] ?? 0);
+
+    $params = [];
+    $deanCampusFilter = '';
+    if ($campusId) {
+        $deanCampusFilter = 'AND campus_id = ?';
+        $params[] = $campusId;
+    }
+
     $depts = db()->fetchAll(
-        "SELECT d.*, c.campus_name,
+        "SELECT d.*,
             (SELECT COUNT(*) FROM department_program dp WHERE dp.department_id = d.department_id) as program_count,
-            u.users_id  AS dean_id,
-            CONCAT(u.first_name, ' ', u.last_name) AS dean_name,
-            u.email     AS dean_email
+            u.users_id AS dean_id,
+            CONCAT_WS(' ',
+                NULLIF(u.first_name,''),
+                NULLIF(u.middle_name,''),
+                NULLIF(u.last_name,''),
+                NULLIF(u.suffix,'')
+            ) AS dean_name,
+            u.email AS dean_email
          FROM department d
-         LEFT JOIN campus c ON d.campus_id = c.campus_id
-         LEFT JOIN users  u ON u.department_id = d.department_id
-                            AND u.role = 'dean'
-                            AND u.status = 'active'
-         ORDER BY d.department_name"
+         LEFT JOIN users u ON u.users_id = (
+             SELECT users_id FROM users
+             WHERE department_id = d.department_id
+               AND role = 'dean' AND status = 'active'
+               $deanCampusFilter
+             ORDER BY created_at DESC LIMIT 1
+         )
+         WHERE d.status = 'active'
+         ORDER BY d.department_name",
+        $params
     );
     echo json_encode(['success' => true, 'data' => $depts]);
 }
@@ -71,19 +90,16 @@ function handleGet() {
 function handleCreate() {
     $data = json_decode(file_get_contents('php://input'), true);
 
-    $campusId = (int)($data['campus_id'] ?? 0);
-    $code = trim($data['department_code'] ?? '');
-    $name = trim($data['department_name'] ?? '');
+    $campusId    = (int)($data['campus_id'] ?? 1);
+    $name        = trim($data['department_name'] ?? '');
     $description = trim($data['description'] ?? '');
-    $status = $data['status'] ?? 'active';
+    $status      = $data['status'] ?? 'active';
+    $code        = trim($data['department_code'] ?? '') ?: deriveDeptCode($name);
 
-    if (!$campusId || !$code || !$name) {
-        echo json_encode(['success' => false, 'message' => 'Campus, code, and name are required']);
+    if (!$name) {
+        echo json_encode(['success' => false, 'message' => 'Department name is required']);
         return;
     }
-
-    $exists = db()->fetchOne("SELECT department_id FROM department WHERE department_code = ?", [$code]);
-    if ($exists) { echo json_encode(['success' => false, 'message' => 'Department code already exists']); return; }
 
     try {
         $stmt = pdo()->prepare(
@@ -103,19 +119,16 @@ function handleUpdate() {
     $id = (int)($data['department_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Department ID required']); return; }
 
-    $campusId = (int)($data['campus_id'] ?? 0);
-    $code = trim($data['department_code'] ?? '');
-    $name = trim($data['department_name'] ?? '');
+    $campusId    = (int)($data['campus_id'] ?? 1);
+    $name        = trim($data['department_name'] ?? '');
     $description = trim($data['description'] ?? '');
-    $status = $data['status'] ?? 'active';
+    $status      = $data['status'] ?? 'active';
+    $code        = trim($data['department_code'] ?? '') ?: deriveDeptCode($name);
 
-    if (!$campusId || !$code || !$name) {
-        echo json_encode(['success' => false, 'message' => 'Campus, code, and name are required']);
+    if (!$name) {
+        echo json_encode(['success' => false, 'message' => 'Department name is required']);
         return;
     }
-
-    $exists = db()->fetchOne("SELECT department_id FROM department WHERE department_code = ? AND department_id != ?", [$code, $id]);
-    if ($exists) { echo json_encode(['success' => false, 'message' => 'Department code already exists']); return; }
 
     try {
         $stmt = pdo()->prepare(
@@ -127,6 +140,16 @@ function handleUpdate() {
         error_log('Update department error: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to update department']);
     }
+}
+
+function deriveDeptCode(string $name): string {
+    $skip = ['of', 'and', 'the', 'for', 'in', 'at', 'a'];
+    $words = preg_split('/\s+/', $name);
+    $code  = '';
+    foreach ($words as $w) {
+        if (!in_array(strtolower($w), $skip)) $code .= strtoupper($w[0] ?? '');
+    }
+    return $code ?: strtoupper(substr($name, 0, 4));
 }
 
 function handleDelete() {

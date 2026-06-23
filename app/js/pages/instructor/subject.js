@@ -16,9 +16,11 @@ import {
     renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss, resolveMaterialUrl,
 } from '../../utils/material-files.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
+import { openQuizModal } from '../../components/quiz-modal.js';
 import { mountClassComposer } from '../../components/class-composer.js';
 import { mountInstructorGradebook } from './gradebook.js';
 import { buildStudentJoinUrl, renderQrInto } from '../../utils/qr-utils.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -116,8 +118,13 @@ export async function render(container, params) {
         : allQuizzesForSubject;
     const allAnnouncements = (annRes.success ? annRes.data : []).filter(a => String(a.subject_id) === String(subjectId));
     const announcements = effectiveSectionId
-        ? allAnnouncements.filter(a => a.all_sections || (a.section_ids || []).includes(Number(effectiveSectionId)))
+        ? allAnnouncements.filter(a =>
+            a.all_sections ||
+            (a.section_ids || []).includes(Number(effectiveSectionId)) ||
+            (a.section_ids || []).map(String).includes(String(effectiveSectionId))
+          )
         : allAnnouncements;
+    console.debug('[Subject] ann API:', annRes.success, 'raw:', annRes.data?.length ?? 0, 'filtered by subject:', allAnnouncements.length, 'filtered by section ('+effectiveSectionId+'):', announcements.length);
     const classmates = classmatesRes.success ? classmatesRes.data : [];
 
     const students = classmates.filter(c => {
@@ -149,11 +156,14 @@ export async function render(container, params) {
         studentSubmissions: [],
         detailViewers: null,
         quizScores: [],
+        quizQuestionStats: [],
         expandedViewers: {},
+        calFilter: 'all',
         calYear: now.getFullYear(),
         calMonth: now.getMonth(),
         calSelectedDay: null,
     };
+    let clockInterval = null;
 
     function getViewCount(contentType, contentId) {
         const bucket = viewSummary.counts?.[contentType] || {};
@@ -167,6 +177,69 @@ export async function render(container, params) {
             ? renderViewersPanel(state.expandedViewers[key])
             : '';
         return footer + panel;
+    }
+
+    function submissionsBlock(workType, workId, count) {
+        const label = count > 0 ? `${count} turned in` : 'No submissions yet';
+        const btnLabel = workType === 'quiz' ? 'View & Grade Submissions' : 'View Submissions';
+        return `
+            <div class="gc-post-card__subs">
+                <span class="gc-subs-count">${icon('users', { size: 13, className: 'ui-icon-inline' })} ${esc(label)}</span>
+                <button type="button" class="gc-subs-btn" data-sub-type="${workType}" data-sub-id="${workId}">
+                    ${icon('eye', { size: 13, className: 'ui-icon-inline' })} ${btnLabel}
+                </button>
+            </div>`;
+    }
+
+    async function openInlineSubmissions(workType, workId) {
+        const btn = container.querySelector(`.gc-subs-btn[data-sub-type="${workType}"][data-sub-id="${workId}"]`);
+        if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+        try {
+            let quizScores = [];
+            let fileGroups = [];
+            if (workType === 'quiz') {
+                const [scoresRes, filesRes] = await Promise.all([
+                    Api.get(`/QuizAttemptsAPI.php?action=quiz-scores&quiz_id=${workId}`),
+                    Api.get(`/ClassroomAPI.php?action=submissions&subject_id=${subjectId}&quiz_id=${workId}&submitted_only=1`),
+                ]);
+                quizScores = scoresRes.success ? (scoresRes.data || []) : [];
+                const files = filesRes.success ? (filesRes.data || []) : [];
+                fileGroups = groupStudentSubmissions(files);
+            } else {
+                const filesRes = await Api.get(`/ClassroomAPI.php?action=submissions&subject_id=${subjectId}&lessons_id=${workId}&submitted_only=1`);
+                const files = filesRes.success ? (filesRes.data || []) : [];
+                fileGroups = groupStudentSubmissions(files);
+            }
+
+            const quizSection = workType === 'quiz' ? `
+                <div class="gc-modal-section">
+                    ${renderQuizScoresTable(quizScores)}
+                </div>` : '';
+            const fileSection = fileGroups.length ? `
+                <div class="gc-modal-section">
+                    <h3 class="gc-modal-section-title">${icon('document', inl)} File attachments</h3>
+                    <div class="gc-student-submissions-list">
+                        ${fileGroups.map((g, i) => renderStudentSubmissionRow(g, i)).join('')}
+                    </div>
+                </div>` : '';
+            const body = (quizSection || fileSection)
+                ? `${quizSection}${fileSection}<p class="gc-focus-card-note gc-focus-card-note--muted">Ordered from first submitted to last.</p>`
+                : '<p class="gc-focus-card-empty">No students have turned in work yet.</p>';
+
+            const title = workType === 'quiz' ? 'Quiz submissions' : 'Activity submissions';
+            openGcModal({ title, bodyHtml: body, wide: true });
+
+            setTimeout(() => {
+                document.querySelectorAll('.gc-grade-btn').forEach(b => {
+                    b.addEventListener('click', () => openGradingPanel(b.dataset.attempt));
+                });
+            }, 50);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `${icon('eye', { size: 13, className: 'ui-icon-inline' })} ${workType === 'quiz' ? 'View & Grade Submissions' : 'View Submissions'}`;
+            }
+        }
     }
 
     async function loadContentViews(contentType, contentId) {
@@ -218,6 +291,8 @@ export async function render(container, params) {
                 const allSections = subjectFromApi?.sections || (activeSection ? [activeSection] : []);
                 mountClassComposer(composerMount, {
                     subjectId,
+                    subjectCode: subject.subject_code || '',
+                    subjectName: subject.subject_name || '',
                     sectionId: effectiveSectionId || null,
                     sections: allSections,
                     instructorName: myName,
@@ -256,10 +331,9 @@ export async function render(container, params) {
                             <span class="sc-chip">${icon('user', inl)} Instructor</span>
                         </div>
                     </div>
-                    <div class="sc-hero-stats">
-                        <div class="sc-stat"><strong>${lessons.length}</strong><span>Lessons</span></div>
-                        <div class="sc-stat"><strong>${quizzes.length}</strong><span>Quizzes</span></div>
-                        <div class="sc-stat"><strong>${students.length}</strong><span>Students</span></div>
+                    <div class="sc-hero-clock" id="sc-hero-clock">
+                        <div class="sc-clock-time" id="sc-clock-time">--:--:--</div>
+                        <div class="sc-clock-date" id="sc-clock-date">---</div>
                     </div>
                 </header>
 
@@ -273,16 +347,29 @@ export async function render(container, params) {
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" aria-selected="${state.tab === 'gradebook'}">Gradebook</button>
                             </nav>
                             <div id="sc-body" class="sc-body"></div>
+                            </div>
                         </div>
-                    </div>
                     <div id="sc-rail-mount">${renderRightRail()}</div>
-                </div>
+                    </div>
                 ${classroomPageFooter()}
             </div>
         `;
 
         bindShellEvents();
         refreshBody();
+
+        if (clockInterval) clearInterval(clockInterval);
+        function tickClock() {
+            const timeEl = container.querySelector('#sc-clock-time');
+            const dateEl = container.querySelector('#sc-clock-date');
+            if (!timeEl) { clearInterval(clockInterval); clockInterval = null; return; }
+            const d = new Date();
+            timeEl.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()]
+                .map(n => String(n).padStart(2, '0')).join(':');
+            dateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        }
+        tickClock();
+        clockInterval = setInterval(tickClock, 1000);
     }
 
     function refreshRail() {
@@ -293,7 +380,22 @@ export async function render(container, params) {
         if (layout) {
             layout.classList.toggle('sc-layout--work-focus', !!state.selectedWork);
         }
-        if (state.selectedWork) bindPrivateRail();
+        if (state.selectedWork) {
+            bindPrivateRail();
+            bindRailGradeButtons();
+        }
+    }
+
+    function bindRailGradeButtons() {
+        const rail = container.querySelector('#sc-rail-mount');
+        if (!rail) return;
+        rail.querySelectorAll('.gc-sub-grade-save').forEach(btn => {
+            btn.addEventListener('click', () => gradeStudentSubmission(btn.dataset.studentId, btn));
+        });
+        rail.querySelectorAll('.gc-grade-btn').forEach(btn => {
+            btn.addEventListener('click', () => openGradingPanel(btn.dataset.attempt));
+        });
+        rail.querySelector('#gc-open-due-modal')?.addEventListener('click', openDueDateModal);
     }
 
     function bindPrivateRail() {
@@ -317,13 +419,42 @@ export async function render(container, params) {
 
     function renderRightRail() {
         if (state.selectedWork) {
-            return renderPrivateCommentsRail({
+            const w = state.selectedWork;
+            const privatePanel = renderPrivateCommentsRail({
                 comments: state.privateComments,
                 userInitials: myInitials,
                 hint: 'Replies are only visible to the student you respond to.',
                 instructorMode: true,
                 replyingTo: state.privateReplyTo,
+                embedded: true,
             });
+
+            if (w.type === 'announcement') {
+                const viewersHtml = state.detailViewers
+                    ? `<div class="sc-rail-card gc-sub-panel" style="overflow:hidden;">
+                        <div class="gc-sub-panel-hdr">
+                            <h3 class="gc-sub-panel-title">${icon('eye', { size: 14, className: 'ui-icon-inline' })} Viewed by <span class="gc-sub-panel-count">${state.detailViewers.view_count ?? (state.detailViewers.viewed?.length ?? 0)}</span></h3>
+                        </div>
+                        <div class="gc-sub-panel-body">${renderViewersPanel(state.detailViewers)}</div>
+                       </div>`
+                    : '';
+                return `
+                    <aside class="sc-rail sc-rail--work-focus">
+                        <div class="sc-rail-focus-stack">
+                            ${viewersHtml}
+                            ${privatePanel}
+                        </div>
+                    </aside>`;
+            }
+
+            const subsPanel = renderDetailSubmissionsPanel(w);
+            return `
+                <aside class="sc-rail sc-rail--work-focus">
+                    <div class="sc-rail-focus-stack">
+                        <div class="sc-rail-card sc-rail-subs">${subsPanel}</div>
+                        ${privatePanel}
+                    </div>
+                </aside>`;
         }
 
         return `
@@ -369,19 +500,6 @@ export async function render(container, params) {
         return { label, late: false };
     }
 
-    function renderDueDateEditor(w) {
-        const raw = w.data.due_date ? String(w.data.due_date).slice(0, 10) : '';
-        const due = formatDue(w.data.due_date);
-        return `
-            <div class="gc-due-editor">
-                <span class="gc-due-editor-label">Due date</span>
-                <input type="date" id="gc-instructor-due" value="${esc(raw)}">
-                <button type="button" class="gc-due-editor-save" id="gc-save-due">Save</button>
-                ${due ? `<span class="gc-due ${due.late ? 'late' : ''}">${due.late ? 'Past due' : 'Due'} ${esc(due.label)}</span>` : '<span class="gc-due">No due date</span>'}
-                <p class="gc-due-editor-hint">Students cannot turn in after the due date unless you extend it here.</p>
-            </div>`;
-    }
-
     function fileHref(filePath) {
         return resolveMaterialUrl(filePath);
     }
@@ -396,6 +514,7 @@ export async function render(container, params) {
                     student_name: f.student_name || 'Student',
                     student_id: f.student_id || '',
                     submitted_at: f.submitted_at || null,
+                    points_earned: f.points_earned != null ? f.points_earned : null,
                     files: [],
                 });
             }
@@ -404,6 +523,7 @@ export async function render(container, params) {
             if (f.submitted_at && (!g.submitted_at || f.submitted_at < g.submitted_at)) {
                 g.submitted_at = f.submitted_at;
             }
+            if (f.points_earned != null) g.points_earned = f.points_earned;
         }
         return [...map.values()].sort((a, b) => {
             const ta = a.submitted_at ? new Date(String(a.submitted_at).replace(' ', 'T')).getTime() : Infinity;
@@ -442,19 +562,114 @@ export async function render(container, params) {
             </article>`;
     }
 
+    function renderDetailSubmissionRow(group, index, totalPoints) {
+        const submittedLbl = group.submitted_at ? formatPosted(group.submitted_at) : '';
+        const ini = group.student_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const pointsEarned = group.points_earned != null ? group.points_earned : '';
+        const filesHtml = group.files.map(f => {
+            const name = f.original_name || f.file_name || 'File';
+            const href = fileHref(f.file_path);
+            return `<a class="gc-work-attach" href="${esc(href)}" target="_blank" rel="noopener">
+                <span class="gc-work-attach-icon">${icon('document', { size: 16 })}</span>
+                <span class="gc-work-attach-name gc-work-attach-text">${esc(name)}</span>
+            </a>`;
+        }).join('');
+
+        return `
+            <article class="gc-sub-row" data-student-id="${group.user_student_id}">
+                <div class="gc-sub-row-hdr">
+                    <div class="sc-avatar sm">${esc(ini)}</div>
+                    <div class="gc-sub-row-meta">
+                        <span class="gc-sub-row-name">${esc(group.student_name)}</span>
+                        ${submittedLbl ? `<span class="gc-sub-row-time">${esc(submittedLbl)}</span>` : ''}
+                    </div>
+                    ${pointsEarned !== '' ? `<span class="gc-sub-row-grade-badge">${pointsEarned}${totalPoints != null ? '/' + totalPoints : ''} pts</span>` : ''}
+                </div>
+                ${filesHtml ? `<div class="gc-sub-row-files">${filesHtml}</div>` : ''}
+                <div class="gc-sub-row-grade-row">
+                    <input type="number" class="gc-sub-grade-input" min="0"
+                        ${totalPoints != null ? `max="${totalPoints}"` : ''}
+                        step="0.5" placeholder="${totalPoints != null ? `/ ${totalPoints} pts` : 'Points'}"
+                        value="${esc(String(pointsEarned))}">
+                    <button type="button" class="gc-sub-grade-save" data-student-id="${group.user_student_id}">Save Grade</button>
+                </div>
+            </article>`;
+    }
+
+    function renderDetailSubmissionsPanel(w) {
+        const submissionGroups = groupStudentSubmissions(state.studentSubmissions || []);
+        const quizRows = w.type === 'quiz' ? listQuizSubmissionsInOrder(state.quizScores) : [];
+        const totalPoints = w.type === 'lesson'
+            ? (w.data.total_points != null && w.data.total_points !== '' ? Number(w.data.total_points) : null)
+            : null;
+
+        const totalCount = w.type === 'quiz'
+            ? quizRows.length + submissionGroups.length
+            : submissionGroups.length;
+
+        const lessonSubmissionsHtml = w.type === 'lesson'
+            ? (submissionGroups.length === 0
+                ? `<p class="gc-sub-panel-empty">No students have turned in work yet.</p>`
+                : submissionGroups.map((g, i) => renderDetailSubmissionRow(g, i, totalPoints)).join(''))
+            : '';
+
+        const quizSubmissionsHtml = w.type === 'quiz' ? `
+            <div class="gc-sub-panel-quiz">
+                ${renderQuizScoresTable(state.quizScores)}
+                ${submissionGroups.length ? `
+                    <h4 class="gc-sub-panel-subtitle">${icon('document', inl)} File attachments</h4>
+                    ${submissionGroups.map((g, i) => renderStudentSubmissionRow(g, i)).join('')}` : ''}
+            </div>` : '';
+
+        const showDueDate = w.type === 'quiz' || totalPoints != null;
+
+        const dueRaw = w.data.due_date ? String(w.data.due_date).slice(0, 10) : '';
+        const dueDisplay = (() => {
+            if (!dueRaw) return null;
+            const d = new Date(dueRaw + 'T00:00:00');
+            if (isNaN(d)) return null;
+            const late = d.getTime() < Date.now();
+            return {
+                label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                late,
+            };
+        })();
+
+        const calIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+        const dueBtnHtml = !showDueDate ? '' : dueDisplay
+            ? `<button type="button" class="gc-sub-due-btn gc-sub-due-btn--set ${dueDisplay.late ? 'late' : ''}" id="gc-open-due-modal">
+                   ${calIcon} ${dueDisplay.late ? 'Past due · ' : 'Due · '}${esc(dueDisplay.label)}
+               </button>`
+            : `<button type="button" class="gc-sub-due-btn" id="gc-open-due-modal">
+                   ${calIcon} Set due date
+               </button>`;
+
+        return `
+            <div class="gc-sub-panel">
+                <div class="gc-sub-panel-hdr">
+                    <h3 class="gc-sub-panel-title">${icon('users', { size: 16, className: 'ui-icon-inline' })} Student Submissions <span class="gc-sub-panel-count">${totalCount}</span></h3>
+                    ${dueBtnHtml}
+                </div>
+                <div class="gc-sub-panel-body" id="gc-sub-panel-body">
+                    ${lessonSubmissionsHtml}
+                    ${quizSubmissionsHtml}
+                </div>
+            </div>`;
+    }
+
     function renderClassCodeAside() {
         const code = subject.subject_code || '';
         const sectionLabel = activeSection?.section_name || subject.section_name || '';
         const qrSectionId = effectiveSectionId || activeSection?.section_id || 0;
 
         if (!code || !qrSectionId) {
-            return `
+        return `
                 <aside class="sc-cw-aside" aria-label="Subject code">
                     <div class="sc-class-code-card sc-class-code-card--empty">
                         <div class="sc-class-code-icon">${icon('school', { size: 28 })}</div>
                         <h3 class="sc-class-code-title">Subject code</h3>
                         <p class="sc-class-code-hint">Create a section in <strong>My Classes</strong> to generate a QR code students can scan to join.</p>
-                    </div>
+                </div>
                 </aside>`;
         }
 
@@ -479,7 +694,7 @@ export async function render(container, params) {
                     <button type="button" class="sc-class-code-value" data-copy-code="${esc(code)}" title="Click to copy">${esc(code)}</button>
                     <button type="button" class="sc-class-code-copy" data-copy-code="${esc(code)}">
                         ${icon('copy', { size: 14, className: 'ui-icon-inline' })} Copy code
-                    </button>
+            </button>
                     <p class="sc-class-code-foot">Instructor only — not shown to students</p>
                 </div>
             </aside>`;
@@ -495,7 +710,9 @@ export async function render(container, params) {
         const items = [
             ...lessons.map(l => ({ type: 'lesson', id: l.lessons_id, data: l })),
             ...quizzes.map(q => ({ type: 'quiz', id: q.quiz_id, data: q })),
+            ...announcements.map(a => ({ type: 'announcement', id: a.announcement_id, data: a })),
         ].sort((a, b) => classworkPostedTime(b.data) - classworkPostedTime(a.data));
+        console.debug('[Classwork] lessons:', lessons.length, 'quizzes:', quizzes.length, 'announcements:', announcements.length, 'total items:', items.length);
 
         const feedInner = !items.length
             ? `<div class="sc-empty sc-empty--inline">
@@ -507,13 +724,13 @@ export async function render(container, params) {
                 ${items.map(classworkRow).join('')}
               </div>`;
 
-        return `
+            return `
             <div class="sc-cw-layout">
                 ${renderClassCodeAside()}
                 <div class="sc-cw-feed">
                     <div id="sc-composer-mount"></div>
                     ${feedInner}
-                </div>
+                        </div>
             </div>`;
     }
 
@@ -521,7 +738,8 @@ export async function render(container, params) {
         const pubLabel = published ? 'Save as draft' : 'Publish';
         const pubStatus = published ? 'draft' : 'published';
         const typeItems = type === 'quiz'
-            ? `<button type="button" class="gc-cw-kebab-item" data-cw-action="questions" data-cw-type="quiz" data-cw-id="${id}">${icon('clipboard', inl)} Edit questions</button>`
+            ? `<button type="button" class="gc-cw-kebab-item" data-cw-action="edit" data-cw-type="quiz" data-cw-id="${id}">${icon('edit', inl)} Edit quiz</button>
+               <button type="button" class="gc-cw-kebab-item" data-cw-action="questions" data-cw-type="quiz" data-cw-id="${id}">${icon('clipboard', inl)} Edit questions</button>`
             : '';
         return `
             <div class="gc-cw-kebab-wrap">
@@ -530,7 +748,7 @@ export async function render(container, params) {
                     <button type="button" class="gc-cw-kebab-item" data-cw-action="status" data-cw-type="${type}" data-cw-id="${id}" data-cw-status="${pubStatus}">${icon(published ? 'folder' : 'check', inl)} ${pubLabel}</button>
                     ${typeItems}
                     <button type="button" class="gc-cw-kebab-item danger" data-cw-action="delete" data-cw-type="${type}" data-cw-id="${id}" data-cw-name="${esc(title)}">${icon('trash', inl)} Delete</button>
-                </div>
+                        </div>
             </div>`;
     }
 
@@ -539,6 +757,8 @@ export async function render(container, params) {
         for (const r of rows || []) {
             const key = r.student_id || `${r.first_name}-${r.last_name}`;
             const pct = parseFloat(r.percentage) || 0;
+            const earned = parseFloat(r.earned_points) || 0;
+            const total = parseFloat(r.total_points) || 0;
             const completed = r.completed_at || '';
             const name = `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Student';
             if (!map.has(key)) {
@@ -546,9 +766,12 @@ export async function render(container, params) {
                     student_id: r.student_id || '',
                     name,
                     score: pct,
+                    earned,
+                    total,
                     attempts: 1,
                     passed: Number(r.passed) === 1,
                     first_completed: completed,
+                    attempt_id: r.attempt_id,
                 });
             } else {
                 const g = map.get(key);
@@ -556,7 +779,10 @@ export async function render(container, params) {
                 if (completed && (!g.first_completed || completed < g.first_completed)) {
                     g.first_completed = completed;
                     g.score = pct;
+                    g.earned = earned;
+                    g.total = total;
                     g.passed = Number(r.passed) === 1;
+                    g.attempt_id = r.attempt_id;
                 }
             }
         }
@@ -588,9 +814,11 @@ export async function render(container, params) {
                             <th class="th-left">Student ID</th>
                             <th class="th-left">Name</th>
                             <th>Score</th>
+                            <th>%</th>
                             <th>Attempts</th>
                             <th>Status</th>
                             <th>Turned in</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -599,12 +827,14 @@ export async function render(container, params) {
                                 <td class="td-rank">${i + 1}</td>
                                 <td class="td-id">${esc(s.student_id || '—')}</td>
                                 <td class="td-name">${esc(s.name)}</td>
+                                <td class="td-num"><strong>${s.earned}/${s.total || '—'}</strong></td>
                                 <td class="td-num">${s.score.toFixed(0)}%</td>
                                 <td class="td-num">${s.attempts}</td>
                                 <td class="td-pass">
                                     <span class="${s.passed ? 'gc-cur-badge-pass' : 'gc-cur-badge-fail'}">${s.passed ? 'Passed' : 'Failed'}</span>
                                 </td>
                                 <td class="td-num" style="font-weight:400;font-size:11px;color:#5F6368;">${esc(fmtDate(s.first_completed))}</td>
+                                <td><button class="gc-grade-btn" data-attempt="${s.attempt_id}" style="padding:5px 12px;background:#00461B;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Check / Grade</button></td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -617,30 +847,112 @@ export async function render(container, params) {
         return res.success ? (res.data || []) : [];
     }
 
+    async function loadQuizQuestionStats(quizId) {
+        const res = await Api.get(`/QuizAttemptsAPI.php?action=quiz-question-stats&quiz_id=${quizId}`);
+        return res.success ? (res.data || []) : [];
+    }
+
+    function renderQuestionDifficultyPanel(stats) {
+        const rows = (stats || []).filter(s => Number(s.responses) > 0);
+        if (!rows.length) {
+            return `<div class="gc-focus-card gc-focus-card--analysis">
+                <h3 class="gc-focus-card-title">${icon('chart', inl)} Where students struggle</h3>
+                <p class="gc-focus-card-note gc-focus-card-note--muted">No completed attempts yet — stats appear after students submit.</p>
+            </div>`;
+        }
+        const top = rows.slice(0, 8);
+        return `
+            <div class="gc-focus-card gc-focus-card--analysis">
+                <h3 class="gc-focus-card-title">${icon('chart', inl)} Where students struggle</h3>
+                <p class="gc-focus-card-note gc-focus-card-note--muted">Questions ranked by how often students miss full points.</p>
+                <div class="gc-qstats-list">
+                    ${top.map((q, i) => {
+                        const miss = Number(q.miss_count) || 0;
+                        const resp = Number(q.responses) || 0;
+                        const pct = resp > 0 ? Math.round((miss / resp) * 100) : 0;
+                        const preview = String(q.question_text || '').replace(/<[^>]+>/g, '').slice(0, 120);
+                        return `
+                            <div class="gc-qstat-row">
+                                <div class="gc-qstat-rank">${i + 1}</div>
+                                <div class="gc-qstat-body">
+                                    <div class="gc-qstat-text">${esc(preview)}${preview.length >= 120 ? '…' : ''}</div>
+                                    <div class="gc-qstat-meta">${esc(q.question_type || 'question')} · ${q.max_points || 0} pts · avg ${q.avg_earned ?? 0}/${q.max_points || 0}</div>
+                    </div>
+                                <div class="gc-qstat-bar-wrap">
+                                    <div class="gc-qstat-bar" style="width:${pct}%"></div>
+                                    <span class="gc-qstat-pct">${miss}/${resp} missed</span>
+                </div>
+                            </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+    }
+
     function classworkRow(item) {
         const d = item.data;
         const posted = formatPosted(d.created_at || d.updated_at);
+
+        if (item.type === 'announcement') {
+            const title = d.title || 'Announcement';
+            const rawContent = (d.content || '').replace(/<[^>]+>/g, '');
+            const preview = rawContent.length > 200 ? rawContent.slice(0, 200) + '…' : rawContent;
+            const sectionLabel = d.section_names
+                ? `To: ${d.section_names}`
+                : (d.all_sections !== false ? 'All sections' : '');
+            return `
+                <article class="gc-post-card gc-post-card--ann gc-post-card--ann-click" data-ann-id="${d.announcement_id}" style="cursor:pointer;">
+                    <div class="gc-post-card__row">
+                        <div class="gc-post-card__ann-body">
+                            <header class="gc-post-card__hdr">
+                                <div class="sc-avatar sm teacher-av">${esc(myInitials)}</div>
+                                <div class="gc-cw-author-text">
+                                    <span class="gc-cw-author-name">${esc(myName)}</span>
+                                    ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                                </div>
+                                <span class="gc-ann-badge">${icon('announce', { size: 13, className: 'ui-icon-inline' })} Announcement</span>
+                            </header>
+                            <div class="gc-ann-content">
+                                <div class="gc-ann-title">${esc(title)}</div>
+                                ${preview ? `<p class="gc-ann-preview">${esc(preview)}</p>` : ''}
+                                ${sectionLabel ? `<div class="gc-ann-section">${esc(sectionLabel)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="gc-cw-kebab-wrap">
+                            <button type="button" class="gc-cw-kebab" title="Actions" aria-label="More actions">${icon('menu', { size: 18 })}</button>
+                            <div class="gc-cw-kebab-menu">
+                                <button type="button" class="gc-cw-kebab-item danger" data-cw-action="delete" data-cw-type="announcement" data-cw-id="${d.announcement_id}" data-cw-name="${esc(title)}">${icon('trash', inl)} Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                    ${viewersBlock('announcement', d.announcement_id)}
+                </article>`;
+        }
 
         if (item.type === 'lesson') {
             const status = String(d.status || 'draft').toLowerCase();
             const published = status === 'published';
             const submitCount = d.completions != null ? Number(d.completions) : 0;
             const title = d.lesson_title || d.title || 'Untitled lesson';
+            const lessonPts = d.total_points != null && d.total_points !== '' ? Number(d.total_points) : null;
             const right = `
                 ${submitCount > 0 ? `<span class="gc-cw-submissions">${submitCount} turned in</span>` : ''}
+                ${lessonPts != null ? `<span class="gc-cw-points">${lessonPts} pts</span>` : ''}
                 <span class="gc-cw-status ${published ? 'done' : ''}">${published ? 'Published' : 'Draft'}</span>`;
+            const lessonDue = formatDue(d.due_date);
             return renderClassworkPostCard({
                 authorName: myName,
                 authorInitials: myInitials,
                 posted,
                 iconName: 'document',
                 title,
-                typeLabel: 'Ungraded activity',
+                typeLabel: lessonPts != null ? `Activity · ${lessonPts} pts` : 'Activity',
                 rightHtml: right,
                 workType: 'lesson',
                 workId: d.lessons_id,
-                viewsFooter: published ? viewersBlock('lesson', d.lessons_id) : '',
+                viewsFooter: published ? viewersBlock('lesson', d.lessons_id) + submissionsBlock('lesson', d.lessons_id, submitCount) : '',
                 menuHtml: renderCwKebabMenu('lesson', d.lessons_id, published, title),
+                dueLabel: lessonDue?.label || '',
+                dueLate:  lessonDue?.late  || false,
             });
         }
 
@@ -653,6 +965,7 @@ export async function render(container, params) {
             ${attemptCount > 0 ? `<span class="gc-cw-submissions">${attemptCount} turned in</span>` : ''}
             ${pts != null ? `<span class="gc-cw-points">${pts} pts</span>` : ''}
             <span class="gc-cw-status ${published ? 'done' : ''}">${published ? 'Published' : 'Draft'}</span>`;
+        const quizDue = formatDue(d.due_date);
         return renderClassworkPostCard({
             authorName: myName,
             authorInitials: myInitials,
@@ -663,44 +976,75 @@ export async function render(container, params) {
             rightHtml: right,
             workType: 'quiz',
             workId: d.quiz_id,
-            viewsFooter: published ? viewersBlock('quiz', d.quiz_id) : '',
+            viewsFooter: published ? viewersBlock('quiz', d.quiz_id) + submissionsBlock('quiz', d.quiz_id, attemptCount) : '',
             menuHtml: renderCwKebabMenu('quiz', d.quiz_id, published, title),
+            dueLabel: quizDue?.label || '',
+            dueLate:  quizDue?.late  || false,
         });
+    }
+
+    function renderAnnouncementDetail() {
+        const w = state.selectedWork;
+        const d = w.data;
+        const posted = formatPosted(d.created_at || d.updated_at);
+        const sectionLabel = d.section_names ? `To: ${d.section_names}` : (d.all_sections !== false ? 'All sections' : '');
+
+        return `
+            <div class="gc-detail gc-detail--stack">
+                <div class="gc-detail-top">
+                    <button type="button" class="gc-back-btn" id="sc-back-cw" aria-label="Back to classwork">
+                        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <span class="gc-breadcrumb">Classwork</span>
+                </div>
+                <div class="gc-detail-stack">
+                    <div class="gc-cw-card-author gc-cw-card-author--detail">
+                        <div class="sc-avatar teacher-av">${esc(myInitials)}</div>
+                        <div class="gc-cw-author-text">
+                            <span class="gc-cw-author-name">${esc(myName)}</span>
+                            ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="gc-assign-head">
+                        <div class="gc-assign-icon">${icon('announce', { size: 28 })}</div>
+                        <div class="gc-assign-head-text">
+                            <h1 class="gc-detail-title">${esc(d.title || 'Announcement')}</h1>
+                            <p class="gc-detail-type">Announcement${sectionLabel ? ` · ${sectionLabel}` : ''}</p>
+                        </div>
+                    </div>
+                    <div class="gc-ann-full-body">${esc(d.content || '')}</div>
+                    <section class="gc-focus-card gc-focus-card--comments">
+                        <h3 class="gc-focus-card-title">${icon('messages', inl)} Class comments</h3>
+                        ${commentSection()}
+                    </section>
+                </div>
+            </div>`;
     }
 
     function renderWorkDetail() {
         const w = state.selectedWork;
         if (!w) return '';
+        if (w.type === 'announcement') return renderAnnouncementDetail();
 
         const posted = formatPosted(w.data.created_at || w.data.updated_at);
         const title = w.type === 'lesson'
             ? (w.data.lesson_title || w.data.title || 'Untitled lesson')
             : (w.data.quiz_title || 'Untitled quiz');
-        const typeLabel = w.type === 'lesson' ? 'Ungraded activity' : 'Quiz assignment';
-        const description = w.type === 'quiz' ? (w.data.quiz_description || '') : '';
+        const detailLessonPts = w.type === 'lesson' && w.data.total_points != null && w.data.total_points !== ''
+            ? Number(w.data.total_points) : null;
+        const typeLabel = w.type === 'lesson'
+            ? (detailLessonPts != null ? `Activity · ${detailLessonPts} pts` : 'Activity')
+            : 'Quiz assignment';
+        const description = w.type === 'lesson'
+            ? (w.data.lesson_description || w.data.description || '')
+            : (w.data.quiz_description || '');
 
         const materials = state.workMaterials || [];
-        const submissionGroups = groupStudentSubmissions(state.studentSubmissions || []);
-        const quizSubmitCount = w.type === 'quiz' ? listQuizSubmissionsInOrder(state.quizScores).length : 0;
-        const submissionCount = w.type === 'lesson'
-            ? submissionGroups.length
-            : quizSubmitCount + submissionGroups.length;
-
-        const materialsBlock = w.type === 'lesson' && materials.length ? `
+        const materialsBlock = materials.length ? `
             <div class="gc-focus-card gc-focus-card--materials">
+                <h3 class="gc-focus-card-title">Attached files</h3>
                 <div class="gc-material-list">${materials.map(renderMaterialAttachment).join('')}</div>
             </div>` : '';
-
-        const actionRow = `
-            <div class="gc-detail-action-row">
-                <button type="button" class="gc-detail-action-btn" id="gc-open-submissions">
-                    ${icon('users', inl)} View submissions (${submissionCount})
-                </button>
-                ${state.detailViewers ? `
-                <button type="button" class="gc-detail-action-btn" id="gc-open-viewers">
-                    ${icon('eye', inl)} Who viewed this
-                </button>` : ''}
-            </div>`;
 
         const quizMeta = w.type === 'quiz' ? `
             <p class="gc-instructions-extra">
@@ -709,6 +1053,27 @@ export async function render(container, params) {
                 Pass ${w.data.passing_rate || 0}% ·
                 ${(w.data.max_attempts || 0) > 0 ? `${w.data.max_attempts} attempt${w.data.max_attempts !== 1 ? 's' : ''}` : 'Unlimited attempts'}
             </p>` : '';
+
+        const due = w.data.due_date ? (() => {
+            const ts = new Date(String(w.data.due_date).replace(' ', 'T')).getTime();
+            if (isNaN(ts)) return null;
+            const late = ts < Date.now();
+            return { label: new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), late };
+        })() : null;
+
+        const aiCheckerRow = w.type === 'quiz' ? `
+            <div class="gc-detail-action-row">
+                <button type="button" class="gc-detail-action-btn gc-detail-action-btn--ai" id="gc-run-ai-checker">${icon('robot', inl)} AI Checker</button>
+            </div>` : '';
+
+        const viewersSection = state.detailViewers ? `
+            <div class="gc-detail-viewers-row">
+                <button type="button" class="gc-detail-action-btn" id="gc-open-viewers">${icon('eye', inl)} Who viewed this (${state.detailViewers.view_count ?? state.detailViewers.viewed?.length ?? 0})</button>
+            </div>` : '';
+
+        const pointsEl = detailLessonPts != null
+            ? `${detailLessonPts} pts`
+            : (w.type === 'quiz' && w.data.total_points != null ? `${Number(w.data.total_points)} pts` : null);
 
         return `
             <div class="gc-detail gc-detail--stack">
@@ -732,18 +1097,17 @@ export async function render(container, params) {
                         <div class="gc-assign-icon">${icon(w.type === 'lesson' ? 'document' : 'quiz', { size: 28 })}</div>
                         <div class="gc-assign-head-text">
                             <h1 class="gc-detail-title">${esc(title)}</h1>
-                            <p class="gc-detail-type">${typeLabel}</p>
+                            <p class="gc-detail-type">${pointsEl ? `${typeLabel} · <strong>${pointsEl}</strong>` : typeLabel}</p>
                         </div>
                     </div>
 
-                    ${renderDueDateEditor(w)}
-                    ${actionRow}
-
+                    ${aiCheckerRow}
                     ${description ? `<div class="gc-instructions-body">${esc(description)}</div>` : ''}
                     ${quizMeta}
-
+                    ${w.type === 'quiz' ? renderQuestionDifficultyPanel(state.quizQuestionStats) : ''}
                     ${materialsBlock}
 
+                    ${viewersSection}
                     <section class="gc-focus-card gc-focus-card--comments">
                         <h3 class="gc-focus-card-title">${icon('messages', inl)} Class comments</h3>
                         ${commentSection()}
@@ -901,112 +1265,154 @@ export async function render(container, params) {
     }
 
     function renderCalendar() {
-        const events = buildCalendarEvents();
-        const eventsByDay = {};
-        events.forEach(ev => {
-            if (!eventsByDay[ev.key]) eventsByDay[ev.key] = [];
-            eventsByDay[ev.key].push(ev);
-        });
-
+        const allEvents = buildCalendarEvents();
+        const filter = state.calFilter || 'all';
+        const sel = state.calSelectedDay || null;
         const year = state.calYear;
         const month = state.calMonth;
-        const monthLabel = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const firstDow = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const allByDay = {};
+        allEvents.forEach(ev => {
+            if (!allByDay[ev.key]) allByDay[ev.key] = [];
+            allByDay[ev.key].push(ev);
+        });
+
+        const events = filter === 'lesson'      ? allEvents.filter(e => e.kind === 'lesson')
+                     : filter === 'quiz'         ? allEvents.filter(e => e.kind.startsWith('quiz') || e.kind === 'quiz')
+                     : filter === 'announcement' ? allEvents.filter(e => e.kind === 'announcement')
+                     : allEvents;
+
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(todayStart.getDate()+1);
+        const dayAfter = new Date(todayStart); dayAfter.setDate(todayStart.getDate()+2);
+        const weekEnd = new Date(todayStart); weekEnd.setDate(todayStart.getDate()+7);
         const todayKey = dateKey(new Date());
 
+        // ── Mini calendar grid ──────────────────────────────────────────
+        const monthLabel = new Date(year, month, 1)
+            .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const firstDow = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
         let cells = '';
-        for (let i = 0; i < firstDow; i++) {
-            cells += '<div class="sc-cal-cell sc-cal-cell--empty"></div>';
-        }
-        for (let day = 1; day <= daysInMonth; day++) {
-            const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayEvents = eventsByDay[key] || [];
+        for (let i = 0; i < firstDow; i++) cells += '<div class="tdc-cell tdc-cell--empty"></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dayEvs = allByDay[key] || [];
+            const kinds = [...new Set(dayEvs.map(e => e.kind.startsWith('quiz') ? 'quiz' : e.kind))];
             const isToday = key === todayKey;
-            const isSelected = state.calSelectedDay === key;
+            const isSel = key === sel;
             cells += `
-                <button type="button" class="sc-cal-cell ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${dayEvents.length ? 'has-events' : ''}"
-                    data-cal-day="${key}">
-                    <span class="sc-cal-day-num">${day}</span>
-                    ${dayEvents.length ? `<span class="sc-cal-dots">${dayEvents.slice(0, 3).map(ev => `<i class="sc-cal-dot sc-cal-dot--${ev.kind}"></i>`).join('')}</span>` : ''}
-                </button>`;
+            <button type="button" class="tdc-cell${isToday?' tdc-today':''}${isSel?' tdc-sel':''}${dayEvs.length?' tdc-has':''}"
+                data-cal-day="${key}">
+                <span class="tdc-num">${d}</span>
+                <span class="tdc-dots">${kinds.map(k=>`<i class="tdc-dot tdc-dot--${k}"></i>`).join('')}</span>
+            </button>`;
         }
 
-        const filterKey = state.calSelectedDay;
-        const listEvents = (filterKey
-            ? (eventsByDay[filterKey] || [])
-            : events
-        ).slice().sort((a, b) => b.date - a.date);
+        const miniGrid = `
+        <div class="tdc-wrap">
+            <div class="tdc-nav">
+                <button type="button" class="tdc-nav-btn" id="sc-cal-prev">‹</button>
+                <span class="tdc-month">${esc(monthLabel)}</span>
+                <button type="button" class="tdc-nav-btn" id="sc-cal-next">›</button>
+                <button type="button" class="tdc-today-btn" id="sc-cal-today">Today</button>
+            </div>
+            <div class="tdc-weekdays">${['S','M','T','W','T','F','S'].map(w=>`<span>${w}</span>`).join('')}</div>
+            <div class="tdc-cells">${cells}</div>
+        </div>`;
 
-        const upcoming = events
-            .filter(ev => ev.date >= new Date(new Date().setHours(0, 0, 0, 0)))
-            .sort((a, b) => a.date - b.date);
-        const listTitle = filterKey
-            ? formatCalDay(new Date(filterKey + 'T12:00:00'))
-            : 'All class activity';
+        // ── Task row renderer ────────────────────────────────────────────
+        function taskRow(ev) {
+            const calOpen = ev.kind==='announcement'?'announcement':(ev.kind.startsWith('quiz')?'quiz':'lesson');
+            const dueSoon = ev.kind==='quiz-due' && ev.date<new Date(Date.now()+7*86400000);
+            let badge = '';
+            if (ev.kind==='quiz-due') badge=`<span class="td-badge ${dueSoon?'td-badge--due':'td-badge--opens'}">Due</span>`;
+            else if (ev.kind==='quiz-opens') badge=`<span class="td-badge td-badge--opens">Opens</span>`;
 
-        const eventRow = (ev) => {
-            const openable = ev.kind === 'lesson' || ev.kind.startsWith('quiz');
-            const dueSoon = ev.kind === 'quiz-due' && ev.date < new Date(Date.now() + 7 * 86400000);
+            const timeStr = ev.date.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+            const typeLabel = ev.kind==='lesson'?'Lesson':ev.kind==='announcement'?'Announcement'
+                :ev.kind==='quiz-due'?'Quiz — Due':ev.kind==='quiz-opens'?'Quiz — Opens':'Quiz';
+
             return `
-                <article class="sc-cal-event ${openable ? 'sc-cal-event--click' : ''}" ${openable ? `data-cal-open="${ev.kind.startsWith('quiz') ? 'quiz' : 'lesson'}" data-cal-id="${ev.id}"` : ''}>
-                    <div class="sc-cal-event-icon sc-cal-event-icon--${ev.kind}">${icon(ev.icon, { size: 18 })}</div>
-                    <div class="sc-cal-event-body">
-                        <div class="sc-cal-event-title">${esc(ev.title)}</div>
-                        <div class="sc-cal-event-sub">${esc(ev.sub)} · ${formatCalDay(ev.date)}${ev.kind !== 'quiz-due' ? ` · ${formatCalTime(ev.date)}` : ''}</div>
-                        ${ev.kind === 'announcement' && ev.data.content ? `<p class="sc-cal-event-msg">${esc(ev.data.content)}</p>` : ''}
-                    </div>
-                    ${ev.kind === 'quiz-due' ? `<span class="sc-cal-event-badge ${dueSoon ? 'urgent' : ''}">Due</span>` : ''}
-                    ${openable ? `<span class="sc-cal-event-chevron">›</span>` : ''}
-                </article>`;
-        };
+            <article class="td-task td-task--click" data-cal-open="${calOpen}" data-cal-id="${ev.id}">
+                <div class="td-task-icon td-task-icon--${ev.kind}">${icon(ev.icon,{size:15})}</div>
+                <div class="td-task-body">
+                    <div class="td-task-title">${esc(ev.title)}</div>
+                    <div class="td-task-meta">${esc(typeLabel)} · ${esc(timeStr)}</div>
+                </div>
+                <div class="td-task-right">${badge}<span class="td-chevron">›</span></div>
+            </article>`;
+        }
+
+        function section(label, items, opts={}) {
+            if (!items.length) return '';
+            return `
+            <div class="td-section${opts.variant?' td-section--'+opts.variant:''}">
+                <div class="td-section-hdr">
+                    <span class="td-section-dot${opts.variant?' td-section-dot--'+opts.variant:''}"></span>
+                    <span class="td-section-label">${label}</span>
+                    ${opts.dateStr?`<span class="td-section-date">${esc(opts.dateStr)}</span>`:''}
+                    <span class="td-section-count">${items.length}</span>
+                </div>
+                <div class="td-tasks">${items.map(taskRow).join('')}</div>
+            </div>`;
+        }
+
+        // ── List section ─────────────────────────────────────────────────
+        let listHtml = '';
+        if (sel) {
+            const selDate = new Date(sel + 'T12:00:00');
+            const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+            const selEvs = events.filter(e => e.key === sel).sort((a,b) => a.date - b.date);
+            listHtml = `
+            <div class="td-day-hdr">
+                <div class="td-day-hdr-label">${esc(selLabel)}</div>
+                <span class="td-section-count">${selEvs.length}</span>
+                <button type="button" class="td-clear-day" data-cal-clear>Show all</button>
+            </div>
+            <div class="td-tasks td-tasks--flat">
+                ${selEvs.length
+                    ? selEvs.map(taskRow).join('')
+                    : '<p class="td-empty-day">Nothing scheduled on this day.</p>'}
+            </div>`;
+        } else {
+            const todayEvs=[], tomorrowEvs=[], thisWeek=[], upcoming=[], past=[];
+            events.forEach(ev => {
+                const d = ev.date;
+                if (d>=todayStart && d<tomorrowStart) todayEvs.push(ev);
+                else if (d>=tomorrowStart && d<dayAfter) tomorrowEvs.push(ev);
+                else if (d>=dayAfter && d<weekEnd) thisWeek.push(ev);
+                else if (d>=weekEnd) upcoming.push(ev);
+                else past.push(ev);
+            });
+            const asc=(a,b)=>a.date-b.date, desc=(a,b)=>b.date-a.date;
+            todayEvs.sort(asc); tomorrowEvs.sort(asc); thisWeek.sort(asc); upcoming.sort(asc); past.sort(desc);
+            const todayLabel = todayStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            const tomorrowLabel = tomorrowStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            listHtml = `
+            ${section('Today', todayEvs, {variant:'today', dateStr:todayLabel})}
+            ${section('Tomorrow', tomorrowEvs, {dateStr:tomorrowLabel})}
+            ${section('This Week', thisWeek)}
+            ${section('Upcoming', upcoming)}
+            ${section('Past', past, {variant:'past'})}
+            ${!events.length?`<div class="td-empty">
+                <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#D1D5DB" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <p class="td-empty-msg">No lessons, quizzes, or announcements posted yet.</p>
+            </div>`:''}`;
+        }
 
         return `
-            <div class="sc-calendar">
-                <div class="sc-cal-header">
-                    <div>
-                        <h2 class="sc-cal-title">${esc(subject.subject_name)}</h2>
-                        <p class="sc-cal-sub">${esc(subject.subject_code)}${subject.section_name ? ` · ${esc(subject.section_name)}` : ''}</p>
-                    </div>
-                    <div class="sc-cal-nav">
-                        <button type="button" class="sc-cal-nav-btn" id="sc-cal-prev" aria-label="Previous month">‹</button>
-                        <span class="sc-cal-month">${esc(monthLabel)}</span>
-                        <button type="button" class="sc-cal-nav-btn" id="sc-cal-next" aria-label="Next month">›</button>
-                        <button type="button" class="sc-cal-today-btn" id="sc-cal-today">Today</button>
-                    </div>
-                </div>
-
-                <div class="sc-cal-grid-wrap">
-                    <div class="sc-cal-weekdays">
-                        ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => `<span>${w}</span>`).join('')}
-                    </div>
-                    <div class="sc-cal-grid">${cells}</div>
-                </div>
-
-                <div class="sc-cal-lists">
-                    <section class="sc-cal-list-section">
-                        <div class="sc-cal-list-hdr">
-                            <h3>${icon('clock', inl)} Upcoming</h3>
-                            <span class="sc-cal-count">${upcoming.length}</span>
-                        </div>
-                        ${upcoming.length
-                            ? `<div class="sc-cal-events">${upcoming.slice(0, 8).map(eventRow).join('')}</div>`
-                            : `<p class="sc-cal-empty">No upcoming tasks or due dates.</p>`
-                        }
-                    </section>
-
-                    <section class="sc-cal-list-section">
-                        <div class="sc-cal-list-hdr">
-                            <h3>${filterKey ? icon('calendar', inl) : icon('folderOpen', inl)} ${esc(listTitle)}</h3>
-                            ${filterKey ? `<button type="button" class="sc-cal-clear-filter" id="sc-cal-clear">Show all</button>` : `<span class="sc-cal-count">${events.length}</span>`}
-                        </div>
-                        ${listEvents.length
-                            ? `<div class="sc-cal-events">${listEvents.map(eventRow).join('')}</div>`
-                            : `<p class="sc-cal-empty">${filterKey ? 'Nothing scheduled on this day.' : 'No lessons, quizzes, or announcements yet.'}</p>`
-                        }
-                    </section>
-                </div>
-            </div>`;
+        <div class="td-wrap">
+            ${miniGrid}
+            <div class="td-filters">
+                <button class="td-filter${filter==='all'?' td-filter--active':''}" data-td-filter="all">All</button>
+                <button class="td-filter${filter==='lesson'?' td-filter--active':''}" data-td-filter="lesson">Lessons</button>
+                <button class="td-filter${filter==='quiz'?' td-filter--active':''}" data-td-filter="quiz">Quizzes</button>
+                <button class="td-filter${filter==='announcement'?' td-filter--active':''}" data-td-filter="announcement">Announcements</button>
+            </div>
+            <div class="td-sections">${listHtml}</div>
+        </div>`;
     }
 
     function commentSection() {
@@ -1112,14 +1518,16 @@ export async function render(container, params) {
             body.className = 'sc-body sc-body-focus';
             body.innerHTML = '<div class="sc-loading"><div class="sc-spin"></div></div>';
         }
-        const [, , viewers, scores] = await Promise.all([
+        const [, , viewers, scores, qStats] = await Promise.all([
             loadWorkComments(null, id),
             loadStudentSubmissions(null, id),
             loadContentViews('quiz', id),
             loadQuizScores(id),
+            loadQuizQuestionStats(id),
         ]);
         state.detailViewers = viewers;
         state.quizScores = scores;
+        state.quizQuestionStats = qStats;
         refreshBody();
     }
 
@@ -1146,11 +1554,73 @@ export async function render(container, params) {
             <p class="gc-focus-card-note gc-focus-card-note--muted">Ordered from first submitted to last.</p>`;
     }
 
+    async function openAnnouncement(annId) {
+        const d = announcements.find(a => String(a.announcement_id) === String(annId));
+        if (!d) return;
+        state.tab = 'classwork';
+        state.selectedWork = { type: 'announcement', id: annId, data: d };
+        state.workComments = [];
+        state.privateComments = [];
+        state.privateReplyTo = null;
+        state.detailViewers = null;
+        const body = container.querySelector('#sc-body');
+        if (body) {
+            body.className = 'sc-body sc-body-focus';
+            body.innerHTML = '<div class="sc-loading"><div class="sc-spin"></div></div>';
+        }
+        const [, viewers] = await Promise.all([
+            loadWorkComments(null, null),
+            loadContentViews('announcement', annId),
+        ]);
+        state.detailViewers = viewers;
+        refreshBody();
+    }
+
+    async function gradeStudentSubmission(studentId, btn) {
+        const w = state.selectedWork;
+        if (!w || w.type !== 'lesson') return;
+        const row = btn.closest('[data-student-id]');
+        const input = row?.querySelector('.gc-sub-grade-input');
+        if (!input) return;
+        const pts = input.value === '' ? null : parseFloat(input.value);
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        try {
+            const res = await Api.post('/ClassroomAPI.php?action=grade-submission', {
+                subject_id: parseInt(subjectId, 10),
+                lessons_id: parseInt(w.id, 10),
+                student_id: parseInt(studentId, 10),
+                points_earned: pts,
+            });
+            if (!res.success) throw new Error(res.message || 'Failed');
+            btn.textContent = 'Saved ✓';
+            btn.style.background = '#00461B';
+            btn.style.color = '#fff';
+            const badge = row.querySelector('.gc-sub-row-grade-badge');
+            const totalPts = w.data.total_points != null ? Number(w.data.total_points) : null;
+            const badgeText = pts != null ? `${pts}${totalPts != null ? '/' + totalPts : ''} pts` : '';
+            if (badge) { badge.textContent = badgeText; }
+            else if (badgeText) { row.querySelector('.gc-sub-row-hdr')?.insertAdjacentHTML('beforeend', `<span class="gc-sub-row-grade-badge">${esc(badgeText)}</span>`); }
+            setTimeout(() => { btn.disabled = false; btn.textContent = 'Save Grade'; btn.style.background = ''; btn.style.color = ''; }, 2000);
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Save Grade';
+            notify.error(err.message || 'Failed to save grade');
+        }
+    }
+
     function openSubmissionsModal() {
         const w = state.selectedWork;
         if (!w) return;
         const title = w.type === 'quiz' ? 'Quiz submissions' : 'Activity submissions';
         openGcModal({ title, bodyHtml: buildSubmissionsModalBody(w), wide: true });
+
+        // Wire up "Check / Grade" buttons inside the modal
+        setTimeout(() => {
+            document.querySelectorAll('.gc-grade-btn').forEach(btn => {
+                btn.addEventListener('click', () => openGradingPanel(btn.dataset.attempt));
+            });
+        }, 50);
     }
 
     function openViewersModal() {
@@ -1161,6 +1631,482 @@ export async function render(container, params) {
             wide: true,
         });
     }
+
+    function openDueDateModal() {
+        const w = state.selectedWork;
+        if (!w) return;
+        const pts = w.type === 'lesson' && (w.data.total_points != null && w.data.total_points !== '')
+            ? Number(w.data.total_points) : (w.type === 'lesson' ? null : 1);
+        if (w.type === 'lesson' && pts == null) return;
+        const raw = w.data.due_date ? String(w.data.due_date).slice(0, 10) : '';
+        const dueDisplay = (() => {
+            if (!raw) return null;
+            const d = new Date(raw + 'T00:00:00');
+            if (isNaN(d)) return null;
+            return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        })();
+
+        const bodyHtml = `
+            <div class="gc-due-modal-body">
+                <div class="gc-due-modal-current">
+                    <div class="gc-due-modal-cal ${raw ? '' : 'empty'}">
+                        ${raw ? (() => {
+                            const d = new Date(raw + 'T00:00:00');
+                            return `<span class="gc-due-cal-month">${d.toLocaleString('en-US',{month:'short'}).toUpperCase()}</span>
+                                    <span class="gc-due-cal-day">${d.getDate()}</span>`;
+                        })() : `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`}
+                    </div>
+                    <div class="gc-due-modal-info">
+                        <span class="gc-due-modal-info-label">Current due date</span>
+                        <span class="gc-due-modal-info-date">${dueDisplay ? esc(dueDisplay) : '<em style="color:#9CA3AF;font-style:italic;font-weight:400">Not set</em>'}</span>
+                    </div>
+                </div>
+                <div class="gc-due-modal-form">
+                    <label class="gc-due-modal-label" for="gc-due-modal-input">Pick a new date</label>
+                    <input type="date" id="gc-due-modal-input" class="gc-due-modal-input" value="${esc(raw)}">
+                    <p class="gc-due-modal-hint">Students cannot submit after the due date unless you extend it.</p>
+                </div>
+                <div class="gc-due-modal-actions">
+                    <button type="button" class="gc-due-modal-save" id="gc-due-modal-save">${raw ? 'Update due date' : 'Set due date'}</button>
+                    ${raw ? `<button type="button" class="gc-due-modal-remove" id="gc-due-modal-remove">Remove due date</button>` : ''}
+                </div>
+            </div>`;
+
+        const title = w.type === 'quiz' ? 'Quiz due date' : 'Activity due date';
+        const { close } = openGcModal({ title, bodyHtml });
+
+        const doSave = async (newDate) => {
+            const payload = {
+                subject_id: parseInt(subjectId, 10),
+                due_date: newDate || null,
+            };
+            if (w.type === 'lesson') payload.lessons_id = w.id;
+            else payload.quiz_id = w.id;
+
+            const saveBtn = document.querySelector('#gc-due-modal-save');
+            const remBtn  = document.querySelector('#gc-due-modal-remove');
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+            if (remBtn)  { remBtn.disabled = true; }
+
+            const res = await Api.post('/ClassroomAPI.php?action=set-due-date', payload);
+            if (!res.success) {
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = newDate ? 'Update due date' : 'Set due date'; }
+                if (remBtn)  { remBtn.disabled = false; }
+                notify.error(res.message || 'Could not update due date');
+                return;
+            }
+            w.data.due_date = res.due_date || null;
+            const list = w.type === 'lesson' ? lessons : quizzes;
+            const item = list.find(x => String(w.type === 'lesson' ? x.lessons_id : x.quiz_id) === String(w.id));
+            if (item) item.due_date = res.due_date || null;
+            close();
+            refreshBody();
+        };
+
+        setTimeout(() => {
+            document.querySelector('#gc-due-modal-save')?.addEventListener('click', () => {
+                const val = document.querySelector('#gc-due-modal-input')?.value || '';
+                doSave(val);
+            });
+            document.querySelector('#gc-due-modal-remove')?.addEventListener('click', () => doSave(''));
+        }, 30);
+    }
+
+    // ─── Submission Grading Panel ──────────────────────────────────
+    async function openGradingPanel(attemptId) {
+        const resolveUrl = u => (!u || /^https?:\/\//i.test(u) || u.startsWith('/')) ? u : BASE_URL + '/' + u;
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;justify-content:flex-end;';
+        overlay.innerHTML = `
+            <style>
+                .gp-panel { background:#fff;width:720px;max-width:100vw;height:100%;display:flex;flex-direction:column;box-shadow:-4px 0 40px rgba(0,0,0,.18);animation:gpSlide .22s ease-out; }
+                @keyframes gpSlide { from { transform:translateX(60px);opacity:0; } to { transform:translateX(0);opacity:1; } }
+                .gp-hdr { background:#00461B;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0; }
+                .gp-hdr h3 { margin:0;font-size:17px;font-weight:700; }
+                .gp-hdr p { margin:4px 0 0;font-size:12px;opacity:.8; }
+                .gp-close { background:rgba(255,255,255,.15);border:none;color:#fff;width:30px;height:30px;border-radius:7px;font-size:20px;cursor:pointer;line-height:1; }
+                .gp-toolbar { display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa;flex-shrink:0;flex-wrap:wrap; }
+                .gp-score-pill { background:#E8F5E9;color:#1B4D3E;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap; }
+                .gp-ai-btn { display:flex;align-items:center;gap:6px;padding:7px 14px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer; }
+                .gp-ai-btn:hover { background:#6D28D9; }
+                .gp-ai-btn:disabled { opacity:.5;cursor:not-allowed; }
+                .gp-confirm-all-btn { display:none;align-items:center;gap:6px;padding:7px 14px;background:#00461B;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer; }
+                .gp-confirm-all-btn.show { display:flex; }
+                .gp-body { flex:1;overflow-y:auto;padding:20px; }
+                .gp-foot { padding:14px 20px;border-top:1px solid #e8e8e8;display:flex;justify-content:flex-end;gap:10px;background:#fff;flex-shrink:0; }
+                .gp-btn-cancel { padding:9px 18px;background:#fff;border:1.5px solid #dadce0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer; }
+                .gp-finalize { padding:9px 20px;background:#00461B;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer; }
+                .gp-finalize:disabled { opacity:.5;cursor:not-allowed; }
+                .gp-spin { animation:gpSpin 1s linear infinite; }
+                @keyframes gpSpin { to { transform:rotate(360deg); } }
+
+                .gp-qblock { border:1px solid #e5e7eb;border-radius:12px;margin-bottom:14px;overflow:hidden; }
+                .gp-qblock.confirmed { border-color:#bbf7d0; }
+                .gp-qblock.overridden { border-color:#fde68a; }
+                .gp-qhead { background:#f8f9fa;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb; }
+                .gp-qnum { font-size:11px;font-weight:700;color:#1B4D3E;text-transform:uppercase; }
+                .gp-qbody { padding:14px 16px; }
+                .gp-q-text { font-size:14px;font-weight:600;color:#111827;margin-bottom:10px;line-height:1.5; }
+                .gp-badge { padding:3px 8px;border-radius:10px;font-size:10px;font-weight:700; }
+                .gp-badge-ok { background:#E8F5E9;color:#1B4D3E; }
+                .gp-badge-wrong { background:#FEE2E2;color:#b91c1c; }
+                .gp-badge-ai { background:#EDE9FE;color:#7C3AED; }
+                .gp-badge-pending { background:#FEF3C7;color:#B45309; }
+                .gp-badge-confirmed { background:#E8F5E9;color:#1B4D3E; }
+                .gp-student-ans { background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 13px;font-size:13px;color:#1a1a1a;margin-bottom:10px;white-space:pre-wrap;line-height:1.6; }
+                .gp-student-ans.empty { background:#fef9f0;border-color:#fde68a;color:#92400e;font-style:italic; }
+                .gp-ai-result { background:#EDE9FE;border:1px solid #C4B5FD;border-radius:8px;padding:10px 13px;margin-bottom:10px;font-size:12px;color:#5B21B6; }
+                .gp-grade-row { display:flex;gap:10px;align-items:flex-start;margin-bottom:10px; }
+                .gp-pts-wrap { flex-shrink:0; }
+                .gp-pts-lbl { font-size:10px;font-weight:700;text-transform:uppercase;color:#6B7280;display:block;margin-bottom:3px; }
+                .gp-pts-inp { width:68px;padding:7px 9px;border:1.5px solid #dadce0;border-radius:8px;font-size:14px;font-weight:700;text-align:center;font-family:inherit; }
+                .gp-pts-inp:focus { outline:none;border-color:#00461B; }
+                .gp-pts-max { font-size:10px;color:#9ca3af;text-align:center;margin-top:3px; }
+                .gp-fb-wrap { flex:1; }
+                .gp-fb-inp { width:100%;padding:7px 10px;border:1.5px solid #dadce0;border-radius:8px;font-size:12px;resize:vertical;min-height:52px;font-family:inherit;box-sizing:border-box; }
+                .gp-fb-inp:focus { outline:none;border-color:#00461B; }
+                .gp-save-btn { padding:6px 14px;background:#00461B;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px; }
+                .gp-save-btn:hover { background:#006428; }
+                .gp-save-btn:disabled { opacity:.5;cursor:not-allowed; }
+                .gp-confirm-btn { padding:6px 14px;background:#7C3AED;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer; }
+                .gp-confirm-btn:hover { background:#6D28D9; }
+                .gp-opt-list { display:flex;flex-direction:column;gap:5px;margin-bottom:10px; }
+                .gp-opt { padding:7px 12px;border-radius:7px;font-size:13px;display:flex;align-items:center;gap:8px; }
+                .gp-opt.selected-correct { background:#E8F5E9;border:1px solid #2D6A4F;color:#1B4D3E; }
+                .gp-opt.selected-wrong { background:#FEE2E2;border:1px solid #fca5a5;color:#b91c1c; }
+                .gp-opt.correct-answer { background:#f0fdf4;border:1px solid #bbf7d0;color:#1B4D3E; }
+                .gp-opt.neutral { background:#f9f9f9;border:1px solid #e8e8e8;color:#374151; }
+                .gp-override-row { display:flex;gap:8px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #e5e7eb; }
+                .gp-override-toggle { padding:5px 12px;border:1.5px solid #dadce0;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:#fff;color:#374151; }
+                .gp-override-toggle:hover { border-color:#00461B;color:#00461B; }
+                .gp-override-form { display:none;margin-top:10px;padding:10px 12px;background:#fffbf0;border:1px solid #fde68a;border-radius:8px; }
+                .gp-override-form.show { display:block; }
+                .gp-correct-toggle { display:flex;gap:8px; }
+                .gp-correct-toggle label { display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;cursor:pointer;padding:5px 10px;border:1.5px solid #dadce0;border-radius:7px; }
+                .gp-correct-toggle input[type=radio] { accent-color:#00461B; }
+                .gp-integrity { background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#991B1B; }
+            </style>
+            <div class="gp-panel">
+                <div class="gp-hdr">
+                    <div><h3 id="gp-title">Loading…</h3><p id="gp-sub"></p></div>
+                    <button class="gp-close" id="gp-close">&times;</button>
+                </div>
+                <div class="gp-toolbar">
+                    <span class="gp-score-pill" id="gp-score">— pts</span>
+                    <button class="gp-ai-btn" id="gp-ai-btn">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                        AI Check Subjective
+                    </button>
+                    <button class="gp-confirm-all-btn" id="gp-confirm-all">✓ Confirm All AI Grades</button>
+                </div>
+                <div class="gp-body" id="gp-body">
+                    <div style="display:flex;align-items:center;justify-content:center;height:200px;gap:12px;color:#888;flex-direction:column;">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1B4D3E" stroke-width="2" class="gp-spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                        Loading submission…
+                    </div>
+                </div>
+                <div class="gp-foot">
+                    <button class="gp-btn-cancel" id="gp-cancel">Close</button>
+                    <button class="gp-finalize" id="gp-finalize" disabled>✓ Finalize & Save</button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(overlay);
+
+        const closeFn = () => overlay.remove();
+        overlay.querySelector('#gp-close').addEventListener('click', closeFn);
+        overlay.querySelector('#gp-cancel').addEventListener('click', closeFn);
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeFn(); });
+
+        const res = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
+        if (!res.success) {
+            overlay.querySelector('#gp-body').innerHTML = `<div style="color:#b91c1c;text-align:center;padding:40px;">${esc(res.message || 'Failed to load')}</div>`;
+            return;
+        }
+
+        const { attempt, answers } = res.data;
+        overlay.querySelector('#gp-title').textContent = attempt.quiz_title || 'Submission Review';
+        overlay.querySelector('#gp-sub').textContent = `${attempt.first_name || ''} ${attempt.last_name || ''}${attempt.student_id ? ' (' + attempt.student_id + ')' : ''} — ${attempt.subject_code || ''}`;
+        overlay.querySelector('#gp-score').textContent = `${attempt.earned_points || 0} / ${attempt.total_points || 0} pts (${parseFloat(attempt.percentage || 0).toFixed(1)}%)`;
+
+        const switches = parseInt(attempt.tab_switch_count || 0);
+        const integrityHtml = switches > 0 ? `<div class="gp-integrity"><strong>⚠ Integrity Flag — ${switches} tab switch${switches > 1 ? 'es' : ''} detected</strong><br>Student left the quiz tab ${switches} time${switches > 1 ? 's' : ''} while taking this quiz.${switches >= 3 ? ' <strong>Multiple violations detected.</strong>' : ''}</div>` : '';
+
+        renderGradingBody(overlay, answers, integrityHtml, attempt, attemptId, resolveUrl, closeFn);
+    }
+
+    function renderGradingBody(overlay, answers, integrityHtml, attempt, attemptId, resolveUrl, closeFn) {
+        const body = overlay.querySelector('#gp-body');
+        const SUBJ_TYPES = ['essay', 'short_answer', 'fill_blank', 'fill_in_the_blank'];
+        const OBJ_TYPES  = ['multiple_choice', 'true_false', 'checkboxes', 'dropdown', 'fill_blank'];
+
+        let html = integrityHtml;
+        answers.forEach((a, idx) => {
+            const qn = idx + 1;
+            const qType   = (a.question_type || '').toLowerCase();
+            const isSubj  = SUBJ_TYPES.includes(qType) && !['fill_blank'].includes(qType);
+            const isObj   = !isSubj;
+            const isPend  = a.grading_status === 'pending';
+            const isAI    = a.grading_status === 'auto_graded';
+            const isDone  = a.grading_status === 'graded';
+            const studentText = (a.answer_text || '').trim();
+
+            // Badge
+            const badge = isPend
+                ? `<span class="gp-badge gp-badge-pending">Pending</span>`
+                : isAI
+                    ? `<span class="gp-badge gp-badge-ai">AI Graded — Confirm Required</span>`
+                    : isDone
+                        ? `<span class="gp-badge gp-badge-confirmed">✓ Graded</span>`
+                        : `<span class="gp-badge ${a.is_correct == 1 ? 'gp-badge-ok' : 'gp-badge-wrong'}">${a.is_correct == 1 ? '✓ Correct' : '✗ Incorrect'}</span>`;
+
+            // Media
+            const mUrl = resolveUrl(a.media_url || '');
+            const mediaHtml = (a.media_type && a.media_type !== 'none' && mUrl)
+                ? (a.media_type === 'image' ? `<img src="${esc(mUrl)}" style="max-width:100%;max-height:160px;border-radius:8px;margin-bottom:10px;display:block;">` :
+                   a.media_type === 'audio' ? `<audio controls src="${esc(mUrl)}" style="width:100%;max-width:380px;margin-bottom:10px;"></audio>` :
+                   `<a href="${esc(mUrl)}" target="_blank" style="font-size:12px;color:#1B4D3E;display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>${esc(a.media_name || mUrl)}</a>`)
+                : '';
+
+            let content = '';
+            if (isObj || qType === 'fill_blank') {
+                // Objective / fill_blank — show options or answer, then allow override
+                if ((a.options || []).length) {
+                    const selId = String(a.selected_option_id || '');
+                    content += `<div class="gp-opt-list">${(a.options).map(o => {
+                        const isSel  = String(o.option_id) === selId;
+                        const isCorr = o.is_correct == 1;
+                        let cls = 'neutral';
+                        let label = '';
+                        if (isSel && isCorr)  { cls = 'selected-correct'; label = '✓ Your answer'; }
+                        else if (isSel)        { cls = 'selected-wrong';   label = '✗ Your answer'; }
+                        else if (isCorr)       { cls = 'correct-answer';   label = 'Correct'; }
+                        return `<div class="gp-opt ${cls}">${esc(o.option_text)}${label ? ` <span style="margin-left:auto;font-size:10px;font-weight:700;">${label}</span>` : ''}</div>`;
+                    }).join('')}</div>`;
+                } else if (studentText) {
+                    content += `<div class="gp-student-ans">${esc(studentText)}</div>`;
+                    if (a.correct_answer_text) content += `<div style="font-size:11px;color:#1B4D3E;margin-bottom:8px;">Expected: <strong>${esc(a.correct_answer_text)}</strong></div>`;
+                }
+                // Override form (collapsed by default)
+                content += `
+                    <div class="gp-override-row">
+                        <span style="font-size:11px;color:#6B7280;font-weight:600;">${a.points_earned != null ? a.points_earned : '—'} / ${a.max_points} pts</span>
+                        <button class="gp-override-toggle" data-aid="${a.answer_id}">Override Grade</button>
+                    </div>
+                    <div class="gp-override-form" id="gp-ovf-${a.answer_id}">
+                        <div style="font-size:11px;font-weight:700;color:#B45309;margin-bottom:8px;">Override — changing this will flag as manually graded</div>
+                        <div class="gp-correct-toggle" style="margin-bottom:8px;">
+                            <label><input type="radio" name="gp-corr-${a.answer_id}" value="1" ${a.is_correct == 1 ? 'checked' : ''}> Correct</label>
+                            <label><input type="radio" name="gp-corr-${a.answer_id}" value="0" ${a.is_correct != 1 ? 'checked' : ''}> Incorrect</label>
+                        </div>
+                        <div class="gp-grade-row">
+                            <div class="gp-pts-wrap">
+                                <span class="gp-pts-lbl">Points</span>
+                                <input type="number" class="gp-pts-inp" id="gp-pts-${a.answer_id}" min="0" max="${a.max_points}" step="0.5" value="${a.points_earned != null ? a.points_earned : 0}">
+                                <div class="gp-pts-max">/ ${a.max_points}</div>
+                            </div>
+                            <div class="gp-fb-wrap">
+                                <span class="gp-pts-lbl">Feedback (optional)</span>
+                                <textarea class="gp-fb-inp" id="gp-fb-${a.answer_id}" placeholder="Add feedback…">${esc(a.grader_feedback || '')}</textarea>
+                            </div>
+                        </div>
+                        <button class="gp-save-btn" data-aid="${a.answer_id}" data-max="${a.max_points}" data-override="1">Save Override</button>
+                    </div>`;
+            } else {
+                // Subjective — show student text and grade form
+                content += `<div class="gp-student-ans${!studentText ? ' empty' : ''}">${studentText ? esc(studentText) : '(No answer provided)'}</div>`;
+                if (isAI) {
+                    content += `<div class="gp-ai-result" style="display:flex;align-items:flex-start;gap:8px;"><svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg><div><strong>AI Score: ${a.points_earned} / ${a.max_points} pts</strong>${a.grader_feedback ? ` — <em>${esc(a.grader_feedback)}</em>` : ''}<br><span style="opacity:.8;">Review the AI grade and confirm or adjust below.</span></div></div>`;
+                }
+                if (isDone && !isAI) {
+                    content += `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px;font-weight:600;color:#1B4D3E;">
+                        ✓ Graded: ${a.points_earned} / ${a.max_points} pts${a.grader_feedback ? ` &mdash; <em style="font-weight:400">${esc(a.grader_feedback)}</em>` : ''}
+                        <button class="gp-override-toggle" data-aid="${a.answer_id}" style="margin-left:auto;">Edit</button>
+                    </div>
+                    <div class="gp-override-form" id="gp-ovf-${a.answer_id}">`;
+                } else {
+                    content += `<div class="gp-override-form show" id="gp-ovf-${a.answer_id}">`;
+                }
+                content += `
+                        <div class="gp-grade-row">
+                            <div class="gp-pts-wrap">
+                                <span class="gp-pts-lbl">Points</span>
+                                <input type="number" class="gp-pts-inp" id="gp-pts-${a.answer_id}" min="0" max="${a.max_points}" step="0.5" value="${a.points_earned != null ? a.points_earned : 0}">
+                                <div class="gp-pts-max">/ ${a.max_points}</div>
+                            </div>
+                            <div class="gp-fb-wrap">
+                                <span class="gp-pts-lbl">Feedback (optional)</span>
+                                <textarea class="gp-fb-inp" id="gp-fb-${a.answer_id}" placeholder="Add feedback…">${esc(a.grader_feedback || '')}</textarea>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <button class="gp-save-btn" data-aid="${a.answer_id}" data-max="${a.max_points}">${isAI ? 'Confirm & Save Grade' : 'Save Grade'}</button>
+                            ${isAI ? `<span style="font-size:11px;color:#7C3AED;">AI suggested — confirm to finalize</span>` : ''}
+                        </div>
+                    </div>`;
+            }
+
+            html += `<div class="gp-qblock${isDone && !isAI ? ' confirmed' : ''}" id="gp-qb-${a.answer_id}">
+                <div class="gp-qhead">
+                    <span class="gp-qnum">Q${qn} — ${formatQType(qType)}</span>
+                    <div style="display:flex;gap:6px;align-items:center;">${badge}<span style="font-size:10px;color:#9CA3AF;">${a.max_points} pt${a.max_points != 1 ? 's' : ''}</span></div>
+                </div>
+                <div class="gp-qbody">
+                    <div class="gp-q-text">${esc(a.question_text)}</div>
+                    ${mediaHtml}
+                    ${content}
+                </div>
+            </div>`;
+        });
+
+        body.innerHTML = html;
+
+        // Wire override toggles
+        body.querySelectorAll('.gp-override-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const form = body.querySelector(`#gp-ovf-${btn.dataset.aid}`);
+                if (form) form.classList.toggle('show');
+            });
+        });
+
+        // Wire save buttons
+        body.querySelectorAll('.gp-save-btn').forEach(btn => {
+            btn.addEventListener('click', () => saveGradePanelAnswer(overlay, btn, attempt, attemptId));
+        });
+
+        // Wire AI Check button
+        const aiBtn = overlay.querySelector('#gp-ai-btn');
+        aiBtn.addEventListener('click', async () => {
+            const hasSubj = answers.some(a => ['essay','short_answer'].includes((a.question_type||'').toLowerCase()) && a.grading_status === 'pending');
+            if (!hasSubj) {
+                alert('No pending subjective answers to grade in this submission.');
+                return;
+            }
+            if (!confirm('AI will grade all pending essay/short answer questions for this student.\n\nYou will still need to confirm each grade before finalizing. Continue?')) return;
+            aiBtn.disabled = true;
+            aiBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="gp-spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Checking…`;
+            try {
+                const aiRes = await Api.post('/QuizAttemptsAPI.php?action=ai-grade-attempt', { attempt_id: parseInt(attemptId) });
+                if (aiRes.success && aiRes.graded > 0) {
+                    // Reload the panel with fresh data
+                    const fresh = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
+                    if (fresh.success) {
+                        renderGradingBody(overlay, fresh.data.answers, integrityHtml, fresh.data.attempt, attemptId, resolveUrl, closeFn);
+                        return;
+                    }
+                } else {
+                    alert(aiRes.message || 'AI grading failed. Check Groq API key in Settings.');
+                }
+            } catch (_) {
+                alert('AI grading failed. Check Groq API key in Settings.');
+            } finally {
+                aiBtn.disabled = false;
+                aiBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg> AI Check Subjective`;
+            }
+        });
+
+        // Wire "Confirm All AI Grades" — appears when any AI-graded answers exist
+        const hasAI = answers.some(a => a.grading_status === 'auto_graded');
+        const confirmAllBtn = overlay.querySelector('#gp-confirm-all');
+        if (hasAI) confirmAllBtn.classList.add('show');
+        confirmAllBtn.addEventListener('click', async () => {
+            if (!confirm('Confirm all AI-graded answers as-is? You can still adjust individual scores before finalizing.')) return;
+            const aiAnswers = answers.filter(a => a.grading_status === 'auto_graded');
+            confirmAllBtn.disabled = true;
+            for (const a of aiAnswers) {
+                const pts = parseFloat(overlay.querySelector(`#gp-pts-${a.answer_id}`)?.value ?? a.points_earned ?? 0);
+                const fb  = overlay.querySelector(`#gp-fb-${a.answer_id}`)?.value?.trim() ?? a.grader_feedback ?? '';
+                await Api.post('/QuizAttemptsAPI.php?action=grade-answer', { answer_id: parseInt(a.answer_id), points_earned: pts, feedback: fb });
+                const block = overlay.querySelector(`#gp-qb-${a.answer_id}`);
+                if (block) block.classList.add('confirmed');
+            }
+            // Reload fresh
+            const fresh = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
+            if (fresh.success) renderGradingBody(overlay, fresh.data.answers, integrityHtml, fresh.data.attempt, attemptId, resolveUrl, closeFn);
+        });
+
+        // Wire Finalize button
+        checkFinalizeState(overlay, answers, attemptId, closeFn);
+    }
+
+    async function saveGradePanelAnswer(overlay, btn, attempt, attemptId) {
+        const aid    = btn.dataset.aid;
+        const isOverride = !!btn.dataset.override;
+        const ptsEl  = overlay.querySelector(`#gp-pts-${aid}`);
+        const fbEl   = overlay.querySelector(`#gp-fb-${aid}`);
+        const pts    = parseFloat(ptsEl?.value ?? 0);
+        const fb     = fbEl?.value?.trim() ?? '';
+        const max    = parseFloat(btn.dataset.max ?? 1);
+
+        if (isNaN(pts) || pts < 0 || pts > max) {
+            alert(`Points must be between 0 and ${max}`); return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+
+        const payload = { answer_id: parseInt(aid), points_earned: pts, feedback: fb };
+        if (isOverride) {
+            const corrEl = overlay.querySelector(`input[name="gp-corr-${aid}"]:checked`);
+            payload.is_correct = corrEl ? parseInt(corrEl.value) : 0;
+        }
+
+        const res = await Api.post('/QuizAttemptsAPI.php?action=grade-answer', payload);
+        btn.disabled = false;
+        btn.textContent = isOverride ? 'Save Override' : 'Save Grade';
+
+        if (res.success) {
+            const block = overlay.querySelector(`#gp-qb-${aid}`);
+            if (block) block.classList.add('confirmed');
+            // Update score pill
+            if (res.new_score != null) {
+                overlay.querySelector('#gp-score').textContent = `${res.new_score} / ${attempt.total_points || 0} pts (${parseFloat(res.new_pct || 0).toFixed(1)}%)`;
+            }
+            // Re-check finalize
+            const fresh = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
+            if (fresh.success) checkFinalizeState(overlay, fresh.data.answers, attemptId, () => overlay.remove());
+        } else {
+            alert(res.message || 'Failed to save grade');
+        }
+    }
+
+    function checkFinalizeState(overlay, answers, attemptId, closeFn) {
+        const finBtn = overlay.querySelector('#gp-finalize');
+        const SUBJ = ['essay','short_answer','fill_blank','fill_in_the_blank'];
+        // Only subjective answers need manual confirmation; objective are already graded
+        const unconfirmed = answers.filter(a => SUBJ.includes((a.question_type||'').toLowerCase()) && a.grading_status !== 'graded');
+        const hasUnconfirmed = unconfirmed.length > 0;
+        finBtn.disabled = hasUnconfirmed;
+        finBtn.title = hasUnconfirmed ? `${unconfirmed.length} answer(s) still need your confirmation` : '';
+
+        finBtn.onclick = async () => {
+            finBtn.disabled = true;
+            finBtn.textContent = 'Finalizing…';
+            const res = await Api.post('/QuizAttemptsAPI.php?action=finalize-grading', { attempt_id: parseInt(attemptId) });
+            if (res.success) {
+                closeFn();
+                // Refresh submissions if they're open
+                const w = state.selectedWork;
+                if (w?.type === 'quiz') {
+                    loadQuizScores(w.id).then(scores => {
+                        state.quizScores = scores;
+                        refreshBody();
+                    });
+                }
+            } else {
+                finBtn.disabled = false;
+                finBtn.textContent = '✓ Finalize & Save';
+                alert(res.message || 'Failed to finalize');
+            }
+        };
+    }
+
+    function formatQType(t) {
+        const m = { multiple_choice:'Multiple Choice', true_false:'True/False', fill_blank:'Fill in Blank', fill_in_the_blank:'Fill in Blank', short_answer:'Short Answer', essay:'Essay', checkboxes:'Checkboxes', dropdown:'Dropdown' };
+        return m[t] || t;
+    }
+    // ─────────────────────────────────────────────────────────────
 
     async function postComment(text, isPrivate = false) {
         const payload = {
@@ -1178,7 +2124,7 @@ export async function render(container, params) {
 
         const res = await Api.post('/ClassroomAPI.php?action=add-comment', payload);
         if (!res.success) {
-            alert(res.message || 'Failed to post comment');
+            notify.error(res.message || 'Failed to post comment');
             return;
         }
 
@@ -1257,10 +2203,28 @@ export async function render(container, params) {
                         : { lessons_id: parseInt(id, 10), status };
                     const res = await Api.post(url, body);
                     if (!res.success) {
-                        alert(res.message || 'Could not update status');
+                        notify.error(res.message || 'Could not update status');
                         return;
                     }
                     await render(container, { subject_id: subjectId, section_id: effectiveSectionId });
+                    return;
+                }
+
+                if (action === 'edit' && type === 'quiz') {
+                    const quizData = allQuizzesForSubject.find(q => String(q.quiz_id) === String(id));
+                    if (quizData) {
+                        openQuizModal({
+                            quiz: quizData,
+                            lockSubject: true,
+                            classesData: [subjectFromApi || {
+                                subject_id: subjectId,
+                                subject_code: subject.subject_code,
+                                subject_name: subject.subject_name,
+                                sections: subjectSections(),
+                            }],
+                            onSuccess: () => render(container, { subject_id: subjectId, section_id: effectiveSectionId }),
+                        });
+                    }
                     return;
                 }
 
@@ -1270,20 +2234,25 @@ export async function render(container, params) {
                 }
 
                 if (action === 'delete') {
-                    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
-                    const url = type === 'quiz'
-                        ? '/QuizzesAPI.php?action=delete'
-                        : '/LessonsAPI.php?action=delete';
-                    const body = type === 'quiz'
-                        ? { quiz_id: parseInt(id, 10) }
-                        : { lessons_id: parseInt(id, 10) };
+                    if (!await notify.confirm(`Delete "${name}"? This cannot be undone.`, { danger: true, confirmText: 'Delete' })) return;
+                    let url, body;
+                    if (type === 'announcement') {
+                        url = '/AnnouncementsAPI.php?action=delete';
+                        body = { announcement_id: parseInt(id, 10) };
+                    } else if (type === 'quiz') {
+                        url = '/QuizzesAPI.php?action=delete';
+                        body = { quiz_id: parseInt(id, 10) };
+                    } else {
+                        url = '/LessonsAPI.php?action=delete';
+                        body = { lessons_id: parseInt(id, 10) };
+                    }
                     const res = await Api.post(url, body);
                     if (!res.success) {
-                        alert(res.message || 'Could not delete');
+                        notify.error(res.message || 'Could not delete');
                         return;
                     }
                     if (state.selectedWork && String(state.selectedWork.id) === String(id)) {
-                        state.selectedWork = null;
+                state.selectedWork = null;
                         state.quizScores = [];
                     }
                     await render(container, { subject_id: subjectId, section_id: effectiveSectionId });
@@ -1332,7 +2301,7 @@ export async function render(container, params) {
                             btn.innerHTML = `${icon('copy', { size: 14, className: 'ui-icon-inline' })} Copy code`;
                         }, 1500);
                     }
-                }).catch(() => alert('Subject code: ' + code));
+                }).catch(() => notify.info('Subject code: ' + code));
             });
         });
 
@@ -1356,6 +2325,13 @@ export async function render(container, params) {
             btn.addEventListener('click', () => openWork(btn.dataset.work, btn.dataset.id));
         });
 
+        container.querySelectorAll('.gc-post-card--ann[data-ann-id]').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.gc-cw-kebab-wrap') || e.target.closest('.gc-viewers-toggle') || e.target.closest('.gc-subs-btn')) return;
+                openAnnouncement(card.dataset.annId);
+            });
+        });
+
         bindCwKebabMenus();
 
         container.querySelectorAll('.gc-viewers-toggle').forEach(btn => {
@@ -1374,6 +2350,13 @@ export async function render(container, params) {
             });
         });
 
+        container.querySelectorAll('.gc-subs-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openInlineSubmissions(btn.dataset.subType, btn.dataset.subId);
+            });
+        });
+
         container.querySelector('#sc-back-cw')?.addEventListener('click', () => {
             state.selectedWork = null;
             state.workComments = [];
@@ -1386,34 +2369,47 @@ export async function render(container, params) {
             refreshBody();
         });
 
-        container.querySelector('#gc-open-submissions')?.addEventListener('click', openSubmissionsModal);
         container.querySelector('#gc-open-viewers')?.addEventListener('click', openViewersModal);
+        container.querySelector('#gc-open-due-modal')?.addEventListener('click', openDueDateModal);
 
-        container.querySelector('#gc-save-due')?.addEventListener('click', async () => {
+        container.querySelector('#gc-run-ai-checker')?.addEventListener('click', async () => {
             const w = state.selectedWork;
-            if (!w) return;
-            const dueInput = container.querySelector('#gc-instructor-due');
-            const dueDate = dueInput?.value || '';
-            const payload = {
-                subject_id: parseInt(subjectId, 10),
-                due_date: dueDate || null,
-            };
-            if (w.type === 'lesson') payload.lessons_id = w.id;
-            else payload.quiz_id = w.id;
-
-            const btn = container.querySelector('#gc-save-due');
-            if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-            const res = await Api.post('/ClassroomAPI.php?action=set-due-date', payload);
-            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
-            if (!res.success) {
-                alert(res.message || 'Could not update due date');
-                return;
+            if (!w || w.type !== 'quiz') return;
+            const btn = container.querySelector('#gc-run-ai-checker');
+            if (btn?.dataset.loading) return;
+            if (!await notify.confirm('Run AI checker on all pending essay/short answers for this quiz?', { confirmText: 'Run AI Checker' })) return;
+            if (btn) {
+                btn.dataset.loading = '1';
+                btn.disabled = true;
+                btn.innerHTML = `${icon('robot', inl)} Checking…`;
             }
-            w.data.due_date = res.due_date || null;
-            const list = w.type === 'lesson' ? lessons : quizzes;
-            const item = list.find(x => String(w.type === 'lesson' ? x.lessons_id : x.quiz_id) === String(w.id));
-            if (item) item.due_date = res.due_date || null;
-            refreshBody();
+            try {
+                const res = await Api.post('/QuizAttemptsAPI.php?action=ai-grade-quiz', {
+                    quiz_id: parseInt(w.id, 10),
+                });
+                if (res.success) {
+                    notify.success(res.message || 'AI check complete.');
+                } else {
+                    notify.error(res.message || 'AI check failed.');
+                }
+                if (res.success) {
+                    const [scores, qStats] = await Promise.all([
+                        loadQuizScores(w.id),
+                        loadQuizQuestionStats(w.id),
+                    ]);
+                    state.quizScores = scores;
+                    state.quizQuestionStats = qStats;
+                    refreshBody();
+                }
+            } catch (_) {
+                notify.error('AI checker failed. Check your Groq API key in Settings.');
+            } finally {
+                if (btn) {
+                    delete btn.dataset.loading;
+                    btn.disabled = false;
+                    btn.innerHTML = `${icon('robot', inl)} AI Checker`;
+                }
+            }
         });
 
         bindCommentEvents();
@@ -1435,20 +2431,33 @@ export async function render(container, params) {
             state.calSelectedDay = dateKey(t);
             refreshBody();
         });
-        container.querySelector('#sc-cal-clear')?.addEventListener('click', () => {
+        container.querySelectorAll('[data-cal-day]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const k = btn.dataset.calDay;
+                state.calSelectedDay = state.calSelectedDay === k ? null : k;
+                refreshBody();
+            });
+        });
+        container.querySelector('[data-cal-clear]')?.addEventListener('click', () => {
             state.calSelectedDay = null;
             refreshBody();
         });
-        container.querySelectorAll('[data-cal-day]').forEach(btn => {
+        container.querySelectorAll('[data-td-filter]').forEach(btn => {
             btn.addEventListener('click', () => {
-                state.calSelectedDay = btn.dataset.calDay;
+                state.calFilter = btn.dataset.tdFilter;
                 refreshBody();
             });
         });
         container.querySelectorAll('[data-cal-open]').forEach(el => {
             el.addEventListener('click', () => {
+                const type = el.dataset.calOpen;
+                const id = el.dataset.calId;
                 state.tab = 'classwork';
-                openWork(el.dataset.calOpen, el.dataset.calId);
+                if (type === 'announcement') {
+                    openAnnouncement(id);
+                } else {
+                    openWork(type, id);
+                }
             });
         });
 
@@ -1490,7 +2499,7 @@ export async function render(container, params) {
                 state.privateComments = [];
                 state.workMaterials = [];
                 state.studentSubmissions = [];
-                if (nextTab === 'calendar') state.calSelectedDay = null;
+                if (nextTab === 'calendar') { state.calFilter = 'all'; state.calSelectedDay = null; }
                 refreshBody();
                 return;
             }
@@ -1521,6 +2530,143 @@ export async function render(container, params) {
 
 function instructorExtraCss() {
     return `
+        /* ── Submissions right panel ───────────────────────────────── */
+        .sc-rail-subs { padding:0 !important; overflow:hidden; border-radius:10px; }
+        .gc-sub-panel {
+            background:#fff;
+            overflow:hidden;
+        }
+        .gc-sub-panel-hdr {
+            padding:14px 16px 10px; border-bottom:1px solid #F0F0F0; background:#FAFAFA;
+        }
+        .gc-sub-panel-title {
+            font-size:13px; font-weight:700; color:#111827;
+            display:flex; align-items:center; gap:6px; margin:0;
+        }
+        .gc-sub-panel-count {
+            background:#00461B; color:#fff; border-radius:20px;
+            padding:1px 8px; font-size:11px; font-weight:700;
+        }
+        .gc-sub-panel-body { max-height:70vh; overflow-y:auto; }
+        .gc-sub-panel-empty { padding:20px 16px; color:#9CA3AF; font-size:13px; }
+        .gc-sub-panel-subtitle { padding:12px 16px 4px; font-size:12px; font-weight:700; color:#374151; margin:0; }
+        .gc-sub-panel-quiz { padding:8px 0; }
+
+        .gc-sub-row {
+            padding:12px 16px; border-bottom:1px solid #F4F4F5;
+        }
+        .gc-sub-row:last-child { border-bottom:none; }
+        .gc-sub-row-hdr {
+            display:flex; align-items:center; gap:8px; margin-bottom:8px;
+        }
+        .gc-sub-row-meta { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+        .gc-sub-row-name { font-size:13px; font-weight:600; color:#111827; }
+        .gc-sub-row-time { font-size:11px; color:#9CA3AF; }
+        .gc-sub-row-grade-badge {
+            font-size:12px; font-weight:700; color:#00461B;
+            background:#E8F5EC; border:1px solid #bbf7d0;
+            border-radius:20px; padding:2px 10px; white-space:nowrap; flex-shrink:0;
+        }
+        .gc-sub-row-files { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+        .gc-sub-row-files .gc-work-attach {
+            display:flex; align-items:center; gap:6px;
+            padding:6px 8px; border-radius:6px; background:#F8F9FA;
+            text-decoration:none; color:#374151; font-size:12px;
+            transition:background .12s;
+        }
+        .gc-sub-row-files .gc-work-attach:hover { background:#E9ECEF; }
+        .gc-sub-row-grade-row {
+            display:flex; gap:6px; align-items:center;
+        }
+        .gc-sub-grade-input {
+            flex:1; padding:6px 8px; border:1px solid #D1D5DB; border-radius:6px;
+            font-size:12px; font-family:inherit; color:#111827;
+            background:#fff;
+        }
+        .gc-sub-grade-input:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
+        .gc-sub-grade-save {
+            padding:6px 12px; border:none; border-radius:6px;
+            background:#E8F5EC; color:#00461B; font-size:11px; font-weight:700;
+            cursor:pointer; white-space:nowrap; font-family:inherit;
+            transition:background .12s, color .12s;
+        }
+        .gc-sub-grade-save:hover { background:#00461B; color:#fff; }
+        .gc-sub-grade-save:disabled { opacity:.6; cursor:not-allowed; }
+
+        /* ── Announcement full-page detail body ───────────────────── */
+        .gc-ann-full-body {
+            font-size:14px; line-height:1.8; color:#374151;
+            white-space:pre-wrap; word-break:break-word;
+            padding:4px 0 8px;
+        }
+        /* ── Announcement stream card ─────────────────────────────── */
+        .gc-post-card--ann {
+            border-left: 4px solid #D1D5DB;
+            border-right: 4px solid #D1D5DB;
+            border-top: none;
+            border-bottom: none;
+        }
+        .gc-post-card__ann-body {
+            flex: 1; min-width: 0; padding: 14px 16px;
+        }
+        .gc-post-card--ann .gc-post-card__hdr {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+        }
+        .gc-ann-badge {
+            margin-left: auto; font-size: 11px; font-weight: 700;
+            color: var(--subj, #00461B); background: var(--subj-soft, #E8F5EC);
+            border: 1px solid var(--subj-light, #bbf7d0); border-radius: 20px;
+            padding: 3px 10px; white-space: nowrap; flex-shrink: 0;
+        }
+        .gc-ann-content { padding: 0 2px; }
+        .gc-ann-title {
+            font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 6px; line-height: 1.3;
+        }
+        .gc-ann-preview {
+            font-size: 13.5px; color: #374151; line-height: 1.6; margin: 0 0 6px;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .gc-ann-section {
+            font-size: 11px; font-weight: 600; color: var(--subj, #00461B);
+            background: var(--subj-soft, #E8F5EC); display: inline-block;
+            padding: 2px 8px; border-radius: 6px; margin-top: 4px;
+        }
+        /* ── Inline submissions footer on classwork cards ─────────── */
+        .gc-post-card__subs {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            padding: 9px 16px 11px; border-top: 1px solid #F0F0F0;
+            background: #FAFAFA; font-size: 12px;
+        }
+        .gc-subs-count { display: inline-flex; align-items: center; gap: 5px; color: #5F6368; font-weight: 500; }
+        .gc-subs-btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 12px; border: 1.5px solid #00461B; border-radius: 20px;
+            background: #fff; color: #00461B; font-size: 11px; font-weight: 700;
+            cursor: pointer; transition: background .12s, color .12s; font-family: inherit;
+        }
+        .gc-subs-btn:hover { background: #00461B; color: #fff; }
+        .gc-subs-btn:disabled { opacity: .55; cursor: not-allowed; }
+        /* ─────────────────────────────────────────────────────────── */
+        .sc-hero-clock {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            padding:10px 24px; border-radius:16px;
+            background:rgba(0,0,0,0.20);
+            backdrop-filter:blur(6px);
+            min-width:210px; text-align:center;
+        }
+        .sc-clock-time {
+            font-family:'Courier New', Courier, monospace;
+            font-size:38px; font-weight:800;
+            color:#fff; letter-spacing:4px; line-height:1;
+            font-variant-numeric:tabular-nums;
+            text-shadow:0 2px 10px rgba(0,0,0,0.35);
+        }
+        .sc-clock-date {
+            font-size:10.5px; font-weight:600;
+            color:rgba(255,255,255,0.88);
+            letter-spacing:1.5px; text-transform:uppercase;
+            margin-top:6px; line-height:1;
+        }
         .sc-instructor-class .sc-main { position:relative; z-index:2; min-width:0; }
         .sc-instructor-class .sc-panel { position:relative; z-index:2; }
         .sc-instructor-class .sc-tabs {
@@ -1674,108 +2820,76 @@ function instructorExtraCss() {
         .gc-work-attach-name { font-size:13px; font-weight:500; }
         .gc-tile-ext { font-size:10px; color:#5F6368; margin-top:2px; }
 
-        .sc-calendar { display:flex; flex-direction:column; gap:24px; }
-        .sc-cal-header {
-            display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:16px;
-        }
-        .sc-cal-title { font-size:20px; font-weight:800; color:#202124; margin:0 0 4px; }
-        .sc-cal-sub { font-size:13px; color:#5F6368; margin:0; }
-        .sc-cal-nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-        .sc-cal-nav-btn {
-            width:36px; height:36px; border:1px solid #DADCE0; border-radius:8px;
-            background:#fff; font-size:20px; cursor:pointer; color:#202124; line-height:1;
-        }
-        .sc-cal-nav-btn:hover { background:#F8FDF9; border-color:#00461B; color:#00461B; }
-        .sc-cal-month { font-size:15px; font-weight:700; color:#202124; min-width:140px; text-align:center; }
-        .sc-cal-today-btn {
-            padding:8px 14px; border-radius:8px; border:1px solid #DADCE0;
-            background:#fff; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;
-        }
-        .sc-cal-today-btn:hover { border-color:#00461B; color:#00461B; }
-        .sc-cal-grid-wrap {
-            border:1px solid #DADCE0; border-radius:12px; overflow:hidden; background:#fff;
-        }
-        .sc-cal-weekdays {
-            display:grid; grid-template-columns:repeat(7,1fr);
-            background:#FAFAFA; border-bottom:1px solid #E8EAED;
-            font-size:11px; font-weight:700; color:#5F6368; text-transform:uppercase;
-        }
-        .sc-cal-weekdays span { padding:10px 4px; text-align:center; }
-        .sc-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
-        .sc-cal-cell {
-            min-height:72px; padding:8px 6px; border:none; border-right:1px solid #F0F0F0;
-            border-bottom:1px solid #F0F0F0; background:#fff; cursor:pointer;
-            display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;
-        }
-        .sc-cal-cell:nth-child(7n) { border-right:none; }
-        .sc-cal-cell--empty { background:#FAFAFA; cursor:default; }
-        .sc-cal-cell:hover:not(.sc-cal-cell--empty) { background:#F8FDF9; }
-        .sc-cal-cell.today .sc-cal-day-num {
-            background:#00461B; color:#fff; border-radius:50%;
-            width:28px; height:28px; display:flex; align-items:center; justify-content:center;
-        }
-        .sc-cal-cell.selected { background:#E8F5EC; }
-        .sc-cal-day-num { font-size:13px; font-weight:600; color:#202124; }
-        .sc-cal-dots { display:flex; gap:3px; flex-wrap:wrap; justify-content:center; }
-        .sc-cal-dot { width:6px; height:6px; border-radius:50%; display:block; }
-        .sc-cal-dot--lesson { background:#00461B; }
-        .sc-cal-dot--announcement { background:#1A73E8; }
-        .sc-cal-dot--quiz-due { background:#D93025; }
-        .sc-cal-dot--quiz-opens { background:#F9AB00; }
-        .sc-cal-dot--quiz { background:#9334E6; }
-        .sc-cal-lists { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-        .sc-cal-list-section {
-            border:1px solid #DADCE0; border-radius:12px; padding:16px; background:#fff;
-        }
-        .sc-cal-list-hdr {
-            display:flex; align-items:center; justify-content:space-between;
-            margin-bottom:12px; gap:8px;
-        }
-        .sc-cal-list-hdr h3 {
-            font-size:14px; font-weight:700; color:#202124; margin:0;
-            display:flex; align-items:center; gap:6px;
-        }
-        .sc-cal-count {
-            font-size:11px; font-weight:700; color:#00461B;
-            background:#E8F5EC; padding:2px 8px; border-radius:10px;
-        }
-        .sc-cal-clear-filter {
-            border:none; background:none; font-size:12px; font-weight:600;
-            color:#00461B; cursor:pointer; font-family:inherit;
-        }
-        .sc-cal-events { display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; }
-        .sc-cal-event {
-            display:flex; align-items:flex-start; gap:12px; padding:12px;
-            border:1px solid #E8EAED; border-radius:10px; background:#FAFAFA;
-        }
-        .sc-cal-event--click { cursor:pointer; transition:background .12s, border-color .12s; }
-        .sc-cal-event--click:hover { background:#F8FDF9; border-color:#00461B; }
-        .sc-cal-event-icon {
-            width:36px; height:36px; border-radius:50%; flex-shrink:0;
-            display:flex; align-items:center; justify-content:center;
-        }
-        .sc-cal-event-icon--lesson { background:#E8F5EC; color:#00461B; }
-        .sc-cal-event-icon--announcement { background:#E8F0FE; color:#1A73E8; }
-        .sc-cal-event-icon--quiz-due { background:#FCE8E6; color:#D93025; }
-        .sc-cal-event-icon--quiz-opens { background:#FEF7E0; color:#F9AB00; }
-        .sc-cal-event-icon--quiz { background:#F3E8FD; color:#9334E6; }
-        .sc-cal-event-body { flex:1; min-width:0; }
-        .sc-cal-event-title { font-size:14px; font-weight:600; color:#202124; margin-bottom:2px; }
-        .sc-cal-event-sub { font-size:12px; color:#5F6368; }
-        .sc-cal-event-msg {
-            font-size:12px; color:#3C4043; margin:8px 0 0; line-height:1.45;
-            display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
-        }
-        .sc-cal-event-badge {
-            font-size:10px; font-weight:700; text-transform:uppercase;
-            padding:3px 8px; border-radius:10px; background:#E8EAED; color:#5F6368; flex-shrink:0;
-        }
-        .sc-cal-event-badge.urgent { background:#FCE8E6; color:#D93025; }
-        .sc-cal-event-chevron { color:#9AA0A6; font-size:18px; flex-shrink:0; }
-        .sc-cal-empty { font-size:13px; color:#9AA0A6; margin:0; font-style:italic; }
+        /* ── Mini calendar grid (instructor) ── */
+        .tdc-wrap{border:1px solid #E8EAED;border-radius:14px;overflow:hidden;background:#fff}
+        .tdc-nav{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid #F0F0F0}
+        .tdc-month{font-size:14px;font-weight:700;color:#202124;flex:1;text-align:center}
+        .tdc-nav-btn{width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:20px;color:#5F6368;border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
+        .tdc-nav-btn:hover{background:#F1F3F4;color:#202124}
+        .tdc-today-btn{padding:4px 10px;border:1px solid #DADCE0;border-radius:6px;background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151}
+        .tdc-today-btn:hover{border-color:#00461B;color:#00461B}
+        .tdc-weekdays{display:grid;grid-template-columns:repeat(7,1fr);padding:6px 8px 0}
+        .tdc-weekdays span{text-align:center;font-size:10px;font-weight:700;color:#9CA3AF;padding:3px 0;text-transform:uppercase}
+        .tdc-cells{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 10px;gap:2px}
+        .tdc-cell{min-height:44px;padding:3px 2px;border:none;border-radius:8px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit;transition:background .12s}
+        .tdc-cell--empty{cursor:default}
+        .tdc-cell:hover:not(.tdc-cell--empty){background:#F1F3F4}
+        .tdc-cell.tdc-has:hover{background:#F8FDF9}
+        .tdc-cell.tdc-sel{background:#E8F5EC}
+        .tdc-num{font-size:12px;font-weight:600;color:#374151;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all .12s}
+        .tdc-cell.tdc-today .tdc-num{background:#00461B;color:#fff}
+        .tdc-cell.tdc-sel .tdc-num{background:#00461B;color:#fff}
+        .tdc-dots{display:flex;gap:2px;justify-content:center;min-height:6px}
+        .tdc-dot{width:4px;height:4px;border-radius:50%;display:block}
+        .tdc-dot--lesson{background:#00461B}
+        .tdc-dot--announcement{background:#1A73E8}
+        .tdc-dot--quiz{background:#9334E6}
+        .td-day-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 8px;border-bottom:1px solid #F0F0F0;margin-bottom:8px}
+        .td-day-hdr-label{font-size:13px;font-weight:700;color:#202124;flex:1}
+        .td-clear-day{border:none;background:none;font-size:12px;font-weight:600;color:#00461B;cursor:pointer;font-family:inherit;padding:0}
+        .td-tasks--flat{border-left:2px solid #86EFAC}
+        .td-empty-day{font-size:13px;color:#9CA3AF;font-style:italic;padding:12px 0}
+        /* ── Shared Todo Calendar (instructor) ── */
+        .td-wrap{display:flex;flex-direction:column;gap:16px;padding:4px 0 20px}
+        .td-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:4px}
+        .td-head-title{font-size:17px;font-weight:800;color:#202124;margin-bottom:2px}
+        .td-head-sub{font-size:12px;color:#6B7280}
+        .td-filters{display:flex;gap:6px;flex-wrap:wrap}
+        .td-filter{padding:6px 14px;border-radius:20px;border:1.5px solid #E8EAED;background:#FAFAFA;font-size:12px;font-weight:600;color:#5F6368;cursor:pointer;font-family:inherit;transition:all .12s}
+        .td-filter:hover{border-color:#00461B;color:#00461B;background:#F8FDF9}
+        .td-filter--active{background:#00461B;color:#fff;border-color:#00461B}
+        .td-sections{display:flex;flex-direction:column;gap:0}
+        .td-section{margin-bottom:10px}
+        .td-section-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 4px}
+        .td-section-dot{width:8px;height:8px;border-radius:50%;background:#D1D5DB;flex-shrink:0}
+        .td-section-dot--today{background:#00461B}
+        .td-section-dot--past{background:#D1D5DB}
+        .td-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#6B7280}
+        .td-section-date{font-size:11px;color:#9CA3AF}
+        .td-section-count{margin-left:auto;font-size:11px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 7px;border-radius:10px}
+        .td-section--today .td-section-label{color:#00461B}
+        .td-section--past .td-section-label{color:#9CA3AF}
+        .td-tasks{display:flex;flex-direction:column;gap:4px;padding-left:8px;border-left:2px solid #F0F0F0;margin-left:3px}
+        .td-section--today .td-tasks{border-left-color:#86EFAC}
+        .td-task{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #F0F0F0;transition:background .12s,border-color .12s}
+        .td-task--click{cursor:pointer}
+        .td-task--click:hover{background:#F8FDF9;border-color:#86EFAC}
+        .td-task-icon{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+        .td-task-icon--lesson{background:#E8F5EC;color:#00461B}
+        .td-task-icon--announcement{background:#E8F0FE;color:#1A73E8}
+        .td-task-icon--quiz-due,.td-task-icon--quiz-opens,.td-task-icon--quiz{background:#F3E8FD;color:#9334E6}
+        .td-task-body{flex:1;min-width:0}
+        .td-task-title{font-size:13px;font-weight:600;color:#202124;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .td-task-meta{font-size:11px;color:#6B7280;margin-top:1px}
+        .td-task-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+        .td-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap}
+        .td-badge--due{background:#E8F0FE;color:#1967D2}
+        .td-badge--opens{background:#FEF7E0;color:#B06000}
+        .td-chevron{color:#C4C6CA;font-size:18px;font-weight:300;line-height:1}
+        .td-empty{text-align:center;padding:48px 20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+        .td-empty-msg{font-size:13px;color:#9CA3AF;margin:0}
 
         @media (max-width:900px) {
-            .sc-cal-lists { grid-template-columns:1fr; }
             .sc-cw-layout { grid-template-columns:1fr; }
             .sc-cw-aside { position:static; }
             .sc-class-code-card { display:grid; grid-template-columns:auto 1fr; gap:12px 16px; text-align:left; align-items:center; }
@@ -1783,6 +2897,30 @@ function instructorExtraCss() {
             .sc-class-code-card .sc-class-code-hint, .sc-class-code-card .sc-class-code-foot { grid-column:2; }
             .sc-class-qr-wrap { grid-row:1 / span 4; margin:0; }
             .sc-class-code-value, .sc-class-code-copy { grid-column:1 / -1; }
+            .gc-qstat-row { flex-wrap:wrap; }
+            .gc-qstat-bar-wrap { width:100%; margin-top:6px; }
         }
+
+        .gc-detail-action-btn--ai { background:#EDE9FE; color:#5B21B6; border-color:#C4B5FD; }
+        .gc-detail-action-btn--ai:hover { background:#DDD6FE; }
+        .gc-qstats-list { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+        .gc-qstat-row {
+            display:flex; align-items:flex-start; gap:10px; padding:10px 12px;
+            border:1px solid #E8EAED; border-radius:10px; background:#FAFBFC;
+        }
+        .gc-qstat-rank {
+            width:24px; height:24px; border-radius:50%; background:#FCE8E6; color:#C5221F;
+            font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+        }
+        .gc-qstat-body { flex:1; min-width:0; }
+        .gc-qstat-text { font-size:13px; color:#202124; line-height:1.4; margin-bottom:4px; }
+        .gc-qstat-meta { font-size:11px; color:#5F6368; }
+        .gc-qstat-bar-wrap {
+            width:120px; flex-shrink:0; text-align:right;
+        }
+        .gc-qstat-bar {
+            height:6px; background:#C5221F; border-radius:999px; margin-bottom:4px; max-width:100%;
+        }
+        .gc-qstat-pct { font-size:10px; font-weight:700; color:#C5221F; white-space:nowrap; }
     `;
 }

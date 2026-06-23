@@ -23,9 +23,13 @@
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     // Session configuration
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+             || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+             || (($_SERVER['SERVER_PORT'] ?? 80) == 443);
     ini_set('session.cookie_httponly', 1);      // Prevent JavaScript access to session cookie
     ini_set('session.use_only_cookies', 1);     // Only use cookies for sessions
-    ini_set('session.cookie_secure', 0);        // Set to 1 in production with HTTPS
+    ini_set('session.cookie_secure', $isHttps ? 1 : 0); // Auto-detects HTTP vs HTTPS
+    ini_set('session.cookie_samesite', 'Lax');  // Prevents CSRF via cross-site form submissions
     ini_set('session.gc_maxlifetime', 7200);    // Session lifetime: 2 hours
     
     session_start();
@@ -486,7 +490,7 @@ class Auth {
     public static function dashboardUrl() {
         $role = self::role();
         if (!$role) {
-            return BASE_URL . '/app/index.html';
+            return BASE_URL . '/index.html';
         }
         return BASE_URL . '/app/dashboard.html#' . $role . '/dashboard';
     }
@@ -499,6 +503,28 @@ class Auth {
      */
     public static function hashPassword($password) {
         return password_hash($password, PASSWORD_DEFAULT);
+    }
+
+    /**
+     * Validate password meets security requirements (NIST SP 800-63B / OWASP).
+     * Returns null on success, or an error string describing the first failed rule.
+     *
+     * Rules:
+     *   - 8–128 characters
+     *   - At least one uppercase letter
+     *   - At least one lowercase letter
+     *   - At least one digit
+     *   - At least one special character
+     */
+    public static function validatePasswordStrength(string $password): ?string {
+        $len = strlen($password);
+        if ($len < 8)   return 'Password must be at least 8 characters.';
+        if ($len > 128) return 'Password must not exceed 128 characters.';
+        if (!preg_match('/[A-Z]/', $password)) return 'Password must contain at least one uppercase letter.';
+        if (!preg_match('/[a-z]/', $password)) return 'Password must contain at least one lowercase letter.';
+        if (!preg_match('/[0-9]/', $password)) return 'Password must contain at least one number.';
+        if (!preg_match('/[^A-Za-z0-9]/', $password)) return 'Password must contain at least one special character (e.g. !@#$%).';
+        return null;
     }
     
     /**

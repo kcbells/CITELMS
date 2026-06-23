@@ -91,42 +91,77 @@ const OFFICE_WASM_FORMAT = {
     docx: 'docx', doc: 'doc', xlsx: 'xlsx', xls: 'xls', ppt: 'ppt',
 };
 
+// ── File-type metadata for attachment cards ────────────────────
+const FILE_TYPE_META = {
+    pdf:  { bg: '#E53935', label: 'PDF',  glyph: 'PDF'  },
+    docx: { bg: '#1E88E5', label: 'DOCX', glyph: 'W'    },
+    doc:  { bg: '#1E88E5', label: 'DOC',  glyph: 'W'    },
+    xlsx: { bg: '#43A047', label: 'XLSX', glyph: 'E'    },
+    xls:  { bg: '#43A047', label: 'XLS',  glyph: 'E'    },
+    pptx: { bg: '#F4511E', label: 'PPTX', glyph: 'P'    },
+    ppt:  { bg: '#F4511E', label: 'PPT',  glyph: 'P'    },
+    jpg:  { bg: '#8E24AA', label: 'IMG',  glyph: '⬛'  },
+    jpeg: { bg: '#8E24AA', label: 'IMG',  glyph: '⬛'  },
+    png:  { bg: '#8E24AA', label: 'IMG',  glyph: '⬛'  },
+    gif:  { bg: '#8E24AA', label: 'IMG',  glyph: '⬛'  },
+    webp: { bg: '#8E24AA', label: 'IMG',  glyph: '⬛'  },
+    mp4:  { bg: '#00897B', label: 'VID',  glyph: '▶'    },
+    webm: { bg: '#00897B', label: 'VID',  glyph: '▶'    },
+    mov:  { bg: '#00897B', label: 'VID',  glyph: '▶'    },
+    mp3:  { bg: '#E91E63', label: 'AUD',  glyph: '♪'    },
+    wav:  { bg: '#E91E63', label: 'AUD',  glyph: '♪'    },
+    txt:  { bg: '#607D8B', label: 'TXT',  glyph: '¶'    },
+    csv:  { bg: '#607D8B', label: 'CSV',  glyph: '≡'    },
+};
+
+function fileTypeMeta(m) {
+    const ext = fileExtension(m.original_name || m.file_name || '');
+    return FILE_TYPE_META[ext] || { bg: '#9E9E9E', label: (ext.toUpperCase() || 'FILE'), glyph: '📄' };
+}
+
 /**
- * Clickable file row — opens viewer modal on click
+ * Google-Classroom-style attachment card — opens viewer modal on click.
  */
 export function renderMaterialAttachment(m) {
     const name = m.original_name || m.file_name || 'Material';
     const isLink = isMaterialLink(m);
     const matId = m.material_id || '';
-    const ext = isLink ? 'Link' : materialExt(m);
     const staticUrl = isLink ? (m.file_path || '#') : resolveMaterialUrl(m.file_path);
     const viewUrl = isLink ? staticUrl : (matId ? materialServeUrl(matId) : staticUrl);
-    const previewable = canInlinePreview(m);
 
     if (isLink) {
         return `
-            <a class="gc-material-row gc-material-row--link" href="${escAttr(viewUrl)}" target="_blank" rel="noopener">
-                <span class="gc-material-icon" aria-hidden="true">🔗</span>
-                <div class="gc-material-text">
-                    <span class="gc-material-name">${escAttr(name)}</span>
-                    <span class="gc-material-meta">${escAttr(ext)} · Opens in new tab</span>
+            <a class="gc-mat-card gc-mat-card--link" href="${escAttr(viewUrl)}" target="_blank" rel="noopener" title="${escAttr(name)}">
+                <div class="gc-mat-card-banner" style="background:#1A73E8">
+                    <svg class="gc-mat-card-glyph-svg" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
                 </div>
-                <span class="gc-material-chevron" aria-hidden="true">↗</span>
+                <div class="gc-mat-card-body">
+                    <span class="gc-mat-card-name">${escAttr(name)}</span>
+                    <span class="gc-mat-card-meta">Link</span>
+                </div>
             </a>`;
     }
 
+    const meta = fileTypeMeta(m);
+    const sizeLabel = m.file_size ? formatSize(m.file_size) : '';
+
     return `
-        <button type="button" class="gc-material-row gc-material-row--file"
+        <button type="button" class="gc-mat-card gc-mat-card--file"
                 data-mat-open
                 data-mat-id="${escAttr(matId)}"
                 data-mat-name="${escAttr(name)}"
-                data-mat-url="${escAttr(viewUrl)}">
-            <span class="gc-material-icon" aria-hidden="true">📄</span>
-            <div class="gc-material-text">
-                <span class="gc-material-name">${escAttr(name)}</span>
-                <span class="gc-material-meta">${escAttr(ext)}${m.file_size ? ` · ${formatSize(m.file_size)}` : ''} · ${previewable ? 'Click to preview' : 'Click to open'}</span>
+                data-mat-url="${escAttr(viewUrl)}"
+                title="${escAttr(name)}">
+            <div class="gc-mat-card-banner" style="background:${meta.bg}">
+                <span class="gc-mat-card-glyph">${escHtml(meta.glyph)}</span>
             </div>
-            <span class="gc-material-chevron" aria-hidden="true">›</span>
+            <div class="gc-mat-card-body">
+                <span class="gc-mat-card-name">${escAttr(name)}</span>
+                <span class="gc-mat-card-meta">${escAttr(meta.label)}${sizeLabel ? ' · ' + sizeLabel : ''}</span>
+            </div>
         </button>`;
 }
 
@@ -606,35 +641,45 @@ export function bindMaterialAttachments(root = document) {
 
 export function materialAttachmentCss() {
     return `
-.gc-material-list { display:flex; flex-direction:column; gap:8px; }
-.gc-material-row {
-    display:flex; align-items:center; gap:12px; width:100%;
-    padding:12px 14px; border:1px solid #E8EAED; border-radius:10px; background:#fff;
-    text-align:left; font-family:inherit; color:inherit;
-    box-shadow:0 2px 8px rgba(0,0,0,.06);
-    transition:border-color .12s, background .12s, box-shadow .12s;
+/* ── Attachment card grid (Google Classroom style) ── */
+.gc-material-list {
+    display:flex; flex-wrap:wrap; gap:12px; padding:0;
 }
-.gc-material-row--file {
-    cursor:pointer; border:none; outline:none;
-    border:1px solid #DADCE0;
+.gc-mat-card {
+    display:flex; flex-direction:column;
+    width:160px; border:1px solid #DADCE0; border-radius:8px;
+    overflow:hidden; background:#fff; cursor:pointer;
+    text-align:left; font-family:inherit; color:inherit; text-decoration:none;
+    transition:box-shadow .15s, border-color .15s;
 }
-.gc-material-row--file:hover {
-    border-color:#00461B; background:#F8FDF9; box-shadow:0 1px 4px rgba(0,70,27,.08);
+.gc-mat-card:hover {
+    border-color:#B0BEC5;
+    box-shadow:0 2px 8px rgba(0,0,0,.14);
 }
-.gc-material-row--file:focus-visible {
+.gc-mat-card:focus-visible {
     outline:2px solid #00461B; outline-offset:2px;
 }
-.gc-material-row--link {
-    text-decoration:none; color:inherit;
+.gc-mat-card-banner {
+    height:72px; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
 }
-.gc-material-row--link:hover {
-    border-color:#00461B; background:#F8FDF9;
+.gc-mat-card-glyph {
+    font-size:26px; line-height:1; color:#fff;
 }
-.gc-material-icon { font-size:22px; flex-shrink:0; line-height:1; }
-.gc-material-text { min-width:0; flex:1; }
-.gc-material-name { display:block; font-size:13px; font-weight:600; color:#202124; word-break:break-word; }
-.gc-material-meta { display:block; font-size:11px; color:#5F6368; margin-top:2px; }
-.gc-material-chevron { font-size:18px; color:#9AA0A6; flex-shrink:0; line-height:1; }
+.gc-mat-card-glyph-svg {
+    width:32px; height:32px;
+}
+.gc-mat-card-body {
+    padding:8px 10px 10px; border-top:1px solid rgba(0,0,0,.08);
+    display:flex; flex-direction:column; gap:2px; min-width:0;
+}
+.gc-mat-card-name {
+    font-size:12px; font-weight:600; color:#202124;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.gc-mat-card-meta {
+    font-size:10px; color:#5F6368; white-space:nowrap;
+}
 
 .gc-mat-viewer-overlay {
     position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:10050;

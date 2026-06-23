@@ -49,10 +49,6 @@ function injectStyles() {
     style.id = 'sef-styles';
     style.textContent = `
         ${enrollmentFormStyles(true)}
-        body.fm-mounted #sef-root { right: 100px; }
-        @media (max-width: 640px) {
-            body.fm-mounted #sef-root { right: 84px; bottom: 16px; }
-        }
         #sef-root {
             position: fixed; bottom: 24px; right: 24px; z-index: 950;
             font-family: inherit;

@@ -4,6 +4,7 @@
  * Fixed to match actual database schema: student_subject, user_student_id, lessons
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
@@ -26,6 +27,20 @@ if (!Auth::check()) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
+}
+
+function ensureLessonPointsColumn() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $col = db()->fetchOne("SHOW COLUMNS FROM lessons LIKE 'total_points'");
+        if (!$col) {
+            pdo()->exec("ALTER TABLE lessons ADD COLUMN total_points DECIMAL(8,2) NULL DEFAULT NULL");
+        }
+    } catch (Exception $e) {
+        error_log('lesson total_points column: ' . $e->getMessage());
+    }
 }
 
 function ensureLessonMaterialsColumns() {
@@ -112,13 +127,49 @@ function enrichLessonsWithSections(array &$rows) {
     unset($row);
 }
 
+function ensureLessonStudentTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec(
+            "CREATE TABLE IF NOT EXISTS lesson_student (
+                lessons_id INT UNSIGNED NOT NULL,
+                user_student_id INT UNSIGNED NOT NULL,
+                PRIMARY KEY (lessons_id, user_student_id),
+                KEY idx_lesson_student (user_student_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    } catch (Exception $e) {
+        error_log('lesson_student table: ' . $e->getMessage());
+    }
+}
+
+function attachLessonStudents($lessonId, array $studentIds) {
+    ensureLessonStudentTable();
+    $pdo = pdo();
+    $pdo->prepare("DELETE FROM lesson_student WHERE lessons_id = ?")->execute([$lessonId]);
+    if (empty($studentIds)) return;
+    $stmt = $pdo->prepare("INSERT IGNORE INTO lesson_student (lessons_id, user_student_id) VALUES (?, ?)");
+    foreach ($studentIds as $sid) {
+        $sid = (int)$sid;
+        if ($sid > 0) $stmt->execute([$lessonId, $sid]);
+    }
+}
+
 function lessonVisibleToSectionSql($lessonAlias = 'l', $sectionIdParam = '?') {
     return "(
         NOT EXISTS (SELECT 1 FROM lesson_section ls0 WHERE ls0.lessons_id = {$lessonAlias}.lessons_id)
+        AND NOT EXISTS (SELECT 1 FROM lesson_student lst0 WHERE lst0.lessons_id = {$lessonAlias}.lessons_id)
         OR EXISTS (
             SELECT 1 FROM lesson_section ls1
             WHERE ls1.lessons_id = {$lessonAlias}.lessons_id
             AND ls1.section_id = {$sectionIdParam}
+        )
+        OR EXISTS (
+            SELECT 1 FROM lesson_student lst1
+            WHERE lst1.lessons_id = {$lessonAlias}.lessons_id
+            AND lst1.user_student_id = ?
         )
     )";
 }
@@ -295,6 +346,7 @@ function getLesson() {
         if ($sectionId > 0) {
             $allLessonsSql .= ' AND ' . lessonVisibleToSectionSql('l', '?');
             $allParams[] = $sectionId;
+            $allParams[] = $userId;
         }
         $allLessonsSql .= ' ORDER BY lesson_order';
         $allLessons = db()->fetchAll($allLessonsSql, $allParams);
@@ -345,6 +397,7 @@ function getLessons() {
     try {
         ensureLessonSectionTable();
         ensureLessonDueDateColumn();
+        ensureLessonPointsColumn();
         $studentSection = db()->fetchOne(
             "SELECT section_id FROM student_subject
              WHERE user_student_id = ? AND subject_offered_id = ? AND status = 'enrolled'
@@ -361,6 +414,7 @@ function getLessons() {
                 l.subject_id,
                 l.prerequisite_lessons_id,
                 l.due_date,
+                l.total_points,
                 l.created_at,
                 CASE WHEN sp.status = 'completed' THEN 1 ELSE 0 END as is_completed,
                 sp.completed_at,
@@ -374,6 +428,7 @@ function getLessons() {
         if ($sectionId > 0) {
             $sql .= ' AND ' . lessonVisibleToSectionSql('l', '?');
             $params[] = $sectionId;
+            $params[] = $userId;
         }
         $sql .= ' ORDER BY l.lesson_order';
         $lessons = db()->fetchAll($sql, $params);
@@ -473,7 +528,7 @@ function markComplete() {
 
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+        error_log('[LessonsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 
@@ -571,8 +626,13 @@ function createLesson() {
     $description = trim($data['lesson_description'] ?? '');
     $content = $data['lesson_content'] ?? '';
     $status = $data['status'] ?? 'draft';
-    $hasSectionTargeting = array_key_exists('all_sections', $data) || array_key_exists('section_ids', $data);
-    $allSections = $hasSectionTargeting ? !empty($data['all_sections']) : true;
+
+    $studentIds = array_values(array_filter(array_map('intval', $data['student_ids'] ?? [])));
+    $hasStudentTargeting = !empty($studentIds);
+
+    $hasSectionTargeting = !$hasStudentTargeting &&
+        (array_key_exists('all_sections', $data) || array_key_exists('section_ids', $data));
+    $allSections = ($hasStudentTargeting) ? false : ($hasSectionTargeting ? !empty($data['all_sections']) : true);
     $sectionIds = $hasSectionTargeting
         ? array_values(array_filter(array_map('intval', $data['section_ids'] ?? [])))
         : [];
@@ -586,22 +646,26 @@ function createLesson() {
         return;
     }
 
-    // Get next order
     $maxOrder = db()->fetchOne("SELECT MAX(lesson_order) as m FROM lessons WHERE subject_id = ?", [$subjectId])['m'] ?? 0;
 
     $teacherId = Auth::id();
     ensureLessonDueDateColumn();
+    ensureLessonPointsColumn();
     ensureGradingPeriodColumns();
     $dueDate = normalizeDueDate($data['due_date'] ?? null);
     $gradingPeriod = normalizeGradingPeriod($data['grading_period'] ?? 'P1');
+    $totalPoints = isset($data['total_points']) && $data['total_points'] !== '' && $data['total_points'] !== null
+        ? (float)$data['total_points'] : null;
 
     try {
         pdo()->prepare(
-            "INSERT INTO lessons (subject_id, user_teacher_id, lesson_title, lesson_description, lesson_content, lesson_order, status, grading_period, due_date, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
-        )->execute([$subjectId, $teacherId, $title, $description, $content, $maxOrder + 1, $status, $gradingPeriod, $dueDate]);
+            "INSERT INTO lessons (subject_id, user_teacher_id, lesson_title, lesson_description, lesson_content, lesson_order, status, grading_period, due_date, total_points, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+        )->execute([$subjectId, $teacherId, $title, $description, $content, $maxOrder + 1, $status, $gradingPeriod, $dueDate, $totalPoints]);
         $lessonId = (int)pdo()->lastInsertId();
-        if (!$allSections && !empty($sectionIds)) {
+        if ($hasStudentTargeting) {
+            attachLessonStudents($lessonId, $studentIds);
+        } elseif (!$allSections && !empty($sectionIds)) {
             attachLessonSections($lessonId, $sectionIds);
         }
         if ($status === 'published') {

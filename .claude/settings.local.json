@@ -65,7 +65,8 @@
       "Bash(find:*)",
       "WebFetch(domain:coc.phinma.edu.ph)",
       "WebFetch(domain:en.wikipedia.org)",
-      "WebFetch(domain:grokipedia.com)"
+      "WebFetch(domain:grokipedia.com)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

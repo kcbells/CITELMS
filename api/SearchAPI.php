@@ -3,8 +3,8 @@
  * Global Search API
  * Returns role-scoped, categorised search results.
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';

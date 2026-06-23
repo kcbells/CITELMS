@@ -2,6 +2,7 @@
 /**
  * Subject Offerings API - CRUD for subject offerings
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -38,6 +39,21 @@ if (!$isDeanSO && isset($_soPerms[$action]) && !Auth::can($_soPerms[$action])) {
     exit;
 }
 
+/** Returns the dean's {campus_id, program_id, department_id} (cached per request) */
+function deanScope(): array {
+    static $s = null;
+    if ($s === null) {
+        $row = db()->fetchOne("SELECT campus_id, program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $s = [
+            'campus_id'     => (int)($row['campus_id']     ?? 0),
+            'program_id'    => (int)($row['program_id']    ?? 0),
+            'department_id' => (int)($row['department_id'] ?? 0),
+        ];
+    }
+    return $s;
+}
+function deanCampusId(): int { return deanScope()['campus_id']; }
+
 switch ($action) {
     case 'list':                 handleList();                break;
     case 'list-multi':           handleListMulti();           break;
@@ -48,6 +64,8 @@ switch ($action) {
     case 'bulk-assign':          handleBulkAssign();          break;
     case 'instructor-subjects':  handleInstructorSubjects();  break;
     case 'dean-assign':          handleDeanAssign();          break;
+    case 'subject-instructors':  handleSubjectInstructors();  break;
+    case 'subject-assign':       handleSubjectAssign();       break;
     case 'instructors':          handleInstructors();         break;
     case 'generate-offerings':   handleGenerateOfferings();   break;
     case 'subjects':             handleSubjects();            break;
@@ -66,17 +84,11 @@ function handleList() {
 
     // Build the correlated subquery that picks the best matching subject_offered per subject
     // Match by academic_year + sem_type_id instead of exact semester_id to handle duplicate semester rows
-    $joinParams  = [];
-    $semCondition  = '';   // uses alias so2 — for the LIMIT 1 subquery
-    $semCondition3 = '';   // uses alias so3 — for the EXISTS subquery
+    $joinParams   = [];
+    $semCondition = '';   // uses alias so2 — for the LIMIT 1 subquery
     if ($semesterId) {
         $intSemId = (int)$semesterId;
         $semCondition = "AND so2.semester_id IN (
-                SELECT s2.semester_id FROM semester s2
-                JOIN semester s3 ON s3.semester_id = $intSemId
-                WHERE s2.academic_year = s3.academic_year AND s2.semester_name = s3.semester_name
-            )";
-        $semCondition3 = "AND so3.semester_id IN (
                 SELECT s2.semester_id FROM semester s2
                 JOIN semester s3 ON s3.semester_id = $intSemId
                 WHERE s2.academic_year = s3.academic_year AND s2.semester_name = s3.semester_name
@@ -89,22 +101,26 @@ function handleList() {
         $whereConditions[] = 's.program_id = ?';
         $whereParams[]     = $programId;
     }
-    // Dean: scope to their department only
+    // Dean: scope to their program (program_id implies campus via department)
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanDeptId = $deanUser['department_id'] ?? null;
-        if ($deanDeptId) {
-            $whereConditions[] = 'p.department_id = ?';
-            $whereParams[]     = $deanDeptId;
+        $scope = deanScope();
+        if ($scope['program_id']) {
+            $whereConditions[] = 's.program_id = ?';
+            $whereParams[]     = $scope['program_id'];
         }
     }
     // Status filter (open/closed/cancelled) — filter on the joined offering
     $statusCondition = '';
-    if ($statusFilter && in_array($statusFilter, ['open','closed','cancelled'])) {
-        $statusCondition = "AND so.status = " . pdo()->quote($statusFilter);
+    $statusParam = null;
+    if ($statusFilter && in_array($statusFilter, ['open', 'closed', 'cancelled', 'archived'], true)) {
+        $statusCondition = 'AND so.status = ?';
+        $statusParam = $statusFilter;
     }
     $where  = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
     $params = array_merge($joinParams, $whereParams);
+    if ($statusParam !== null) {
+        $params[] = $statusParam;
+    }
 
     // Start from `subject` (the curriculum) and LEFT JOIN to the best offering
     $offerings = db()->fetchAll(
@@ -183,11 +199,10 @@ function handleListMulti() {
         $whereParams[]     = $programId;
     }
     if (Auth::role() === 'dean') {
-        $deanUser   = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanDeptId = $deanUser['department_id'] ?? null;
-        if ($deanDeptId) {
-            $whereConditions[] = 'p.department_id = ?';
-            $whereParams[]     = $deanDeptId;
+        $scope = deanScope();
+        if ($scope['program_id']) {
+            $whereConditions[] = 's.program_id = ?';
+            $whereParams[]     = $scope['program_id'];
         }
     }
     $where = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
@@ -256,25 +271,53 @@ function handleListMulti() {
 function handleCreate() {
     $data = json_decode(file_get_contents('php://input'), true);
     $subjectId  = (int)($data['subject_id']  ?? 0);
-    $semesterId = (int)($data['semester_id'] ?? 0);
     $status     = $data['status'] ?? 'open';
     $validBatch = ['1st Year','2nd Year','3rd Year','4th Year'];
     $batch      = in_array($data['batch'] ?? '', $validBatch) ? $data['batch'] : null;
 
-    if (!$subjectId || !$semesterId) {
-        echo json_encode(['success' => false, 'message' => 'Subject and semester are required']);
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'Subject is required']);
         return;
     }
 
-    $exists = db()->fetchOne("SELECT subject_offered_id FROM subject_offered WHERE subject_id = ? AND semester_id = ?", [$subjectId, $semesterId]);
+    // Dean: only allow offering subjects in their own department's programs
+    if (Auth::role() === 'dean') {
+        $scope  = deanScope();
+        $deptId = $scope['department_id'];
+        $owns   = null;
+        if ($deptId) {
+            $owns = db()->fetchOne(
+                "SELECT s.subject_id FROM subject s
+                 JOIN department_program dp ON dp.program_id = s.program_id AND dp.department_id = ?
+                 WHERE s.subject_id = ? LIMIT 1",
+                [$deptId, $subjectId]
+            );
+        } elseif ($scope['program_id']) {
+            $owns = db()->fetchOne(
+                "SELECT subject_id FROM subject WHERE subject_id = ? AND program_id = ? LIMIT 1",
+                [$subjectId, $scope['program_id']]
+            );
+        }
+        if (!$owns) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: subject is not in your department']);
+            return;
+        }
+    }
+
+    // Subjects are available all year — one active offering per subject is enough
+    $exists = db()->fetchOne(
+        "SELECT subject_offered_id FROM subject_offered WHERE subject_id = ? AND status NOT IN ('cancelled','archived')",
+        [$subjectId]
+    );
     if ($exists) {
-        echo json_encode(['success' => false, 'message' => 'This subject is already offered in this semester']);
+        echo json_encode(['success' => false, 'message' => 'This subject is already offered']);
         return;
     }
 
     try {
-        pdo()->prepare("INSERT INTO subject_offered (subject_id, semester_id, batch, status, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())")
-            ->execute([$subjectId, $semesterId, $batch, $status]);
+        pdo()->prepare("INSERT INTO subject_offered (subject_id, semester_id, batch, status, created_at, updated_at) VALUES (?, NULL, ?, ?, NOW(), NOW())")
+            ->execute([$subjectId, $batch, $status]);
         echo json_encode(['success' => true, 'message' => 'Subject offering created', 'data' => ['id' => pdo()->lastInsertId()]]);
     } catch (Exception $e) {
         error_log('Create offering: ' . $e->getMessage());
@@ -287,9 +330,29 @@ function handleUpdate() {
     $id = (int)($data['subject_offered_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'ID required']); return; }
 
-    $status     = $data['status'] ?? 'open';
+    $status       = $data['status'] ?? 'open';
+    $validStatuses = ['open', 'closed', 'cancelled', 'archived'];
+    if (!in_array($status, $validStatuses, true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid status']); return;
+    }
     $validBatch = ['1st Year','2nd Year','3rd Year','4th Year'];
     $batch      = in_array($data['batch'] ?? '', $validBatch) ? $data['batch'] : null;
+
+    // Instructors can only archive/open their own offerings
+    if (Auth::role() === 'instructor') {
+        $owns = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered WHERE subject_offered_id = ? AND user_teacher_id = ?",
+            [$id, Auth::id()]
+        );
+        if (!$owns) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied']); return;
+        }
+        // Instructors may only toggle between open and archived
+        if (!in_array($status, ['open', 'archived'], true)) {
+            echo json_encode(['success' => false, 'message' => 'Instructors may only archive or unarchive subjects']); return;
+        }
+    }
 
     try {
         pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, updated_at = NOW() WHERE subject_offered_id = ?")
@@ -359,17 +422,17 @@ function handleInstructorSubjects() {
         $semId = $act ? (int)$act['semester_id'] : 0;
     }
 
-    // Scope to dean's department
-    $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-    $deptId   = (int)($deanUser['department_id'] ?? 0);
-    if (!$deptId) {
+    // Scope to dean's program (and campus for instructor verification)
+    $scope = deanScope();
+    $progId = $scope['program_id'];
+    if (!$progId) {
         echo json_encode(['success' => true, 'data' => [], 'semester_id' => $semId]);
         return;
     }
 
     $instrParam = $instrId ?: 0;
     // Aggregate: one row per subject.
-    // is_assigned   = 1 if THIS instructor has any offering for this subject
+    // is_assigned    = 1 if THIS instructor has any offering for this subject
     // taken_by_other = 1 if ANY OTHER instructor also has an offering (informational — does NOT block)
     // other_instructor_names = comma-separated names of other assigned instructors
     $subjects = db()->fetchAll(
@@ -387,7 +450,6 @@ function handleInstructorSubjects() {
                 AS other_instructor_names
          FROM subject s
          JOIN program p ON p.program_id = s.program_id
-         JOIN department_program dp ON dp.program_id = p.program_id
          LEFT JOIN subject_offered so
                ON so.subject_id = s.subject_id
               AND so.semester_id = $semId
@@ -395,7 +457,7 @@ function handleInstructorSubjects() {
          LEFT JOIN users ou
                ON ou.users_id = so.user_teacher_id
               AND so.user_teacher_id != $instrParam
-         WHERE dp.department_id = $deptId AND s.status = 'active'
+         WHERE s.program_id = $progId AND s.status = 'active'
          GROUP BY s.subject_id, s.subject_code, s.subject_name, s.units,
                   s.year_level, s.semester,
                   p.program_id, p.program_code, p.program_name
@@ -441,16 +503,34 @@ function handleDeanAssign() {
         $semId = $act ? (int)$act['semester_id'] : 0;
     }
 
-    // Verify instructor is in dean's department
-    $deanUser   = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-    $deptId     = (int)($deanUser['department_id'] ?? 0);
-    $instrCheck = db()->fetchOne(
-        "SELECT users_id FROM users WHERE users_id = ? AND department_id = ? AND role = 'instructor' AND status = 'active'",
-        [$instrId, $deptId]
-    );
-    if (!$instrCheck) {
-        echo json_encode(['success' => false, 'message' => 'Instructor not in your department']);
-        return;
+    // Verify instructor is on dean's campus in dean's department.
+    // Exception: a dean may assign themselves (instrId == their own users_id).
+    $scope    = deanScope();
+    $deptId   = $scope['department_id'];
+    $isSelf   = ($instrId === Auth::id() && Auth::role() === 'dean');
+
+    if (!$isSelf) {
+        if ($deptId) {
+            $instrCheck = db()->fetchOne(
+                "SELECT u.users_id FROM users u
+                 WHERE u.users_id = ? AND u.campus_id = ?
+                   AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
+                       SELECT 1 FROM department_program dp WHERE dp.program_id = u.program_id AND dp.department_id = ?
+                   )))
+                   AND u.role = 'instructor' AND u.status = 'active'",
+                [$instrId, $scope['campus_id'], $deptId, $deptId]
+            );
+        } else {
+            $instrCheck = db()->fetchOne(
+                "SELECT u.users_id FROM users u
+                 WHERE u.users_id = ? AND u.campus_id = ? AND u.role = 'instructor' AND u.status = 'active'",
+                [$instrId, $scope['campus_id']]
+            );
+        }
+        if (!$instrCheck) {
+            echo json_encode(['success' => false, 'message' => 'Instructor not in your department']);
+            return;
+        }
     }
 
     try {
@@ -503,6 +583,151 @@ function handleDeanAssign() {
     }
 }
 
+// ─── Get all dept instructors with is_assigned flag for one subject ───────────
+// GET: subject_id, semester_id
+function handleSubjectInstructors() {
+    if (Auth::role() !== 'dean') {
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $subjectId = (int)($_GET['subject_id'] ?? 0);
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+
+    $scope = deanScope();
+    if (!$scope['campus_id']) {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+
+    $deptId = $scope['department_id'];
+    $qParams = [$subjectId, $scope['campus_id']];
+    $deptCond = '';
+    if ($deptId) {
+        $deptCond = "AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM department_program dp WHERE dp.program_id = u.program_id AND dp.department_id = ?
+        )))";
+        $qParams[] = $deptId;
+        $qParams[] = $deptId;
+    }
+
+    // is_assigned = has any active offering for this subject
+    $instructors = db()->fetchAll(
+        "SELECT u.users_id, u.first_name, u.last_name, u.employee_id, u.email,
+                p.program_code, p.program_name,
+                CASE WHEN so.subject_offered_id IS NOT NULL THEN 1 ELSE 0 END AS is_assigned,
+                so.subject_offered_id AS assigned_offering_id
+         FROM users u
+         LEFT JOIN program p ON p.program_id = u.program_id
+         LEFT JOIN subject_offered so
+               ON so.subject_id = ? AND so.user_teacher_id = u.users_id
+              AND so.status NOT IN ('cancelled','archived')
+         WHERE u.campus_id = ? $deptCond AND u.role = 'instructor' AND u.status = 'active'
+         ORDER BY u.last_name, u.first_name",
+        $qParams
+    );
+
+    echo json_encode(['success' => true, 'data' => $instructors]);
+}
+
+// ─── Assign/unassign multiple instructors to one subject ──────────────────────
+// POST body: { subject_id, semester_id?, assign_instructor_ids: [], unassign_instructor_ids: [] }
+function handleSubjectAssign() {
+    if (!in_array(Auth::role(), ['dean', 'admin'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $data        = json_decode(file_get_contents('php://input'), true) ?? [];
+    $subjectId   = (int)($data['subject_id']   ?? 0);
+    $assignIds   = array_values(array_filter(array_map('intval', $data['assign_instructor_ids']   ?? []), fn($x) => $x > 0));
+    $unassignIds = array_values(array_filter(array_map('intval', $data['unassign_instructor_ids'] ?? []), fn($x) => $x > 0));
+
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+    if (empty($assignIds) && empty($unassignIds)) {
+        echo json_encode(['success' => false, 'message' => 'No changes to apply']);
+        return;
+    }
+
+    // Scope: subject must be in dean's department's programs
+    if (Auth::role() === 'dean') {
+        $scope  = deanScope();
+        $deptId = $scope['department_id'];
+        $owns   = null;
+        if ($deptId) {
+            $owns = db()->fetchOne(
+                "SELECT s.subject_id FROM subject s
+                 JOIN department_program dp ON dp.program_id = s.program_id AND dp.department_id = ?
+                 WHERE s.subject_id = ? LIMIT 1",
+                [$deptId, $subjectId]
+            );
+        } elseif ($scope['program_id']) {
+            $owns = db()->fetchOne(
+                "SELECT subject_id FROM subject WHERE subject_id = ? AND program_id = ? LIMIT 1",
+                [$subjectId, $scope['program_id']]
+            );
+        }
+        if (!$owns) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: subject is not in your department']);
+            return;
+        }
+    }
+
+    try {
+        $pdo = pdo();
+        $pdo->beginTransaction();
+
+        foreach ($assignIds as $instrId) {
+            // Already assigned? Skip.
+            $mine = db()->fetchOne(
+                "SELECT subject_offered_id FROM subject_offered
+                  WHERE subject_id = ? AND user_teacher_id = ? AND status NOT IN ('cancelled','archived') LIMIT 1",
+                [$subjectId, $instrId]
+            );
+            if ($mine) continue;
+
+            // Unclaimed offering exists? Claim it.
+            $empty = db()->fetchOne(
+                "SELECT subject_offered_id FROM subject_offered
+                  WHERE subject_id = ? AND user_teacher_id IS NULL AND status = 'open' LIMIT 1",
+                [$subjectId]
+            );
+            if ($empty) {
+                $pdo->prepare("UPDATE subject_offered SET user_teacher_id = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+                    ->execute([$instrId, $empty['subject_offered_id']]);
+            } else {
+                $pdo->prepare(
+                    "INSERT INTO subject_offered (subject_id, semester_id, user_teacher_id, status, created_at, updated_at)
+                     VALUES (?, NULL, ?, 'open', NOW(), NOW())"
+                )->execute([$subjectId, $instrId]);
+            }
+        }
+
+        foreach ($unassignIds as $instrId) {
+            $pdo->prepare(
+                "UPDATE subject_offered SET user_teacher_id = NULL, updated_at = NOW()
+                  WHERE subject_id = ? AND user_teacher_id = ? AND status NOT IN ('cancelled','archived')"
+            )->execute([$subjectId, $instrId]);
+        }
+
+        $pdo->commit();
+        $total = count($assignIds) + count($unassignIds);
+        echo json_encode(['success' => true, 'message' => "Updated $total instructor(s)"]);
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('SubjectAssign: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to save assignments']);
+    }
+}
+
 function handleInstructors() {
     $instructors = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.last_name, u.email, u.employee_id,
@@ -532,15 +757,16 @@ function handleSubjects() {
 }
 
 function handleDepartments() {
-    // Dean: only return their own department
+    // Dean: return only the department of their program
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne(
+        $scope = deanScope();
+        $depts = $scope['program_id'] ? db()->fetchAll(
             "SELECT d.department_id, d.department_name, d.department_code
-             FROM users u JOIN department d ON d.department_id = u.department_id
-             WHERE u.users_id = ?",
-            [Auth::id()]
-        );
-        $depts = $deanUser ? [$deanUser] : [];
+             FROM department d
+             JOIN program p ON p.department_id = d.department_id
+             WHERE p.program_id = ? AND d.status = 'active'",
+            [$scope['program_id']]
+        ) : [];
     } else {
         $depts = db()->fetchAll(
             "SELECT department_id, department_name, department_code FROM department WHERE status = 'active' ORDER BY department_name"
@@ -550,27 +776,27 @@ function handleDepartments() {
 }
 
 function handlePrograms() {
-    // Dean: always scope to their department only
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deptId   = (int)($deanUser['department_id'] ?? 0);
+        // Dean: return only their own program
+        $scope = deanScope();
+        $programs = $scope['program_id'] ? db()->fetchAll(
+            "SELECT program_id, program_code, program_name, department_id
+             FROM program WHERE program_id = ? AND status = 'active'",
+            [$scope['program_id']]
+        ) : [];
     } else {
         $deptId = (int)($_GET['department_id'] ?? 0);
-    }
-
-    if ($deptId) {
-        $programs = db()->fetchAll(
-            "SELECT p.program_id, p.program_code, p.program_name, dp.department_id
-             FROM program p
-             JOIN department_program dp ON dp.program_id = p.program_id
-             WHERE p.status = 'active' AND dp.department_id = ?
-             ORDER BY p.program_code",
-            [$deptId]
-        );
-    } else {
-        $programs = db()->fetchAll(
-            "SELECT program_id, program_code, program_name, department_id FROM program WHERE status = 'active' ORDER BY program_code"
-        );
+        if ($deptId) {
+            $programs = db()->fetchAll(
+                "SELECT program_id, program_code, program_name, department_id FROM program
+                  WHERE status = 'active' AND department_id = ? ORDER BY program_code",
+                [$deptId]
+            );
+        } else {
+            $programs = db()->fetchAll(
+                "SELECT program_id, program_code, program_name, department_id FROM program WHERE status = 'active' ORDER BY program_code"
+            );
+        }
     }
     echo json_encode(['success' => true, 'data' => $programs]);
 }

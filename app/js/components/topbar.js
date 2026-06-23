@@ -7,14 +7,13 @@ import { Auth } from '../auth.js';
 import { Api }  from '../api.js';
 import { icon, resolveIcon } from '../utils/icons.js';
 
+
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let _notifPollTimer       = null;
-let _cachedAnnouncements  = [];   // recent announcements fetched from API
-let _cachedNewQuizzes     = [];   // newly available quizzes (students)
 let _cachedNewLessons     = [];   // newly posted lessons (students)
-let _cachedReminders      = [];   // due-soon reminders (students)
 let _cachedTeachingAlerts = [];   // instructor dashboard alerts
+let _cachedCommentReplies = [];   // private comment replies (students)
 let _topbarRole           = null;
 let _topbarUserId         = null;
 
@@ -26,7 +25,7 @@ export function renderTopbar(container) {
         <!-- Left Side -->
         <div class="topbar-left">
             <button class="topbar-btn mobile-menu-btn" id="sidebar-toggle" title="Toggle Menu">${icon('menu')}</button>
-            <h1 class="page-title">Dashboard</h1>
+            <h1 class="page-title">Home</h1>
         </div>
 
         <!-- Right Side -->
@@ -36,6 +35,14 @@ export function renderTopbar(container) {
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
+            </button>
+
+            <!-- Messenger -->
+            <button class="topbar-btn" id="fm-topbar-btn" title="Messenger">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.15 2 11.25c0 2.91 1.45 5.54 3.78 7.26L4.5 21.5l3.2-1.68c1.12.31 2.31.48 3.55.48 5.52 0 10-4.15 10-9.25S17.52 2 12 2zm1 12.5-2.5-2.67L6 14.5l5-5.33 2.5 2.67L18 9.5l-5 5z"/>
+                </svg>
+                <span class="badge" id="fm-topbar-badge" style="display:none">0</span>
             </button>
 
             <!-- Notifications -->
@@ -53,7 +60,7 @@ export function renderTopbar(container) {
                         <div class="notif-loading">Loading...</div>
                     </div>
                     <div class="dropdown-footer" style="display:flex;justify-content:space-between;gap:8px;">
-                        <a href="#${role}/${role === 'student' ? 'dashboard' : 'announcements'}" id="notif-view-ann">${role === 'student' ? 'Dashboard' : 'All announcements'}</a>
+                        <a href="#${role}/${role === 'student' ? 'dashboard' : 'announcements'}" id="notif-view-ann">${role === 'student' ? 'Home' : 'All announcements'}</a>
                         <a href="#${role}/messages" id="notif-view-all">All messages</a>
                     </div>
                 </div>
@@ -91,9 +98,27 @@ export function renderTopbar(container) {
 
     // Event listeners
     // Sidebar toggle (mobile)
+    const sidebar = document.querySelector('.sidebar');
+    let backdrop = document.getElementById('sidebar-backdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'sidebar-backdrop';
+        backdrop.className = 'sidebar-backdrop';
+        document.body.appendChild(backdrop);
+    }
+    const closeSidebar = () => {
+        sidebar?.classList.remove('active');
+        backdrop.classList.remove('active');
+        document.body.classList.remove('sidebar-open');
+    };
     document.getElementById('sidebar-toggle').addEventListener('click', () => {
-        document.querySelector('.sidebar').classList.toggle('active');
+        const open = !sidebar?.classList.contains('active');
+        sidebar?.classList.toggle('active', open);
+        backdrop.classList.toggle('active', open);
+        document.body.classList.toggle('sidebar-open', open);
     });
+    backdrop.addEventListener('click', closeSidebar);
+    window.addEventListener('hashchange', closeSidebar);
 
     // Dropdown toggles
     ['notification', 'user'].forEach(id => {
@@ -129,9 +154,8 @@ export function renderTopbar(container) {
 
         try {
             const res = await Api.post('/MessagingAPI.php?action=mark_all_read', {});
-            // Also mark announcements as seen
-            markAnnLastSeen();
-            markQuizLastSeen();
+            markLessonLastSeen();
+            markReplyLastSeen();
             if (res.success) {
                 updateNotifBadge(0);
                 await loadNotifications(role);
@@ -176,84 +200,43 @@ async function pollUnreadCount() {
     try {
         const requests = [
             Api.get('/MessagingAPI.php?action=unread_count'),
-            Api.get('/AnnouncementsAPI.php?action=new-announcements'),
         ];
         if (_topbarRole === 'instructor') {
             requests.push(Api.get('/DashboardAPI.php?action=instructor'));
         } else if (_topbarRole === 'student') {
-            requests.push(Api.get('/ProgressAPI.php?action=new-quizzes&since=' + encodeURIComponent(getQuizLastSeen().toISOString())));
             requests.push(Api.get('/LessonsAPI.php?action=new-lessons&since=' + encodeURIComponent(getLessonLastSeen().toISOString())));
-            requests.push(Api.get('/ProgressAPI.php?action=reminders&dispatch=1'));
+            requests.push(Api.get('/ClassroomAPI.php?action=new-replies&since=' + encodeURIComponent(getReplyLastSeen().toISOString())));
         }
 
         const results = await Promise.all(requests);
-        const msgRes = results[0];
-        const annRes = results[1];
-        const extraRes = results[2];
-        const lessonRes = results[3];
-        const reminderRes = results[4];
+        const msgRes    = results[0];
+        const extraRes  = results[1];
+        const replyRes  = results[2];
 
         const msgCount = msgRes.success ? (msgRes.count || 0) : 0;
-
-        _cachedAnnouncements = annRes.success ? (annRes.data || []) : [];
-        const annCount = countNewAnnouncements();
+        // Drive the messenger topbar badge
+        const fmBadge = document.getElementById('fm-topbar-badge');
+        if (fmBadge) {
+            if (msgCount > 0) { fmBadge.textContent = msgCount > 99 ? '99+' : msgCount; fmBadge.style.display = 'flex'; }
+            else { fmBadge.style.display = 'none'; }
+        }
 
         if (_topbarRole === 'instructor' && extraRes?.success) {
             _cachedTeachingAlerts = buildTeachingAlerts(extraRes.data || {});
-            _cachedNewQuizzes = [];
-            _cachedNewLessons = [];
-            _cachedReminders = [];
+            _cachedNewLessons     = [];
+            _cachedCommentReplies = [];
         } else {
             _cachedTeachingAlerts = [];
-            _cachedNewQuizzes = (_topbarRole === 'student' && extraRes?.success) ? (extraRes.data || []) : [];
-            _cachedNewLessons = (_topbarRole === 'student' && lessonRes?.success) ? (lessonRes.data || []) : [];
-            _cachedReminders = (_topbarRole === 'student' && reminderRes?.success) ? (reminderRes.data?.reminders || []) : [];
+            _cachedNewLessons     = (_topbarRole === 'student' && extraRes?.success) ? (extraRes.data || [])  : [];
+            _cachedCommentReplies = (_topbarRole === 'student' && replyRes?.success) ? (replyRes.data || [])  : [];
         }
 
         updateNotifBadge(
-            msgCount
-            + annCount
-            + _cachedNewQuizzes.length
-            + _cachedNewLessons.length
-            + _cachedReminders.length
+            _cachedNewLessons.length
+            + _cachedCommentReplies.length
             + _cachedTeachingAlerts.length
         );
     } catch (_) {}
-}
-
-/** Count announcements newer than the user's last-seen timestamp */
-function countNewAnnouncements() {
-    const lastSeen = getAnnLastSeen();
-    return _cachedAnnouncements.filter(a => new Date(a.created_at) > lastSeen).length;
-}
-
-/** localStorage key scoped to current user */
-function annLastSeenKey() {
-    return `ann_last_seen_${_topbarUserId}`;
-}
-
-/** Get Date of last time the user acknowledged announcements (default: 7 days ago) */
-function getAnnLastSeen() {
-    const stored = localStorage.getItem(annLastSeenKey());
-    return stored ? new Date(stored) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-}
-
-/** Mark all announcements as seen right now */
-function markAnnLastSeen() {
-    localStorage.setItem(annLastSeenKey(), new Date().toISOString());
-}
-
-function quizLastSeenKey() {
-    return `quiz_last_seen_${_topbarUserId}`;
-}
-
-function getQuizLastSeen() {
-    const stored = localStorage.getItem(quizLastSeenKey());
-    return stored ? new Date(stored) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-}
-
-function markQuizLastSeen() {
-    localStorage.setItem(quizLastSeenKey(), new Date().toISOString());
 }
 
 function lessonLastSeenKey() {
@@ -267,6 +250,19 @@ function getLessonLastSeen() {
 
 function markLessonLastSeen() {
     localStorage.setItem(lessonLastSeenKey(), new Date().toISOString());
+}
+
+function replyLastSeenKey() {
+    return `reply_last_seen_${_topbarUserId}`;
+}
+
+function getReplyLastSeen() {
+    const stored = localStorage.getItem(replyLastSeenKey());
+    return stored ? new Date(stored) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
+function markReplyLastSeen() {
+    localStorage.setItem(replyLastSeenKey(), new Date().toISOString());
 }
 
 function updateNotifBadge(count) {
@@ -289,51 +285,120 @@ async function loadNotifications(role) {
     if (role === 'instructor') {
         fetches.push(Api.get('/DashboardAPI.php?action=instructor'));
     } else if (role === 'student') {
-        fetches.push(Api.get('/ProgressAPI.php?action=new-quizzes&since=' + encodeURIComponent(getQuizLastSeen().toISOString())));
         fetches.push(Api.get('/LessonsAPI.php?action=new-lessons&since=' + encodeURIComponent(getLessonLastSeen().toISOString())));
-        fetches.push(Api.get('/ProgressAPI.php?action=reminders&dispatch=1'));
+        fetches.push(Api.get('/ClassroomAPI.php?action=new-replies&since=' + encodeURIComponent(getReplyLastSeen().toISOString())));
     }
 
     const results = await Promise.all(fetches);
-    const msgRes = results[0];
+    const msgRes  = results[0];
+
     if (role === 'instructor' && results[1]?.success) {
         _cachedTeachingAlerts = buildTeachingAlerts(results[1].data || {});
-    } else if (role === 'student' && results[1]?.success) {
-        _cachedNewQuizzes = results[1].data || [];
-        _cachedNewLessons = results[2]?.success ? (results[2].data || []) : [];
-        _cachedReminders = results[3]?.success ? (results[3].data?.reminders || []) : [];
+    } else if (role === 'student') {
+        _cachedNewLessons     = results[1]?.success ? (results[1].data || []) : [];
+        _cachedCommentReplies = results[2]?.success ? (results[2].data || []) : [];
     }
 
-    const threads     = msgRes.success ? msgRes.data : [];
-    const unreadMsgs  = threads.filter(t => parseInt(t.unread) > 0);
+    const threads    = msgRes.success ? msgRes.data : [];
+    const unreadMsgs = threads.filter(t => parseInt(t.unread) > 0);
+    const newLessons = role === 'student' ? _cachedNewLessons     : [];
+    const replies    = role === 'student' ? _cachedCommentReplies : [];
+    const teachingAlerts = role === 'instructor' ? _cachedTeachingAlerts : [];
 
-    const lastSeen    = getAnnLastSeen();
-    const newAnns     = _cachedAnnouncements.filter(a => new Date(a.created_at) > lastSeen);
-    const newQuizzes  = role === 'student' ? _cachedNewQuizzes : [];
-    const newLessons  = role === 'student' ? _cachedNewLessons : [];
-    const reminders   = role === 'student' ? _cachedReminders : [];
-
-    if (newAnns.length) {
-        markAnnLastSeen();
-        setTimeout(pollUnreadCount, 300);
-    }
-    if (newQuizzes.length) {
-        markQuizLastSeen();
-        setTimeout(pollUnreadCount, 300);
-    }
     if (newLessons.length) {
         markLessonLastSeen();
         setTimeout(pollUnreadCount, 300);
     }
+    if (replies.length) {
+        markReplyLastSeen();
+        setTimeout(pollUnreadCount, 300);
+    }
 
-    const teachingAlerts = _topbarRole === 'instructor' ? _cachedTeachingAlerts : [];
-
-    if (!unreadMsgs.length && !newAnns.length && !newQuizzes.length && !newLessons.length && !reminders.length && !teachingAlerts.length) {
+    if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length) {
         body.innerHTML = `<div class="notif-empty">${icon('checkCircle', { size: 20 })} You're all caught up!</div>`;
         return;
     }
 
     let html = '';
+
+    // ── Unread Messages (all roles) ────────────────────────────────────
+    if (unreadMsgs.length) {
+        html += `<div class="notif-section-label">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Messages</div>`;
+        html += unreadMsgs.map(t => {
+            const initials = (t.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            const preview  = (t.last_message || '').slice(0, 55);
+            return `
+                <div class="notification-item unread notif-msg-item" style="cursor:pointer"
+                     data-id="${t.other_id}" data-name="${escapeHtml(t.name)}">
+                    <span class="notification-icon">
+                        <span style="width:36px;height:36px;border-radius:50%;background:#1B4D3E;
+                                     color:#fff;font-size:13px;font-weight:700;
+                                     display:flex;align-items:center;justify-content:center;">
+                            ${initials}
+                        </span>
+                    </span>
+                    <div class="notification-content">
+                        <span class="notification-title">${escapeHtml(t.name)}</span>
+                        <span class="notification-time" style="display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;font-size:12px;color:#555">
+                            ${escapeHtml(preview)}
+                        </span>
+                        <span class="notification-time">${relativeTime(t.last_at)} · ${parseInt(t.unread)} new</span>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    // ── New Lessons (student) ──────────────────────────────────────────
+    if (newLessons.length) {
+        html += `<div class="notif-section-label">${icon('document', { size: 14, className: 'ui-icon-inline' })} New Lessons</div>`;
+        html += newLessons.map(l => {
+            const subLabel = l.subject_code
+                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(l.subject_code)}</span>`
+                : '';
+            const href = `#student/subject?subject_id=${l.subject_id}&work=lesson&work_id=${l.lessons_id}`;
+            return `
+                <div class="notification-item unread notif-lesson-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
+                    <span class="notification-icon">
+                        <span style="width:36px;height:36px;border-radius:10px;background:#E8F5E9;display:flex;align-items:center;justify-content:center;">
+                            ${icon('document', { size: 18 })}
+                        </span>
+                    </span>
+                    <div class="notification-content">
+                        <span class="notification-title">${escapeHtml(l.lesson_title || 'New lesson')}${subLabel}</span>
+                        <span class="notification-time">Uploaded · ${relativeTime(l.notify_at || l.updated_at || l.created_at)}</span>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    // ── Private comment replies (student) ─────────────────────────────
+    if (replies.length) {
+        html += `<div class="notif-section-label">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Comment Replies</div>`;
+        html += replies.map(r => {
+            const href = r.lessons_id
+                ? `#student/subject?subject_id=${r.subject_id}&work=lesson&work_id=${r.lessons_id}`
+                : r.quiz_id
+                    ? `#student/subject?subject_id=${r.subject_id}&work=quiz&work_id=${r.quiz_id}`
+                    : `#student/subject?subject_id=${r.subject_id}`;
+            const subLabel = r.subject_code
+                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(r.subject_code)}</span>`
+                : '';
+            const preview = (r.content || '').slice(0, 60);
+            return `
+                <div class="notification-item unread notif-reply-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
+                    <span class="notification-icon">
+                        <span style="width:36px;height:36px;border-radius:10px;background:#F0F9FF;display:flex;align-items:center;justify-content:center;">
+                            ${icon('messages', { size: 18 })}
+                        </span>
+                    </span>
+                    <div class="notification-content">
+                        <span class="notification-title">${escapeHtml(r.replier_name)} replied to your comment${subLabel}</span>
+                        <span class="notification-time" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;font-size:12px;color:#555;margin-top:2px">${escapeHtml(preview)}</span>
+                        <span class="notification-time">${relativeTime(r.created_at)}</span>
+                    </div>
+                </div>`;
+        }).join('');
+    }
 
     // ── Teaching alerts (instructor) ───────────────────────────────────
     if (teachingAlerts.length) {
@@ -353,166 +418,20 @@ async function loadNotifications(role) {
         `).join('');
     }
 
-    // ── New quizzes (student) ──────────────────────────────────────────
-    if (newQuizzes.length) {
-        html += `<div class="notif-section-label">${icon('quiz', { size: 14, className: 'ui-icon-inline' })} New Quizzes</div>`;
-        html += newQuizzes.map(q => {
-            const subLabel = q.subject_code
-                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(q.subject_code)}</span>`
-                : '';
-            const href = `#student/subject?subject_id=${q.subject_id}&work=quiz&work_id=${q.quiz_id}`;
-            return `
-                <div class="notification-item unread notif-quiz-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;background:#E8F5E9;display:flex;align-items:center;justify-content:center;">
-                            ${icon('quiz', { size: 18 })}
-                        </span>
-                    </span>
-                    <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(q.quiz_title || 'New quiz')}${subLabel}</span>
-                        <span class="notification-time">Available now · ${relativeTime(q.notify_at || q.availability_start || q.created_at)}</span>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
-    // ── New lessons (student) ─────────────────────────────────────────
-    if (newLessons.length) {
-        html += `<div class="notif-section-label">${icon('document', { size: 14, className: 'ui-icon-inline' })} New Lessons</div>`;
-        html += newLessons.map(l => {
-            const subLabel = l.subject_code
-                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(l.subject_code)}</span>`
-                : '';
-            const href = `#student/subject?subject_id=${l.subject_id}&work=lesson&work_id=${l.lessons_id}`;
-            return `
-                <div class="notification-item unread notif-lesson-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;background:#E8F5E9;display:flex;align-items:center;justify-content:center;">
-                            ${icon('document', { size: 18 })}
-                        </span>
-                    </span>
-                    <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(l.lesson_title || 'New lesson')}${subLabel}</span>
-                        <span class="notification-time">Posted · ${relativeTime(l.notify_at || l.updated_at || l.created_at)}</span>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
-    // ── Due reminders (student) ───────────────────────────────────────
-    if (reminders.length) {
-        html += `<div class="notif-section-label">${icon('clock', { size: 14, className: 'ui-icon-inline' })} Due Reminders</div>`;
-        html += reminders.map(r => {
-            const href = `#student/subject?subject_id=${r.subject_id}&work=${r.item_type}&work_id=${r.item_id}`;
-            const due = r.due_at ? relativeOrUpcoming(r.due_at) : 'soon';
-            const kind = r.item_type === 'quiz' ? 'Quiz' : 'Lesson';
-            return `
-                <div class="notification-item unread notif-rem-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;">
-                            ${icon('clock', { size: 18 })}
-                        </span>
-                    </span>
-                    <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(kind)} due: ${escapeHtml(r.title || '')}</span>
-                        <span class="notification-time">${escapeHtml(r.subject_code || '')} · ${escapeHtml(due)}</span>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
-    // ── Announcement section ───────────────────────────────────────────
-    if (newAnns.length) {
-        html += `<div class="notif-section-label">${icon('announce', { size: 14, className: 'ui-icon-inline' })} New Announcements</div>`;
-        html += newAnns.map(a => {
-            const typeIconName = { urgent: 'siren', reminder: 'clock', event: 'calendar', general: 'megaphone' }[a.announcement_type] || 'megaphone';
-            const typeIcon = icon(typeIconName, { size: 18 });
-            const subLabel = a.subject_code ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(a.subject_code)}</span>` : '';
-            return `
-                <div class="notification-item unread notif-ann-item" style="cursor:pointer"
-                     data-id="${a.announcement_id}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;
-                                     background:#E8F5E9;
-                                     font-size:18px;display:flex;align-items:center;justify-content:center;">
-                            ${typeIcon}
-                        </span>
-                    </span>
-                    <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(a.title)}${subLabel}</span>
-                        <span class="notification-time">By ${escapeHtml(a.author_name)} · ${relativeTime(a.created_at)}</span>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
-    // ── Messages section ───────────────────────────────────────────────
-    if (unreadMsgs.length) {
-        html += `<div class="notif-section-label">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Unread Messages</div>`;
-        html += unreadMsgs.map(t => {
-            const initials = (t.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-            const preview  = (t.last_message || '').slice(0, 55);
-            const time     = relativeTime(t.last_at);
-            return `
-                <div class="notification-item unread notif-msg-item" style="cursor:pointer"
-                     data-id="${t.other_id}" data-name="${escapeHtml(t.name)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:50%;
-                                     background:#1B4D3E;
-                                     color:#fff;font-size:13px;font-weight:700;
-                                     display:flex;align-items:center;justify-content:center;">
-                            ${initials}
-                        </span>
-                    </span>
-                    <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(t.name)}</span>
-                        <span class="notification-time" style="display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;font-size:12px;color:#555">
-                            ${escapeHtml(preview)}
-                        </span>
-                        <span class="notification-time">${time} · ${parseInt(t.unread)} new</span>
-                    </div>
-                </div>`;
-        }).join('');
-    }
-
     body.innerHTML = html;
 
-    // Announcement click → student goes to dashboard (announcements live on subjects)
-    body.querySelectorAll('.notif-ann-item').forEach(el => {
-        el.addEventListener('click', () => {
-            document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
-            window.location.hash = role === 'student' ? '#student/dashboard' : `#${role}/announcements`;
-        });
-    });
-
-    // Message click → go to thread
+    // Message click → open floating messenger
     body.querySelectorAll('.notif-msg-item').forEach(el => {
         el.addEventListener('click', async () => {
             document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
-            await Api.post('/MessagingAPI.php?action=mark_read', { other_user_id: parseInt(el.dataset.id) });
-            window.location.hash = `#${role}/messages?with=${el.dataset.id}&name=${encodeURIComponent(el.dataset.name)}`;
+            const { openFloatingChat } = await import('./floating-messenger.js');
+            openFloatingChat(parseInt(el.dataset.id), el.dataset.name);
             pollUnreadCount();
         });
     });
 
-    // Teaching alert click
-    body.querySelectorAll('.notif-teach-item').forEach(el => {
-        el.addEventListener('click', () => {
-            document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
-            const href = el.dataset.href;
-            if (href) window.location.hash = href;
-        });
-    });
-
-    body.querySelectorAll('.notif-quiz-item').forEach(el => {
-        el.addEventListener('click', () => {
-            document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
-            const href = el.dataset.href;
-            if (href) window.location.hash = href;
-        });
-    });
-
-    body.querySelectorAll('.notif-lesson-item, .notif-rem-item').forEach(el => {
+    // Lesson / reply / teaching alert click → navigate
+    body.querySelectorAll('.notif-lesson-item, .notif-reply-item, .notif-teach-item').forEach(el => {
         el.addEventListener('click', () => {
             document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
             const href = el.dataset.href;

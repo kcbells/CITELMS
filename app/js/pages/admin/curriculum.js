@@ -5,6 +5,7 @@
 import { Api }  from '../../api.js';
 import { Auth } from '../../auth.js';
 import { L, icon } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -35,7 +36,7 @@ export async function render(container, params = {}) {
 
     container.innerHTML = `
         <style>
-            .cur-page { max-width:1200px; }
+            .cur-page { max-width:1300px; }
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:800; color:#050505; margin:0; }
             .page-header p { font-size:13px; color:#65676B; margin:4px 0 0; }
@@ -47,71 +48,69 @@ export async function render(container, params = {}) {
             .btn-primary.visible { display:inline-flex; align-items:center; gap:6px; }
             .cur-hint { background:#F0F2F5; border-radius:10px; padding:12px 16px; font-size:13px; color:#65676B; margin-bottom:20px; display:flex; align-items:center; gap:10px; }
 
-            /* ── Year block ────────────────────────────────── */
-            .year-block { margin-bottom:36px; }
-            .year-banner {
-                text-align:center; font-size:13px; font-weight:800;
-                color:#fff; background:#00461B;
-                padding:8px 20px; letter-spacing:1.5px; text-transform:uppercase;
-                border-radius:8px 8px 0 0; margin-bottom:0;
-            }
-            .sem-pair {
-                display:grid; grid-template-columns:1fr 1fr; gap:0;
-                border:2px solid #1B4D3E; border-top:none; border-radius:0 0 8px 8px;
-                overflow:hidden;
-            }
-            .sem-pair .sem-table-wrap:first-child {
-                border-right:1px solid #1B4D3E;
-            }
-            .summer-wrap {
-                border:2px solid #1B4D3E; border-top:none;
-                border-radius:0 0 8px 8px; overflow:hidden;
+            /* ── Year block: flat table layout ── */
+            .year-block { margin-bottom:32px; overflow-x:auto; }
+
+            .cur-table {
+                width:100%; border-collapse:collapse;
+                font-size:12.5px; font-family:inherit;
+                background:#fff; border:1.5px solid #374151;
             }
 
-            /* ── Semester table ────────────────────────────── */
-            .sem-table-wrap { background:#fff; }
-            .sem-label {
-                font-size:12px; font-weight:700; text-align:center;
-                padding:7px 12px; background:#E8F5E9; color:#1B4D3E;
-                border-bottom:1px solid #1B4D3E; letter-spacing:.5px;
+            /* Year banner */
+            .cur-table .th-year {
+                background:#00461B; color:#fff;
+                font-size:13px; font-weight:800; letter-spacing:1px; text-transform:uppercase;
+                text-align:center; padding:9px 12px; border:1px solid #003515;
             }
-            .cur-table { width:100%; border-collapse:collapse; font-size:12px; }
-            .cur-table thead tr th {
-                background:#f7f7f7; color:#404040; font-weight:700;
-                padding:6px 8px; border-bottom:1px solid #ccc;
-                text-align:center; white-space:nowrap;
+            /* Semester banner */
+            .cur-table .th-sem {
+                background:#1B4D3E; color:#fff;
+                font-size:12px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+                text-align:center; padding:7px 10px; border:1px solid #155534;
             }
-            .cur-table thead tr th.th-title { text-align:left; }
-            .cur-table thead tr th.th-code  { text-align:left; min-width:80px; }
-            .th-unit { width:36px; }
-            .th-prereq { min-width:80px; }
-            .th-action { width:28px; }
+            /* Column sub-headers */
+            .cur-table .th-col {
+                background:#2d6a4f; color:#fff;
+                font-size:11px; font-weight:700;
+                text-align:center; padding:6px 8px;
+                border:1px solid #155534; white-space:nowrap; vertical-align:middle;
+            }
+            .cur-table .th-col-title { text-align:left; }
 
-            .cur-table tbody tr { border-bottom:1px solid #f0f0f0; }
-            .cur-table tbody tr:last-child { border-bottom:none; }
-            .cur-table tbody tr:hover { background:#f9fffe; }
-            .cur-table td { padding:6px 8px; vertical-align:top; }
-            .td-code { font-family:monospace; font-size:11px; font-weight:700; color:#1B4D3E; white-space:nowrap; }
+            /* Divider column */
+            .cur-table .td-div, .cur-table .th-div {
+                width:6px; padding:0; background:#374151; border:none;
+            }
+
+            /* Body rows */
+            .cur-table tbody tr:nth-child(even) td:not(.td-div) { background:#f9fafb; }
+            .cur-table tbody tr:hover td:not(.td-div) { background:#f0fdf4; }
+            .cur-table td { border:1px solid #d1d5db; padding:6px 8px; vertical-align:middle; }
+
+            .td-code  { font-family:monospace; font-size:11px; font-weight:700; color:#1B4D3E; white-space:nowrap; text-align:center; }
             .td-title { font-size:12px; color:#262626; line-height:1.35; }
-            .td-unit { text-align:center; color:#404040; font-weight:500; white-space:nowrap; }
-            .td-prereq { font-size:11px; color:#737373; }
+            .td-unit  { text-align:center; color:#404040; font-weight:500; }
+            .td-total { text-align:center; font-weight:700; color:#00461B; }
+            .td-pre   { font-size:11px; color:#737373; text-align:center; }
+            .td-empty { color:#9ca3af; font-size:12px; text-align:center; font-style:italic; }
 
-            .cur-table tfoot tr { background:#f7f7f7; border-top:1px solid #ccc; }
-            .cur-table tfoot td { padding:6px 8px; font-weight:800; font-size:12px; }
-            .tfoot-label { text-align:right; color:#262626; }
+            /* Total row */
+            .cur-table tfoot td { background:#E8F5E9; border:1px solid #d1d5db; padding:6px 8px; }
+            .td-total-lbl { text-align:right; font-size:12px; font-weight:800; color:#1B4D3E; letter-spacing:.4px; }
 
-            /* ── Kebab ─────────────────────────────────────── */
+            /* Kebab */
             .cur-kebab-wrap { position:relative; }
-            .cur-kebab { background:none; border:none; width:28px; height:28px; border-radius:8px; cursor:pointer; color:#65676B; display:flex; align-items:center; justify-content:center; padding:0; }
+            .cur-kebab { background:none; border:none; width:26px; height:26px; border-radius:6px; cursor:pointer; color:#65676B; display:flex; align-items:center; justify-content:center; padding:0; }
             .cur-kebab:hover { background:#f0f0f0; color:#262626; }
-            .cur-kebab-menu { display:none; position:absolute; right:0; top:100%; background:#fff; border:1px solid #e8e8e8; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); min-width:150px; z-index:200; overflow:hidden; }
+            .cur-kebab-menu { display:none; position:fixed; background:#fff; border:1px solid #e8e8e8; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14); min-width:160px; z-index:9999; overflow:hidden; }
             .cur-kebab-menu.open { display:block; }
             .cur-kebab-item { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#404040; cursor:pointer; background:none; border:none; width:100%; text-align:left; white-space:nowrap; }
             .cur-kebab-item:hover { background:#f5f5f5; }
             .cur-kebab-item.danger { color:#b91c1c; }
             .cur-kebab-item.danger:hover { background:#FEF2F2; }
 
-            /* ── Modals ────────────────────────────────────── */
+            /* Modals */
             .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:1000; }
             .modal { background:#fff; border-radius:16px; width:90%; max-width:480px; max-height:90vh; overflow-y:auto; }
             .modal-header { padding:20px 24px; border-bottom:1px solid #f0f0f0; display:flex; justify-content:space-between; align-items:center; }
@@ -132,12 +131,7 @@ export async function render(container, params = {}) {
             .empty-msg { text-align:center; padding:60px 20px; color:#737373; }
             .empty-msg h3 { font-size:18px; margin-bottom:8px; color:#404040; }
             @keyframes spin { to { transform:rotate(360deg); } }
-            @media(max-width:900px) {
-                .sem-pair { grid-template-columns:1fr; }
-                .sem-pair .sem-table-wrap:first-child { border-right:none; border-bottom:1px solid #1B4D3E; }
-                .header-right { width:100%; }
-                .program-select { width:100%; }
-            }
+            @media(max-width:900px) { .header-right { width:100%; } .program-select { width:100%; } }
         </style>
 
         <div class="cur-page">
@@ -237,7 +231,6 @@ async function loadCurriculum(container, programId) {
         return;
     }
 
-    // Group by year → semester
     const grouped = {};
     subjects.forEach(s => {
         const yr  = s.year_level || 'Unassigned';
@@ -247,140 +240,194 @@ async function loadCurriculum(container, programId) {
         grouped[yr][sem].push(s);
     });
 
-    const yearLabels = { '1':'First Year','2':'Second Year','3':'Third Year','4':'Fourth Year','Unassigned':'Unassigned' };
+    const yearLabels = { '1':'FIRST YEAR','2':'SECOND YEAR','3':'THIRD YEAR','4':'FOURTH YEAR','Unassigned':'UNASSIGNED' };
 
     let html = '';
     for (const yr of Object.keys(grouped).sort()) {
-        const sem1     = grouped[yr][1]            || [];
-        const sem2     = grouped[yr][2]            || [];
-        const summer   = grouped[yr][3]            || [];
-        const unassign = grouped[yr]['Unassigned'] || [];
+        const sem1   = grouped[yr][1]            || [];
+        const sem2   = grouped[yr][2]            || [];
+        const summer = grouped[yr][3]            || [];
+        const unasgn = grouped[yr]['Unassigned'] || [];
 
-        const hasMainSems = sem1.length > 0 || sem2.length > 0;
-
-        html += `<div class="year-block">
-            <div class="year-banner">${yearLabels[yr] || yr}</div>`;
-
-        if (hasMainSems) {
-            html += `<div class="sem-pair">
-                ${renderSemesterTable('First Semester',  sem1)}
-                ${renderSemesterTable('Second Semester', sem2)}
-            </div>`;
+        if (sem1.length || sem2.length) {
+            html += renderYearTable(yearLabels[yr] || yr, sem1, sem2);
         }
-
-        if (summer.length > 0) {
-            html += `<div class="summer-wrap" style="margin-top:${hasMainSems ? '8' : '0'}px;">
-                ${renderSemesterTable('Summer', summer)}
-            </div>`;
+        if (summer.length) {
+            html += renderSingleSemTable('SUMMER', summer);
         }
-
-        if (unassign.length > 0) {
-            html += `<div class="summer-wrap" style="margin-top:${(hasMainSems || summer.length) ? '8' : '0'}px;">
-                ${renderSemesterTable('Unassigned Semester', unassign)}
-            </div>`;
+        if (unasgn.length) {
+            html += renderSingleSemTable('UNASSIGNED SEMESTER', unasgn);
         }
-
-        html += `</div>`;
     }
 
     content.innerHTML = html;
     bindCurriculumEvents(container, content, programId);
 }
 
-function renderSemesterTable(label, subjects) {
-    const totalLec   = subjects.reduce((s, x) => s + (parseInt(x.lecture_hours) || 0), 0);
-    const totalLab   = subjects.reduce((s, x) => s + (parseInt(x.lab_hours)     || 0), 0);
-    const totalUnits = subjects.reduce((s, x) => s + (parseInt(x.units)         || 0), 0);
+function kebabCell(s) {
+    return `<td style="padding:3px;vertical-align:middle;text-align:center;border:1px solid #d1d5db;">
+        <div class="cur-kebab-wrap">
+            <button class="cur-kebab" title="Actions">${icon('menu', { size: 15 })}</button>
+            <div class="cur-kebab-menu">
+                <button class="cur-kebab-item"
+                    data-open="${s.subject_id}"
+                    data-code="${esc(s.subject_code)}"
+                    data-name="${esc(s.subject_name)}">
+                    ${icon('school', inl)} Open Subject
+                </button>
+                <button class="cur-kebab-item"
+                    data-edit="${s.subject_id}"
+                    data-year="${esc(s.year_level||'')}"
+                    data-sem="${esc(s.semester||'')}"
+                    data-units="${s.units ?? 3}"
+                    data-lec="${s.lecture_hours ?? 3}"
+                    data-lab="${s.lab_hours ?? 0}"
+                    data-prereq="${esc(s.pre_requisite||'')}"
+                    data-name="${esc(s.subject_name)}">
+                    ${L.edit}
+                </button>
+                <button class="cur-kebab-item"
+                    data-offer="${s.subject_id}"
+                    data-name="${esc(s.subject_name)}">
+                    ${icon('calendar', inl)} Offer for Semester
+                </button>
+                <button class="cur-kebab-item danger"
+                    data-archive="${s.subject_id}"
+                    data-name="${esc(s.subject_name)}">
+                    ${icon('trash', inl)} Archive
+                </button>
+            </div>
+        </div>
+    </td>`;
+}
 
-    const rows = subjects.length === 0
-        ? `<tr><td colspan="7" style="text-align:center;color:#bbb;padding:14px;font-size:12px;font-style:italic;">No subjects assigned</td></tr>`
-        : subjects.map(s => `
+function subjCells(s) {
+    const lec   = parseInt(s.lecture_hours) || 0;
+    const lab   = parseInt(s.lab_hours)     || 0;
+    return `<td class="td-code">${esc(s.subject_code)}</td>
+            <td class="td-title">${esc(s.subject_name)}</td>
+            <td class="td-unit">${lec}</td>
+            <td class="td-unit">${lab}</td>
+            <td class="td-total">${lec + lab}</td>
+            <td class="td-pre">${esc(s.pre_requisite || '')}</td>
+            ${kebabCell(s)}`;
+}
+
+function emptyCells() {
+    return `<td class="td-empty" colspan="7" style="border:1px solid #d1d5db;"></td>`;
+}
+
+function semTotals(arr) {
+    const lec = arr.reduce((n, x) => n + (parseInt(x.lecture_hours) || 0), 0);
+    const lab = arr.reduce((n, x) => n + (parseInt(x.lab_hours)     || 0), 0);
+    return { lec, lab, total: lec + lab };
+}
+
+function renderYearTable(yearLabel, sem1, sem2) {
+    const rows    = [];
+    const maxRows = Math.max(sem1.length, sem2.length, 1);
+    for (let i = 0; i < maxRows; i++) {
+        const left  = sem1[i] ? subjCells(sem1[i]) : emptyCells();
+        const right = sem2[i] ? subjCells(sem2[i]) : emptyCells();
+        rows.push(`<tr>${left}<td class="td-div"></td>${right}</tr>`);
+    }
+    const t1 = semTotals(sem1), t2 = semTotals(sem2);
+    return `<div class="year-block">
+    <table class="cur-table">
+        <thead>
+            <tr><th class="th-year" colspan="15">${yearLabel}</th></tr>
             <tr>
-                <td class="td-code">${esc(s.subject_code)}</td>
-                <td class="td-title">${esc(s.subject_name)}</td>
-                <td class="td-unit">${s.lecture_hours ?? 3}</td>
-                <td class="td-unit">${s.lab_hours ?? 0}</td>
-                <td class="td-unit">${s.units ?? 3}</td>
-                <td class="td-prereq">${esc(s.pre_requisite || '')}</td>
-                <td class="td-action">
-                    <div class="cur-kebab-wrap">
-                        <button class="cur-kebab" title="Actions">${icon('menu', { size: 16 })}</button>
-                        <div class="cur-kebab-menu">
-                            <button class="cur-kebab-item"
-                                data-open="${s.subject_id}"
-                                data-code="${esc(s.subject_code)}"
-                                data-name="${esc(s.subject_name)}">
-                                ${icon('school', inl)} Open Subject
-                            </button>
-                            <button class="cur-kebab-item"
-                                data-edit="${s.subject_id}"
-                                data-year="${esc(s.year_level||'')}"
-                                data-sem="${esc(s.semester||'')}"
-                                data-units="${s.units ?? 3}"
-                                data-lec="${s.lecture_hours ?? 3}"
-                                data-lab="${s.lab_hours ?? 0}"
-                                data-prereq="${esc(s.pre_requisite||'')}"
-                                data-name="${esc(s.subject_name)}">
-                                ${L.edit}
-                            </button>
-                            <button class="cur-kebab-item"
-                                data-offer="${s.subject_id}"
-                                data-name="${esc(s.subject_name)}">
-                                ${icon('calendar', inl)} Offer for Semester
-                            </button>
-                            <button class="cur-kebab-item danger"
-                                data-archive="${s.subject_id}"
-                                data-name="${esc(s.subject_name)}">
-                                ${icon('trash', inl)} Archive
-                            </button>
-                        </div>
-                    </div>
-                </td>
+                <th class="th-sem" colspan="7">FIRST SEMESTER</th>
+                <th class="th-div"></th>
+                <th class="th-sem" colspan="7">SECOND SEMESTER</th>
             </tr>
-        `).join('');
+            <tr>
+                <th class="th-col" rowspan="2">Course Code</th>
+                <th class="th-col th-col-title" rowspan="2" style="text-align:left;">Course Title</th>
+                <th class="th-col" colspan="3">Units</th>
+                <th class="th-col" rowspan="2">Pre-Req</th>
+                <th class="th-col" rowspan="2"></th>
+                <th class="th-div" rowspan="2"></th>
+                <th class="th-col" rowspan="2">Course Code</th>
+                <th class="th-col th-col-title" rowspan="2" style="text-align:left;">Course Title</th>
+                <th class="th-col" colspan="3">Units</th>
+                <th class="th-col" rowspan="2">Pre-Req</th>
+                <th class="th-col" rowspan="2"></th>
+            </tr>
+            <tr>
+                <th class="th-col">Lec</th><th class="th-col">Lab</th><th class="th-col">Total</th>
+                <th class="th-col">Lec</th><th class="th-col">Lab</th><th class="th-col">Total</th>
+            </tr>
+        </thead>
+        <tbody>${rows.join('')}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2" class="td-total-lbl" style="border:1px solid #d1d5db;">TOTAL</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t1.lec}</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t1.lab}</td>
+                <td class="td-total" style="border:1px solid #d1d5db;">${t1.total}</td>
+                <td style="border:1px solid #d1d5db;"></td>
+                <td style="border:1px solid #d1d5db;"></td>
+                <td class="td-div"></td>
+                <td colspan="2" class="td-total-lbl" style="border:1px solid #d1d5db;">TOTAL</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t2.lec}</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t2.lab}</td>
+                <td class="td-total" style="border:1px solid #d1d5db;">${t2.total}</td>
+                <td style="border:1px solid #d1d5db;"></td>
+                <td style="border:1px solid #d1d5db;"></td>
+            </tr>
+        </tfoot>
+    </table></div>`;
+}
 
-    return `
-    <div class="sem-table-wrap">
-        <div class="sem-label">${label}</div>
-        <table class="cur-table">
-            <thead>
-                <tr>
-                    <th class="th-code">Course Code</th>
-                    <th class="th-title" style="text-align:left;">Course Title</th>
-                    <th class="th-unit">Lec</th>
-                    <th class="th-unit">Lab</th>
-                    <th class="th-unit">Total</th>
-                    <th class="th-prereq">Pre-requisite</th>
-                    <th class="th-action"></th>
-                </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-            ${subjects.length > 0 ? `
-            <tfoot>
-                <tr>
-                    <td colspan="2" class="tfoot-label">Total</td>
-                    <td class="td-unit">${totalLec}</td>
-                    <td class="td-unit">${totalLab}</td>
-                    <td class="td-unit">${totalUnits}</td>
-                    <td colspan="2"></td>
-                </tr>
-            </tfoot>` : ''}
-        </table>
-    </div>`;
+function renderSingleSemTable(label, subjects) {
+    const rows = subjects.map(s => `<tr>${subjCells(s)}</tr>`).join('');
+    const t    = semTotals(subjects);
+    return `<div class="year-block" style="max-width:52%;">
+    <table class="cur-table">
+        <thead>
+            <tr><th class="th-year" colspan="7">${label}</th></tr>
+            <tr>
+                <th class="th-col" rowspan="2">Course Code</th>
+                <th class="th-col th-col-title" rowspan="2" style="text-align:left;">Course Title</th>
+                <th class="th-col" colspan="3">Units</th>
+                <th class="th-col" rowspan="2">Pre-Req</th>
+                <th class="th-col" rowspan="2"></th>
+            </tr>
+            <tr>
+                <th class="th-col">Lec</th><th class="th-col">Lab</th><th class="th-col">Total</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2" class="td-total-lbl" style="border:1px solid #d1d5db;">TOTAL</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t.lec}</td>
+                <td class="td-unit" style="border:1px solid #d1d5db;">${t.lab}</td>
+                <td class="td-total" style="border:1px solid #d1d5db;">${t.total}</td>
+                <td style="border:1px solid #d1d5db;"></td>
+                <td style="border:1px solid #d1d5db;"></td>
+            </tr>
+        </tfoot>
+    </table></div>`;
 }
 
 function bindCurriculumEvents(container, content, programId) {
     let closeMenusHandler = null;
 
-    // Kebab toggle
+    // Kebab toggle — position:fixed menu needs viewport coords
     content.querySelectorAll('.cur-kebab').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const menu = btn.nextElementSibling;
+            const menu   = btn.nextElementSibling;
             const isOpen = menu.classList.contains('open');
             content.querySelectorAll('.cur-kebab-menu.open').forEach(m => m.classList.remove('open'));
-            if (!isOpen) menu.classList.add('open');
-
+            if (!isOpen) {
+                const r = btn.getBoundingClientRect();
+                menu.style.top  = (r.bottom + 4) + 'px';
+                menu.style.left = Math.max(4, r.right - 165) + 'px';
+                menu.classList.add('open');
+            }
             if (closeMenusHandler) document.removeEventListener('click', closeMenusHandler);
             closeMenusHandler = () => content.querySelectorAll('.cur-kebab-menu.open').forEach(m => m.classList.remove('open'));
             document.addEventListener('click', closeMenusHandler, { once: true });
@@ -424,13 +471,13 @@ function bindCurriculumEvents(container, content, programId) {
     content.querySelectorAll('[data-archive]').forEach(btn => {
         btn.addEventListener('click', async () => {
             content.querySelectorAll('.cur-kebab-menu.open').forEach(m => m.classList.remove('open'));
-            if (!confirm(`Archive "${btn.dataset.name}"?\n\nThis will hide it from the curriculum. It cannot be archived if it has active offerings.`)) return;
+            if (!await notify.confirm(`Archive "${btn.dataset.name}"?\n\nThis will hide it from the curriculum. It cannot be archived if it has active offerings.`, { danger: true, confirmText: 'Archive' })) return;
             const res = await Api.post('/CurriculumAPI.php?action=archive', {
                 subject_id: parseInt(btn.dataset.archive),
                 program_id: parseInt(programId),
             });
             if (res.success) loadCurriculum(container, programId);
-            else alert(res.message);
+            else notify.error(res.message);
         });
     });
 }

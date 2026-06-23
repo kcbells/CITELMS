@@ -325,17 +325,17 @@ class NotificationEmailHelper {
     }
 
     private static function lessonLink(int $lessonId) {
-        return EmailHelper::appBaseUrl() . '/app/index.html#student/lesson-view?id=' . $lessonId;
+        return EmailHelper::appBaseUrl() . '/app/dashboard.html#student/lesson-view?id=' . $lessonId;
     }
 
     private static function quizLink(int $quizId) {
-        return EmailHelper::appBaseUrl() . '/app/index.html#student/take-quiz?id=' . $quizId;
+        return EmailHelper::appBaseUrl() . '/app/dashboard.html#student/take-quiz?id=' . $quizId;
     }
 
     private static function announcementLink($subjectId) {
         if ($subjectId) {
-            return EmailHelper::appBaseUrl() . '/app/index.html#student/subject?id=' . (int)$subjectId . '&tab=classwork';
+            return EmailHelper::appBaseUrl() . '/app/dashboard.html#student/subject?id=' . (int)$subjectId . '&tab=classwork';
         }
-        return EmailHelper::appBaseUrl() . '/app/index.html#student/announcements';
+        return EmailHelper::appBaseUrl() . '/app/dashboard.html#student/announcements';
     }
 }

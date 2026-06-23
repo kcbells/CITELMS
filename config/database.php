@@ -15,18 +15,28 @@
  * ============================================================
  */
 
-// Database Configuration
-define('DB_HOST', '127.0.0.1');
-$dbName = 'cit_lms';
+// Load .env file (safe to call multiple times)
+require_once __DIR__ . '/env.php';
+
+// Database credentials — reads from .env, falls back to database.local.php, then hardcoded defaults
+$dbHost = getenv('DB_HOST') ?: '127.0.0.1';
+$dbName = getenv('DB_NAME') ?: 'cit_lms';
+$dbUser = getenv('DB_USER') ?: 'root';
+$dbPass = getenv('DB_PASS') !== false ? getenv('DB_PASS') : '';
+$dbPort = (int)(getenv('DB_PORT') ?: 3306);
+
+// Legacy local override (still supported for InfinityFree / backwards compat)
 $dbLocal = __DIR__ . '/database.local.php';
 if (is_readable($dbLocal)) {
     require $dbLocal;
 }
-define('DB_NAME', $dbName);
-define('DB_USER', 'root');
-define('DB_PASS', '');  // Change this in production!
+
+define('DB_HOST',    $dbHost);
+define('DB_NAME',    $dbName);
+define('DB_USER',    $dbUser);
+define('DB_PASS',    $dbPass);
 define('DB_CHARSET', 'utf8mb4');
-define('DB_PORT', 3306);
+define('DB_PORT',    (int)$dbPort);
 
 /**
  * Database Class
@@ -252,4 +262,13 @@ function db() {
  */
 function pdo() {
     return Database::getInstance()->getConnection();
+}
+
+// ── Rate limiting ─────────────────────────────────────────────
+// Applied to every API request automatically.  Non-API includes
+// (CLI scripts, cron jobs) skip this block.
+if (!defined('SKIP_RATE_LIMIT') &&
+    strpos($_SERVER['SCRIPT_NAME'] ?? '', '/api/') !== false) {
+    require_once __DIR__ . '/../api/helpers/RateLimiter.php';
+    RateLimiter::check();
 }

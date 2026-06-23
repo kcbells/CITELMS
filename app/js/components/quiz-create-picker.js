@@ -2,6 +2,7 @@
  * Choose manual vs AI-assisted quiz creation.
  */
 import { openQuizModal } from './quiz-modal.js';
+import { openAiQuizModal } from '../pages/instructor/quiz-ai-generate.js';
 
 const STYLES = `
     .qz-pick-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
@@ -101,10 +102,12 @@ export function openQuizCreatePicker(options = {}) {
 
     overlay.querySelector('[data-mode="ai"]').addEventListener('click', () => {
         close();
-        let hash = `#instructor/quiz-ai-generate?back=${encodeURIComponent(backTarget)}`;
-        if (presetSubjectId) hash += `&subject_id=${presetSubjectId}`;
-        if (presetSectionId) hash += `&section_id=${presetSectionId}`;
-        window.location.hash = hash;
+        openAiQuizModal({
+            presetSubjectId,
+            presetSectionId,
+            lockSubject,
+            backTarget,
+        });
     });
 
     document.body.appendChild(overlay);

@@ -68,9 +68,12 @@ export function messagePageStyles() {
         .msg-search:focus {
             border-color:${G}; box-shadow:0 0 0 3px rgba(0,70,27,.1);
         }
+        .msg-new-row {
+            display:flex; gap:8px; margin-bottom:10px;
+        }
         .msg-new-btn {
-            display:flex; align-items:center; justify-content:center; gap:8px;
-            width:100%; padding:11px 14px; border-radius:10px;
+            flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+            padding:10px 10px; border-radius:10px;
             background:${G}; color:#fff; border:none;
             font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
             box-shadow:0 2px 8px rgba(0,70,27,.25);
@@ -79,6 +82,31 @@ export function messagePageStyles() {
         .msg-new-btn:hover {
             background:${G2}; transform:translateY(-1px);
             box-shadow:0 4px 12px rgba(0,70,27,.3);
+        }
+        .msg-new-btn--group {
+            background:#0369A1;
+            box-shadow:0 2px 8px rgba(3,105,161,.25);
+        }
+        .msg-new-btn--group:hover {
+            background:#0284C7;
+            box-shadow:0 4px 12px rgba(3,105,161,.3);
+        }
+        .msg-type-tabs {
+            display:flex; gap:4px; margin-bottom:10px;
+        }
+        .msg-type-tab {
+            flex:1; padding:7px 10px; border:1px solid ${BORDER}; border-radius:8px;
+            background:#fff; color:#6B7280; font-size:12px; font-weight:600;
+            cursor:pointer; font-family:inherit; transition:all .15s;
+        }
+        .msg-type-tab.active {
+            background:${G}; color:#fff; border-color:${G};
+        }
+        .msg-type-tab:not(.active):hover { background:#F3F4F6; color:#374151; }
+        .thread-avatar--group { background:#0369A1; border-radius:10px !important; }
+        .thread-group-badge {
+            font-size:9px; font-weight:700; background:#E0F2FE; color:#0369A1;
+            padding:1px 5px; border-radius:4px; margin-left:4px;
         }
 
         .thread-list {
@@ -286,13 +314,46 @@ export function messagePageStyles() {
         .nc-name { font-size:14px; font-weight:700; color:#111; }
         .nc-sub  { font-size:12px; color:#6B7280; margin-top:2px; }
 
-        @media (max-width:768px) {
-            .msg-hero { padding:20px; }
-            .msg-hero-title { font-size:22px; }
-            .msg-layout { flex-direction:column; height:auto; min-height:0; }
-            .msg-sidebar { width:100%; min-width:unset; border-right:none; border-bottom:1px solid ${BORDER}; max-height:280px; }
-            .msg-main { min-height:420px; }
-            .msg-hero-stat { display:none; }
+        /* Mobile back button — hidden on desktop */
+        .msg-mobile-back {
+            display: none;
+            align-items: center; justify-content: center;
+            width: 36px; height: 36px; border-radius: 50%;
+            border: none; background: transparent; cursor: pointer;
+            color: #374151; flex-shrink: 0;
+            transition: background .12s;
+        }
+        .msg-mobile-back:hover { background: #F3F4F6; }
+        .msg-mobile-back svg { width: 20px; height: 20px; }
+
+        @media (max-width: 768px) {
+            .msg-hero { padding: 20px; }
+            .msg-hero-title { font-size: 22px; }
+            .msg-hero-stat { display: none; }
+
+            .msg-layout {
+                flex-direction: column;
+                height: calc(100dvh - 160px);
+                min-height: 400px;
+                border-radius: 12px;
+            }
+
+            /* Default (thread list) view on mobile */
+            .msg-sidebar {
+                width: 100%; min-width: unset;
+                border-right: none; border-bottom: 1px solid ${BORDER};
+                flex: 1; max-height: none;
+            }
+            .msg-main { display: none; }
+
+            /* Chat view: hide sidebar, show chat */
+            .msg-layout.in-chat .msg-sidebar { display: none; }
+            .msg-layout.in-chat .msg-main {
+                display: flex; flex: 1; min-height: 0;
+            }
+
+            /* Show back button on mobile */
+            .msg-mobile-back { display: flex; }
         }
     `;
 }
@@ -321,7 +382,22 @@ export function messageSidebarShell(newMessageLabel) {
                     <input class="msg-search" id="msg-thread-search" type="search"
                         placeholder="Search conversations…" autocomplete="off">
                 </div>
-                <button type="button" class="msg-new-btn" id="btn-new-chat">${newMessageLabel}</button>
+                <div class="msg-new-row">
+                    <button type="button" class="msg-new-btn" id="btn-new-chat">${newMessageLabel}</button>
+                    <button type="button" class="msg-new-btn msg-new-btn--group" id="btn-new-group" title="New Group Chat">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        New Group
+                    </button>
+                </div>
+                <div class="msg-type-tabs" id="msg-type-tabs">
+                    <button class="msg-type-tab active" data-type="direct">Direct</button>
+                    <button class="msg-type-tab" data-type="group">Groups</button>
+                </div>
             </div>
             <div class="thread-list" id="thread-list">
                 <div class="thread-empty">Loading…</div>
@@ -344,4 +420,23 @@ export function applyMessagePageBg(container) {
     container.style.background = '#fff';
     const pageContent = container.closest('.page-content');
     if (pageContent) pageContent.style.background = '#fff';
+}
+
+/** Switch the messages layout into mobile chat mode (hides sidebar, shows chat panel). */
+export function enterMobileChat(onBack) {
+    const layout = document.querySelector('.msg-layout');
+    if (!layout) return;
+    layout.classList.add('in-chat');
+    const btn = document.querySelector('.msg-mobile-back');
+    if (btn) {
+        btn.onclick = () => {
+            layout.classList.remove('in-chat');
+            if (onBack) onBack();
+        };
+    }
+}
+
+/** Return to thread list on mobile. */
+export function exitMobileChat() {
+    document.querySelector('.msg-layout')?.classList.remove('in-chat');
 }

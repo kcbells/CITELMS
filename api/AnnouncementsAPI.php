@@ -3,6 +3,7 @@
  * CIT-LMS Announcements API
  * CRUD for instructor announcements
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
@@ -32,6 +33,36 @@ function ensureAnnouncementSectionTable() {
         );
     } catch (Exception $e) {
         error_log('announcement_section table: ' . $e->getMessage());
+    }
+}
+
+function ensureAnnouncementStudentTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec(
+            "CREATE TABLE IF NOT EXISTS announcement_student (
+                announcement_id INT UNSIGNED NOT NULL,
+                user_student_id INT UNSIGNED NOT NULL,
+                PRIMARY KEY (announcement_id, user_student_id),
+                KEY idx_ann_student (user_student_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    } catch (Exception $e) {
+        error_log('announcement_student table: ' . $e->getMessage());
+    }
+}
+
+function attachAnnouncementStudents($announcementId, array $studentIds) {
+    ensureAnnouncementStudentTable();
+    $pdo = pdo();
+    $pdo->prepare("DELETE FROM announcement_student WHERE announcement_id = ?")->execute([$announcementId]);
+    if (empty($studentIds)) return;
+    $stmt = $pdo->prepare("INSERT IGNORE INTO announcement_student (announcement_id, user_student_id) VALUES (?, ?)");
+    foreach ($studentIds as $sid) {
+        $sid = (int)$sid;
+        if ($sid > 0) $stmt->execute([$announcementId, $sid]);
     }
 }
 
@@ -114,10 +145,13 @@ function getInstructorAnnouncements() {
         $sql .= " ORDER BY a.created_at DESC";
         $data = db()->fetchAll($sql, $params);
         enrichAnnouncementsWithSections($data);
+        ob_clean();
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+        error_log('[AnnouncementsAPI.php] ' . $e->getMessage());
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 
@@ -128,8 +162,10 @@ function createAnnouncement() {
     $content = trim($input['content'] ?? '');
     $status = $input['status'] ?? 'published';
     $subjectId = $input['subject_id'] ?? null;
-    $allSections = !empty($input['all_sections']);
-    $sectionIds = array_values(array_filter(array_map('intval', $input['section_ids'] ?? [])));
+    $studentIds = array_values(array_filter(array_map('intval', $input['student_ids'] ?? [])));
+    $hasStudentTargeting = !empty($studentIds);
+    $allSections = $hasStudentTargeting ? false : !empty($input['all_sections']);
+    $sectionIds = $hasStudentTargeting ? [] : array_values(array_filter(array_map('intval', $input['section_ids'] ?? [])));
 
     if (!$title || !$content) {
         echo json_encode(['success' => false, 'message' => 'Title and content are required']);
@@ -159,18 +195,26 @@ function createAnnouncement() {
         $stmt->execute([$userId, $subjectOfferedId, $title, $content, $status]);
         $annId = (int)$pdo->lastInsertId();
 
-        if ($subjectOfferedId && !$allSections && !empty($sectionIds)) {
+        if ($hasStudentTargeting) {
+            attachAnnouncementStudents($annId, $studentIds);
+        } elseif ($subjectOfferedId && !$allSections && !empty($sectionIds)) {
             attachAnnouncementSections($annId, $sectionIds);
         }
 
         if ($status === 'published') {
-            NotificationEmailHelper::queueNewAnnouncement($annId);
-            NotificationEmailHelper::dispatchAfterPublish();
+            try {
+                NotificationEmailHelper::queueNewAnnouncement($annId);
+                NotificationEmailHelper::dispatchAfterPublish();
+            } catch (Throwable $ne) {
+                error_log("Announcement notify error: " . $ne->getMessage());
+            }
         }
 
+        ob_clean();
         echo json_encode(['success' => true, 'message' => 'Announcement created']);
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         error_log("Announcement create error: " . $e->getMessage());
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Failed to create announcement']);
     }
 }
@@ -223,13 +267,19 @@ function updateAnnouncement() {
         }
 
         if ($status === 'published' && ($prev['status'] ?? '') !== 'published') {
-            NotificationEmailHelper::queueNewAnnouncement($annId);
-            NotificationEmailHelper::dispatchAfterPublish();
+            try {
+                NotificationEmailHelper::queueNewAnnouncement($annId);
+                NotificationEmailHelper::dispatchAfterPublish();
+            } catch (Throwable $ne) {
+                error_log("Announcement notify error: " . $ne->getMessage());
+            }
         }
 
+        ob_clean();
         echo json_encode(['success' => true, 'message' => 'Announcement updated']);
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         error_log("Announcement update error: " . $e->getMessage());
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Failed to update announcement']);
     }
 }
@@ -249,8 +299,11 @@ function deleteAnnouncement() {
         pdo()->prepare("DELETE FROM announcement_section WHERE announcement_id = ?")->execute([$annId]);
         $stmt = pdo()->prepare("DELETE FROM announcement WHERE announcement_id = ? AND user_id = ?");
         $stmt->execute([$annId, $userId]);
+        ob_clean();
         echo json_encode(['success' => true, 'message' => 'Announcement deleted']);
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
+        error_log("Announcement delete error: " . $e->getMessage());
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Failed to delete announcement']);
     }
 }
@@ -274,9 +327,9 @@ function getStudentAnnouncements() {
                              WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
                          )
                          AND (
-                             NOT EXISTS (
-                                 SELECT 1 FROM announcement_section ans
-                                 WHERE ans.announcement_id = a.announcement_id
+                             (
+                                 NOT EXISTS (SELECT 1 FROM announcement_section ans WHERE ans.announcement_id = a.announcement_id)
+                                 AND NOT EXISTS (SELECT 1 FROM announcement_student anst WHERE anst.announcement_id = a.announcement_id)
                              )
                              OR EXISTS (
                                  SELECT 1 FROM announcement_section ans
@@ -286,9 +339,14 @@ function getStudentAnnouncements() {
                                      AND ss2.status = 'enrolled'
                                  WHERE ans.announcement_id = a.announcement_id
                              )
+                             OR EXISTS (
+                                 SELECT 1 FROM announcement_student anst2
+                                 WHERE anst2.announcement_id = a.announcement_id
+                                   AND anst2.user_student_id = ?
+                             )
                          )
                      ))";
-        $params = [$userId, $userId];
+        $params = [$userId, $userId, $userId];
 
         if ($subjectId) {
             $sql .= " AND so.subject_id = ?";
@@ -297,9 +355,11 @@ function getStudentAnnouncements() {
 
         $sql .= " ORDER BY a.created_at DESC";
         $data = db()->fetchAll($sql, $params);
+        ob_clean();
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
         http_response_code(500);
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }

@@ -1,0 +1,1763 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <title>COC LMS | PHINMA Cagayan de Oro College</title>
+    <meta name="description" content="The official Learning Management System of PHINMA Cagayan de Oro College.">
+    <link rel="icon" type="image/png" href="assets/images/phinma_logo1.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --green:       #1B4D2E;
+            --green-dark:  #0f2e1a;
+            --green-hero:  rgba(15,42,24,.78);
+            --gold:        #C8941A;
+            --gold-light:  #F5C842;
+            --gold-dark:   #a8780f;
+            --cream:       #F7F5E8;
+            --white:       #ffffff;
+            --gray-100:    #f3f4f6;
+            --gray-200:    #e5e7eb;
+            --gray-300:    #d1d5db;
+            --gray-400:    #9ca3af;
+            --gray-500:    #6b7280;
+            --gray-600:    #4b5563;
+            --gray-700:    #374151;
+            --gray-900:    #111827;
+            --shadow:      0 4px 20px rgba(0,0,0,.08);
+            --shadow-lg:   0 16px 48px rgba(0,0,0,.14);
+        }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: var(--gray-900); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+        img { display: block; max-width: 100%; }
+        a { text-decoration: none; }
+
+        /* â”€â”€ TOPBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .topbar { background: var(--green-dark); padding: 7px 0; font-size: 12px; color: rgba(255,255,255,.68); }
+        .topbar-inner { max-width: 1240px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .tb-left  { display: flex; align-items: center; gap: 20px; }
+        .tb-right { display: flex; align-items: center; gap: 14px; }
+        .tb-item  { display: flex; align-items: center; gap: 6px; }
+        .tb-item svg { opacity: .55; flex-shrink: 0; }
+        .tb-divider { width: 1px; height: 12px; background: rgba(255,255,255,.2); }
+        .tb-right a { color: rgba(255,255,255,.68); font-size: 12px; transition: color .15s; }
+        .tb-right a:hover { color: var(--gold-light); }
+
+        /* â”€â”€ NAVBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .navbar { position: sticky; top: 0; z-index: 900; background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,.09); border-bottom: 2px solid var(--gold); }
+        .nav-inner { max-width: 1240px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; height: 76px; gap: 24px; }
+        .nav-brand { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+        .nav-brand img { width: 52px; height: 52px; object-fit: contain; }
+        .nav-brand-text { line-height: 1.2; }
+        .nav-brand-name { font-size: 17px; font-weight: 800; color: var(--green); display: block; letter-spacing: -.2px; }
+        .nav-brand-sub  { font-size: 10px; color: var(--gold); display: block; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
+        .nav-links { display: flex; align-items: center; gap: 2px; list-style: none; flex: 1; }
+        .nav-links a { display: block; padding: 7px 15px; font-size: 13.5px; font-weight: 500; color: var(--gray-700); border-radius: 6px; transition: color .15s, background .15s; }
+        .nav-links a:hover { color: var(--green); background: #eef6f1; }
+        .nav-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .btn-nav-reg { padding: 9px 20px; background: var(--gold); color: #fff; border: 2px solid var(--gold); border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background .15s, border-color .15s; white-space: nowrap; }
+        .btn-nav-reg:hover { background: var(--gold-dark); border-color: var(--gold-dark); }
+        .btn-nav-login { padding: 9px 20px; background: transparent; color: var(--green); border: 2px solid var(--green); border-radius: 6px; font-size: 13px; font-weight: 700; display: inline-block; white-space: nowrap; transition: background .15s; cursor:pointer; font-family:inherit; }
+        .btn-nav-login:hover { background: #eef6f1; }
+        .hamburger { display: none; background: none; border: 1.5px solid var(--gray-300); border-radius: 6px; padding: 7px 9px; cursor: pointer; color: var(--gray-700); }
+        .hamburger:hover { background: var(--gray-100); }
+        .mobile-nav { display: none; background: #fff; border-bottom: 1px solid var(--gray-200); padding: 12px 28px 20px; position: sticky; top: 76px; z-index: 899; box-shadow: 0 6px 20px rgba(0,0,0,.07); }
+        .mobile-nav.open { display: block; }
+        .mobile-nav a { display: block; padding: 11px 0; font-size: 14px; font-weight: 500; color: var(--gray-700); border-bottom: 1px solid var(--gray-100); }
+        .mobile-nav a:hover { color: var(--green); }
+        .mobile-nav-btns { display: flex; gap: 10px; margin-top: 16px; }
+        .mobile-nav-btns > * { flex: 1; text-align: center; }
+
+        /* â”€â”€ HERO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .hero {
+            position: relative; min-height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; overflow: hidden;
+        }
+        .hero-bg {
+            position: absolute; inset: 0;
+            background: url('assets/images/campus-building.jpg') center/cover no-repeat;
+        }
+        .hero-overlay {
+            position: absolute; inset: 0;
+            background: linear-gradient(to bottom, rgba(10,32,18,.82) 0%, rgba(10,32,18,.72) 60%, rgba(10,32,18,.90) 100%);
+        }
+        .hero-content {
+            position: relative; z-index: 1;
+            max-width: 860px; padding: 0 28px;
+        }
+        .hero-badge {
+            display: inline-block;
+            border: 1.5px solid var(--gold);
+            color: var(--gold); font-size: 11.5px; font-weight: 700;
+            letter-spacing: 1.5px; text-transform: uppercase;
+            padding: 8px 22px; border-radius: 100px;
+            margin-bottom: 28px;
+            animation: fadeDown .7s ease both; animation-delay: .1s;
+        }
+        .hero h1 {
+            font-size: clamp(36px, 6vw, 74px); font-weight: 900;
+            line-height: 1.08; letter-spacing: -1.5px; margin-bottom: 22px;
+            animation: fadeDown .7s ease both; animation-delay: .25s;
+        }
+        .hero h1 .white { color: #fff; display: block; }
+        .hero h1 .gold  { color: var(--gold); display: block; }
+        .hero-desc {
+            font-size: 17px; color: rgba(255,255,255,.78);
+            line-height: 1.75; margin-bottom: 44px; max-width: 600px; margin-left: auto; margin-right: auto;
+            animation: fadeDown .7s ease both; animation-delay: .4s;
+        }
+        .hero-btns {
+            display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+            animation: fadeDown .7s ease both; animation-delay: .55s;
+        }
+        .btn-gold {
+            padding: 15px 36px; background: var(--gold); color: var(--green-dark);
+            border: 2px solid var(--gold); border-radius: 8px;
+            font-size: 15px; font-weight: 800; cursor: pointer;
+            font-family: inherit; display: inline-flex; align-items: center; gap: 9px;
+            transition: background .15s, transform .12s, box-shadow .15s;
+        }
+        .btn-gold:hover { background: var(--gold-light); border-color: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(200,148,26,.4); }
+        .btn-ghost-white {
+            padding: 15px 32px; background: transparent; color: #fff;
+            border: 2px solid rgba(255,255,255,.55); border-radius: 8px;
+            font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 9px;
+            transition: border-color .15s, background .15s;
+        }
+        .btn-ghost-white:hover { border-color: #fff; background: rgba(255,255,255,.1); }
+        .hero-scroll {
+            position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+            z-index: 2; text-align: center; color: rgba(255,255,255,.55);
+            font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+            animation: fadeDown 1s ease both; animation-delay: .8s;
+        }
+        .hero-scroll svg { margin: 8px auto 0; animation: bounce 1.6s ease-in-out infinite; }
+        @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(7px); } }
+
+        /* â”€â”€ ANIMATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        @keyframes fadeDown { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
+        [data-anim] { opacity:0; transition: opacity .65s cubic-bezier(.4,0,.2,1), transform .65s cubic-bezier(.4,0,.2,1); }
+        [data-anim="up"]    { transform: translateY(36px); }
+        [data-anim="left"]  { transform: translateX(-36px); }
+        [data-anim="right"] { transform: translateX(36px); }
+        [data-anim="scale"] { transform: scale(.94); }
+        [data-anim].visible { opacity:1; transform: translate(0) scale(1); }
+        [data-delay="1"]{ transition-delay:.08s; } [data-delay="2"]{ transition-delay:.16s; }
+        [data-delay="3"]{ transition-delay:.24s; } [data-delay="4"]{ transition-delay:.32s; }
+        [data-delay="5"]{ transition-delay:.40s; } [data-delay="6"]{ transition-delay:.48s; }
+
+        /* â”€â”€ SHARED â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .section { padding: 96px 32px; }
+        .sec-inner { max-width: 1240px; margin: 0 auto; }
+        .sec-kicker {
+            display: inline-flex; align-items: center; gap: 9px;
+            font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+            text-transform: uppercase; color: var(--gold); margin-bottom: 12px;
+        }
+        .sec-kicker-line { width: 24px; height: 2px; background: var(--gold); flex-shrink: 0; }
+        .sec-title { font-size: clamp(24px, 3.5vw, 40px); font-weight: 800; color: var(--gray-900); line-height: 1.18; letter-spacing: -.5px; margin-bottom: 14px; }
+        .sec-title em { font-style: normal; color: var(--green); }
+        .sec-desc { font-size: 15.5px; color: var(--gray-600); line-height: 1.75; max-width: 600px; }
+        .center-block { text-align: center; }
+        .center-block .sec-kicker { justify-content: center; }
+        .center-block .sec-desc   { margin: 0 auto; }
+        .gold-divider { width: 56px; height: 3px; background: var(--gold); border-radius: 2px; margin: 18px auto 0; }
+
+        /* â”€â”€ ABOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .about { background: #fff; }
+        .about-stats { display:grid; grid-template-columns:repeat(4,1fr); background:var(--green); border-radius:14px; overflow:hidden; margin-bottom:64px; }
+        .as-item { padding:28px 24px; text-align:center; border-right:1px solid rgba(255,255,255,.12); }
+        .as-item:last-child { border-right:none; }
+        .as-num  { font-size:38px; font-weight:900; color:var(--gold-light); display:block; line-height:1; }
+        .as-label{ font-size:10.5px; font-weight:700; color:rgba(255,255,255,.65); text-transform:uppercase; letter-spacing:.8px; margin-top:7px; display:block; }
+        .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+        .about-visual { position:relative; }
+        .about-main-photo { border-radius:14px; overflow:hidden; height:380px; position:relative; box-shadow:var(--shadow-lg); }
+        .about-main-photo img { width:100%; height:100%; object-fit:cover; }
+        .about-main-photo-cap { position:absolute; bottom:0; left:0; right:0; background:#0f2e1a; padding:18px 22px; border-top:3px solid var(--gold); }
+        .about-main-photo-cap span { color:#fff; font-size:13px; font-weight:700; display:block; }
+        .about-main-photo-cap small { color:var(--gold-light); font-size:11px; }
+        .about-sub-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+        .about-sub-photo { border-radius:10px; overflow:hidden; height:150px; }
+        .about-sub-photo img { width:100%; height:100%; object-fit:cover; }
+        .about-sub-stat { border-radius:10px; background:var(--green); display:flex; flex-direction:column; align-items:center; justify-content:center; height:150px; border:2px solid transparent; transition:border-color .2s; }
+        .about-sub-stat:hover { border-color:var(--gold); }
+        .about-sub-stat strong { font-size:32px; font-weight:900; color:var(--gold-light); display:block; line-height:1; }
+        .about-sub-stat span { font-size:10.5px; color:rgba(255,255,255,.72); font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-top:6px; }
+        .about-points { margin-top:28px; display:flex; flex-direction:column; }
+        .about-point { display:flex; gap:16px; padding:16px 0; border-bottom:1px solid var(--gray-100); align-items:flex-start; }
+        .about-point:last-child { border-bottom:none; }
+        .ap-icon { width:44px; height:44px; border-radius:10px; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .ap-body strong { display:block; font-size:14px; font-weight:700; color:var(--gray-900); margin-bottom:3px; }
+        .ap-body span   { font-size:13px; color:var(--gray-600); line-height:1.55; }
+
+        /* â”€â”€ CAMPUSES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .campuses { background: #fff; }
+        .campus-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:48px; }
+        .campus-card { border-radius:12px; overflow:hidden; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; transition:transform .2s, box-shadow .2s; }
+        .campus-card:hover { transform:translateY(-5px); box-shadow:0 24px 60px rgba(0,0,0,.16); }
+        .campus-photo { position:relative; height:210px; flex-shrink:0; }
+        .campus-photo img { width:100%; height:100%; object-fit:cover; transition:transform .5s ease; }
+        .campus-card:hover .campus-photo img { transform:scale(1.04); }
+        .campus-photo-overlay { position:absolute; inset:0; background:linear-gradient(to top, rgba(10,32,18,.82) 0%, transparent 55%); }
+        .campus-label { position:absolute; bottom:0; left:0; right:0; padding:18px 18px 14px; }
+        .campus-label h3 { font-size:18px; font-weight:800; color:#fff; margin-bottom:3px; }
+        .campus-label p  { font-size:12px; color:var(--gold-light); font-weight:600; }
+        .campus-body { background:#fff; padding:20px; flex:1; display:flex; flex-direction:column; gap:10px; border:1.5px solid var(--gray-200); border-top:none; border-radius:0 0 12px 12px; }
+        .campus-detail { display:flex; gap:10px; align-items:flex-start; font-size:13px; color:var(--gray-600); }
+        .campus-detail svg { color:var(--green); flex-shrink:0; margin-top:2px; }
+        .campus-tag { display:inline-block; background:#eef6f1; color:var(--green); font-size:11px; font-weight:700; padding:4px 12px; border-radius:12px; margin-top:4px; border:1px solid #c2dec9; }
+
+
+
+
+
+
+
+
+
+
+
+        /* -- FEATURES -------------------------- */
+        .features { background: #f0f4f2; }
+        /* two-column layout */
+        .feat-layout { display:grid; grid-template-columns:1fr 1.15fr; gap:72px; align-items:start; margin-top:56px; }
+        /* LEFT: explanation panel */
+        .feat-left { position:sticky; top:100px; }
+        .feat-left .fl-kicker { display:inline-flex; align-items:center; gap:8px; font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:var(--green); margin-bottom:16px; }
+        .feat-left .fl-kicker span { display:inline-block; width:28px; height:2px; background:var(--gold); }
+        .feat-left h3 { font-size:28px; font-weight:900; color:var(--green-dark); line-height:1.25; margin-bottom:16px; }
+        .feat-left h3 em { color:var(--gold); font-style:normal; }
+        .feat-left > p { font-size:14.5px; color:#4a5568; line-height:1.75; margin-bottom:28px; }
+        /* bullet highlights */
+        .feat-bullets { list-style:none; margin-bottom:32px; display:flex; flex-direction:column; gap:10px; }
+        .feat-bullets li { display:flex; align-items:center; gap:12px; font-size:13.5px; color:var(--green-dark); font-weight:600; }
+        .feat-bullets li::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--gold); flex-shrink:0; }
+        /* AI card inside left */
+        .feat-ai-card { background:var(--green-dark); border-radius:16px; padding:24px 28px; display:flex; gap:18px; align-items:flex-start; }
+        .feat-ai-card .fai-icon { width:46px; height:46px; border-radius:12px; background:#C8941A; color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .feat-ai-card .fai-tag { display:inline-block; background:rgba(245,200,66,.14); border:1px solid rgba(245,200,66,.38); color:#F5C842; font-size:9.5px; font-weight:700; padding:2px 9px; border-radius:20px; letter-spacing:.6px; text-transform:uppercase; margin-bottom:6px; }
+        .feat-ai-card h4 { font-size:15px; font-weight:800; color:#fff; margin-bottom:5px; }
+        .feat-ai-card p  { font-size:12.5px; color:rgba(255,255,255,.58); line-height:1.6; }
+        /* RIGHT: feature card stack */
+        .feat-right { display:flex; flex-direction:column; gap:12px; }
+        .fi-card { display:flex; align-items:center; gap:20px; background:#fff; border-radius:14px; padding:20px 22px; border:1.5px solid #e2ece7; box-shadow:0 2px 10px rgba(0,0,0,.05); transition:transform .2s,box-shadow .2s; }
+        .fi-card:hover { transform:translateX(5px); box-shadow:0 10px 30px rgba(0,0,0,.1); border-color:#b0c4bc; }
+        .fi-card-icon { width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .fi-card-text { flex:1; }
+        .fi-card-text h4 { font-size:14.5px; font-weight:800; color:var(--green-dark); margin-bottom:4px; line-height:1.2; }
+        .fi-card-text p  { font-size:12.5px; color:#6b7a8d; line-height:1.55; margin:0; }
+        .fi-card-arrow { color:#c5d5ce; flex-shrink:0; transition:color .2s,transform .2s; }
+        .fi-card-arrow { color:#c5d5ce; flex-shrink:0; transition:color .2s,transform .2s; }
+        .fi-card:hover .fi-card-arrow { color:var(--green); transform:translateX(3px); }
+        /* icon */
+        .fi-dark { background:#1f2937; color:#fff; }
+
+
+
+
+        /* â”€â”€ PROGRAMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .programs { background:#fff; }
+        /* Programs carousel */
+        .prog-carousel-wrap { position:relative; margin-top:52px; }
+        .prog-carousel { display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; padding:8px 4px 24px; scrollbar-width:none; -ms-overflow-style:none; }
+        .prog-carousel::-webkit-scrollbar { display:none; }
+        .col-card { flex:0 0 340px; height:480px; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; flex-direction:column; background:var(--green-dark); border:1.5px solid rgba(255,255,255,.08); box-shadow:0 8px 32px rgba(0,0,0,.18); transition:transform .22s,box-shadow .22s; cursor:default; }
+        /* College watermark letter colors */
+        .cc-abbr-bg.cc-green  { color:rgba(77,209,122,.18); }
+        .cc-abbr-bg.cc-maroon { color:rgba(232,117,138,.22); }
+        .cc-abbr-bg.cc-blue   { color:rgba(106,173,255,.2); }
+        .cc-abbr-bg.cc-red    { color:rgba(255,124,110,.2); }
+        .cc-abbr-bg.cc-gold   { color:rgba(245,200,66,.2); }
+        .cc-abbr-bg.cc-purple { color:rgba(196,157,255,.2); }
+        .cc-badge.cc-purple { color:#c49dff; border-color:#c49dff; background:rgba(196,157,255,.12); }
+        .cc-top { padding:28px 24px 20px; position:relative; flex-shrink:0; }
+        .cc-abbr-bg { position:absolute; bottom:-20px; right:-8px; font-size:120px; font-weight:900; line-height:1; color:rgba(255,255,255,.07); pointer-events:none; letter-spacing:-4px; }
+        .cc-badge { display:inline-block; background:rgba(255,255,255,.1); border:1.5px solid rgba(255,255,255,.25); color:rgba(255,255,255,.7); font-size:10.5px; font-weight:800; letter-spacing:1px; padding:4px 12px; border-radius:4px; margin-bottom:9px; text-transform:uppercase; }
+        .cc-name { font-size:14.5px; font-weight:800; color:#fff; line-height:1.3; }
+        .cc-divider { height:1px; background:rgba(255,255,255,.15); margin:0 24px; flex-shrink:0; }
+        .cc-programs { flex:1; padding:16px 24px 20px; overflow-y:auto; scrollbar-width:none; }
+        .cc-programs::-webkit-scrollbar { display:none; }
+        .cc-programs ul { list-style:none; }
+        .cc-programs ul li { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.1); font-size:13px; color:rgba(255,255,255,.88); line-height:1.45; }
+        .cc-programs ul li:last-child { border-bottom:none; }
+        .cc-programs ul li::before { content:''; width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.6); flex-shrink:0; margin-top:5px; }
+        .cc-elective { font-size:11px; color:rgba(255,255,255,.45); display:block; margin-top:2px; font-style:italic; }
+        /* Controls */
+        .prog-controls { display:flex; align-items:center; justify-content:center; gap:18px; margin-top:4px; }
+        .prog-arrow { width:46px; height:46px; border-radius:50%; background:#fff; border:1.5px solid var(--gray-200); color:var(--green); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s,border-color .15s,transform .15s; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+        .prog-arrow:hover { background:var(--gold); border-color:var(--gold); color:var(--green-dark); transform:scale(1.08); }
+        .prog-dots { display:flex; gap:8px; align-items:center; }
+        .prog-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); cursor:pointer; transition:background .2s,width .25s; border:none; padding:0; }
+        .prog-dot.active { background:var(--gold); width:26px; border-radius:4px; }
+
+        /* â”€â”€ FOOTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        footer { background: #061409; color:rgba(255,255,255,.65); padding:64px 32px 28px; }
+        .footer-inner { max-width:1240px; margin:0 auto; }
+        .footer-grid { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:48px; margin-bottom:44px; }
+        .footer-brand-row { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+        .footer-brand-row img  { width:44px; height:44px; object-fit:contain; }
+        .footer-brand-name { font-size:16px; font-weight:800; color:#fff; display:block; }
+        .footer-brand-sub  { font-size:10px; font-weight:700; color:var(--gold); text-transform:uppercase; letter-spacing:.6px; display:block; margin-top:2px; }
+        .footer-brand p { font-size:13px; line-height:1.75; }
+        .footer-col h4 { font-size:10.5px; font-weight:700; color:rgba(255,255,255,.38); text-transform:uppercase; letter-spacing:.8px; margin-bottom:14px; }
+        .footer-col a  { display:block; font-size:13px; color:rgba(255,255,255,.62); margin-bottom:9px; transition:color .15s; }
+        .footer-col a:hover { color:var(--gold-light); }
+        .footer-bottom { border-top:1px solid rgba(255,255,255,.08); padding-top:22px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:12px; }
+        .footer-gold { color:var(--gold); font-weight:600; }
+
+        /* â”€â”€ SCROLL TOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .scroll-top { position:fixed; bottom:28px; right:28px; z-index:800; width:46px; height:46px; border-radius:50%; background:var(--gold); color:var(--green-dark); border:none; cursor:pointer; display:none; align-items:center; justify-content:center; box-shadow:0 4px 18px rgba(200,148,26,.45); transition:transform .15s; }
+        .scroll-top.show { display:flex; }
+        .scroll-top:hover { transform:translateY(-3px); }
+
+        /* â”€â”€ REGISTRATION MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9000; align-items:center; justify-content:center; padding:20px; }
+        .modal-backdrop.open { display:flex; animation:bdFadeIn .15s; }
+        @keyframes bdFadeIn { from{opacity:0;} to{opacity:1;} }
+        .reg-modal { background:#fff; border-radius:16px; width:100%; max-width:700px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 32px 80px rgba(0,0,0,.32); animation:modalSlide .22s cubic-bezier(.4,0,.2,1); }
+        @keyframes modalSlide { from{opacity:0;transform:translateY(24px) scale(.97);} to{opacity:1;transform:translateY(0) scale(1);} }
+        .modal-hdr { background:var(--green); border-radius:16px 16px 0 0; padding:22px 28px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:3px solid var(--gold); }
+        .modal-hdr img { width:44px; height:44px; object-fit:contain; flex-shrink:0; }
+        .modal-hdr-text { flex:1; }
+        .modal-hdr-text h2 { font-size:17px; font-weight:800; color:#fff; line-height:1.2; margin-bottom:2px; }
+        .modal-hdr-text p  { font-size:12px; color:rgba(255,255,255,.7); }
+        .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
+        .modal-close:hover { background:rgba(200,148,26,.4); color:#fff; }
+        .modal-tabs { display:flex; border-bottom:1.5px solid var(--gray-200); flex-shrink:0; }
+        .modal-tab { flex:1; padding:13px 20px; border:none; background:transparent; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; color:var(--gray-500); border-bottom:3px solid transparent; margin-bottom:-1.5px; transition:all .15s; }
+        .modal-tab:hover { color:var(--green); }
+        .modal-tab.active { color:var(--green); border-bottom-color:var(--gold); background:#fdf9ee; }
+        .modal-body { overflow-y:auto; padding:26px 28px 20px; flex:1; }
+        .modal-body::-webkit-scrollbar { width:5px; }
+        .modal-body::-webkit-scrollbar-thumb { background:var(--gray-300); border-radius:3px; }
+        .reg-panel { display:none; }
+        .reg-panel.active { display:block; }
+        .pre-note { background:#fdf9ee; border:1px solid #e8d9a0; border-radius:6px; padding:12px 14px; font-size:13px; color:var(--gray-600); line-height:1.6; margin-bottom:18px; }
+        .rrow { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+        .rrow.s1 { grid-template-columns:1fr; }
+        .rrow.s3 { grid-template-columns:1fr 1fr 1fr; }
+        .rf { display:flex; flex-direction:column; gap:5px; }
+        .rl { font-size:12px; font-weight:600; color:var(--gray-700); }
+        .rl .req { color:#dc2626; margin-left:2px; }
+        .ri,.rs,.rt { padding:9px 13px; border:1.5px solid var(--gray-300); border-radius:7px; font-size:13.5px; font-family:inherit; color:var(--gray-900); background:#fff; outline:none; width:100%; transition:border-color .15s,box-shadow .15s; }
+        .ri:focus,.rs:focus,.rt:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(200,148,26,.1); }
+        .rt { resize:vertical; min-height:74px; }
+        .rdivider { display:flex; align-items:center; gap:10px; font-size:10.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--gray-400); margin:4px 0 14px; }
+        .rdivider::before,.rdivider::after { content:''; flex:1; height:1px; background:var(--gray-200); }
+        .pw-strength { margin-top:6px; }
+        .pw-bar  { height:3px; border-radius:2px; background:var(--gray-200); overflow:hidden; }
+        .pw-fill { height:100%; width:0; border-radius:2px; transition:width .3s,background .3s; }
+        .pw-lbl  { font-size:11px; color:var(--gray-400); margin-top:3px; }
+        .ragree { display:flex; gap:9px; align-items:flex-start; margin-bottom:14px; margin-top:4px; }
+        .ragree input { width:15px; height:15px; accent-color:var(--green); flex-shrink:0; margin-top:2px; }
+        .ragree label { font-size:12px; color:var(--gray-600); line-height:1.55; }
+        .ragree a { color:var(--green); font-weight:600; }
+        .rmsg { padding:10px 14px; border-radius:6px; font-size:13px; line-height:1.5; display:none; margin-bottom:14px; }
+        .rmsg.success { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; display:block; }
+        .rmsg.error   { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; display:block; }
+        .modal-ft { padding:14px 28px 20px; flex-shrink:0; border-top:1px solid var(--gray-100); background:var(--gray-50); border-radius:0 0 16px 16px; display:flex; gap:10px; }
+        .btn-cancel { padding:11px 22px; background:transparent; color:var(--gray-600); border:1.5px solid var(--gray-300); border-radius:6px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; transition:background .15s; }
+        .btn-cancel:hover { background:var(--gray-100); }
+        .btn-submit { flex:1; padding:12px; background:var(--gold); color:var(--green-dark); border:none; border-radius:6px; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; transition:background .15s,transform .1s; }
+        .btn-submit:hover { background:var(--gold-dark); transform:translateY(-1px); }
+        .btn-submit:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+        /* Terms box */
+        .terms-box { border:1.5px solid var(--gray-200); border-radius:8px; margin-bottom:14px; overflow:hidden; }
+        .terms-scroll { max-height:130px; overflow-y:auto; padding:14px 16px; font-size:12px; color:var(--gray-600); line-height:1.7; background:#fafafa; }
+        .terms-scroll h5 { font-size:11.5px; font-weight:700; color:var(--green-dark); margin:0 0 4px; text-transform:uppercase; letter-spacing:.4px; }
+        .terms-scroll p { margin:0 0 10px; }
+        .terms-accept { display:flex; gap:10px; align-items:center; padding:10px 16px; border-top:1px solid var(--gray-200); background:#f5f8f6; }
+        .terms-accept input { width:15px; height:15px; accent-color:var(--green); flex-shrink:0; }
+        .terms-accept label { font-size:12.5px; color:var(--gray-700); font-weight:600; }
+        .terms-accept a { color:var(--green); font-weight:700; }
+        .rf-hint { font-size:11px; color:#6b7a8d; margin-top:3px; font-style:italic; }
+        /* Sign in modal */
+        .signin-note { font-size:13px; color:var(--gray-600); line-height:1.6; text-align:center; padding:4px 0 8px; }
+        .signin-switch { text-align:center; font-size:13px; color:var(--gray-500); margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-100); }
+        .link-btn { background:none; border:none; color:var(--green); font-weight:700; font-size:13px; cursor:pointer; font-family:inherit; padding:0; text-decoration:underline; }
+        .forgot-row { text-align:right; margin-top:-6px; margin-bottom:4px; }
+        .forgot-row a { font-size:12px; color:var(--green); font-weight:600; }
+        /* Sign In modal — app-style fields */
+        .si-group { margin-bottom:16px; }
+        .si-label { display:block; font-size:13px; font-weight:600; color:#1a1a1a; margin-bottom:7px; }
+        .si-wrap { position:relative; }
+        .si-icon { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9ca3af; display:flex; pointer-events:none; }
+        .si-input { width:100%; padding:11px 14px 11px 40px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; font-family:inherit; color:#1a1a1a; background:#f9fafb; outline:none; transition:border-color .15s,box-shadow .15s; }
+        .si-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,46,.08); background:#fff; }
+        .si-pw-input { padding-right:42px; }
+        .si-pw-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:#9ca3af; padding:4px; display:flex; transition:color .15s; }
+        .si-pw-toggle:hover { color:var(--green); }
+        .si-hint { font-size:12px; color:#6b7280; margin-top:5px; }
+        .si-options { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+        .si-remember { display:flex; align-items:center; gap:8px; font-size:13px; color:#6b7280; cursor:pointer; }
+        .si-remember input { width:15px; height:15px; accent-color:var(--green); cursor:pointer; }
+        .si-forgot { font-size:13px; font-weight:600; color:var(--green); text-decoration:none; }
+        .si-forgot:hover { text-decoration:underline; }
+        .si-captcha-row { display:flex; gap:10px; align-items:center; }
+        .si-captcha-box { flex:1; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 16px; font-family:'Courier New',monospace; font-size:22px; font-weight:700; color:var(--green); letter-spacing:6px; text-align:center; user-select:none; }
+        .si-captcha-reload { width:42px; height:42px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; color:#6b7280; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s,color .15s; flex-shrink:0; }
+        .si-captcha-reload:hover { border-color:var(--green); color:var(--green); }
+        .si-btn { width:100%; padding:13px; background:var(--green); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; margin-top:4px; transition:background .15s; }
+        .si-btn:hover { background:var(--green-dark); }
+        .si-switch { text-align:center; margin-top:18px; font-size:13px; color:#6b7280; padding-top:16px; border-top:1px solid #f0f0f0; }
+        .si-switch-link { background:none; border:none; color:var(--green); font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; padding:0; text-decoration:underline; }
+        /* Forgot password modal */
+        .fp-otp-input { width:100%; padding:13px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:22px; font-weight:700; font-family:'Courier New',monospace; letter-spacing:10px; text-align:center; color:#111827; background:#f9fafb; outline:none; transition:border-color .15s,box-shadow .15s; box-sizing:border-box; }
+        .fp-otp-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,46,.08); background:#fff; }
+        .fp-success-box { text-align:center; padding:12px 0 4px; }
+        .fp-success-icon { width:60px; height:60px; background:#dcfce7; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; color:#16a34a; }
+        .fp-success-box h3 { font-size:18px; font-weight:700; color:#111827; margin:0 0 8px; }
+        .fp-success-box p { font-size:14px; color:#6b7280; margin:0 0 24px; }
+
+        /* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        @media (max-width:1100px) {
+            .feat-layout { grid-template-columns:1fr; gap:40px; }
+            .feat-left { position:static; }
+
+            .footer-grid { grid-template-columns:1fr 1fr; gap:32px; }
+        }
+        @media (max-width:960px) {
+            .about-grid  { grid-template-columns:1fr; gap:40px; }
+            .campus-grid { grid-template-columns:1fr 1fr; }
+            .rrow.s3 { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:768px) {
+            .topbar { display:none; }
+            .nav-links,.nav-actions { display:none; }
+            .hamburger { display:flex; align-items:center; }
+
+
+            .feat-layout { gap:28px; }
+            .fi-card { padding:16px 18px; }
+            .footer-grid { grid-template-columns:1fr; gap:28px; }
+            .rrow { grid-template-columns:1fr; }
+            .rrow.s3 { grid-template-columns:1fr; }
+            .modal-body { padding:20px; }
+            .modal-ft { padding:14px 20px 18px; }
+        }
+        @media (max-width:600px) {
+            .hero h1 { font-size:34px; }
+            .hero-btns { flex-direction:column; align-items:center; }
+            .btn-gold { width:100%; justify-content:center; }
+            .section { padding:64px 20px; }
+            .campus-grid { grid-template-columns:1fr; }
+            .about-grid { grid-template-columns:1fr; }
+            .about-visual { width:100%; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+    <div class="topbar-inner">
+        <div class="tb-left">
+            <div class="tb-item">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                Max Suniel St. Carmen, Cagayan de Oro City 9000
+            </div>
+            <div class="tb-item">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg>
+                (088) 880-8420
+            </div>
+        </div>
+        <div class="tb-right">
+            <a href="mailto:info@coc.phinma.edu.ph">info@coc.phinma.edu.ph</a>
+            <div class="tb-divider"></div>
+            <a href="#" onclick="openSignIn();return false;">Student Portal</a>
+        </div>
+    </div>
+</div>
+
+<!-- NAVBAR -->
+<nav class="navbar" id="navbar">
+    <div class="nav-inner">
+        <a href="#" class="nav-brand">
+            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <div class="nav-brand-text">
+                <span class="nav-brand-name">Cagayan de Oro College</span>
+                <span class="nav-brand-sub">PHINMA Education Network</span>
+            </div>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#about">About</a></li>
+            <li><a href="#campuses">Campuses</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#programs">Programs</a></li>
+        </ul>
+        <div class="nav-actions">
+            <button class="btn-nav-reg" onclick="openReg()">Create Account</button>
+                <button class="btn-nav-login" onclick="openSignIn()">Sign In</button>
+        </div>
+        <button class="hamburger" id="hamburger" aria-label="Menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+        </button>
+    </div>
+</nav>
+
+<!-- MOBILE NAV -->
+<div class="mobile-nav" id="mobile-nav">
+    <a href="#about"    onclick="closeNav()">About</a>
+    <a href="#campuses" onclick="closeNav()">Campuses</a>
+    <a href="#features" onclick="closeNav()">Features</a>
+    <a href="#programs" onclick="closeNav()">Programs</a>
+    <div class="mobile-nav-btns">
+        <button class="btn-nav-reg" onclick="closeNav();openReg()">Create Account</button>
+                <button class="btn-nav-login" onclick="closeNav();openSignIn()">Sign In</button>
+    </div>
+</div>
+
+<!-- HERO -->
+<section class="hero" id="home">
+    <div class="hero-bg"></div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+        <div class="hero-badge">Welcome to the Future of Learning</div>
+        <h1>
+            <span class="white">Learning</span>
+            <span class="gold">Management System</span>
+        </h1>
+        <p class="hero-desc">Empowering higher education through smart learning, automated assessments, and seamless real-time communication for the PHINMA COC community.</p>
+        <div class="hero-btns">
+            <button class="btn-gold" onclick="openReg()">
+                Create Account
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+        </div>
+    </div>
+    <div class="hero-scroll">
+        Discover More
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+</section>
+
+<!-- ABOUT -->
+<section class="section about" id="about">
+    <div class="sec-inner">
+
+
+
+
+
+
+
+        <div class="about-grid">
+            <div class="about-visual" data-anim="left">
+                <div class="about-main-photo">
+                    <img src="assets/images/campus-building.jpg" alt="COC Main Campus">
+                    <div class="about-main-photo-cap">
+                        <span>PHINMA Cagayan de Oro College</span>
+                        <small>Carmen Main Campus &mdash; Est. 1948</small>
+                    </div>
+                </div>
+                <div class="about-sub-row">
+                    <div class="about-sub-photo">
+                        <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2023/08/7rj48fjk58.jpg" alt="COC Iligan" crossorigin="anonymous">
+                    </div>
+                    <div class="about-sub-stat">
+                        <strong>77</strong>
+                        <span>Years of Excellence</span>
+                    </div>
+                </div>
+            </div>
+            <div data-anim="right">
+                <div class="sec-kicker"><span class="sec-kicker-line"></span> About COC LMS</div>
+                <h2 class="sec-title">A Smarter Way to<br><em>Learn and Teach</em></h2>
+                <div class="gold-divider" style="margin:0 0 20px;"></div>
+                <p class="sec-desc">COC LMS is the official digital learning hub of PHINMA Cagayan de Oro College &mdash; connecting students, instructors, and administrators across all three campuses in one seamless platform.</p>
+                <div class="about-points">
+                    <div class="about-point">
+                        <div class="ap-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+                        <div class="ap-body"><strong>Centralized Learning Hub</strong><span>Access lessons, materials, and quizzes anytime, anywhere.</span></div>
+                    </div>
+                    <div class="about-point">
+                        <div class="ap-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+                        <div class="ap-body"><strong>Real-time Grade Tracking</strong><span>Monitor academic performance with live gradebooks.</span></div>
+                    </div>
+                    <div class="about-point">
+                        <div class="ap-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+                        <div class="ap-body"><strong>AI Learning Assistant</strong><span>AI-powered help for students on coursework and subjects.</span></div>
+                    </div>
+                    <div class="about-point">
+                        <div class="ap-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+                        <div class="ap-body"><strong>Multi-Campus Support</strong><span>Carmen, Iligan, and Puerto &mdash; one unified system.</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+</section>
+
+<!-- CAMPUSES -->
+<section class="section campuses" id="campuses">
+    <div class="sec-inner">
+        <div class="center-block" data-anim="up">
+            <div class="sec-kicker"><span class="sec-kicker-line"></span> Our Campuses <span class="sec-kicker-line"></span></div>
+            <h2 class="sec-title">Three Campuses, <em>One Community</em></h2>
+            <div class="gold-divider"></div>
+            <p class="sec-desc" style="margin-top:16px;">PHINMA COC operates across Northern Mindanao, with each campus offering complete academic facilities and a dedicated community of faculty and students.</p>
+        </div>
+        <div class="campus-grid">
+            <div class="campus-card" data-anim="up" data-delay="1">
+                <div class="campus-photo">
+                    <img src="assets/images/campus-building.jpg" alt="Carmen Campus">
+                    <div class="campus-photo-overlay"></div>
+                    <div class="campus-label"><h3>Carmen Campus</h3><p>Main Campus</p></div>
+                </div>
+                <div class="campus-body">
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Max Suniel Street, Carmen, Cagayan de Oro City, 9000, Misamis Oriental</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0917-376-5105 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
+                    <span class="campus-tag">Established 1948</span>
+                </div>
+            </div>
+            <div class="campus-card" data-anim="up" data-delay="3">
+                <div class="campus-photo">
+                    <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2023/08/369054271_620105453631752_5866736303991850769_n.jpg" alt="Iligan Campus" crossorigin="anonymous">
+                    <div class="campus-photo-overlay"></div>
+                    <div class="campus-label"><h3>Iligan Campus</h3><p>City of Majestic Waterfalls</p></div>
+                </div>
+                <div class="campus-body">
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Pedro Permites Rd., Brgy. Pala-o, Iligan City</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0927-120-9941 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
+                    <span class="campus-tag">New 8-Storey Building</span>
+                </div>
+            </div>
+            <div class="campus-card" data-anim="up" data-delay="5">
+                <div class="campus-photo">
+                    <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2026/05/image-55.png?resize=1024%2C675&ssl=1" alt="Puerto Campus" crossorigin="anonymous">
+                    <div class="campus-photo-overlay"></div>
+                    <div class="campus-label"><h3>Puerto Campus</h3><p>Cagayan de Oro City</p></div>
+                </div>
+                <div class="campus-body">
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Purok 6, Puerto, Cagayan de Oro City, 9000, Misamis Oriental</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0916-131-8980 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
+                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
+                    <span class="campus-tag">New 6-Storey Building 2026</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+</section>
+<!-- FEATURES -->
+<section class="section features" id="features">
+    <div class="sec-inner">
+        <div class="center-block" data-anim="up">
+            <div class="sec-kicker"><span class="sec-kicker-line"></span> Platform Features <span class="sec-kicker-line"></span></div>
+            <h2 class="sec-title">Everything You Need <em>in One Place</em></h2>
+            <div class="gold-divider"></div>
+        </div>
+
+        <div class="feat-layout">
+
+            <!-- LEFT: explanation -->
+            <div class="feat-left" data-anim="left">
+                <div class="fl-kicker"><span></span> What is COC LMS?</div>
+                <h3>A Learning Management<br>System built for <em>PHINMA COC</em></h3>
+                <p>LMS stands for <strong>Learning Management System</strong> &mdash; a digital platform where all academic activity happens in one place. COC LMS is the official platform of PHINMA Cagayan de Oro College, designed to make teaching and learning more structured, efficient, and accessible.</p>
+                <p style="font-size:14px;color:#4a5568;line-height:1.75;margin-bottom:28px;">Whether you are a student submitting outputs, an instructor managing grades, or an admin overseeing enrollment &mdash; COC LMS is your single workspace for everything academic.</p>
+                <!-- AI card -->
+                <div class="feat-ai-card">
+                    <div class="fai-icon">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </div>
+                    <div>
+                        <div class="fai-tag">AI-Powered</div>
+                        <h4>AI Learning Assistant</h4>
+                        <p>An intelligent study companion built into the platform &mdash; ask questions, get guidance, and receive tailored support anytime.</p>
+                    </div>
+                </div>
+            </div>
+            <!-- RIGHT: feature card stack -->
+            <div class="feat-right" data-anim="right">
+
+                <div class="fi-card">
+                    <div class="fi-card-icon fi-dark">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    </div>
+                    <div class="fi-card-text">
+                        <h4>Online Lessons</h4>
+                        <p>Structured modules with video content, materials, and real-time progress tracking.</p>
+                    </div>
+                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <div class="fi-card">
+                    <div class="fi-card-icon fi-dark">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    </div>
+                    <div class="fi-card-text">
+                        <h4>Quizzes &amp; Assessments</h4>
+                        <p>Auto-graded quizzes with timers and anti-cheat measures for fair evaluations.</p>
+                    </div>
+                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <div class="fi-card">
+                    <div class="fi-card-icon fi-dark">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </div>
+                    <div class="fi-card-text">
+                        <h4>Grade Management</h4>
+                        <p>Live gradebook for instructors with real-time visibility for every enrolled student.</p>
+                    </div>
+                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <div class="fi-card">
+                    <div class="fi-card-icon fi-dark">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <div class="fi-card-text">
+                        <h4>Messaging System</h4>
+                        <p>Direct messages and announcements between students and instructors.</p>
+                    </div>
+                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+                <div class="fi-card">
+                    <div class="fi-card-icon fi-dark">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div class="fi-card-text">
+                        <h4>Class Enrollment</h4>
+                        <p>Seamless online enrollment with section management, offerings, and enrollment codes.</p>
+                    </div>
+                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+
+            </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- PROGRAMS -->
+<section class="section programs" id="programs">
+    <div class="sec-inner">
+        <div class="center-block" data-anim="up">
+            <div class="sec-kicker"><span class="sec-kicker-line"></span> Academic Programs <span class="sec-kicker-line"></span></div>
+            <h2 class="sec-title">Colleges and Programs <em>Offered</em></h2>
+            <div class="gold-divider"></div>
+            <p class="sec-desc" style="margin-top:16px;">Six colleges. Swipe or click the arrows to explore each one.</p>
+        </div>
+
+        <div class="prog-carousel-wrap" data-anim="up">
+            <div class="prog-carousel" id="prog-carousel">
+
+                <!-- CIT -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-green">CIT</span>
+
+                        <div class="cc-badge cc-green">CIT</div>
+                        <div class="cc-name">College of Information Technology</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>Bachelor of Science in Information Technology<span class="cc-elective">Electives: Business Informatics, Computer Security, System Development, Digital Arts</span></li>
+                    </ul></div>
+                </div>
+
+                <!-- CEA -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-maroon">CEA</span>
+
+                        <div class="cc-badge cc-maroon">CEA</div>
+                        <div class="cc-name">College of Engineering and Architecture</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>BS Architecture</li>
+                        <li>BS Civil Engineering</li>
+                        <li>BS Computer Engineering</li>
+                        <li>BS Electrical Engineering</li>
+                        <li>BS Mechanical Engineering</li>
+                    </ul></div>
+                </div>
+
+                <!-- COE -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-blue">COE</span>
+
+                        <div class="cc-badge cc-blue">COE</div>
+                        <div class="cc-name">College of Education</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>Bachelor in Early Childhood Education</li>
+                        <li>BSEd Major in English</li>
+                        <li>BSEd Major in Filipino</li>
+                        <li>BSEd Major in Math</li>
+                        <li>Bachelor of Elementary Education</li>
+                    </ul></div>
+                </div>
+
+                <!-- CAHS -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-red">CAHS</span>
+
+                        <div class="cc-badge cc-red">CAHS</div>
+                        <div class="cc-name">College of Allied Health Sciences</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>BS Medical Technology</li>
+                        <li>BS Nursing</li>
+                        <li>BS Pharmacy</li>
+                        <li>BS Psychology</li>
+                    </ul></div>
+                </div>
+
+                <!-- CMA -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-gold">CMA</span>
+
+                        <div class="cc-badge cc-gold">CMA</div>
+                        <div class="cc-name">College of Management and Accountancy</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>BS Accountancy</li>
+                        <li>BSBA Major in Financial Management</li>
+                        <li>BSBA Major in Marketing Management</li>
+                        <li>BS Hospitality Management</li>
+                        <li>BS Tourism Management</li>
+                        <li>BS Management Accounting</li>
+                    </ul></div>
+                </div>
+
+                <!-- SCCJ -->
+                <div class="col-card">
+                    <div class="cc-top">
+                        <span class="cc-abbr-bg cc-purple">SCCJ</span>
+
+                        <div class="cc-badge cc-purple">SCCJ</div>
+                        <div class="cc-name">School of Criminology and Criminal Justice</div>
+                    </div>
+                    <div class="cc-divider"></div>
+                    <div class="cc-programs"><ul>
+                        <li>Bachelor of Science in Criminology</li>
+                    </ul></div>
+                </div>
+
+            </div>
+            <div class="prog-controls">
+                <button class="prog-arrow" onclick="carouselMove(-1)" aria-label="Previous">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <div class="prog-dots" id="prog-dots">
+                    <button class="prog-dot active" onclick="carouselGo(0)"></button>
+                    <button class="prog-dot" onclick="carouselGo(1)"></button>
+                    <button class="prog-dot" onclick="carouselGo(2)"></button>
+                    <button class="prog-dot" onclick="carouselGo(3)"></button>
+                    <button class="prog-dot" onclick="carouselGo(4)"></button>
+                    <button class="prog-dot" onclick="carouselGo(5)"></button>
+                </div>
+                <button class="prog-arrow" onclick="carouselMove(1)" aria-label="Next">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- FOOTER -->
+<footer>
+    <div class="footer-inner">
+        <div class="footer-grid">
+            <div>
+                <div class="footer-brand-row">
+                    <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+                    <div>
+                        <span class="footer-brand-name">Cagayan de Oro College</span>
+                        <span class="footer-brand-sub">PHINMA Education Network</span>
+                    </div>
+                </div>
+                <p>The official Learning Management System of PHINMA Cagayan de Oro College. Making Lives Better Through Education.</p>
+            </div>
+            <div class="footer-col">
+                <h4>Navigation</h4>
+                <a href="#about">About</a>
+                <a href="#campuses">Campuses</a>
+                <a href="#features">Features</a>
+                <a href="#programs">Programs</a>
+            </div>
+            <div class="footer-col">
+                <h4>Campuses</h4>
+                <a href="#campuses">Carmen Campus</a>
+                <a href="#campuses">Iligan Campus</a>
+                <a href="#campuses">Puerto Campus</a>
+            </div>
+            <div class="footer-col">
+                <h4>Support</h4>
+                <a href="#" onclick="openSignIn();return false;">Student Portal</a>
+                <a href="#">Help Center</a>
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Use</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>Â© 2026 PHINMA Cagayan de Oro College. All rights reserved.</span>
+            <span class="footer-gold">Making Lives Better Through Education</span>
+        </div>
+    </div>
+</footer>
+
+<!-- SCROLL TOP -->
+<button class="scroll-top" id="scroll-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Scroll to top">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
+
+<!-- REGISTRATION MODAL -->
+<div class="modal-backdrop" id="reg-backdrop" onclick="if(event.target===this)closeReg()">
+    <div class="reg-modal">
+        <div class="modal-hdr">
+            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <div class="modal-hdr-text">
+                <h2>Create Your LMS Account</h2>
+                <p>PHINMA Cagayan de Oro College &mdash; Student Registration</p>
+            </div>
+            <button class="modal-close" onclick="closeReg()">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            <div class="rmsg" id="rmsg" role="alert"></div>
+            <form id="form-register" onsubmit="submitReg(event)" novalidate>
+                <div class="rrow">
+                    <div class="rf"><label class="rl" for="r-fn">First Name <span class="req">*</span></label><input class="ri" type="text" id="r-fn" placeholder="Juan" required maxlength="80" autocomplete="given-name"></div>
+                    <div class="rf"><label class="rl" for="r-mn">Middle Name</label><input class="ri" type="text" id="r-mn" placeholder="Santos (optional)" maxlength="80" autocomplete="additional-name"></div>
+                </div>
+                <div class="rrow">
+                    <div class="rf"><label class="rl" for="r-ln">Last Name <span class="req">*</span></label><input class="ri" type="text" id="r-ln" placeholder="Dela Cruz" required maxlength="80" autocomplete="family-name"></div>
+                    <div class="rf"><label class="rl" for="r-sx">Extension / Suffix</label><input class="ri" type="text" id="r-sx" placeholder="Jr., Sr., III… (optional)" maxlength="20" autocomplete="honorific-suffix"></div>
+                </div>
+                <div class="rrow">
+                    <div class="rf"><label class="rl" for="r-em">Email Address <span class="req">*</span></label><input class="ri" type="email" id="r-em" placeholder="juan@email.com" required maxlength="120" autocomplete="email"></div>
+                    <div class="rf"><label class="rl" for="r-ph">Mobile Number <span class="req">*</span></label><input class="ri" type="tel" id="r-ph" placeholder="09XX XXX XXXX" required maxlength="15" autocomplete="tel"></div>
+                </div>
+                <div class="rrow s1">
+                    <div class="rf">
+                        <label class="rl" for="r-sid">Student ID <span style="font-weight:400;color:#6b7a8d;font-size:11px;">&mdash; leave blank if you do not have one yet</span></label>
+                        <input class="ri" type="text" id="r-sid" placeholder="e.g. 2024-00001 (optional)" maxlength="30" autocomplete="off">
+                        <span class="rf-hint">If left blank, a Student ID will be generated and sent to your email along with your login credentials.</span>
+                    </div>
+                </div>
+                <div class="rrow">
+                    <div class="rf"><label class="rl" for="r-ca">Campus <span class="req">*</span></label><select class="rs" id="r-ca" required><option value="">Select Campus</option><option>Carmen</option><option>Iligan</option><option>Puerto</option></select></div>
+                    <div class="rf"><label class="rl" for="r-co">College <span class="req">*</span></label><select class="rs" id="r-co" required onchange="loadRegPrograms(this)"><option value="">Select College</option><option value="CIT">College of Information Technology (CIT)</option><option value="CEA">College of Engineering and Architecture (CEA)</option><option value="COE">College of Education (COE)</option><option value="CAHS">College of Allied Health Sciences (CAHS)</option><option value="CMA">College of Management and Accountancy (CMA)</option><option value="SCCJ">School of Criminology and Criminal Justice (SCCJ)</option></select></div>
+                </div>
+                <div class="rrow s1">
+                    <div class="rf"><label class="rl" for="r-pg">Program <span class="req">*</span></label><select class="rs" id="r-pg" required><option value="">Select a College first</option></select></div>
+                </div>
+                <!-- Terms of Use & Privacy Policy -->
+                <div class="terms-box">
+                    <div class="terms-scroll">
+                        <h5>Terms of Use</h5>
+                        <p>By creating an account on COC LMS, you agree to use the platform solely for academic purposes as a student, instructor, or staff of PHINMA Cagayan de Oro College. You are responsible for maintaining the confidentiality of your login credentials. Unauthorized access, sharing of accounts, academic dishonesty, or misuse of the platform is strictly prohibited and may result in account suspension.</p>
+                        <h5>Privacy Policy</h5>
+                        <p>PHINMA Cagayan de Oro College collects your personal information (name, email, student ID, mobile number, and academic details) solely for the purpose of managing your academic account on COC LMS. Your data will not be shared with third parties without your consent, except as required by law. You have the right to request access, correction, or deletion of your data by contacting info.coc@phinmaed.com.</p>
+                    </div>
+                    <div class="terms-accept">
+                        <input type="checkbox" id="r-ag" required>
+                        <label for="r-ag">I have read and agree to the <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a> of COC LMS.</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-ft">
+            <button class="btn-cancel" onclick="closeReg()">Cancel</button>
+            <button class="btn-submit" id="btn-submit" onclick="document.getElementById('form-register').requestSubmit()">Create Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- SIGN IN MODAL -->
+<div class="modal-backdrop" id="signin-backdrop" onclick="if(event.target===this)closeSignIn()">
+    <div class="reg-modal" style="max-width:480px;">
+        <div class="modal-hdr">
+            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <div class="modal-hdr-text">
+                <h2>Welcome Back!</h2>
+                <p>Sign in to continue to your home page</p>
+            </div>
+            <button class="modal-close" onclick="closeSignIn()">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            <div class="rmsg" id="signin-msg" role="alert"></div>
+            <form id="form-signin" onsubmit="submitSignIn(event)" novalidate>
+
+                <!-- School ID -->
+                <div class="si-group">
+                    <label class="si-label" for="si-uid">School ID</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <input class="si-input" type="text" id="si-uid" placeholder="Student ID or Employee ID" required maxlength="64" autocomplete="username">
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div class="si-group">
+                    <label class="si-label" for="si-pw">Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="si-pw" placeholder="Leave blank if first-time login" maxlength="128" autocomplete="current-password">
+                        <button type="button" class="si-pw-toggle" id="si-pw-toggle" onclick="toggleSiPw()" aria-label="Show password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="si-hint">Enter your password</p>
+                </div>
+
+                <!-- Remember me + Forgot -->
+                <div class="si-options">
+                    <label class="si-remember"><input type="checkbox" id="si-rem"> Remember me</label>
+                    <a href="#" class="si-forgot" onclick="openForgotPw();return false;">Forgot password?</a>
+                </div>
+
+                <!-- CAPTCHA -->
+                <div class="si-group">
+                    <label class="si-label">Captcha Verification</label>
+                    <div class="si-captcha-row">
+                        <div class="si-captcha-box" id="si-captcha-display"></div>
+                        <button type="button" class="si-captcha-reload" onclick="siGenCaptcha()" aria-label="Refresh captcha">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                    </div>
+                    <div class="si-wrap" style="margin-top:10px;">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                        <input class="si-input" type="text" id="si-captcha-ans" placeholder="Enter the answer" autocomplete="off" inputmode="numeric" maxlength="3" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="si-btn">Sign In</button>
+            </form>
+
+            <p class="si-switch">No account? <button type="button" class="si-switch-link" onclick="closeSignIn();openReg()">Go to Create Account</button></p>
+        </div>
+    </div>
+</div>
+
+<!-- FORGOT PASSWORD MODAL -->
+<div class="modal-backdrop" id="fp-backdrop" onclick="if(event.target===this)closeForgotPw()">
+    <div class="reg-modal" style="max-width:480px;">
+        <div class="modal-hdr">
+            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <div class="modal-hdr-text">
+                <h2>Reset Password</h2>
+                <p id="fp-modal-sub">Enter your registered email or School ID</p>
+            </div>
+            <button class="modal-close" onclick="closeForgotPw()">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            <!-- Step 1: identifier input -->
+            <div id="fp-step1">
+                <div class="si-group">
+                    <label class="si-label" for="fp-identifier">Email or School ID</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <input class="si-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
+                    </div>
+                </div>
+                <div id="fp-msg1" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Remembered it? <button type="button" class="si-switch-link" onclick="closeForgotPw();openSignIn()">Back to Sign In</button>
+                </p>
+            </div>
+            <!-- Step 2: OTP + new password -->
+            <div id="fp-step2" style="display:none">
+                <p id="fp-email-hint" style="font-size:13px;color:#374151;margin-bottom:16px;line-height:1.5;"></p>
+                <div class="si-group">
+                    <label class="si-label">6-Digit Verification Code</label>
+                    <input class="fp-otp-input" type="text" id="fp-otp" placeholder="&mdash; &mdash; &mdash; &mdash; &mdash; &mdash;" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+                    <p class="si-hint" id="fp-timer" style="margin-top:6px;"></p>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-newpw">New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-pw-toggle" onclick="fpTogglePw('fp-newpw','fp-pw-toggle')" aria-label="Show password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-confirmpw">Confirm New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-cpw-toggle" onclick="fpTogglePw('fp-confirmpw','fp-cpw-toggle')" aria-label="Show confirm password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="fp-msg2" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Didn't get the code? <button type="button" class="si-switch-link" onclick="fpGoBack()">Go back &amp; resend</button>
+                </p>
+            </div>
+            <!-- Step 3: success -->
+            <div id="fp-step3" style="display:none">
+                <div class="fp-success-box">
+                    <div class="fp-success-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <h3>Password Reset!</h3>
+                    <p>Your password has been changed. You can now sign in with your new credentials.</p>
+                    <button class="si-btn" onclick="closeForgotPw();openSignIn()">Back to Sign In</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SET FIRST PASSWORD MODAL — shown when a dean logs in for the first time -->
+<style>
+    #set-password-modal { position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
+    #set-password-modal[hidden] { display:none; animation:none; }
+    .auth-error   { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; border-radius:7px; padding:10px 14px; font-size:13px; align-items:center; gap:8px; line-height:1.4; margin-bottom:14px; }
+    .auth-success { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:7px; padding:10px 14px; font-size:13px; align-items:center; gap:8px; line-height:1.4; margin-bottom:14px; }
+</style>
+<div id="set-password-modal" hidden aria-hidden="true">
+    <div class="reg-modal" style="max-width:460px;">
+        <div class="modal-hdr">
+            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <div class="modal-hdr-text">
+                <h2>Set Your Password</h2>
+                <p>Secure your account before entering the system</p>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;">
+                <svg width="20" height="20" style="color:#16a34a;flex-shrink:0;margin-top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:3px;">First login detected</div>
+                    <div style="font-size:13px;color:#166534;line-height:1.5;">Your account was set up by an administrator. Please create a strong password before continuing.</div>
+                </div>
+            </div>
+
+            <div class="si-group">
+                <label class="si-label" for="new-password">New Password <span style="color:#dc2626">*</span></label>
+                <div class="si-wrap">
+                    <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                    <input class="si-input si-pw-input" type="password" id="new-password" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
+                    <button type="button" class="si-pw-toggle" id="new-pw-toggle" aria-label="Show password" onclick="spwToggle('new-password','new-pw-toggle')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="si-group">
+                <label class="si-label" for="confirm-password">Confirm Password <span style="color:#dc2626">*</span></label>
+                <div class="si-wrap">
+                    <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                    <input class="si-input si-pw-input" type="password" id="confirm-password" placeholder="Repeat your password" maxlength="128" autocomplete="new-password">
+                    <button type="button" class="si-pw-toggle" id="confirm-pw-toggle" aria-label="Show confirm password" onclick="spwToggle('confirm-password','confirm-pw-toggle')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="set-pw-error" style="display:none;"></div>
+            <button class="si-btn" id="set-pw-submit" onclick="submitSetFirstPassword()" style="margin-top:6px;">
+                <span id="set-pw-btn-text">Set Password &amp; Continue</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Scroll top
+    window.addEventListener('scroll', () => {
+        document.getElementById('scroll-top').classList.toggle('show', window.scrollY > 500);
+    });
+
+    // Mobile nav
+    document.getElementById('hamburger').addEventListener('click', () => {
+        document.getElementById('mobile-nav').classList.toggle('open');
+    });
+    function closeNav() { document.getElementById('mobile-nav').classList.remove('open'); }
+
+    // Scroll animations
+    const animObs = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); animObs.unobserve(e.target); } });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('[data-anim]').forEach(el => animObs.observe(el));
+
+    // Registration modal
+    function openReg()  { document.getElementById('reg-backdrop').classList.add('open'); document.body.style.overflow='hidden'; clearMsg(); }
+    function closeReg() { document.getElementById('reg-backdrop').classList.remove('open'); document.body.style.overflow=''; }
+
+    // Sign In modal
+    function openSignIn()  { document.getElementById('signin-backdrop').classList.add('open'); document.body.style.overflow='hidden'; }
+    function closeSignIn() { document.getElementById('signin-backdrop').classList.remove('open'); document.body.style.overflow=''; }
+
+    document.addEventListener('keydown', e => { if (e.key==='Escape') { closeReg(); closeSignIn(); closeForgotPw(); } });
+
+    function clearMsg() { const m=document.getElementById('rmsg'); m.className='rmsg'; m.textContent=''; }
+
+    // Programs carousel
+    const carouselEl = document.getElementById('prog-carousel');
+    const progDots = document.querySelectorAll('.prog-dot');
+    const CARD_W = 360;
+    function updateDots() {
+        const idx = Math.round(carouselEl.scrollLeft / CARD_W);
+        progDots.forEach((d,i) => d.classList.toggle('active', i === idx));
+    }
+    carouselEl.addEventListener('scroll', updateDots, { passive:true });
+    function carouselMove(dir) { carouselEl.scrollBy({ left: dir * CARD_W, behavior:'smooth' }); }
+    function carouselGo(idx) { carouselEl.scrollTo({ left: idx * CARD_W, behavior:'smooth' }); }
+
+    // Programs dropdown
+    const PROGRAMS = {
+        CIT:  ['Bachelor of Science in Information Technology'],
+        CEA:  ['Bachelor of Science in Architecture','Bachelor of Science in Civil Engineering','Bachelor of Science in Computer Engineering','Bachelor of Science in Electrical Engineering','Bachelor of Science in Mechanical Engineering'],
+        COE:  ['Bachelor in Early Childhood Education','Bachelor of Secondary Education Major in English','Bachelor of Secondary Education Major in Filipino','Bachelor of Secondary Education Major in Math','Bachelor of Elementary Education'],
+        CAHS: ['Bachelor of Science in Medical Technology','Bachelor of Science in Nursing','Bachelor of Science in Pharmacy','Bachelor of Science in Psychology'],
+        CMA:  ['Bachelor of Science in Accountancy','Bachelor of Science in Business Administration Major in Financial Management','Bachelor of Science in Business Administration Major in Marketing Management','Bachelor of Science in Hospitality Management','Bachelor of Science in Tourism Management','Bachelor of Science in Management Accounting'],
+        SCCJ: ['Bachelor of Science in Criminology'],
+    };
+    function loadRegPrograms(sel) {
+        const pg = document.getElementById('r-pg');
+        pg.innerHTML = '<option value="">Select Program</option>';
+        (PROGRAMS[sel.value]||[]).forEach(p => { const o=document.createElement('option'); o.value=p; o.textContent=p; pg.appendChild(o); });
+    }
+    // keep old loadPrograms alias just in case
+    function loadPrograms(sel) { loadRegPrograms(sel); }
+
+    // Generate Student ID
+    function generateStudentId() {
+        const yr = new Date().getFullYear();
+        const n  = String(Math.floor(10000 + Math.random() * 90000));
+        return `COC-${yr}-${n}`;
+    }
+
+    // Submit registration
+    async function submitReg(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn-submit');
+        const msg = document.getElementById('rmsg');
+        btn.disabled = true; btn.textContent = 'Submitting...'; clearMsg();
+
+        const sidInput = document.getElementById('r-sid').value.trim();
+        const studentId = sidInput || generateStudentId();
+        const email = document.getElementById('r-em').value.trim();
+        const fn  = document.getElementById('r-fn').value.trim();
+        const mn  = document.getElementById('r-mn').value.trim();
+        const ln  = document.getElementById('r-ln').value.trim();
+        const sx  = document.getElementById('r-sx').value.trim();
+        const name = [fn, mn, ln, sx].filter(Boolean).join(' ');
+
+        await new Promise(r => setTimeout(r, 1000));
+
+        msg.innerHTML = `
+            <strong>Registration successful!</strong><br>
+            Your Student ID is: <strong>${studentId}</strong><br>
+            Your login credentials have been sent to <strong>${email}</strong>. Please check your email to sign in.
+        `;
+        msg.classList.add('success');
+        e.target.reset();
+        btn.disabled = false; btn.textContent = 'Create Account';
+        document.querySelector('#reg-backdrop .modal-body').scrollTop = 0;
+    }
+
+    // Sign in modal — CAPTCHA
+    let siCaptchaAnswer = 0;
+    function siGenCaptcha() {
+        const a = Math.floor(1 + Math.random() * 12);
+        const b = Math.floor(1 + Math.random() * 12);
+        siCaptchaAnswer = a + b;
+        document.getElementById('si-captcha-display').textContent = a + '  +  ' + b + '  =  ?';
+        const inp = document.getElementById('si-captcha-ans');
+        if (inp) { inp.value = ''; inp.classList.remove('si-error','si-ok'); }
+    }
+    // Generate captcha when sign in modal opens
+    const _origOpenSignIn = window.openSignIn;
+    function openSignIn() {
+        document.getElementById('signin-backdrop').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        siGenCaptcha();
+        document.getElementById('si-uid').focus();
+    }
+    function closeSignIn() {
+        document.getElementById('signin-backdrop').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    // Password show/hide
+    function toggleSiPw() {
+        const inp = document.getElementById('si-pw');
+        const btn = document.getElementById('si-pw-toggle');
+        if (inp.type === 'password') { inp.type = 'text'; btn.style.color = 'var(--green)'; }
+        else { inp.type = 'password'; btn.style.color = ''; }
+    }
+
+    // Submit sign in — validate captcha, call login API, redirect to role dashboard
+    async function submitSignIn(e) {
+        e.preventDefault();
+        const msg = document.getElementById('signin-msg');
+        msg.className = 'rmsg'; msg.textContent = '';
+
+        const ans = parseInt(document.getElementById('si-captcha-ans').value.trim(), 10);
+        if (isNaN(ans) || ans !== siCaptchaAnswer) {
+            msg.textContent = 'Incorrect captcha answer. Please try again.';
+            msg.classList.add('error');
+            siGenCaptcha();
+            return;
+        }
+
+        const uid = document.getElementById('si-uid').value.trim();
+        const pw  = document.getElementById('si-pw').value;
+        if (!uid) {
+            msg.textContent = 'Please enter your School ID.';
+            msg.classList.add('error');
+            return;
+        }
+
+        const btn = document.querySelector('#form-signin .si-btn');
+        btn.disabled = true;
+        btn.textContent = 'Signing in...';
+
+        try {
+            const res  = await fetch('api/AuthAPI.php?action=login', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ user_id: uid, password: pw })
+            });
+            const json = await res.json();
+
+            if (!json.success) {
+                msg.textContent = json.message || 'Login failed. Please check your credentials.';
+                msg.classList.add('error');
+                siGenCaptcha();
+                return;
+            }
+
+            if (json.data && json.data.token) {
+                localStorage.setItem('jwt_token', json.data.token);
+            }
+
+            // First login: no password yet — open the set-password modal
+            if (json.data && json.data.first_login) {
+                closeSignIn();
+                openSetPwModal();
+                return;
+            }
+
+            window.location.href = (json.data && json.data.redirect) ? json.data.redirect : 'index.html';
+
+        } catch (err) {
+            msg.textContent = 'Connection error. Please try again.';
+            msg.classList.add('error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        }
+    }
+
+    // ── Forgot Password ──────────────────────────────────────────
+    const FP_PW_RULES = [
+        { re: /.{8,}/, label: 'At least 8 characters' },
+        { re: /[A-Z]/, label: 'One uppercase letter' },
+        { re: /[a-z]/, label: 'One lowercase letter' },
+        { re: /[0-9]/, label: 'One number' },
+        { re: /[^A-Za-z0-9]/, label: 'One special character' },
+    ];
+    function fpValidatePw(pw) {
+        if (!pw) return 'Password is required.';
+        if (pw.length > 128) return 'Password must not exceed 128 characters.';
+        for (const r of FP_PW_RULES) {
+            if (!r.re.test(pw)) return r.label + ' is required.';
+        }
+        return null;
+    }
+
+    let fpTimerInterval = null;
+
+    function openForgotPw() {
+        closeSignIn();
+        document.getElementById('fp-backdrop').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        fpReset();
+        setTimeout(() => { const el = document.getElementById('fp-identifier'); if (el) el.focus(); }, 80);
+    }
+    function closeForgotPw() {
+        document.getElementById('fp-backdrop').classList.remove('open');
+        document.body.style.overflow = '';
+        clearInterval(fpTimerInterval);
+    }
+    function fpReset() {
+        ['fp-identifier','fp-otp','fp-newpw','fp-confirmpw'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        document.getElementById('fp-msg1').innerHTML = '';
+        document.getElementById('fp-msg2').innerHTML = '';
+        document.getElementById('fp-step1').style.display = '';
+        document.getElementById('fp-step2').style.display = 'none';
+        document.getElementById('fp-step3').style.display = 'none';
+        clearInterval(fpTimerInterval);
+    }
+    function fpGoBack() {
+        document.getElementById('fp-step2').style.display = 'none';
+        document.getElementById('fp-step1').style.display = '';
+        document.getElementById('fp-msg1').innerHTML = '';
+        clearInterval(fpTimerInterval);
+    }
+
+    async function fpSendCode() {
+        const identifier = document.getElementById('fp-identifier').value.trim();
+        const msgEl = document.getElementById('fp-msg1');
+        const btn = document.getElementById('fp-send-btn');
+        if (!identifier) {
+            msgEl.innerHTML = '<p style="color:#dc2626;font-size:13px;margin:0;">Please enter your email or School ID.</p>';
+            return;
+        }
+        btn.disabled = true; btn.textContent = 'Sending...'; msgEl.innerHTML = '';
+        try {
+            const res = await fetch('api/AuthAPI.php?action=forgot-password', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ identifier })
+            }).then(r => r.json());
+
+            if (!res.success) {
+                msgEl.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0;">${res.message || 'Failed to send code. Please try again.'}</p>`;
+                return;
+            }
+            // Show step 2 regardless (anti-enumeration: success even if no account)
+            document.getElementById('fp-step1').style.display = 'none';
+            document.getElementById('fp-step2').style.display = '';
+            const hint = document.getElementById('fp-email-hint');
+            if (res.data && res.data.masked_email) {
+                hint.textContent = 'A 6-digit code was sent to ' + res.data.masked_email + '. Enter it below to set your new password.';
+            } else {
+                hint.textContent = 'If that account exists, a 6-digit code has been sent. Enter it below.';
+            }
+            fpStartTimer(res.data && res.data.expires_at, (res.data && res.data.expires_in) || 60);
+            document.getElementById('fp-otp').focus();
+        } catch (err) {
+            msgEl.innerHTML = '<p style="color:#dc2626;font-size:13px;margin:0;">Connection error. Please try again.</p>';
+        } finally {
+            btn.disabled = false; btn.textContent = 'Send Verification Code';
+        }
+    }
+
+    function fpStartTimer(expiresAt, expiresIn) {
+        clearInterval(fpTimerInterval);
+        const expiresAtMs = expiresAt
+            ? new Date(expiresAt.replace(' ', 'T')).getTime()
+            : Date.now() + expiresIn * 1000;
+        const timerEl = document.getElementById('fp-timer');
+        function tick() {
+            const left = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+            if (left === 0) {
+                timerEl.textContent = 'Code expired. Click "Go back & resend" to request a new one.';
+                timerEl.style.color = '#dc2626';
+                clearInterval(fpTimerInterval);
+                return;
+            }
+            const m = Math.floor(left / 60), s = left % 60;
+            timerEl.textContent = 'Expires in ' + (m > 0 ? m + ':' + String(s).padStart(2, '0') : s + 's');
+            timerEl.style.color = left <= 15 ? '#d97706' : '#6b7280';
+        }
+        tick();
+        fpTimerInterval = setInterval(tick, 1000);
+    }
+
+    async function fpVerifyAndReset() {
+        const otp = document.getElementById('fp-otp').value.trim();
+        const newPw = document.getElementById('fp-newpw').value;
+        const confirmPw = document.getElementById('fp-confirmpw').value;
+        const msgEl = document.getElementById('fp-msg2');
+        const btn = document.getElementById('fp-reset-btn');
+        const showErr = msg => { msgEl.innerHTML = `<p style="color:#dc2626;font-size:13px;margin:0 0 8px;">${msg}</p>`; };
+
+        if (!/^\d{6}$/.test(otp)) { showErr('Enter the 6-digit code from your email.'); return; }
+        const pwErr = fpValidatePw(newPw);
+        if (pwErr) { showErr(pwErr); return; }
+        if (newPw !== confirmPw) { showErr('Passwords do not match.'); return; }
+
+        btn.disabled = true; btn.textContent = 'Resetting...'; msgEl.innerHTML = '';
+        try {
+            const res = await fetch('api/AuthAPI.php?action=verify-forgot-otp', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ otp, new_password: newPw, confirm_password: confirmPw })
+            }).then(r => r.json());
+
+            if (!res.success) { showErr(res.message || 'Failed to reset password. Please try again.'); return; }
+            clearInterval(fpTimerInterval);
+            document.getElementById('fp-step2').style.display = 'none';
+            document.getElementById('fp-step3').style.display = '';
+        } catch (err) {
+            showErr('Connection error. Please try again.');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Reset Password';
+        }
+    }
+
+    function fpTogglePw(inputId, btnId) {
+        const inp = document.getElementById(inputId);
+        const btn = document.getElementById(btnId);
+        const showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.style.color = showing ? '' : 'var(--green)';
+    }
+
+    // ── Set First Password Modal (dean first login) ──────────────
+    function openSetPwModal() {
+        const modal = document.getElementById('set-password-modal');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        spwAttachStrength();
+        setTimeout(() => document.getElementById('new-password').focus(), 80);
+    }
+
+    function spwToggle(inputId, btnId) {
+        const inp = document.getElementById(inputId);
+        const btn = document.getElementById(btnId);
+        const showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.style.color = showing ? '' : 'var(--green)';
+    }
+
+    function spwAttachStrength() {
+        const input = document.getElementById('new-password');
+        if (input.dataset.strengthAttached) return;
+        input.dataset.strengthAttached = '1';
+        const meter = document.createElement('div');
+        meter.style.cssText = 'margin-top:8px;font-size:12px;line-height:1.9;';
+        input.closest('.si-group').appendChild(meter);
+        function update() {
+            const pw = input.value;
+            const passed = FP_PW_RULES.filter(r => r.re.test(pw)).length;
+            const pct = Math.round((passed / FP_PW_RULES.length) * 100);
+            const color = pct < 40 ? '#dc2626' : pct < 80 ? '#d97706' : '#16a34a';
+            const lbl = pct === 0 ? '' : pct < 40 ? 'Weak' : pct < 80 ? 'Fair' : pct < 100 ? 'Good' : 'Strong';
+            meter.innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <div style="flex:1;height:4px;background:#e5e7eb;border-radius:2px;overflow:hidden">
+                        <div style="width:${pct}%;height:100%;background:${color};transition:width .2s,background .2s"></div>
+                    </div>
+                    ${lbl ? `<span style="font-size:11px;font-weight:700;color:${color}">${lbl}</span>` : ''}
+                </div>
+                ${FP_PW_RULES.map(r => {
+                    const ok = pw.length > 0 && r.re.test(pw);
+                    return `<div style="color:${ok ? '#16a34a' : '#9ca3af'}">${ok ? '✓' : '○'} ${r.label}</div>`;
+                }).join('')}`;
+        }
+        input.addEventListener('input', update);
+        update();
+    }
+
+    async function submitSetFirstPassword() {
+        const newPw     = document.getElementById('new-password').value;
+        const confirmPw = document.getElementById('confirm-password').value;
+        const errEl     = document.getElementById('set-pw-error');
+        const btn       = document.getElementById('set-pw-submit');
+        const btnText   = document.getElementById('set-pw-btn-text');
+
+        errEl.style.display = 'none';
+        function showErr(msg) {
+            errEl.textContent = msg;
+            errEl.className   = 'auth-error';
+            errEl.style.display = 'block';
+        }
+
+        const pwErr = fpValidatePw(newPw);
+        if (pwErr) { showErr(pwErr); return; }
+        if (newPw !== confirmPw) { showErr('Passwords do not match.'); return; }
+
+        btn.disabled = true;
+        btnText.textContent = 'Setting password…';
+
+        try {
+            const res = await fetch('api/AuthAPI.php?action=set-first-password', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ new_password: newPw, confirm_password: confirmPw })
+            }).then(r => r.json());
+
+            if (!res.success) {
+                showErr(res.message || 'Failed to set password. Please try again.');
+                return;
+            }
+
+            if (res.data && res.data.token) localStorage.setItem('jwt_token', res.data.token);
+            btnText.textContent = '✓ Password set! Redirecting…';
+
+            const dest = (res.data && res.data.redirect) || 'app/dashboard.html';
+            setTimeout(() => { window.location.href = dest; }, 900);
+        } catch {
+            showErr('Connection error. Please try again.');
+        } finally {
+            if (!btnText.textContent.includes('Redirecting')) {
+                btn.disabled = false;
+                btnText.textContent = 'Set Password & Continue';
+            }
+        }
+    }
+</script>
+
+<!-- VISITOR ASSISTANT -->
+<style>
+    /* Chatbot button */
+    #vc-btn { position:fixed; bottom:28px; right:28px; width:56px; height:56px; border-radius:50%; background:var(--green); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 24px rgba(27,77,46,.4); z-index:9000; transition:transform .2s,box-shadow .2s; }
+    #vc-btn:hover { transform:scale(1.08); box-shadow:0 10px 32px rgba(27,77,46,.5); }
+    #vc-btn .vc-close { display:none; }
+    #vc-btn.open .vc-open { display:none; }
+    #vc-btn.open .vc-close { display:block; }
+    /* Chatbot panel */
+    #vc-panel { position:fixed; bottom:98px; right:28px; width:340px; background:#fff; border-radius:20px; box-shadow:0 16px 56px rgba(0,0,0,.18); z-index:8999; display:none; flex-direction:column; overflow:hidden; border:1.5px solid #e2ece7; max-height:500px; }
+    #vc-panel.open { display:flex; animation:vcIn .25s ease; }
+    @keyframes vcIn { from { opacity:0; transform:translateY(12px) scale(.97); } to { opacity:1; transform:none; } }
+    .vc-head { background:var(--green); padding:18px 20px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+    .vc-head-avatar { width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
+    .vc-head-info { flex:1; }
+    .vc-head-info h5 { color:#fff; font-size:14px; font-weight:800; margin:0 0 2px; }
+    .vc-head-info span { color:rgba(255,255,255,.7); font-size:11px; }
+    .vc-online { width:8px; height:8px; border-radius:50%; background:#4ade80; flex-shrink:0; box-shadow:0 0 0 2px rgba(74,222,128,.3); }
+    .vc-msgs { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+    .vc-msg { max-width:82%; padding:10px 14px; border-radius:14px; font-size:13px; line-height:1.55; }
+    .vc-msg.bot { background:#f0f4f2; color:#1f2937; border-bottom-left-radius:4px; align-self:flex-start; }
+    .vc-msg.user { background:var(--green); color:#fff; border-bottom-right-radius:4px; align-self:flex-end; }
+        .vc-chips { padding:0 16px 10px; display:flex; flex-wrap:wrap; gap:6px; flex-shrink:0; max-height:130px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#c5d5ce transparent; }
+    .vc-chip { background:#f0f4f2; border:1.5px solid #d4e2d9; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--green-dark); cursor:pointer; transition:background .15s,border-color .15s; }
+    .vc-chip:hover { background:var(--green); color:#fff; border-color:var(--green); }
+    .vc-input-row { display:flex; gap:8px; padding:12px 14px; border-top:1px solid #e8f0ec; flex-shrink:0; }
+    #vc-input { flex:1; border:1.5px solid #d4e2d9; border-radius:10px; padding:9px 13px; font-size:13px; outline:none; transition:border-color .15s; font-family:inherit; }
+    #vc-input:focus { border-color:var(--green); }
+    #vc-send { width:36px; height:36px; border-radius:10px; background:var(--green); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s; flex-shrink:0; }
+    #vc-send:hover { background:var(--green-dark); }
+</style>
+
+<!-- Chat button -->
+<button id="vc-btn" aria-label="Ask a question" onclick="vcToggle()">
+    <svg class="vc-open" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <svg class="vc-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+</button>
+
+<!-- Chat panel -->
+<div id="vc-panel">
+    <div class="vc-head">
+        <div class="vc-head-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="vc-head-info">
+            <h5>COC LMS Assistant</h5>
+            <span>Ask me anything about COC LMS</span>
+        </div>
+        <div class="vc-online"></div>
+    </div>
+    <div class="vc-msgs" id="vc-msgs">
+        <div class="vc-msg bot">Hello! I am the COC LMS Assistant. How can I help you today?</div>
+    </div>
+    <div class="vc-chips" id="vc-chips">
+        <button class="vc-chip" onclick="vcAsk('How can I create an account?')">How can I create an account?</button>
+        <button class="vc-chip" onclick="vcAsk('What are the requirements to register?')">What are the requirements to register?</button>
+        <button class="vc-chip" onclick="vcAsk('Is COC LMS free to use?')">Is COC LMS free?</button>
+        <button class="vc-chip" onclick="vcAsk('What devices can I use COC LMS on?')">What devices can I use?</button>
+        <button class="vc-chip" onclick="vcAsk('How do I enroll in a class?')">How do I enroll in a class?</button>
+        <button class="vc-chip" onclick="vcAsk('I forgot my password, what do I do?')">Forgot my password</button>
+        <button class="vc-chip" onclick="vcAsk('How do I view my grades?')">How do I view my grades?</button>
+        <button class="vc-chip" onclick="vcAsk('How do I contact my instructor?')">How do I contact my instructor?</button>
+        <button class="vc-chip" onclick="vcAsk('What colleges and programs are offered?')">What colleges are offered?</button>
+        <button class="vc-chip" onclick="vcAsk('Where are the COC campuses located?')">Campus locations?</button>
+        <button class="vc-chip" onclick="vcAsk('Who can use COC LMS?')">Who can use COC LMS?</button>
+        <button class="vc-chip" onclick="vcAsk('How do I contact COC for help?')">Contact COC support</button>
+    </div>
+
+    <div class="vc-input-row">
+        <input id="vc-input" type="text" placeholder="Type your question..." onkeydown="if(event.key==='Enter')vcSend()">
+        <button id="vc-send" onclick="vcSend()" aria-label="Send">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+    const vcQA = [
+        { k:['how can i create','create an account','sign up','register','registration','how to join','new account','make an account'], a:'Click the "Create Account" button at the top of this page. You will see two options:\n\n• Already enrolled at COC — fill in your student ID and details to activate your LMS account.\n• New applicant / not yet enrolled — submit a pre-registration form and our admissions team will contact you within 2 to 3 business days.' },
+        { k:['requirement','requirements','need to register','what do i need','documents','needed'], a:'To register on COC LMS you will need:\n\n• A valid COC student ID number (for enrolled students)\n• Your full name, email address, and date of birth\n• Your campus and college/program\n\nNew applicants only need a valid email address and basic personal information to pre-register.' },
+        { k:['free','cost','pay','fee','subscription','price'], a:'Yes, COC LMS is completely free for all enrolled PHINMA COC students, instructors, and staff. There are no subscription fees or hidden charges. Access is provided as part of your enrollment at COC.' },
+        { k:['device','devices','mobile','phone','tablet','laptop','computer','app','browser','android','ios'], a:'COC LMS is fully web-based and works on any device with a modern browser — laptop, desktop, smartphone, or tablet. No app download is required. Simply visit the LMS website and log in from any device.' },
+        { k:['enroll','enrollment','how do i enroll','join class','section','subject','class'], a:'To enroll in a class:\n\n1. Log in to your COC LMS account\n2. Go to the Enrollment section\n3. Select your semester, program, and section\n4. Enter the enrollment code given by your instructor or registrar\n5. Submit your enrollment\n\nContact your registrar if you do not have your enrollment code.' },
+        { k:['forgot','password','reset password','cannot login','lost password','change password'], a:'If you forgot your password:\n\n1. Go to the COC LMS Sign In page\n2. Click "Forgot Password"\n3. Enter your registered email address\n4. Check your email for a password reset link\n\nIf you still cannot access your account, contact your campus registrar or email info.coc@phinmaed.com.' },
+        { k:['view grades','check grades','my grades','grade','gradebook','gwa','result','scores'], a:'To view your grades:\n\n1. Log in to COC LMS\n2. Open the class where you want to check your grade\n3. Click on "Gradebook" or "My Grades"\n\nYour instructor updates grades after each quiz or activity. Contact your instructor directly if you notice any missing or incorrect grade.' },
+        { k:['contact instructor','message instructor','talk to teacher','reach instructor','communicate','messaging'], a:'COC LMS has a built-in messaging system. To contact your instructor:\n\n1. Log in and open your class\n2. Click on the "Messages" or chat icon\n3. Type your message and send\n\nYou can also see class announcements posted by your instructor in the Announcements section.' },
+        { k:['college','colleges','programs','courses','offered','bsit','bsn','architecture','engineering','education','criminology','cit','cea','coe','cahs','cma','sccj'], a:'COC has six colleges:\n\n• CIT — College of Information Technology (BSIT)\n• CEA — College of Engineering and Architecture (BS Architecture, Civil, Computer, Electrical, Mechanical Engineering)\n• COE — College of Education (BEEd, BSEd English/Filipino/Math, BECE)\n• CAHS — College of Allied Health Sciences (Medical Technology, Nursing, Pharmacy, Psychology)\n• CMA — College of Management and Accountancy (Accountancy, BSBA, Hospitality, Tourism)\n• SCCJ — School of Criminology and Criminal Justice (BS Criminology)' },
+        { k:['campus','location','where','address','carmen','iligan','puerto','cdo','cagayan'], a:'COC has three campuses:\n\n• Carmen Campus — Max Suniel St., Carmen, Cagayan de Oro 9000 · 0917-376-5105\n• Iligan Campus — Pedro Permites Rd., Brgy. Pala-o, Iligan City · 0927-120-9941\n• Puerto Campus — Purok 6, Puerto, Cagayan de Oro 9000 · 0916-131-8980' },
+        { k:['who can use','who uses','users','for students','for teachers','for faculty','for admin','roles','access'], a:'COC LMS is designed for three types of users:\n\n• Students — access lessons, take quizzes, view grades, enroll in classes, and message instructors\n• Instructors / Faculty — manage lessons, create quizzes, update grades, and communicate with students\n• Administrators / Dean — oversee enrollment, manage users, generate reports, and manage the academic system' },
+        { k:['what is','lms','learning management','platform','coc lms','about coc lms'], a:'COC LMS stands for Learning Management System. It is the official digital academic platform of PHINMA Cagayan de Oro College. It brings together everything needed for teaching and learning — online lessons, quizzes, grades, enrollment, messaging, and an AI assistant — all in one place.' },
+        { k:['quiz','assessment','exam','test','anti-cheat','timer'], a:'COC LMS supports auto-graded quizzes with countdown timers and anti-cheat measures such as tab-switch detection. Your instructor sets the quiz schedule and duration. Results are available immediately after submission.' },
+        { k:['ai','artificial intelligence','ai assistant','smart assistant'], a:'COC LMS includes an AI Learning Assistant available once you are logged in. You can ask it academic questions, get explanations on lessons, and receive personalized study guidance — anytime, anywhere.' },
+        { k:['contact','email','phone','number','reach','help','support','hotline'], a:'For assistance, contact COC through:\n\n• Email: info.coc@phinmaed.com\n• Carmen Campus: 0917-376-5105 · (088) 858-5867\n• Iligan Campus: 0927-120-9941\n• Puerto Campus: 0916-131-8980' },
+    ];
+
+    function vcToggle() {
+        const btn = document.getElementById('vc-btn');
+        const panel = document.getElementById('vc-panel');
+        btn.classList.toggle('open');
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) document.getElementById('vc-input').focus();
+    }
+
+    function vcAsk(q) {
+        vcAddMsg(q, 'user');
+        document.getElementById('vc-chips').style.display = 'none';
+        setTimeout(() => vcRespond(q), 400);
+    }
+
+    function vcSend() {
+        const inp = document.getElementById('vc-input');
+        const q = inp.value.trim();
+        if (!q) return;
+        inp.value = '';
+        vcAddMsg(q, 'user');
+        document.getElementById('vc-chips').style.display = 'none';
+        setTimeout(() => vcRespond(q), 400);
+    }
+
+    function vcRespond(q) {
+        const lower = q.toLowerCase();
+        let answer = 'I am not sure about that. For detailed assistance, please contact us at info.coc@phinmaed.com or call your nearest COC campus.';
+        for (const item of vcQA) {
+            if (item.k.some(kw => lower.includes(kw))) { answer = item.a; break; }
+        }
+        vcAddMsg(answer, 'bot');
+    }
+
+    function vcAddMsg(text, who) {
+        const msgs = document.getElementById('vc-msgs');
+        const div = document.createElement('div');
+        div.className = 'vc-msg ' + who;
+        div.textContent = text;
+        msgs.appendChild(div);
+        msgs.scrollTop = msgs.scrollHeight;
+    }
+</script>
+</body>
+</html>

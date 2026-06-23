@@ -4,8 +4,10 @@
  * Shared lesson repository — instructors can publish, browse, and copy lessons
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/../config/constants.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
 
 header('Content-Type: application/json');
@@ -24,6 +26,7 @@ $action = $_GET['action'] ?? '';
 $_lbPerms = [
     'browse'   => 'lessons.view',
     'my-bank'  => 'lessons.view',
+    'get'      => 'lessons.view',
     'subjects' => 'lessons.view',
     'publish'  => 'lessons.create',
     'copy'     => 'lessons.create',
@@ -38,6 +41,7 @@ if (isset($_lbPerms[$action]) && !Auth::can($_lbPerms[$action])) {
 switch ($action) {
     case 'browse':    browseBank();    break;
     case 'my-bank':   myBank();        break;
+    case 'get':       getBankItem();   break;
     case 'publish':   publishLesson(); break;
     case 'copy':      copyLesson();    break;
     case 'delete':    deleteLesson();  break;
@@ -114,6 +118,44 @@ function myBank() {
     echo json_encode(['success' => true, 'data' => $lessons ?: []]);
 }
 
+// ─── Get single bank item (full preview) ─────────────────────────────────────
+
+function getBankItem() {
+    $userId = Auth::id();
+    $bankId = (int)($_GET['bank_id'] ?? 0);
+    if (!$bankId) {
+        echo json_encode(['success' => false, 'message' => 'bank_id required']);
+        return;
+    }
+
+    $lesson = db()->fetchOne(
+        "SELECT lb.bank_id, lb.lesson_title, lb.lesson_description, lb.lesson_content,
+                lb.subject_id, lb.visibility, lb.tags, lb.copy_count,
+                lb.attachment_type, lb.attachment_path, lb.attachment_name,
+                lb.created_by, lb.created_at, lb.updated_at,
+                s.subject_code, s.subject_name,
+                u.first_name, u.last_name,
+                (lb.created_by = ?) AS is_own
+         FROM lesson_bank lb
+         LEFT JOIN subject s ON lb.subject_id = s.subject_id
+         JOIN users u ON lb.created_by = u.users_id
+         WHERE lb.bank_id = ?",
+        [$userId, $bankId]
+    );
+
+    if (!$lesson || !canAccessBankItem(
+        $userId,
+        (int)$lesson['created_by'],
+        $lesson['visibility'],
+        (int)$lesson['subject_id']
+    )) {
+        echo json_encode(['success' => false, 'message' => 'Material not found or not available for preview']);
+        return;
+    }
+
+    echo json_encode(['success' => true, 'data' => $lesson]);
+}
+
 // ─── Publish: create a new bank lesson (or publish from existing lesson) ─────
 
 function publishLesson() {
@@ -129,8 +171,10 @@ function publishLesson() {
     $data = $isMultipart ? $_POST : (json_decode(file_get_contents('php://input'), true) ?? []);
 
     // Support publishing from an existing lessons_id
+    $sourceLessonId = null;
     if (!empty($data['lessons_id'])) {
         $lessonId = (int)$data['lessons_id'];
+        $sourceLessonId = $lessonId;
         $existing = db()->fetchOne(
             "SELECT * FROM lessons WHERE lessons_id = ? AND user_teacher_id = ?",
             [$lessonId, $userId]
@@ -154,8 +198,8 @@ function publishLesson() {
         $subjectId   = !empty($data['subject_id']) ? (int)$data['subject_id'] : null;
     }
 
-    $visibility = in_array($data['visibility'] ?? 'public', ['public', 'private'])
-                  ? $data['visibility'] : 'public';
+    // Content bank posts are always public so colleagues can preview immediately
+    $visibility = 'public';
     $tags = trim($data['tags'] ?? '');
 
     // ── Handle attachment ────────────────────────────────────────────────────
@@ -192,11 +236,38 @@ function publishLesson() {
         $filename = uniqid('lb_') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $file['name']);
         if (move_uploaded_file($file['tmp_name'], $uploadDir . $filename)) {
             $attachmentType = 'file';
-            $attachmentPath = '/COC-LMS/uploads/lesson_bank/' . $filename;
+            $attachmentPath = BASE_URL . '/uploads/lesson_bank/' . $filename;
             $attachmentName = $file['name'];
         } else {
             echo json_encode(['success' => false, 'message' => 'Failed to save uploaded file.']);
             return;
+        }
+    }
+
+    // When publishing from a class lesson, carry over the latest attachment for preview
+    if ($sourceLessonId && $attachmentType === 'none') {
+        try {
+            $mat = db()->fetchOne(
+                "SELECT original_name, file_name, file_path, material_type
+                 FROM lesson_materials
+                 WHERE lessons_id = ?
+                 ORDER BY uploaded_at DESC
+                 LIMIT 1",
+                [$sourceLessonId]
+            );
+            if ($mat && !empty($mat['file_path'])) {
+                if (($mat['material_type'] ?? '') === 'link' || preg_match('/^https?:\/\//i', $mat['file_path'])) {
+                    $attachmentType = 'link';
+                    $attachmentPath = $mat['file_path'];
+                    $attachmentName = $mat['original_name'] ?: $mat['file_name'] ?: $mat['file_path'];
+                } else {
+                    $attachmentType = 'file';
+                    $attachmentPath = $mat['file_path'];
+                    $attachmentName = $mat['original_name'] ?: $mat['file_name'] ?: basename($mat['file_path']);
+                }
+            }
+        } catch (Exception $e) {
+            // lesson_materials may not exist — preview still works without attachment
         }
     }
 

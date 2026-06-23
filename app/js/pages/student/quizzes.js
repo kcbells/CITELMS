@@ -3,6 +3,7 @@
  */
 import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
+import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -77,6 +78,7 @@ export async function renderQuizzesPanel(container, opts = {}) {
             <div id="qp-body">${quizGrid}</div>
         </div>
     `;
+    bindQuizReviewTriggers(container);
 }
 
 function quizStyles() {
@@ -190,6 +192,8 @@ function quizStyles() {
 function renderQuizCard(q) {
     const status = q.quiz_status || 'none';
     const canTake = !!q.can_take;
+    const hasRaw = q.earned_points != null && q.total_points != null;
+    const rawLabel = hasRaw ? `${parseFloat(q.earned_points)}/${parseFloat(q.total_points)}` : null;
     const hasScore = q.best_score !== null && q.best_score !== undefined;
     const scorePct = hasScore ? parseFloat(q.best_score) : 0;
     const isPassed = q.passed == 1;
@@ -205,7 +209,10 @@ function renderQuizCard(q) {
         : status === 'exhausted' ? 'locked'
         : status === 'attempted' ? 'attempted'
         : canTake ? 'available' : 'locked';
-    const stLabel = status === 'passed' ? `${icon('check', inl)} Passed`
+    const isPractice = q.quiz_type === 'practice';
+    const workSubmitted = !isPractice && (status === 'passed' || status === 'attempted' || status === 'exhausted');
+    const stLabel = workSubmitted ? `${icon('check', inl)} Work submitted`
+        : status === 'passed' ? `${icon('check', inl)} Passed`
         : status === 'exhausted' ? 'No attempts left'
         : status === 'attempted' ? '↩ Attempted'
         : canTake ? 'Available' : 'Locked';
@@ -216,8 +223,11 @@ function renderQuizCard(q) {
         : 'Unlimited tries';
 
     let btn = '';
-    if (status === 'passed') {
-        btn = `<a class="qp-btn done" href="#student/take-quiz?quiz_id=${q.quiz_id}">${icon('check', inl)} Passed</a>`;
+    if (workSubmitted) {
+        const aid = q.best_attempt_id;
+        btn = aid
+            ? `<button type="button" class="qp-btn done" data-quiz-review="${aid}">${icon('chart', inl)} Where I went wrong</button>`
+            : `<span class="qp-btn done">${icon('check', inl)} Work submitted</span>`;
     } else if (status === 'exhausted' || (!canTake && q.attempts_remaining === 0 && (q.max_attempts || 0) > 0)) {
         btn = `<span class="qp-btn locked">${icon('lock', inl)} No attempts left</span>`;
     } else if (canTake && status === 'attempted') {
@@ -247,8 +257,11 @@ function renderQuizCard(q) {
             </div>
             <div class="qp-card-footer">
                 <div class="qp-score-side">
-                    <div class="qp-score-lbl">Best Score</div>
-                    ${hasScore
+                    <div class="qp-score-lbl">${hasRaw ? 'Raw Score' : 'Best Score'}</div>
+                    ${hasRaw
+                        ? `<div class="qp-score-num ${isPassed ? 'pass' : 'fail'}">${rawLabel}</div>
+                           <div class="qp-score-sub">${hasScore ? `${scorePct.toFixed(1)}%` : ''}</div>`
+                        : hasScore
                         ? `<div class="qp-score-num ${isPassed ? 'pass' : 'fail'}">${scorePct.toFixed(1)}%</div>
                            <div class="qp-bar"><div class="qp-bar-fill" style="width:${Math.min(scorePct, 100)}%;background:${barColor}"></div></div>`
                         : `<div class="qp-score-num none">Not taken yet</div>`}

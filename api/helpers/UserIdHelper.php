@@ -35,15 +35,30 @@ class UserIdHelper {
             return null;
         }
 
+        // Email address — look up any active user by email
+        if (filter_var($userId, FILTER_VALIDATE_EMAIL)) {
+            return db()->fetchOne(
+                "SELECT * FROM users WHERE email = ? AND status = 'active' LIMIT 1",
+                [$userId]
+            );
+        }
+
         if (self::hasLetters($userId)) {
             if (!self::isValidStaffId($userId)) {
                 return null;
             }
-            return db()->fetchOne(
+            // Try staff/admin/dean first
+            $user = db()->fetchOne(
                 "SELECT * FROM users
                  WHERE employee_id = ?
                    AND role IN ('instructor', 'admin', 'dean')
                  LIMIT 1",
+                [$userId]
+            );
+            if ($user) return $user;
+            // Fall back to student lookup — some student IDs contain letters (e.g. "02-2324-bj")
+            return db()->fetchOne(
+                "SELECT * FROM users WHERE student_id = ? AND role = 'student' LIMIT 1",
                 [$userId]
             );
         }
@@ -66,14 +81,17 @@ class UserIdHelper {
     }
 
     public static function loginIdErrorMessage($userId) {
+        if (filter_var($userId, FILTER_VALIDATE_EMAIL)) {
+            return 'No active account found for this email address.';
+        }
         if (self::hasLetters($userId)) {
             if (!self::isValidStaffId($userId)) {
-                return 'Invalid Employee ID format. Staff IDs must contain letters.';
+                return 'Invalid ID format.';
             }
-            return 'No instructor/staff account found for this Employee ID.';
+            return 'No account found for this ID. Please check your Student ID or Employee ID.';
         }
         if (!self::isValidStudentId($userId)) {
-            return 'Student IDs must contain numbers only (no letters).';
+            return 'Invalid ID format.';
         }
         return 'No student account found for this Student ID.';
     }

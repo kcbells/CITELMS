@@ -8,6 +8,8 @@ import {
     renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss,
 } from '../../utils/material-files.js';
 import { setAssistantContext } from '../../utils/assistant-context.js';
+import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -196,6 +198,26 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
                     </ul>
                 </div>` : ''}
 
+                <!-- Ali Study Helper -->
+                ${!focus ? `
+                <div class="ali-study-bar">
+                    <div class="ali-study-bar-left">
+                        <svg class="ali-study-icon" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+                        <span>Need help understanding this lesson? <strong>Ali</strong> has read the full content and is ready to help.</span>
+                    </div>
+                    <div class="ali-study-actions">
+                        <button type="button" id="aliDigestBtn" class="ali-study-btn ali-study-btn-primary">
+                            Summarize lesson
+                        </button>
+                        <button type="button" id="aliConceptsBtn" class="ali-study-btn">
+                            Key concepts
+                        </button>
+                        <button type="button" id="aliQuizMeBtn" class="ali-study-btn">
+                            Quiz me
+                        </button>
+                    </div>
+                </div>` : ''}
+
                 <!-- Content -->
                 ${lesson.lesson_content ? `
                 <div class="content-card${focus ? ' lv-focus-card' : ''}">
@@ -284,8 +306,9 @@ function renderContent(lesson, d, allLessons, completedCount, videoLinks, otherM
 
 function renderQuizzesCard(quizzes) {
     const statusMeta = {
-        passed:    { label: 'Passed',    bg: '#E8F5E9', color: '#1B4D3E', icon: icon('check', { size: 12 }) },
-        attempted: { label: 'Attempted', bg: '#EFF6FF', color: '#1d4ed8', icon: '↺' },
+        passed:    { label: 'Work submitted', bg: '#E8F5E9', color: '#1B4D3E', icon: icon('check', { size: 12 }) },
+        attempted: { label: 'Work submitted', bg: '#E8F5E9', color: '#1B4D3E', icon: icon('check', { size: 12 }) },
+        exhausted: { label: 'Work submitted', bg: '#E8F5E9', color: '#1B4D3E', icon: icon('check', { size: 12 }) },
         overdue:   { label: 'Overdue',   bg: '#FEE2E2', color: '#b91c1c', icon: '!' },
         available: { label: 'Available', bg: '#F0FDF4', color: '#166534', icon: '▶' },
     };
@@ -316,16 +339,29 @@ function renderQuizzesCard(quizzes) {
                             </div>
                             <div class="quiz-row-right">
                                 <span class="quiz-status-badge" style="background:${s.bg};color:${s.color}">${s.icon} ${s.label}</span>
-                                ${q.status === 'passed'
-                                    ? `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz btn-passed">${icon('check', inl)} Passed</a>`
-                                    : (q.status === 'exhausted' || (!q.can_take && q.attempts_remaining === 0 && (q.max_attempts || 0) > 0))
-                                        ? `<span class="btn-take-quiz disabled">No attempts left</span>`
-                                    : q.can_take
-                                        ? `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz">
+                                ${(() => {
+                                    const isPractice = q.quiz_type === 'practice';
+                                    const submitted = !isPractice && (q.status === 'passed' || q.status === 'attempted' || q.status === 'exhausted');
+                                    if (submitted) {
+                                        const aid = q.best_attempt_id;
+                                        return aid
+                                            ? `<button type="button" class="btn-take-quiz btn-passed" data-quiz-review="${aid}">${icon('chart', inl)} Where I went wrong</button>`
+                                            : `<span class="btn-take-quiz btn-passed disabled">${icon('check', inl)} Work submitted</span>`;
+                                    }
+                                    if (q.status === 'passed') {
+                                        return `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz btn-passed">${icon('check', inl)} Passed</a>`;
+                                    }
+                                    if (q.status === 'exhausted' || (!q.can_take && q.attempts_remaining === 0 && (q.max_attempts || 0) > 0)) {
+                                        return `<span class="btn-take-quiz disabled">No attempts left</span>`;
+                                    }
+                                    if (q.can_take) {
+                                        return `<a href="#student/take-quiz?quiz_id=${q.quiz_id}" class="btn-take-quiz">
                                             ${q.attempts_used > 0 ? 'Retake' : 'Take Quiz'}${q.attempts_remaining != null ? ` (${q.attempts_remaining} left)` : ''}
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                                           </a>`
-                                        : `<span class="btn-take-quiz disabled">Closed</span>`}
+                                           </a>`;
+                                    }
+                                    return `<span class="btn-take-quiz disabled">Closed</span>`;
+                                })()}
                             </div>
                         </div>`;
                 }).join('')}
@@ -437,8 +473,31 @@ function bindLessonAiHighlight(container, lesson, lessonId) {
 
 function bindEvents(container, lessonId, d, hooks = {}) {
     bindLessonNav(container, hooks);
-
     bindMaterialAttachments(container);
+    bindQuizReviewTriggers(container);
+
+    // Ali study helper bar buttons
+    const lesson = d?.lesson || {};
+    const lessonTitle = lesson.lesson_title || lesson.title || 'this lesson';
+    const aliCtx = {
+        page: 'lesson',
+        lessons_id: parseInt(lessonId, 10),
+        work_title: lessonTitle,
+        subject_id: lesson.subject_id,
+        subject_name: lesson.subject_name || '',
+        subject_code: lesson.subject_code || '',
+    };
+    const aliActions = [
+        { id: 'aliDigestBtn',   msg: `Please give me a clear, organized summary of "${lessonTitle}". Cover all the important points from the lesson content.` },
+        { id: 'aliConceptsBtn', msg: `What are the key concepts and main ideas I need to understand from "${lessonTitle}"? Explain each one simply.` },
+        { id: 'aliQuizMeBtn',   msg: `Give me 5 practice questions based on "${lessonTitle}" to test my understanding. Ask me the first question now.` },
+    ];
+    aliActions.forEach(({ id, msg }) => {
+        container.querySelector('#' + id)?.addEventListener('click', async () => {
+            const { askAli } = await import('../../components/floating-assistant.js');
+            askAli(msg, aliCtx);
+        });
+    });
 
     const btn = container.querySelector('#markCompleteBtn');
     if (btn) {
@@ -456,7 +515,7 @@ function bindEvents(container, lessonId, d, hooks = {}) {
             } else {
                 btn.disabled = false;
                 btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg> Mark as Complete';
-                alert(res.message || 'Failed');
+                notify.error(res.message || 'Failed');
             }
         });
     }
@@ -538,6 +597,28 @@ function getStyles() {
 .header-meta { display:flex; gap:20px; }
 .meta-item { display:flex; align-items:center; gap:6px; font-size:14px; color:#666; }
 .meta-item svg { color:#1B4D3E; }
+
+/* Ali Study Helper Bar */
+.ali-study-bar {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    background:linear-gradient(135deg,#f0fdf4,#e8f5e9);
+    border:1px solid #a5d6a7; border-radius:12px;
+    padding:14px 18px; margin-bottom:16px;
+}
+.ali-study-bar-left {
+    display:flex; align-items:center; gap:10px;
+    font-size:13.5px; color:#1B4D3E; line-height:1.4; flex:1; min-width:0;
+}
+.ali-study-icon { flex-shrink:0; stroke:#1B4D3E; }
+.ali-study-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.ali-study-btn {
+    padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
+    border:1px solid #a5d6a7; background:#fff; color:#1B4D3E;
+    transition:background .15s, border-color .15s, color .15s;
+}
+.ali-study-btn:hover { background:#1B4D3E; color:#fff; border-color:#1B4D3E; }
+.ali-study-btn-primary { background:#1B4D3E; color:#fff; border-color:#1B4D3E; }
+.ali-study-btn-primary:hover { background:#145c30; border-color:#145c30; }
 
 /* Objectives */
 .objectives-card { background:#f8fdf9; border-color:#c8e6c9; }

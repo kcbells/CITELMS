@@ -12,15 +12,11 @@
  * ============================================================
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/database.php';
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -49,12 +45,17 @@ switch ($action) {
             }
             echo json_encode(['success' => true, 'data' => $grouped]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            error_log('[RBACApi.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
         }
         break;
 
-    // Permissions granted to a specific role
+    // Permissions granted to a specific role (admin-only — exposes permission structure)
     case 'role-permissions':
+        if (!Auth::can('rbac.view')) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Permission denied']);
+            break;
+        }
         $role = $_GET['role'] ?? '';
         if (!in_array($role, ['admin', 'dean', 'instructor', 'student'])) {
             echo json_encode(['success' => false, 'message' => 'Invalid role']);
@@ -71,7 +72,7 @@ switch ($action) {
             $stmt->execute([$role]);
             echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            error_log('[RBACApi.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
         }
         break;
 
@@ -106,7 +107,7 @@ switch ($action) {
                 ]
             ]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            error_log('[RBACApi.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
         }
         break;
 
@@ -164,7 +165,7 @@ switch ($action) {
             echo json_encode(['success' => true, 'message' => "Permissions for {$role} updated."]);
         } catch (Exception $e) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            error_log('[RBACApi.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
         }
         break;
 

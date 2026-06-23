@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -445,7 +446,7 @@ function checkFinalize(overlay, attemptId, closePanel, subjectId, container) {
         } else {
             finalBtn.disabled = false;
             finalBtn.innerHTML = 'Finalize &amp; Save';
-            alert(res.message || 'Failed to finalize');
+            notify.error(res.message || 'Failed to finalize');
         }
     };
 }
@@ -524,7 +525,7 @@ async function saveAnswer(overlay, answerId, maxPts) {
     } else {
         btn.disabled = false;
         btn.innerHTML = 'Save Grade (retry)';
-        alert(res.message || 'Failed to save grade');
+        notify.error(res.message || 'Failed to save grade');
     }
 }
 

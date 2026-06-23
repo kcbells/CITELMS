@@ -10,6 +10,7 @@
  *   POST ?action=send          — {receiver_id, content} or multipart + attachment (max 2MB)
  *   POST ?action=mark_read     — {other_user_id}
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 

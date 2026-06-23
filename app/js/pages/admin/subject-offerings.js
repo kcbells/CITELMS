@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -47,11 +48,11 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; }
             .filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; background:#fff; min-width:220px; }
 
-            .data-table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:2px solid #1B4D3E; }
-            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#404040; background:#f7f7f7; border-bottom:1px solid #ccc; }
-            .data-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; font-size:13px; }
-            .data-table tr:last-child td { border-bottom:none; }
-            .data-table tr:hover td { background:#f9fffe; }
+            .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
+            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table tbody tr:nth-child(even) { background:#f9fafb; }
+            .data-table tbody tr:hover { background:#f0fdf4; }
+            .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
 
             .subj-code { background:#E8F5E9; color:#1B4D3E; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; margin-right:8px; }
             .meta-badge { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; display:inline-block; margin-right:4px; }
@@ -182,7 +183,7 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             e.preventDefault();
             const res = await Api.post('/SubjectOfferingsAPI.php?action=update', { subject_offered_id: parseInt(a.dataset.toggle), status: a.dataset.status });
             if (res.success) renderList(container, semFilter, batchFilter);
-            else alert(res.message);
+            else notify.error(res.message);
         });
     });
 
@@ -197,10 +198,10 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
     container.querySelectorAll('[data-cancel]').forEach(a => {
         a.addEventListener('click', async (e) => {
             e.preventDefault();
-            if (!confirm(`Cancel offering "${a.dataset.name}"?`)) return;
+            if (!await notify.confirm(`Cancel offering "${a.dataset.name}"?`, { danger: true, confirmText: 'Cancel Offering' })) return;
             const res = await Api.post('/SubjectOfferingsAPI.php?action=delete', { subject_offered_id: parseInt(a.dataset.cancel) });
             if (res.success) renderList(container, semFilter, batchFilter);
-            else alert(res.message);
+            else notify.error(res.message);
         });
     });
 }

@@ -32,11 +32,11 @@ export async function render(container) {
             .subj-name { font-size:16px; font-weight:700; color:#111827; }
             .subj-count { font-size:13px; color:#9ca3af; }
 
-            .data-table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:2px solid #1B4D3E; }
-            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#404040; background:#f7f7f7; border-bottom:1px solid #ccc; }
-            .data-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; font-size:13px; }
-            .data-table tr:last-child td { border-bottom:none; }
-            .data-table tr:hover td { background:#f9fffe; }
+            .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
+            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table tbody tr:nth-child(even) { background:#f9fafb; }
+            .data-table tbody tr:hover { background:#f0fdf4; }
+            .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
 
             .user-cell { display:flex; align-items:center; gap:10px; }
             .user-av { width:36px; height:36px; border-radius:50%; background:#1B4D3E; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0; }

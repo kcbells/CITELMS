@@ -157,6 +157,48 @@ function ensureTabSwitchColumn() {
     }
 }
 
+function fixQuestionOptionFk() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        // The lms.sql schema had fk_qopt_quiz_question pointing to quiz_questions(quiz_questions_id),
+        // but every API uses quiz_question_id as an alias for questions.questions_id.
+        // Drop the wrong FK so inserts work correctly.
+        $row = db()->fetchOne(
+            "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'question_option'
+               AND CONSTRAINT_NAME = 'fk_qopt_quiz_question'
+               AND REFERENCED_TABLE_NAME = 'quiz_questions'"
+        );
+        if ($row) {
+            pdo()->exec("ALTER TABLE question_option DROP FOREIGN KEY fk_qopt_quiz_question");
+        }
+    } catch (Exception $e) {
+        error_log('fixQuestionOptionFk: ' . $e->getMessage());
+    }
+}
+
+function ensureQuestionMediaColumns() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!db()->fetchOne("SHOW COLUMNS FROM questions LIKE 'media_type'")) {
+            pdo()->exec("ALTER TABLE questions ADD COLUMN media_type VARCHAR(20) NOT NULL DEFAULT 'none' COMMENT 'none|image|audio|link'");
+        }
+        if (!db()->fetchOne("SHOW COLUMNS FROM questions LIKE 'media_url'")) {
+            pdo()->exec("ALTER TABLE questions ADD COLUMN media_url VARCHAR(500) NULL DEFAULT NULL");
+        }
+        if (!db()->fetchOne("SHOW COLUMNS FROM questions LIKE 'media_name'")) {
+            pdo()->exec("ALTER TABLE questions ADD COLUMN media_name VARCHAR(200) NULL DEFAULT NULL");
+        }
+    } catch (Exception $e) {
+        error_log('questions media columns: ' . $e->getMessage());
+    }
+}
+
 function ensureQuizScheduleColumns() {
     static $done = false;
     if ($done) return;
@@ -267,8 +309,14 @@ function enrichQuizAttemptAccess(array &$quiz): void {
     }
 
     $available = !empty($quiz['is_available']) || isQuizAvailableNow($quiz);
+    $isPractice = strtolower((string)($quiz['quiz_type'] ?? '')) === 'practice';
 
-    if ($passed) {
+    // Classwork quizzes: one submission — no retakes after turn-in (practice quizzes exempt)
+    if ($used > 0 && !$isPractice) {
+        $quiz['can_take'] = false;
+        $quiz['has_attempts_left'] = false;
+        $quiz['attempts_remaining'] = 0;
+    } elseif ($passed) {
         $quiz['can_take'] = false;
     } elseif ($overdue) {
         $quiz['can_take'] = false;

@@ -5,55 +5,62 @@ import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { L } from '../../utils/action-labels.js';
+import { resolveMaterialUrl } from '../../utils/material-files.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let mySubjects        = [];
 let myQuizzes         = [];
 let currentUser       = null;
-let section           = 'lessons';   // 'lessons' | 'quizzes' (questions + full quizzes)
+let section           = 'all';     // 'all' | 'lessons' | 'quizzes'
 let activeTab         = 'browse';
 let searchTimer       = null;
 let closeMenusHandler = null;
 let feedCache         = [];        // last loaded items for preview/actions
 
 export async function render(container) {
-    const [subjRes, quizRes, bankSubjRes, user] = await Promise.all([
+    const [subjRes, quizRes, bankSubjRes, sharedSubjRes, user] = await Promise.all([
         Api.get('/LessonsAPI.php?action=subjects'),
         Api.get('/QuestionBankAPI.php?action=my-quizzes'),
         Api.get('/LessonBankAPI.php?action=subjects'),
+        Api.get('/QuizzesAPI.php?action=shared-subjects'),
         Auth.getUser(),
     ]);
     mySubjects = subjRes.success ? subjRes.data : [];
     myQuizzes  = quizRes.success ? quizRes.data : [];
     currentUser = user || Auth.user();
-    const initBankSubjects = bankSubjRes.success ? bankSubjRes.data : [];
+    const initBankSubjects = mergeSubjects(
+        bankSubjRes.success ? bankSubjRes.data : [],
+        sharedSubjRes.success ? sharedSubjRes.data : [],
+    );
 
     const myInitials = authorInitials(currentUser?.first_name, currentUser?.last_name, currentUser?.name);
 
     container.innerHTML = `
         <style>
-            .cb-page { background:#F0F2F5; padding:8px 0 32px; min-height:60vh; border-radius:12px; }
+            .cb-page { background:#F0F2F5; border-radius:12px; padding:12px 10px 28px; min-height:60vh; }
             .cb-layout { max-width:680px; margin:0 auto; }
-            .cb-banner { background:#fff; border-radius:12px; padding:18px 20px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.08); }
-            .cb-banner h2 { font-size:20px; font-weight:800; margin:0 0 4px; color:#050505; }
-            .cb-banner p  { font-size:13px; color:#65676B; margin:0; }
 
-            .cb-sections { display:flex; gap:6px; margin-bottom:14px; }
-            .cb-section-btn { flex:1; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; color:#65676B; border:none; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08); transition:all .15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+            .cb-topbar { margin-bottom:12px; }
+            .cb-topbar h2 { font-size:20px; font-weight:800; margin:0 0 4px; color:#050505; display:flex; align-items:center; gap:8px; }
+            .cb-topbar p  { font-size:13px; color:#65676B; margin:0; }
+
+            .cb-sections { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+            .cb-section-btn { flex:1; min-width:90px; padding:9px 12px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:#65676B; border:none; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08); transition:all .15s; display:flex; align-items:center; justify-content:center; gap:5px; }
             .cb-section-btn.active { background:#00461B; color:#fff; }
 
-            .cb-tabs { display:flex; gap:8px; margin-bottom:14px; }
+            .cb-tabs { display:flex; gap:8px; margin-bottom:12px; }
             .cb-tab { flex:1; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; color:#65676B; border:none; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.06); }
             .cb-tab.active { background:#E7F3FF; color:#00461B; }
 
-            .cb-toolbar { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+            .cb-toolbar { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
             .cb-search { flex:1; min-width:180px; padding:10px 14px 10px 38px; border:none; border-radius:20px; font-size:14px; background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") no-repeat 14px center; box-shadow:0 1px 2px rgba(0,0,0,.08); }
             .cb-search:focus { outline:none; box-shadow:0 0 0 2px rgba(0,70,27,.25); }
             .cb-select { padding:10px 14px; border:none; border-radius:20px; font-size:13px; cursor:pointer; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08); }
 
             /* Facebook composer */
-            .fb-composer { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+            .fb-composer { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:14px; box-shadow:0 1px 2px rgba(0,0,0,.1); }
             .fb-composer-top { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
             .fb-composer-prompt { flex:1; text-align:left; padding:12px 16px; background:#F0F2F5; border:none; border-radius:24px; font-size:15px; color:#65676B; cursor:pointer; font-family:inherit; }
             .fb-composer-prompt:hover { background:#E4E6EB; }
@@ -62,12 +69,12 @@ export async function render(container) {
             .fb-composer-btn:hover { background:#F0F2F5; }
             .fb-composer-btn .ico { font-size:18px; }
 
-            /* Facebook feed posts */
+            /* Facebook feed */
             .fb-feed { display:flex; flex-direction:column; gap:14px; }
             .fb-post { background:#fff; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.1); overflow:hidden; }
             .fb-post-head { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 0; }
             .fb-avatar { width:40px; height:40px; border-radius:50%; background:#00461B; color:#fff; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-            .fb-avatar.sm { width:36px; height:36px; font-size:12px; }
+            .fb-avatar.sm { width:32px; height:32px; font-size:11px; }
             .fb-post-meta { flex:1; min-width:0; }
             .fb-post-name { font-size:15px; font-weight:700; color:#050505; line-height:1.2; }
             .fb-post-sub { font-size:12px; color:#65676B; margin-top:2px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
@@ -81,22 +88,78 @@ export async function render(container) {
             .fb-post-text { font-size:14px; color:#050505; line-height:1.5; margin:0; white-space:pre-wrap; }
             .fb-post-text.clamp { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
             .fb-post-attach { margin-top:10px; }
-            .fb-post-stats { padding:8px 16px; font-size:13px; color:#65676B; border-top:1px solid #E4E6EB; display:flex; gap:16px; }
+            .fb-quiz-card { display:flex; gap:12px; align-items:center; margin-top:10px; padding:14px 16px; background:#F0F2F5; border-radius:10px; border:1px solid #E4E6EB; cursor:pointer; transition:background .15s; }
+            .fb-quiz-card:hover { background:#E4E6EB; }
+            .fb-quiz-card-icon { width:48px; height:48px; border-radius:10px; background:#DBEAFE; color:#1E40AF; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+            .fb-quiz-card-title { font-size:15px; font-weight:700; color:#050505; margin:0 0 4px; }
+            .fb-quiz-card-meta { font-size:12px; color:#65676B; }
+            .fb-post-stats { padding:8px 16px; font-size:13px; color:#65676B; border-top:1px solid #E4E6EB; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
             .fb-post-actions { display:flex; border-top:1px solid #E4E6EB; }
-            .fb-action { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border:none; background:none; font-size:13px; font-weight:600; color:#65676B; cursor:pointer; border-radius:0; }
+            .fb-action { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border:none; background:none; font-size:13px; font-weight:600; color:#65676B; cursor:pointer; }
             .fb-action:hover { background:#F0F2F5; }
+            .fb-action.active { color:#00461B; background:#F0F2F5; }
             .fb-action.primary { color:#00461B; }
             .fb-action.danger { color:#b91c1c; }
-            .fb-q-opts { margin-top:10px; padding:10px 12px; background:#F0F2F5; border-radius:8px; }
-            .fb-q-opt { font-size:13px; color:#444; padding:4px 0; display:flex; gap:8px; align-items:center; }
-            .fb-q-opt.correct { color:#00461B; font-weight:700; }
+
+            /* Comments */
+            .fb-comments { border-top:1px solid #E4E6EB; padding:12px 16px 14px; background:#FAFBFC; display:none; }
+            .fb-comments.open { display:block; }
+            .fb-comment-list { display:flex; flex-direction:column; gap:10px; margin-bottom:10px; max-height:280px; overflow-y:auto; }
+            .fb-comment { display:flex; gap:8px; align-items:flex-start; }
+            .fb-comment-body { flex:1; background:#F0F2F5; border-radius:18px; padding:8px 12px; min-width:0; }
+            .fb-comment-author { font-size:13px; font-weight:700; color:#050505; margin-right:6px; }
+            .fb-comment-text { font-size:13px; color:#050505; line-height:1.45; margin:2px 0 0; white-space:pre-wrap; word-break:break-word; }
+            .fb-comment-time { font-size:11px; color:#65676B; margin-top:4px; }
+            .fb-comment-empty { font-size:13px; color:#65676B; font-style:italic; padding:4px 0 8px; }
+            .fb-comment-compose { display:flex; gap:8px; align-items:flex-end; }
+            .fb-comment-input { flex:1; padding:10px 14px; border:none; border-radius:20px; background:#F0F2F5; font-size:13px; font-family:inherit; resize:none; min-height:36px; max-height:100px; }
+            .fb-comment-input:focus { outline:none; background:#E4E6EB; }
+            .fb-comment-send { padding:8px 14px; border:none; border-radius:8px; background:#00461B; color:#fff; font-size:12px; font-weight:700; cursor:pointer; flex-shrink:0; }
+            .fb-comment-send:disabled { opacity:.5; cursor:not-allowed; }
+            .fb-comment-send:hover:not(:disabled) { background:#006428; }
+
+            /* Get resource controls */
+            .fb-resource-ctrl {
+                margin:0 16px 12px; padding:12px 14px; background:#F0FDF4; border:1px solid #BBF7D0;
+                border-radius:10px;
+            }
+            .fb-resource-ctrl-hdr {
+                display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800;
+                color:#00461B; text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px;
+            }
+            .fb-resource-ctrl-row {
+                display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+            }
+            .fb-resource-lbl { font-size:12px; font-weight:600; color:#374151; white-space:nowrap; }
+            .fb-resource-subject {
+                flex:1; min-width:160px; padding:8px 12px; border:1px solid #D1D5DB; border-radius:8px;
+                font-size:13px; background:#fff; font-family:inherit;
+            }
+            .fb-resource-subject:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
+            .fb-resource-btn {
+                display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px;
+                font-size:12px; font-weight:700; cursor:pointer; border:none; font-family:inherit;
+                white-space:nowrap; transition:background .15s;
+            }
+            .fb-resource-btn.preview { background:#fff; color:#374151; border:1px solid #D1D5DB; }
+            .fb-resource-btn.preview:hover { background:#F9FAFB; border-color:#00461B; color:#00461B; }
+            .fb-resource-btn.outline { background:#fff; color:#1E40AF; border:1px solid #BFDBFE; }
+            .fb-resource-btn.outline:hover { background:#EFF6FF; }
+            .fb-resource-btn.primary { background:#00461B; color:#fff; }
+            .fb-resource-btn.primary:hover { background:#006428; }
+            .fb-resource-btn:disabled { opacity:.55; cursor:not-allowed; }
+            .fb-resource-none { font-size:12px; color:#6B7280; font-style:italic; }
+            .cb-get-hint {
+                font-size:12px; color:#00461B; background:#ECFDF5; border:1px solid #BBF7D0;
+                border-radius:8px; padding:8px 12px; margin-bottom:12px; line-height:1.45;
+            }
 
             .cb-vis-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; }
             .cb-vis-badge.public  { background:#E8F5E9; color:#00461B; }
             .cb-vis-badge.private { background:#FEF3C7; color:#B45309; }
             .cb-type-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:#EDE9FE; color:#5B21B6; }
             .cb-subject-tag { background:#E7F3FF; color:#00461B; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; }
-            .cb-attachment-badge, .cb-attachment-link { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:8px 12px; border-radius:8px; text-decoration:none; }
+            .cb-attachment-badge, .cb-attachment-link { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:5px 8px; border-radius:6px; text-decoration:none; max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .cb-attachment-badge { background:#E8F5EC; color:#00461B; border:1px solid #bbf7d0; }
             .cb-attachment-link { background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; }
 
@@ -215,20 +278,25 @@ export async function render(container) {
 
         <div class="cb-page">
         <div class="cb-layout">
-        <div class="cb-banner">
-                <h2>${icon('folder', { size: 22, className: 'ui-icon-inline' })} Content Bank</h2>
-                <p>See what colleagues share — materials, quiz questions, and full quizzes from your subjects.</p>
+        <div class="cb-topbar">
+            <h2>${icon('folder', { size: 22, className: 'ui-icon-inline' })} Instructor Community</h2>
+            <p>Browse resources from colleagues, preview them, and add them to your classes.</p>
         </div>
 
         <div class="cb-sections">
-                <button class="cb-section-btn active" data-section="lessons">${icon('document', inl)} Materials</button>
-                <button class="cb-section-btn" data-section="quizzes">${icon('quiz', inl)} Quizzes &amp; Questions</button>
+                <button class="cb-section-btn active" data-section="all">${icon('dashboard', inl)} All</button>
+                <button class="cb-section-btn" data-section="lessons">${icon('document', inl)} Materials</button>
+                <button class="cb-section-btn" data-section="quizzes">${icon('quiz', inl)} Full Quizzes</button>
         </div>
 
         <div class="cb-tabs">
-                <button class="cb-tab active" data-tab="browse">Community Feed</button>
+                <button class="cb-tab active" data-tab="browse">Get Resources</button>
                 <button class="cb-tab" data-tab="mine">My Posts</button>
         </div>
+
+            <div id="cb-get-hint" class="cb-get-hint" style="display:none;">
+                ${icon('copy', inl)} Choose a class on each post, then click <strong>Get material</strong> or <strong>Get full quiz</strong> to add it to your teaching.
+            </div>
 
             <div id="cb-composer-wrap"></div>
 
@@ -237,13 +305,6 @@ export async function render(container) {
             <select class="cb-select" id="cb-subject">
                 <option value="">All Subjects</option>
                 ${initBankSubjects.map(s => `<option value="${s.subject_id}">${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
-            </select>
-            <select class="cb-select" id="cb-type" style="display:none;">
-                    <option value="">All question types</option>
-                <option value="multiple_choice">Multiple Choice</option>
-                <option value="true_false">True / False</option>
-                <option value="short_answer">Short Answer</option>
-                <option value="essay">Essay</option>
             </select>
         </div>
 
@@ -260,13 +321,27 @@ export async function render(container) {
             btn.classList.add('active');
             section = btn.dataset.section;
             const typeFilter = document.getElementById('cb-type');
-            if (typeFilter) typeFilter.style.display = section === 'quizzes' ? '' : 'none';
-            document.getElementById('cb-search').placeholder = section === 'lessons' ? 'Search materials…' : 'Search quizzes & questions…';
-            const bankApi = section === 'lessons'
+            if (typeFilter) typeFilter.style.display = 'none';
+            document.getElementById('cb-search').placeholder =
+                section === 'lessons' ? 'Search materials…'
+                : section === 'quizzes' ? 'Search full quizzes…'
+                : 'Search community posts…';
+            const bankApi = section === 'quizzes'
+                ? '/QuizzesAPI.php?action=shared-subjects'
+                : section === 'lessons'
                 ? '/LessonBankAPI.php?action=subjects'
-                : '/QuestionBankAPI.php?action=subjects';
-            const sRes = await Api.get(bankApi);
-            refreshSubjectDropdown(sRes.success ? sRes.data : []);
+                : null;
+            if (bankApi) {
+                const sRes = await Api.get(bankApi);
+                refreshSubjectDropdown(sRes.success ? sRes.data : []);
+            } else {
+                const [lRes, qRes] = await Promise.all([
+                    Api.get('/LessonBankAPI.php?action=subjects'),
+                    Api.get('/QuizzesAPI.php?action=shared-subjects'),
+                ]);
+                const merged = mergeSubjects(lRes.success ? lRes.data : [], qRes.success ? qRes.data : []);
+                refreshSubjectDropdown(merged);
+            }
             renderComposer(container, myInitials);
             loadContent();
         });
@@ -278,17 +353,21 @@ export async function render(container) {
             tab.classList.add('active');
             activeTab = tab.dataset.tab;
             document.getElementById('cb-toolbar').style.display = 'flex';
+            const hint = document.getElementById('cb-get-hint');
+            if (hint) hint.style.display = activeTab === 'browse' ? '' : 'none';
             renderComposer(container, myInitials);
             loadContent();
         });
     });
+
+    const hint = document.getElementById('cb-get-hint');
+    if (hint) hint.style.display = activeTab === 'browse' ? '' : 'none';
 
     document.getElementById('cb-search').addEventListener('input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(loadContent, 350);
     });
     document.getElementById('cb-subject').addEventListener('change', loadContent);
-    document.getElementById('cb-type').addEventListener('change', loadContent);
 
     loadContent();
 }
@@ -298,54 +377,91 @@ export async function render(container) {
 async function loadContent() {
     const wrap = document.getElementById('cb-content');
     if (!wrap) return;
-    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:#65676B;">Loading feed…</div>';
+    wrap.innerHTML = '<div class="fb-feed"><div class="cb-empty"><p>Loading feed…</p></div></div>';
 
-    if (section === 'lessons') {
+    if (section === 'all') {
+        await loadAllContent(wrap);
+    } else if (section === 'lessons') {
         await loadLessons(wrap);
     } else {
         await loadQuizContent(wrap);
     }
 }
 
-async function loadQuizContent(wrap) {
+async function loadAllContent(wrap) {
     const search = document.getElementById('cb-search')?.value || '';
-        const subjectId = document.getElementById('cb-subject')?.value || '';
-    const type = document.getElementById('cb-type')?.value || '';
+    const subjectId = document.getElementById('cb-subject')?.value || '';
 
     if (activeTab === 'browse') {
-        let qUrl = '/QuestionBankAPI.php?action=browse';
+        let lUrl = '/LessonBankAPI.php?action=browse';
         let zUrl = '/QuizzesAPI.php?action=browse-shared';
         if (search) {
-            qUrl += '&search=' + encodeURIComponent(search);
+            lUrl += '&search=' + encodeURIComponent(search);
             zUrl += '&search=' + encodeURIComponent(search);
         }
         if (subjectId) {
-            qUrl += '&subject_id=' + subjectId;
+            lUrl += '&subject_id=' + subjectId;
             zUrl += '&subject_id=' + subjectId;
         }
-        if (type) qUrl += '&type=' + encodeURIComponent(type);
-
-        const [qRes, zRes] = await Promise.all([Api.get(qUrl), Api.get(zUrl)]);
+        const [lRes, zRes] = await Promise.all([Api.get(lUrl), Api.get(zUrl)]);
         const items = [
-            ...(qRes.success ? qRes.data : []).map(q => ({ ...q, feed_type: 'question' })),
-            ...(zRes.success ? zRes.data : []).map(q => ({ ...q, feed_type: 'quiz' })),
+            ...(lRes.success ? lRes.data : []).map(l => ({ ...l, feed_type: 'material' })),
+            ...(zRes.success ? zRes.data : []).map(q => ({
+                ...q,
+                feed_type: 'quiz',
+                is_own: q.is_own == 1 || q.is_own === true,
+            })),
         ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
         renderFeed(wrap, items, 'browse');
     } else {
-        const [qRes, zRes] = await Promise.all([
-            Api.get('/QuestionBankAPI.php?action=my-bank'),
+        const [lRes, zRes] = await Promise.all([
+            Api.get('/LessonBankAPI.php?action=my-bank'),
             Api.get('/QuizzesAPI.php?action=instructor-list'),
         ]);
         const items = [
-            ...(qRes.success ? qRes.data : []).map(q => ({ ...q, feed_type: 'question', is_own: true })),
-            ...(zRes.success ? zRes.data : []).map(q => ({
+            ...(lRes.success ? lRes.data : []).map(l => ({
+                ...l, feed_type: 'material', is_own: true,
+                first_name: currentUser?.first_name, last_name: currentUser?.last_name,
+            })),
+            ...(zRes.success ? zRes.data : [])
+                .filter(q => q.status === 'published')
+                .map(q => ({
+                    ...q, feed_type: 'quiz', is_own: true,
+                    first_name: currentUser?.first_name, last_name: currentUser?.last_name,
+                })),
+        ].sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0));
+        renderFeed(wrap, items, 'mine');
+    }
+}
+
+async function loadQuizContent(wrap) {
+    const search = document.getElementById('cb-search')?.value || '';
+    const subjectId = document.getElementById('cb-subject')?.value || '';
+
+    if (activeTab === 'browse') {
+        let zUrl = '/QuizzesAPI.php?action=browse-shared';
+        if (search) zUrl += '&search=' + encodeURIComponent(search);
+        if (subjectId) zUrl += '&subject_id=' + subjectId;
+
+        const zRes = await Api.get(zUrl);
+        const items = (zRes.success ? zRes.data : []).map(q => ({
+            ...q,
+            feed_type: 'quiz',
+            is_own: q.is_own == 1 || q.is_own === true,
+        }));
+        renderFeed(wrap, items, 'browse');
+    } else {
+        const zRes = await Api.get('/QuizzesAPI.php?action=instructor-list');
+        const items = (zRes.success ? zRes.data : [])
+            .filter(q => q.status === 'published')
+            .map(q => ({
                 ...q,
                 feed_type: 'quiz',
                 is_own: true,
                 first_name: currentUser?.first_name,
                 last_name: currentUser?.last_name,
-            })),
-        ].sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0));
+            }))
+            .sort((a, b) => new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0));
         renderFeed(wrap, items, 'mine');
     }
 }
@@ -371,13 +487,14 @@ async function openSharedQuizPreview(quizId, title) {
     const footer = overlay.querySelector('#cb-quiz-preview-footer');
     const res = await Api.get('/QuizzesAPI.php?action=shared-preview&id=' + quizId);
 
-    if (!res.success || !res.data?.questions?.length) {
+    if (!res.success || !res.data?.quiz) {
         body.innerHTML = alertHtml('error', res.message || 'Could not load quiz preview');
         return;
     }
 
     const quiz = res.data.quiz;
-    const questions = res.data.questions;
+    const questions = res.data.questions || [];
+    const isOwn = Number(quiz.user_teacher_id) === Number(currentUser?.users_id || currentUser?.id);
     const typeLabels = {
         multiple_choice: 'Multiple Choice',
         true_false: 'True / False',
@@ -386,6 +503,41 @@ async function openSharedQuizPreview(quizId, title) {
         short_answer: 'Short Answer',
         essay: 'Essay',
     };
+
+    if (isOwn) {
+        body.innerHTML = `
+            <div style="margin-bottom:16px;">
+                <h4 style="margin:0 0 6px;font-size:17px;color:#050505;">${esc(quiz.quiz_title || title)}</h4>
+                <p style="margin:0;font-size:13px;color:#65676B;">
+                    ${esc(quiz.subject_code || '')} · ${questions.length} questions · ${quiz.time_limit || 30} min
+                </p>
+                ${quiz.quiz_description ? `<p style="font-size:13px;color:#444;margin:10px 0 0;">${esc(quiz.quiz_description)}</p>` : ''}
+            </div>
+            <div style="max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+                ${questions.map((q, i) => `
+                    <div style="border:1px solid #e4e6eb;border-radius:10px;padding:12px 14px;background:#fff;">
+                        <div style="font-size:12px;color:#65676B;margin-bottom:4px;">
+                            Q${i + 1} · ${typeLabels[q.question_type] || q.question_type} · ${q.points || 1} pt${q.points != 1 ? 's' : ''}
+                        </div>
+                        <div style="font-size:14px;color:#050505;line-height:1.5;">${esc(q.question_text)}</div>
+                        ${(q.choices || []).length ? `
+                            <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
+                                ${q.choices.map(c => `
+                                    <div style="font-size:12px;color:#444;padding:4px 8px;border-radius:6px;background:${c.is_correct ? '#ecfdf5' : '#f9fafb'};">
+                                        ${c.is_correct ? '✓ ' : '○ '}${esc(c.option_text)}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        footer.style.display = '';
+        overlay.querySelector('#cb-quiz-use-all')?.remove();
+        overlay.querySelector('#cb-quiz-use-selected')?.remove();
+        return;
+    }
 
     body.innerHTML = `
         <div id="cb-quiz-copy-alert"></div>
@@ -574,40 +726,42 @@ function renderComposer(container, myInitials) {
 
     const prompt = section === 'lessons'
         ? 'Share a lesson or material with colleagues…'
-        : 'Share a quiz question with colleagues…';
+        : section === 'quizzes'
+        ? 'Publish a full quiz from My Classes to share here…'
+        : 'Share a material or quiz with fellow instructors…';
 
     wrap.innerHTML = `
         <div class="fb-composer">
             <div class="fb-composer-top">
                 <div class="fb-avatar sm">${esc(myInitials)}</div>
                 <button type="button" class="fb-composer-prompt" id="fb-composer-main">${esc(prompt)}</button>
-                </div>
+            </div>
             <div class="fb-composer-actions">
-                ${section === 'lessons' ? `
+                ${section !== 'quizzes' ? `
                     <button type="button" class="fb-composer-btn" data-share="lesson">
                         <span class="ico">${icon('document', { size: 16 })}</span> Share Material
                     </button>
-                ` : `
-                    <button type="button" class="fb-composer-btn" data-share="question">
-                        <span class="ico">${icon('quiz', { size: 16 })}</span> Share Question
-                    </button>
+                ` : ''}
+                ${section !== 'lessons' ? `
                     <button type="button" class="fb-composer-btn" data-share="quiz-hint" title="Publish full quizzes from My Classes">
-                        <span class="ico">${icon('quiz', { size: 16 })}</span> Full Quiz
+                        <span class="ico">${icon('quiz', { size: 16 })}</span> Publish Full Quiz
                     </button>
-                `}
+                ` : ''}
             </div>
-            </div>
+        </div>
     `;
 
     const activeSubject = document.getElementById('cb-subject')?.value || '';
     wrap.querySelector('#fb-composer-main')?.addEventListener('click', () => {
-        if (section === 'lessons') openLessonPublishModal(container, activeSubject);
-        else openQuestionPublishModal(container, activeSubject);
+        if (section === 'quizzes') {
+            showToast('Open My Classes → pick a quiz → set status to Published to share it here.');
+            return;
+        }
+        openLessonPublishModal(container, activeSubject);
     });
     wrap.querySelector('[data-share="lesson"]')?.addEventListener('click', () => openLessonPublishModal(container, activeSubject));
-    wrap.querySelector('[data-share="question"]')?.addEventListener('click', () => openQuestionPublishModal(container, activeSubject));
     wrap.querySelector('[data-share="quiz-hint"]')?.addEventListener('click', () => {
-        showToast('Publish full quizzes from My Classes → set quiz status to Published.');
+        showToast('Open My Classes → pick a quiz → set status to Published to share the full quiz.');
     });
 }
 
@@ -619,15 +773,22 @@ function renderFeed(wrap, items, mode) {
             ? emptyHtml('folder', 'No posts yet', mode === 'browse'
                 ? 'When colleagues share materials for your subjects, they will show up here.'
                 : 'Use the composer above to share your first material.')
-            : emptyHtml('quiz', 'No posts yet', mode === 'browse'
-                ? 'Quiz questions and full quizzes from colleagues will appear in this feed.'
-                : 'Share a question above, or publish a quiz from My Classes.');
-        wrap.innerHTML = empty;
+            : section === 'quizzes'
+            ? emptyHtml('quiz', 'No quiz posts yet', mode === 'browse'
+                ? 'Published full quizzes from colleagues will appear here. Comment and copy whole quizzes — not question by question.'
+                : 'Publish a full quiz from My Classes to share it with fellow instructors.')
+            : emptyHtml('messages', 'No posts yet', mode === 'browse'
+                ? 'Materials and full quizzes from colleagues in your subjects will show up in this feed.'
+                : 'Share a material or publish a full quiz to get started.');
+        wrap.innerHTML = `<div class="fb-feed">${empty}</div>`;
         return;
     }
 
     wrap.innerHTML = `<div class="fb-feed">${items.map((item, i) => feedPostHtml(item, mode, i)).join('')}</div>`;
     bindFeedEvents(wrap, items, mode);
+    bindResourceControls(wrap, items);
+    bindCommentEvents(wrap, items);
+    loadCommentCountsForFeed(items);
 }
 
 function feedPostHtml(item, mode, index) {
@@ -639,6 +800,9 @@ function feedPostHtml(item, mode, index) {
     const subject = item.subject_code
         ? `<span class="cb-subject-tag">${esc(item.subject_code)}</span>`
         : '';
+    const ref = getPostRef(item);
+    const myInitials = authorInitials(currentUser?.first_name, currentUser?.last_name, currentUser?.name);
+    const commentKey = ref ? `${ref.post_type}:${ref.post_id}` : '';
 
     const typePills = {
         material: '<span class="fb-type-pill material">Material</span>',
@@ -657,56 +821,47 @@ function feedPostHtml(item, mode, index) {
             ? `<p class="fb-post-text clamp">${esc(item.lesson_description)}</p>`
             : '';
         if (item.attachment_type && item.attachment_type !== 'none' && item.attachment_path) {
+            const attHref = item.attachment_type === 'link' || /^https?:\/\//i.test(item.attachment_path)
+                ? item.attachment_path
+                : resolveMaterialUrl(item.attachment_path);
             body += `<div class="fb-post-attach">${
                 item.attachment_type === 'file'
-                    ? `<a class="cb-attachment-badge" href="${esc(item.attachment_path)}" target="_blank" rel="noopener">${L.attach} ${esc(item.attachment_name || 'Attachment')}</a>`
-                    : `<a class="cb-attachment-link" href="${esc(item.attachment_path)}" target="_blank" rel="noopener">${L.link} ${esc(item.attachment_name || 'Link')}</a>`
+                    ? `<a class="cb-attachment-badge" href="${esc(attHref)}" target="_blank" rel="noopener">${L.attach} ${esc(item.attachment_name || 'Attachment')}</a>`
+                    : `<a class="cb-attachment-link" href="${esc(attHref)}" target="_blank" rel="noopener">${L.link} ${esc(item.attachment_name || 'Link')}</a>`
             }</div>`;
         }
         stats = `<span>${icon('copy', { size: 12, className: 'ui-icon-inline' })} ${item.copy_count ?? 0} copies</span>`;
-        if (mode === 'browse' && !isOwn) {
-            actions = `
-                <button type="button" class="fb-action" data-feed-view="${index}">${L.preview}</button>
-                <button type="button" class="fb-action primary" data-lesson-copy="${item.bank_id}" data-title="${esc(item.lesson_title)}">${L.copyToClass}</button>`;
-        } else if (isOwn) {
-            actions = `
-                <button type="button" class="fb-action" data-feed-view="${index}">${L.preview}</button>
-                <button type="button" class="fb-action danger" data-lesson-delete="${item.bank_id}">${L.remove}</button>`;
-        }
-    } else if (type === 'question') {
-        const typeLabel = { multiple_choice: 'Multiple Choice', true_false: 'True/False', short_answer: 'Short Answer', essay: 'Essay' };
-        title = '';
-        body = `<p class="fb-post-text">${esc(item.question_text)}</p>`;
-        if (item.lesson_title) {
-            body += `<p style="font-size:12px;color:#65676B;margin:8px 0 0;">Lesson: ${esc(item.lesson_title)}</p>`;
-        }
-        if ((item.options || []).length) {
-            body += `<div class="fb-q-opts">${item.options.map(o =>
-                `<div class="fb-q-opt ${o.is_correct ? 'correct' : ''}"><span>${o.is_correct ? '✓' : '○'}</span>${esc(o.option_text)}</div>`
-            ).join('')}</div>`;
-        }
-        stats = `<span class="cb-type-badge">${typeLabel[item.question_type] || item.question_type}</span>
-                 <span>${item.points || 1} pt${item.points != 1 ? 's' : ''}</span>
-                 <span>${icon('copy', { size: 12, className: 'ui-icon-inline' })} ${item.copy_count ?? 0} copies</span>`;
-        if (mode === 'browse' && !isOwn) {
-            actions = `<button type="button" class="fb-action primary" data-q-copy="${item.qbank_id}" data-qtitle="${esc(item.question_text)}">Copy to Quiz</button>`;
-        } else if (isOwn) {
-            actions = `<button type="button" class="fb-action danger" data-q-delete="${item.qbank_id}">${L.remove}</button>`;
+        if (isOwn) {
+            actions = `<button type="button" class="fb-action danger" data-lesson-delete="${item.bank_id}">${L.remove}</button>`;
         }
     } else if (type === 'quiz') {
-        title = esc(item.quiz_title || 'Untitled quiz');
-        body = item.quiz_description
-            ? `<p class="fb-post-text clamp">${esc(item.quiz_description)}</p>`
-            : '';
+        if (item.quiz_description) {
+            body = `<p class="fb-post-text clamp">${esc(item.quiz_description)}</p>`;
+        }
+        body += `
+            <div class="fb-quiz-card" data-quiz-open="${item.quiz_id}" data-title="${esc(item.quiz_title || '')}" role="button" tabindex="0">
+                <div class="fb-quiz-card-icon">${icon('quiz', { size: 22 })}</div>
+                <div style="min-width:0;">
+                    <p class="fb-quiz-card-title">${esc(item.quiz_title || 'Untitled quiz')}</p>
+                    <p class="fb-quiz-card-meta">${item.question_count || 0} questions · ${item.time_limit || 30} min${item.total_points ? ` · ${item.total_points} pts` : ''}${item.subject_code ? ` · ${esc(item.subject_code)}` : ''}</p>
+                </div>
+            </div>`;
         stats = `<span>${item.question_count || 0} questions</span>
                  <span>${item.time_limit || 30} min</span>
-                 ${item.status ? `<span class="cb-vis-badge ${item.status === 'published' ? 'public' : 'private'}">${esc(item.status)}</span>` : ''}`;
-        if (mode === 'browse' && !isOwn) {
-            actions = `
-                <button type="button" class="fb-action" data-quiz-preview="${item.quiz_id}" data-title="${esc(item.quiz_title)}">${L.preview} Quiz</button>
-                <button type="button" class="fb-action primary" data-quiz-copy="${item.quiz_id}" data-title="${esc(item.quiz_title)}">Use All in My Class</button>`;
-        } else if (isOwn) {
+                 ${item.status ? `<span class="cb-vis-badge ${item.status === 'published' ? 'public' : 'private'}">${esc(item.status)}</span>` : ''}
+                 <span class="fb-comment-count" data-comment-count="${esc(commentKey)}"></span>`;
+        if (isOwn) {
             actions = `<a class="fb-action primary" href="#instructor/quiz-questions?quiz_id=${item.quiz_id}" style="text-decoration:none">Manage Quiz</a>`;
+        }
+    }
+
+    const resourceCtrl = resourceControlsHtml(item, index, isOwn, mode);
+
+    if (ref) {
+        const commentLabel = `<span class="fb-comment-count-inline" data-comment-count="${esc(commentKey)}"></span>`;
+        actions = `<button type="button" class="fb-action" data-feed-comment="${index}">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Comment ${commentLabel}</button>` + (actions || '');
+        if (type === 'material' && stats) {
+            stats += `<span class="fb-comment-count" data-comment-count="${esc(commentKey)}"></span>`;
         }
     }
 
@@ -714,8 +869,20 @@ function feedPostHtml(item, mode, index) {
         ? `<span class="cb-vis-badge ${item.visibility}">${item.visibility}</span>`
         : '';
 
-            return `
-        <article class="fb-post" data-feed-idx="${index}">
+    const commentsPanel = ref ? `
+        <div class="fb-comments" id="fb-comments-${esc(ref.post_type)}-${ref.post_id}" data-post-type="${esc(ref.post_type)}" data-post-id="${ref.post_id}">
+            <div class="fb-comment-list" data-comment-list>
+                <p class="fb-comment-empty">Loading comments…</p>
+            </div>
+            <div class="fb-comment-compose">
+                <div class="fb-avatar sm">${esc(myInitials)}</div>
+                <textarea class="fb-comment-input" rows="1" placeholder="Write a comment…" maxlength="2000"></textarea>
+                <button type="button" class="fb-comment-send" disabled>Post</button>
+            </div>
+        </div>` : '';
+
+    return `
+        <article class="fb-post" data-feed-idx="${index}" ${ref ? `data-post-type="${esc(ref.post_type)}" data-post-id="${ref.post_id}"` : ''}>
             <div class="fb-post-head">
                 <div class="fb-avatar">${esc(initials)}</div>
                 <div class="fb-post-meta">
@@ -725,23 +892,26 @@ function feedPostHtml(item, mode, index) {
                         ${when ? `<span class="dot">·</span><span>${when}</span>` : ''}
                         ${typePills[type] || ''}
                         ${visBadge}
+                    </div>
                 </div>
-                </div>
-                </div>
-            <div class="fb-post-body">
+            </div>
+            <div class="fb-post-body" ${type === 'material' ? `data-feed-view="${index}" style="cursor:pointer;" title="Click to preview"` : ''}>
                 ${title ? `<h3 class="fb-post-title">${title}</h3>` : ''}
                 ${body}
             </div>
+            ${resourceCtrl}
             ${stats ? `<div class="fb-post-stats">${stats}</div>` : ''}
             ${actions ? `<div class="fb-post-actions">${actions}</div>` : ''}
+            ${commentsPanel}
         </article>
     `;
 }
 
 function bindFeedEvents(wrap, items, mode) {
-    wrap.querySelectorAll('[data-feed-view]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const item = items[parseInt(btn.dataset.feedView, 10)];
+    wrap.querySelectorAll('[data-feed-view]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            if (e.target.closest('a, button')) return;
+            const item = items[parseInt(el.dataset.feedView, 10)];
             if (item?.feed_type === 'material') openLessonPreview(item);
         });
     });
@@ -751,17 +921,279 @@ function bindFeedEvents(wrap, items, mode) {
     wrap.querySelectorAll('[data-lesson-delete]').forEach(btn => {
         btn.addEventListener('click', () => confirmLessonDelete(btn.dataset.lessonDelete));
     });
-    wrap.querySelectorAll('[data-q-copy]').forEach(btn => {
-        btn.addEventListener('click', () => openQuestionCopyModal(btn.dataset.qCopy, btn.dataset.qtitle));
-    });
-    wrap.querySelectorAll('[data-q-delete]').forEach(btn => {
-        btn.addEventListener('click', () => confirmQuestionDelete(btn.dataset.qDelete));
+    wrap.querySelectorAll('[data-quiz-preview], [data-quiz-open]').forEach(btn => {
+        btn.addEventListener('click', () => openSharedQuizPreview(parseInt(btn.dataset.quizPreview || btn.dataset.quizOpen, 10), btn.dataset.title));
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && btn.dataset.quizOpen) {
+                openSharedQuizPreview(parseInt(btn.dataset.quizOpen, 10), btn.dataset.title);
+            }
         });
-    wrap.querySelectorAll('[data-quiz-preview]').forEach(btn => {
-        btn.addEventListener('click', () => openSharedQuizPreview(parseInt(btn.dataset.quizPreview, 10), btn.dataset.title));
     });
     wrap.querySelectorAll('[data-quiz-copy]').forEach(btn => {
         btn.addEventListener('click', () => openQuizCopyModal(parseInt(btn.dataset.quizCopy, 10), btn.dataset.title, null));
+    });
+}
+
+function subjectOptionsHtml() {
+    if (!mySubjects.length) {
+        return '<option value="">No classes assigned</option>';
+    }
+    return '<option value="">Select your class…</option>' +
+        mySubjects.map(s => `<option value="${s.subject_id}">${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('');
+}
+
+function canShowResourceControls(item, isOwn, mode) {
+    const type = item.feed_type || 'material';
+    if (type === 'material') return true;
+    if (type === 'quiz' && !isOwn) return true;
+    return false;
+}
+
+function resourceControlsHtml(item, index, isOwn, mode) {
+    if (!canShowResourceControls(item, isOwn, mode)) return '';
+
+    const type = item.feed_type || 'material';
+    const isMaterial = type === 'material';
+    const resourceId = isMaterial ? item.bank_id : item.quiz_id;
+    const getLabel = isMaterial
+        ? (isOwn ? 'Add to another class' : 'Get material')
+        : 'Get full quiz';
+    const pickLabel = isMaterial ? 'Add to class:' : 'Copy quiz to:';
+    const hasClasses = mySubjects.length > 0;
+
+    return `
+        <div class="fb-resource-ctrl">
+            <div class="fb-resource-ctrl-hdr">
+                ${icon('copy', { size: 16, className: 'ui-icon-inline' })}
+                <span>Get this resource</span>
+            </div>
+            <div class="fb-resource-ctrl-row">
+                <span class="fb-resource-lbl">${pickLabel}</span>
+                ${hasClasses ? `
+                    <select class="fb-resource-subject" data-feed-idx="${index}">
+                        ${subjectOptionsHtml()}
+                    </select>
+                    <button type="button" class="fb-resource-btn preview" data-res-preview="${index}">${icon('preview', { size: 14, className: 'ui-icon-inline' })} Preview</button>
+                    <button type="button" class="fb-resource-btn primary" data-get-resource="${isMaterial ? 'material' : 'quiz'}" data-resource-id="${resourceId}" data-feed-idx="${index}">
+                        ${icon('copy', { size: 14, className: 'ui-icon-inline' })} ${getLabel}
+                    </button>
+                    ${!isMaterial ? `<button type="button" class="fb-resource-btn outline" data-quiz-pick="${item.quiz_id}" data-title="${esc(item.quiz_title || '')}">${icon('quiz', { size: 14, className: 'ui-icon-inline' })} Pick questions…</button>` : ''}
+                ` : `<span class="fb-resource-none">Assign subjects to your account to use resources.</span>`}
+            </div>
+        </div>`;
+}
+
+function bindResourceControls(wrap, items) {
+    wrap.querySelectorAll('[data-res-preview]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const item = items[parseInt(btn.dataset.feedIdx, 10)];
+            if (!item) return;
+            if (item.feed_type === 'material') openLessonPreview(item);
+            else if (item.feed_type === 'quiz') openSharedQuizPreview(item.quiz_id, item.quiz_title);
+        });
+    });
+
+    wrap.querySelectorAll('[data-quiz-pick]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openSharedQuizPreview(parseInt(btn.dataset.quizPick, 10), btn.dataset.title);
+        });
+    });
+
+    wrap.querySelectorAll('[data-get-resource]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = parseInt(btn.dataset.feedIdx, 10);
+            const item = items[idx];
+            const post = btn.closest('.fb-post');
+            const subjectId = parseInt(post?.querySelector('.fb-resource-subject')?.value, 10);
+            if (!subjectId) {
+                showToast('Select which class to add this resource to.');
+                return;
+            }
+
+            const kind = btn.dataset.getResource;
+            const resourceId = parseInt(btn.dataset.resourceId, 10);
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = 'Adding…';
+
+            try {
+                if (kind === 'material') {
+                    const res = await Api.post('/LessonBankAPI.php?action=copy', {
+                        bank_id: resourceId,
+                        subject_id: subjectId,
+                    });
+                    if (res.success) {
+                        showToast('Material added to your class!');
+                        loadContent();
+                    } else {
+                        showToast(res.message || 'Failed to add material.');
+                    }
+                } else {
+                    const res = await Api.post('/QuizzesAPI.php?action=copy-shared', {
+                        quiz_id: resourceId,
+                        subject_id: subjectId,
+                    });
+                    if (res.success) {
+                        showToast('Full quiz added to your class!');
+                        const newId = res.data?.quiz_id;
+                        if (newId) {
+                            window.location.hash = `#instructor/quiz-questions?quiz_id=${newId}`;
+                        } else {
+                            loadContent();
+                        }
+                    } else {
+                        showToast(res.message || 'Failed to add quiz.');
+                    }
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+            }
+        });
+    });
+}
+
+// ─── Social comments ─────────────────────────────────────────────────────────
+
+function getPostRef(item) {
+    const type = item.feed_type || 'material';
+    if (type === 'material' && item.bank_id) return { post_type: 'material', post_id: item.bank_id };
+    if (type === 'question' && item.qbank_id) return { post_type: 'question', post_id: item.qbank_id };
+    if (type === 'quiz' && item.quiz_id) return { post_type: 'quiz', post_id: item.quiz_id };
+    return null;
+}
+
+function mergeSubjects(a, b) {
+    const map = new Map();
+    [...a, ...b].forEach(s => {
+        if (s?.subject_id) map.set(String(s.subject_id), s);
+    });
+    return [...map.values()].sort((x, y) => String(x.subject_code).localeCompare(String(y.subject_code)));
+}
+
+function commentRowHtml(c) {
+    const authorName = c.author_name || authorName(c.first_name, c.last_name);
+    const initials = authorInitials(c.first_name, c.last_name);
+    const when = c.created_at
+        ? new Date(String(c.created_at).replace(' ', 'T')).toLocaleString('en-US', {
+            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        })
+        : '';
+    return `
+        <div class="fb-comment">
+            <div class="fb-avatar sm">${esc(initials)}</div>
+            <div class="fb-comment-body">
+                <span class="fb-comment-author">${esc(authorName)}</span>
+                <p class="fb-comment-text">${esc(c.content || '')}</p>
+                <div class="fb-comment-time">${esc(when)}</div>
+            </div>
+        </div>`;
+}
+
+function updateCommentCountLabels(key, count) {
+    const label = count > 0 ? `(${count})` : '';
+    document.querySelectorAll(`[data-comment-count="${key}"]`).forEach(el => {
+        el.textContent = el.classList.contains('fb-comment-count')
+            ? (count > 0 ? `${count} comment${count !== 1 ? 's' : ''}` : '')
+            : label;
+    });
+}
+
+async function loadCommentCountsForFeed(items) {
+    const posts = items.map(getPostRef).filter(Boolean);
+    if (!posts.length) return;
+    const res = await Api.post('/ContentBankAPI.php?action=comment-counts', { posts });
+    if (!res.success) return;
+    Object.entries(res.data || {}).forEach(([key, count]) => updateCommentCountLabels(key, count));
+}
+
+async function loadCommentsForPost(postType, postId, listEl) {
+    listEl.innerHTML = '<p class="fb-comment-empty">Loading…</p>';
+    const res = await Api.get(`/ContentBankAPI.php?action=comments&post_type=${encodeURIComponent(postType)}&post_id=${postId}`);
+    if (!res.success) {
+        listEl.innerHTML = '<p class="fb-comment-empty">Could not load comments.</p>';
+        return;
+    }
+    const comments = res.data || [];
+    listEl.innerHTML = comments.length
+        ? comments.map(commentRowHtml).join('')
+        : '<p class="fb-comment-empty">No comments yet. Start the conversation!</p>';
+    updateCommentCountLabels(`${postType}:${postId}`, comments.length);
+}
+
+function bindCommentEvents(wrap, items) {
+    wrap.querySelectorAll('[data-feed-comment]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const item = items[parseInt(btn.dataset.feedComment, 10)];
+            const ref = getPostRef(item);
+            if (!ref) return;
+            const panel = wrap.querySelector(`#fb-comments-${ref.post_type}-${ref.post_id}`);
+            if (!panel) return;
+
+            const isOpen = panel.classList.contains('open');
+            wrap.querySelectorAll('.fb-comments.open').forEach(p => p.classList.remove('open'));
+            wrap.querySelectorAll('[data-feed-comment].active').forEach(b => b.classList.remove('active'));
+
+            if (!isOpen) {
+                panel.classList.add('open');
+                btn.classList.add('active');
+                const listEl = panel.querySelector('[data-comment-list]');
+                if (listEl && !panel.dataset.loaded) {
+                    await loadCommentsForPost(ref.post_type, ref.post_id, listEl);
+                    panel.dataset.loaded = '1';
+                }
+                panel.querySelector('.fb-comment-input')?.focus();
+            }
+        });
+    });
+
+    wrap.querySelectorAll('.fb-comment-compose').forEach(compose => {
+        const panel = compose.closest('.fb-comments');
+        const input = compose.querySelector('.fb-comment-input');
+        const sendBtn = compose.querySelector('.fb-comment-send');
+        if (!panel || !input || !sendBtn) return;
+
+        input.addEventListener('input', () => {
+            sendBtn.disabled = !input.value.trim();
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+        });
+
+        const submit = async () => {
+            const content = input.value.trim();
+            if (!content) return;
+            const postType = panel.dataset.postType;
+            const postId = parseInt(panel.dataset.postId, 10);
+            sendBtn.disabled = true;
+            const res = await Api.post('/ContentBankAPI.php?action=add-comment', {
+                post_type: postType,
+                post_id: postId,
+                content,
+            });
+            if (res.success) {
+                input.value = '';
+                input.style.height = 'auto';
+                const listEl = panel.querySelector('[data-comment-list]');
+                const existing = listEl.querySelector('.fb-comment-empty');
+                if (existing) existing.remove();
+                listEl.insertAdjacentHTML('beforeend', commentRowHtml(res.data));
+                listEl.scrollTop = listEl.scrollHeight;
+                const key = `${postType}:${postId}`;
+                const count = listEl.querySelectorAll('.fb-comment').length;
+                updateCommentCountLabels(key, count);
+            } else {
+                showToast(res.message || 'Failed to post comment');
+            }
+            sendBtn.disabled = !input.value.trim();
+        };
+
+        sendBtn.addEventListener('click', submit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+            }
+        });
     });
 }
 
@@ -804,13 +1236,9 @@ function openLessonPublishModal(_container, preSelectedSubjectId = '') {
                     <div style="font-size:12px;color:#555;line-height:1.5;" id="lp-prev-desc"></div>
                     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;" id="lp-prev-meta"></div>
                 </div>
-                <div class="cb-form-group">
-                    <label>Visibility</label>
-                    <select class="cb-form-select" id="lp-vis">
-                        <option value="public">Public — any instructor can browse &amp; copy</option>
-                        <option value="private">Private — only visible to me</option>
-                    </select>
-                </div>
+                <p style="font-size:12px;color:#65676B;margin:0;padding:10px 12px;background:#F0F2F5;border-radius:8px;line-height:1.5;">
+                    Posts are shared publicly with instructors in the same subjects and are available for preview immediately.
+                </p>
             </div>
             <div class="cb-modal-footer">
                 <button class="btn-outline-sm modal-cancel">Cancel</button>
@@ -888,10 +1316,18 @@ function openLessonPublishModal(_container, preSelectedSubjectId = '') {
 
         const res = await Api.post('/LessonBankAPI.php?action=publish', {
             lessons_id: lessonId,
-            visibility: overlay.querySelector('#lp-vis').value,
+            visibility: 'public',
         });
 
-        if (res.success) { overlay.remove(); loadContent(); showToast('Lesson published to bank!'); }
+        if (res.success) {
+            overlay.remove();
+            await loadContent();
+            showToast('Material shared — preview is available in the feed.');
+            if (res.bank_id) {
+                const prev = await Api.get('/LessonBankAPI.php?action=get&bank_id=' + res.bank_id);
+                if (prev.success) openLessonPreview(prev.data);
+            }
+        }
         else { saveBtn.disabled = false; saveBtn.textContent = 'Post'; overlay.querySelector('#lp-alert').innerHTML = alertHtml('error', res.message || 'Failed to publish.'); }
     });
 }
@@ -931,58 +1367,74 @@ function openLessonCopyModal(bankId, title) {
     });
 }
 
-function openLessonPreview(lesson) {
-    if (!lesson) return;
-    const hasAtt = lesson.attachment_type && lesson.attachment_type !== 'none' && lesson.attachment_path;
+function bankAttachmentHref(lesson) {
+    if (!lesson?.attachment_path) return '#';
+    if (lesson.attachment_type === 'link' || /^https?:\/\//i.test(lesson.attachment_path)) {
+        return lesson.attachment_path;
+    }
+    return resolveMaterialUrl(lesson.attachment_path);
+}
+
+async function openLessonPreview(lesson) {
+    if (!lesson?.bank_id) return;
+
+    let data = lesson;
+    const res = await Api.get('/LessonBankAPI.php?action=get&bank_id=' + lesson.bank_id);
+    if (res.success && res.data) {
+        data = { ...lesson, ...res.data };
+    }
+
+    const attUrl = bankAttachmentHref(data);
+    const hasAtt = data.attachment_type && data.attachment_type !== 'none' && data.attachment_path;
     const attHtml = hasAtt
         ? `<div class="cb-form-group" style="margin-top:14px;">
                <label>Attachment</label>
-               <a class="cb-att-preview-btn ${lesson.attachment_type}"
-                  href="${esc(lesson.attachment_path)}" target="_blank" rel="noopener">
-                   ${lesson.attachment_type === 'file' ? L.downloadFile : L.openLink}
-                   <span style="font-size:11px;opacity:.75;font-weight:400;">${esc(lesson.attachment_name || lesson.attachment_path)}</span>
+               <a class="cb-att-preview-btn ${data.attachment_type}"
+                  href="${esc(attUrl)}" target="_blank" rel="noopener">
+                   ${data.attachment_type === 'file' ? L.downloadFile : L.openLink}
+                   <span style="font-size:11px;opacity:.75;font-weight:400;">${esc(data.attachment_name || data.attachment_path)}</span>
                </a>
            </div>`
         : '';
+    const isOwn = data.is_own == 1 || data.is_own === true;
     createOverlay(`
         <div class="cb-modal">
             <div class="cb-modal-header">
-                <h3>${esc(lesson.lesson_title)}</h3>
+                <h3>${esc(data.lesson_title)}</h3>
                 <button class="cb-modal-close">&times;</button>
             </div>
             <div class="cb-modal-body">
                 <div class="cb-card-meta" style="margin-bottom:12px;">
-                    ${lesson.subject_code ? `<span class="cb-subject-tag">${esc(lesson.subject_code)}</span>` : ''}
-                    ${lesson.first_name ? `<span class="cb-meta-item">By <strong>${esc(lesson.first_name + ' ' + lesson.last_name)}</strong></span>` : ''}
-                    <span class="cb-copy-badge">${icon('copy', { size: 12, className: 'ui-icon-inline' })} ${lesson.copy_count ?? 0} copies</span>
+                    ${data.subject_code ? `<span class="cb-subject-tag">${esc(data.subject_code)}</span>` : ''}
+                    ${data.first_name ? `<span class="cb-meta-item">By <strong>${esc(data.first_name + ' ' + data.last_name)}</strong></span>` : ''}
+                    <span class="cb-copy-badge">${icon('copy', { size: 12, className: 'ui-icon-inline' })} ${data.copy_count ?? 0} copies</span>
                 </div>
-                ${lesson.lesson_description ? `<p style="font-size:13px;color:#555;margin:0 0 14px;">${esc(lesson.lesson_description)}</p>` : ''}
+                ${data.lesson_description ? `<p style="font-size:13px;color:#555;margin:0 0 14px;">${esc(data.lesson_description)}</p>` : ''}
                 <div class="cb-form-group">
                     <label>Lesson Content</label>
-                    <div class="cb-preview-content">${lesson.lesson_content ? esc(lesson.lesson_content) : '<em style="color:#999">No content provided.</em>'}</div>
+                    <div class="cb-preview-content">${data.lesson_content ? esc(data.lesson_content) : '<em style="color:#999">No content provided.</em>'}</div>
                 </div>
                 ${attHtml}
             </div>
             <div class="cb-modal-footer">
                 <button class="btn-outline-sm modal-cancel">Close</button>
-                ${!lesson.is_own ? `<button class="btn-primary-sm" id="prev-copy-btn">Copy to My Class</button>` : ''}
+                ${!isOwn ? `<button class="btn-primary-sm" id="prev-copy-btn">Copy to My Class</button>` : ''}
             </div>
         </div>`);
-    // prev-copy-btn handled via event delegation on overlay (already done by createOverlay close)
     const copyBtn = document.getElementById('prev-copy-btn');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
             document.querySelector('.cb-overlay')?.remove();
-            openLessonCopyModal(lesson.bank_id, lesson.lesson_title);
+            openLessonCopyModal(data.bank_id, data.lesson_title);
         });
     }
 }
 
 async function confirmLessonDelete(bankId) {
-    if (!confirm('Remove this lesson from the bank?')) return;
+    if (!await notify.confirm('Remove this lesson from the bank?', { danger: true, confirmText: 'Remove' })) return;
     const res = await Api.post('/LessonBankAPI.php?action=delete', { bank_id: parseInt(bankId) });
     if (res.success) { loadContent(); showToast('Lesson removed from bank.'); }
-    else alert(res.message || 'Failed to remove.');
+    else notify.error(res.message || 'Failed to remove.');
 }
 
 // ─── Question Modals ──────────────────────────────────────────────────────────
@@ -1158,7 +1610,7 @@ function addOptionRow(container, text = '', correct = false) {
 
 function openQuestionCopyModal(qbankId, questionText) {
     if (!myQuizzes.length) {
-        alert('You have no quizzes yet. Create a quiz first, then copy questions into it.');
+        notify.warning('You have no quizzes yet. Create a quiz first, then copy questions into it.');
         return;
     }
     const overlay = createOverlay(`
@@ -1196,15 +1648,15 @@ function openQuestionCopyModal(qbankId, questionText) {
 }
 
 async function confirmQuestionDelete(qbankId) {
-    if (!confirm('Remove this question from the bank?')) return;
+    if (!await notify.confirm('Remove this question from the bank?', { danger: true, confirmText: 'Remove' })) return;
     const res = await Api.post('/QuestionBankAPI.php?action=delete', { qbank_id: parseInt(qbankId) });
     if (res.success) { loadContent(); showToast('Question removed from bank.'); }
-    else alert(res.message || 'Failed to remove.');
+    else notify.error(res.message || 'Failed to remove.');
 }
 
 function openGroupCopyModal(qbankIds, groupLabel) {
     if (!myQuizzes.length) {
-        alert('You have no quizzes yet. Create a quiz first, then copy questions into it.');
+        notify.warning('You have no quizzes yet. Create a quiz first, then copy questions into it.');
         return;
     }
     const overlay = createOverlay(`

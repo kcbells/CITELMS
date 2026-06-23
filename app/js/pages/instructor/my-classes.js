@@ -17,16 +17,13 @@ const BORDER = '#E5E7EB';
 export async function render(container, params = {}) {
     container.innerHTML = `<div class="mc-loading"><div class="mc-spin"></div></div>`;
 
-    const subjectId = params?.subject_id
-        || new URLSearchParams(window.location.hash.split('?')[1] || '').get('subject_id');
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const subjectId  = params?.subject_id || hashParams.get('subject_id');
+    const view       = (params?.view || hashParams.get('view')) === 'archived' ? 'archived' : 'active';
 
-    const [classesRes, semRes] = await Promise.all([
-        Api.get('/SectionsAPI.php?action=instructor-classes'),
-        Api.get('/SemesterAPI.php?action=list')
-    ]);
+    const classesRes = await Api.get('/SectionsAPI.php?action=instructor-classes');
 
     const subjects = classesRes.success ? (classesRes.data || []) : [];
-    const activeSem = (semRes.success ? semRes.data : []).find(s => s.status === 'active');
 
     if (subjectId) {
         const subject = subjects.find(s => String(s.subject_id) === String(subjectId));
@@ -35,37 +32,52 @@ export async function render(container, params = {}) {
             applyPageBg(container);
             return;
         }
-        renderSubjectSections(container, subject, activeSem);
+        renderSubjectSections(container, subject);
     } else {
-        renderSubjectList(container, subjects, activeSem);
+        renderSubjectList(container, subjects, view);
     }
 
     applyPageBg(container);
 }
 
-function renderSubjectList(container, subjects, activeSem) {
+function renderSubjectList(container, subjects, view = 'active') {
+    const activeSubjects   = subjects.filter(s => s.offering_status !== 'archived');
+    const archivedSubjects = subjects.filter(s => s.offering_status === 'archived');
+    const viewSubjects     = view === 'archived' ? archivedSubjects : activeSubjects;
+
+    const emptyMsg = view === 'archived'
+        ? 'No archived subjects yet. Use the Archive button on any active subject to move it here.'
+        : 'No subjects assigned yet. Contact your dean to assign subjects to you.';
+
     container.innerHTML = `
         <style>${styles()}</style>
         <div class="mc-page">
             <header class="mc-hero">
                 <div>
                     <p class="mc-hero-label">Teaching</p>
-                    <h1 class="mc-hero-title">My Classes</h1>
-                    <p class="mc-hero-sub">Select a subject to manage its sections, then open a class.</p>
-                    ${activeSem ? `<span class="mc-hero-badge">${esc(activeSem.semester_name)} · AY ${esc(activeSem.academic_year)}</span>` : ''}
+                    <h1 class="mc-hero-title">${view === 'archived' ? 'Archived Subjects' : 'My Subjects'}</h1>
+                    <p class="mc-hero-sub">${view === 'archived' ? 'Archived subjects are frozen — students can still view lesson materials and past results.' : 'Select a subject to manage its sections, then open a class.'}</p>
+                </div>
+                <div class="mc-view-tabs">
+                    <a href="#instructor/my-classes" class="mc-view-tab${view !== 'archived' ? ' active' : ''}">
+                        Active${activeSubjects.length > 0 ? ` (${activeSubjects.length})` : ''}
+                    </a>
+                    <a href="#instructor/my-classes?view=archived" class="mc-view-tab${view === 'archived' ? ' active' : ''}">
+                        Archived${archivedSubjects.length > 0 ? ` (${archivedSubjects.length})` : ''}
+                    </a>
                 </div>
             </header>
 
-            ${subjects.length === 0 ? emptyState('No subjects assigned yet. Contact your dean to assign subjects to you.', null) : `
+            ${viewSubjects.length === 0 ? emptyState(emptyMsg, null) : `
                 <div class="mc-toolbar">
                     <div class="mc-search-wrap">
                         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                         <input type="search" id="mc-search" class="mc-search" placeholder="Search subjects…" autocomplete="off">
                     </div>
-                    <span class="mc-count">${subjects.length} subject${subjects.length !== 1 ? 's' : ''}</span>
+                    <span class="mc-count">${viewSubjects.length} subject${viewSubjects.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="mc-subj-grid" id="mc-subj-grid">
-                    ${subjects.map(s => subjectCard(s)).join('')}
+                    ${viewSubjects.map(s => subjectCard(s)).join('')}
                 </div>
                 <p class="mc-no-results" id="mc-no-results" hidden>No subjects match your search.</p>
             `}
@@ -73,7 +85,7 @@ function renderSubjectList(container, subjects, activeSem) {
     `;
 
     const search = container.querySelector('#mc-search');
-    const cards = [...container.querySelectorAll('.mc-subj-card')];
+    const cards = [...container.querySelectorAll('.mc-subj-card-wrap')];
     search?.addEventListener('input', () => {
         const q = search.value.toLowerCase().trim();
         let n = 0;
@@ -87,9 +99,40 @@ function renderSubjectList(container, subjects, activeSem) {
         if (nr) nr.hidden = n > 0;
         if (grid) grid.style.display = n === 0 ? 'none' : '';
     });
+
+    container.querySelectorAll('.mc-archive-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const offeredId = parseInt(btn.dataset.offeredId, 10);
+            const newStatus = btn.dataset.newStatus;
+            const isArchiving = newStatus === 'archived';
+            const ok = await showMcConfirm(
+                isArchiving
+                    ? 'Archive this subject? Students will see it in their Archived Classes and cannot take quizzes or submit work.'
+                    : 'Unarchive this subject? It will return to students\' active subjects.',
+                { title: isArchiving ? 'Archive Subject' : 'Unarchive Subject',
+                  confirmLabel: isArchiving ? 'Archive' : 'Unarchive' }
+            );
+            if (!ok) return;
+            btn.disabled = true;
+            btn.innerHTML = 'Saving…';
+            const res = await Api.post('/SubjectOfferingsAPI.php?action=update', {
+                subject_offered_id: offeredId,
+                status: newStatus,
+            });
+            if (res.success) {
+                render(container, { view: newStatus === 'archived' ? 'archived' : 'active' });
+            } else {
+                showMcPopup(res.message || 'Failed to update.', { title: 'Error', type: 'error' });
+                btn.disabled = false;
+                btn.innerHTML = icon('archive', inl) + ' ' + (isArchiving ? 'Archive' : 'Unarchive');
+            }
+        });
+    });
 }
 
-function renderSubjectSections(container, subject, activeSem) {
+function renderSubjectSections(container, subject) {
     const sections = subject.sections || [];
     const color = subjectColor(subject.subject_id);
 
@@ -108,7 +151,7 @@ function renderSubjectSections(container, subject, activeSem) {
                     ${subject.program_code ? `<span class="mc-subj-prog">${esc(subject.program_code)}</span>` : ''}
                 </div>
                 <div class="mc-subj-hero-meta">
-                    <p>${sections.length} section${sections.length !== 1 ? 's' : ''} · ${activeSem ? esc(activeSem.semester_name) : 'Current term'}</p>
+                    <p>${sections.length} section${sections.length !== 1 ? 's' : ''}</p>
                     <div class="mc-hero-actions">
                         <button type="button" class="mc-btn-outline-dark" id="mc-add-lesson">
                             ${icon('document', inl)} Add Lesson
@@ -210,19 +253,31 @@ function subjectCard(s) {
     const secCount = (s.sections || []).length;
     const studentTotal = (s.sections || []).reduce((n, x) => n + Number(x.student_count || 0), 0);
     const search = [s.subject_code, s.subject_name, s.program_code].filter(Boolean).join(' ').toLowerCase();
+    const isArchived = s.offering_status === 'archived';
 
     return `
-        <a href="#instructor/my-classes?subject_id=${s.subject_id}" class="mc-subj-card" data-search="${esc(search)}">
-            <div class="mc-subj-top" style="background:${color}">
-                <span class="mc-subj-card-code">${esc(s.subject_code)}</span>
-                <h3>${esc(s.subject_name)}</h3>
-            </div>
-            <div class="mc-subj-body">
-                <div class="mc-stat-row">${icon('school', inl)} <strong>${secCount}</strong> section${secCount !== 1 ? 's' : ''}</div>
-                <div class="mc-stat-row">${icon('users', inl)} <strong>${studentTotal}</strong> student${studentTotal !== 1 ? 's' : ''}</div>
-                <span class="mc-subj-link">View sections →</span>
-                    </div>
-        </a>
+        <div class="mc-subj-card-wrap${isArchived ? ' mc-subj-card-wrap--archived' : ''}"
+             data-search="${esc(search)}">
+            <a href="#instructor/my-classes?subject_id=${s.subject_id}" class="mc-subj-card">
+                <div class="mc-subj-top" style="background:${color}${isArchived ? ';filter:saturate(.5)' : ''}">
+                    <span class="mc-subj-card-code">${esc(s.subject_code)}</span>
+                    <h3>${esc(s.subject_name)}</h3>
+                    ${isArchived ? '<span class="mc-archived-badge">Archived</span>' : ''}
+                </div>
+                <div class="mc-subj-body">
+                    <div class="mc-stat-row">${icon('school', inl)} <strong>${secCount}</strong> section${secCount !== 1 ? 's' : ''}</div>
+                    <div class="mc-stat-row">${icon('users', inl)} <strong>${studentTotal}</strong> student${studentTotal !== 1 ? 's' : ''}</div>
+                    <span class="mc-subj-link">View sections →</span>
+                </div>
+            </a>
+            ${s.subject_offered_id ? `
+            <button type="button" class="mc-archive-btn${isArchived ? ' mc-archive-btn--restore' : ''}"
+                    data-offered-id="${s.subject_offered_id}"
+                    data-new-status="${isArchived ? 'open' : 'archived'}"
+                    title="${isArchived ? 'Unarchive this subject' : 'Archive this subject'}">
+                ${icon('archive', inl)} ${isArchived ? 'Unarchive' : 'Archive'}
+            </button>` : ''}
+        </div>
     `;
 }
 
@@ -722,7 +777,7 @@ function showImportResultPopup(data, message) {
 
 function styles() {
     return `
-        .mc-page { width:100%; min-height:calc(100vh - 120px); background:#fff; }
+        .mc-page { width:100%; min-height:calc(100vh - 120px); background:transparent; }
         .mc-loading { display:flex; justify-content:center; align-items:center; min-height:320px; }
         .mc-spin { width:42px; height:42px; border:3px solid #eee; border-top-color:${G}; border-radius:50%; animation:mcSpin .75s linear infinite; }
         @keyframes mcSpin { to { transform:rotate(360deg); } }
@@ -737,6 +792,11 @@ function styles() {
             border:none; padding:5px 12px; border-radius:20px; }
         .mc-btn-outline { padding:10px 18px; background:#fff; color:${G}; border-radius:10px; font-weight:700;
             font-size:14px; text-decoration:none; white-space:nowrap; }
+        .mc-view-tabs { display:flex; gap:4px; padding:4px; background:rgba(255,255,255,.15); border-radius:12px; align-self:flex-start; }
+        .mc-view-tab { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:8px;
+            font-size:13px; font-weight:700; color:rgba(255,255,255,.75); text-decoration:none; transition:all .15s; }
+        .mc-view-tab:hover { color:#fff; background:rgba(255,255,255,.15); }
+        .mc-view-tab.active { background:#fff; color:${G}; }
 
         .mc-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:${G};
             text-decoration:none; margin-bottom:16px; }
@@ -763,8 +823,10 @@ function styles() {
         .mc-count { font-size:12px; font-weight:700; color:${G}; background:${GL}; padding:8px 14px; border-radius:20px; }
 
         .mc-subj-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:20px; }
+        .mc-subj-card-wrap { position:relative; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
+        .mc-subj-card-wrap--archived { opacity:.85; }
         .mc-subj-card { text-decoration:none; color:inherit; border:none; border-radius:14px; overflow:hidden;
-            background:#fff; box-shadow:none; transition:background .15s; display:flex; flex-direction:column; }
+            background:#fff; box-shadow:none; transition:background .15s; display:flex; flex-direction:column; flex:1; }
         .mc-subj-card:hover { background:#F9FAFB; }
         .mc-subj-top { padding:20px 18px; min-height:100px; display:flex; flex-direction:column; justify-content:flex-end; }
         .mc-subj-card-code { font-size:11px; font-weight:700; font-family:monospace; color:rgba(255,255,255,.9); }
@@ -772,6 +834,18 @@ function styles() {
         .mc-subj-body { padding:16px 18px; flex:1; display:flex; flex-direction:column; gap:8px; }
         .mc-stat-row { font-size:13px; color:#374151; display:flex; align-items:center; gap:8px; }
         .mc-subj-link { margin-top:auto; font-size:12px; font-weight:700; color:${G}; padding-top:10px; }
+        .mc-archived-badge { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase;
+            background:rgba(0,0,0,.25); color:#fff; padding:2px 7px; border-radius:4px; margin-top:6px; letter-spacing:.5px; }
+        .mc-archive-btn { width:100%; padding:9px 14px; background:#F3F4F6; color:#374151; border:1px solid ${BORDER};
+            border-top:none; border-radius:0 0 14px 14px; font-size:12px; font-weight:700; cursor:pointer;
+            transition:background .15s; text-align:center; }
+        .mc-archive-btn:hover { background:#E5E7EB; }
+        .mc-archive-btn--restore { background:#F0FDF4; color:${G}; border-color:#BBF7D0; }
+        .mc-archive-btn--restore:hover { background:#DCFCE7; }
+        .mc-archive-btn:disabled { opacity:.5; cursor:not-allowed; }
+        .mc-archive-divider { grid-column:1/-1; display:flex; align-items:center; gap:14px; padding:8px 0; margin-top:8px; }
+        .mc-archive-divider::before,.mc-archive-divider::after { content:''; flex:1; height:1px; background:${BORDER}; }
+        .mc-archive-divider-label { font-size:12px; font-weight:700; color:#6B7280; white-space:nowrap; }
 
         .mc-sec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; }
         .mc-sec-card { border:none; border-radius:14px; padding:18px; background:#fff;

@@ -1,0 +1,31 @@
+Options -Indexes
+DirectoryIndex index.html
+
+# Force fresh JS/CSS so auth redirects are never served from cache
+<IfModule mod_headers.c>
+    <FilesMatch "\.(js|css)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block direct HTTP access to sensitive directories
+    RewriteRule ^config/         - [F,L]
+    RewriteRule ^database/       - [F,L]
+    RewriteRule ^tools/          - [F,L]
+    RewriteRule ^storage/        - [F,L]
+    RewriteRule ^docs/           - [F,L]
+
+    # Block .env and all dot files from web access
+    RewriteRule (^|/)\. - [F,L]
+
+    # Extra explicit block for .env files
+    <FilesMatch "^\.env">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>

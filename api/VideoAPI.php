@@ -10,6 +10,7 @@
  * GET  ?action=comments&room_key=...&since=0
  * POST ?action=comment { room_key, content }
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';

@@ -10,6 +10,7 @@
 import { Api }    from '../../api.js';
 import { render as renderSections } from './sections.js';
 import { L, icon } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -514,7 +515,7 @@ export async function render(container) {
             });
             btn.textContent = 'Save Assignments';
             if (r.success) loadContent();
-            else { btn.disabled = false; alert(r.message || 'Failed'); }
+            else { btn.disabled = false; notify.error(r.message || 'Failed'); }
         });
     }
 
@@ -672,7 +673,7 @@ export async function render(container) {
 
             saveBtn.textContent = 'Save Changes';
             if (r.success) { overlay.remove(); loadContent(); }
-            else { saveBtn.disabled = false; alert(r.message || 'Failed to save'); }
+            else { saveBtn.disabled = false; notify.error(r.message || 'Failed to save'); }
         });
     }
 
@@ -773,7 +774,7 @@ export async function render(container) {
                 } else {
                     this.disabled = false;
                     this.value    = '';
-                    alert(r.message || 'Failed to assign instructor');
+                    notify.error(r.message || 'Failed to assign instructor');
                 }
             });
         });
@@ -784,7 +785,7 @@ export async function render(container) {
                 const subjectId    = parseInt(this.dataset.subjectId);
                 const instructorId = parseInt(this.dataset.instructorId);
                 const name         = this.dataset.instructorName || 'this instructor';
-                if (!confirm(`Remove ${name} from this subject?`)) return;
+                if (!await notify.confirm(`Remove ${name} from this subject?`, { danger: true, confirmText: 'Remove' })) return;
                 this.disabled = true;
                 const r = await Api.post('/SubjectOfferingsAPI.php?action=bulk-assign', {
                     instructor_id:        instructorId,
@@ -796,7 +797,7 @@ export async function render(container) {
                     loadContent();
                 } else {
                     this.disabled = false;
-                    alert(r.message || 'Failed to remove instructor');
+                    notify.error(r.message || 'Failed to remove instructor');
                 }
             });
         });

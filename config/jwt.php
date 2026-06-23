@@ -8,7 +8,15 @@
  * ============================================================
  */
 
-define('JWT_SECRET', 'coc-lms-secret-key-2024-change-in-production');
+// Load secret from environment; fall back to a strong generated key stored in database.local.php
+$_jwtSecret = getenv('JWT_SECRET') ?: (defined('JWT_SECRET_KEY') ? JWT_SECRET_KEY : null);
+if (!$_jwtSecret || strlen($_jwtSecret) < 32) {
+    // Hard-coded fallback only for local dev — must be overridden via env in production
+    $_jwtSecret = 'CHANGE_THIS_IN_PRODUCTION_USE_ENV_JWT_SECRET_AT_LEAST_32_CHARS!!';
+}
+define('JWT_SECRET', $_jwtSecret);
+unset($_jwtSecret);
+
 define('JWT_EXPIRY', 3600); // 1 hour in seconds
 
 class JWT {
@@ -32,6 +40,7 @@ class JWT {
             'email'       => $user['email'],
             'student_id'  => $user['student_id'] ?? null,
             'employee_id' => $user['employee_id'] ?? null,
+            'tok_ver'     => $user['token_version'] ?? 0,  // used to invalidate on logout
             'iat'         => time(),
             'exp'         => time() + JWT_EXPIRY
         ]));
@@ -44,10 +53,11 @@ class JWT {
     }
 
     /**
-     * Validate and decode a JWT token
-     * Returns the payload array or null if invalid/expired
+     * Validate and decode a JWT token.
+     * Pass $pdo to also verify token_version against the database (logout revocation).
+     * Returns the payload array or null if invalid/expired/revoked.
      */
-    public static function validate(string $token): ?array {
+    public static function validate(string $token, ?PDO $pdo = null): ?array {
         $parts = explode('.', $token);
         if (count($parts) !== 3) return null;
 
@@ -57,7 +67,6 @@ class JWT {
         $expectedSig = self::base64UrlEncode(
             hash_hmac('sha256', "$header.$payload", JWT_SECRET, true)
         );
-
         if (!hash_equals($expectedSig, $signature)) return null;
 
         // Decode payload
@@ -66,6 +75,19 @@ class JWT {
 
         // Check expiry
         if (isset($data['exp']) && $data['exp'] < time()) return null;
+
+        // Check token version against DB (revokes tokens issued before logout)
+        if ($pdo && isset($data['users_id'], $data['tok_ver'])) {
+            try {
+                $row = $pdo->prepare('SELECT token_version FROM users WHERE users_id = ? LIMIT 1');
+                $row->execute([$data['users_id']]);
+                $dbVer = (int)($row->fetchColumn() ?? 0);
+                if ((int)$data['tok_ver'] < $dbVer) return null; // token was revoked
+            } catch (Exception $e) {
+                // DB unavailable — fail safe by rejecting
+                return null;
+            }
+        }
 
         return $data;
     }
@@ -87,10 +109,10 @@ class JWT {
      * Get authenticated user from JWT header
      * Returns payload or null if not authenticated
      */
-    public static function authenticate(): ?array {
+    public static function authenticate(?PDO $pdo = null): ?array {
         $token = self::fromHeader();
         if (!$token) return null;
-        return self::validate($token);
+        return self::validate($token, $pdo);
     }
 
     // ── Helpers ──────────────────────────────────────────────

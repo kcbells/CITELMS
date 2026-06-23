@@ -4,6 +4,7 @@
  * Shared question repository — instructors can publish, browse, and copy questions
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';

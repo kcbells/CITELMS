@@ -2,6 +2,7 @@
 /**
  * Gradebook API — lesson completion matrix for class records
  */
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
@@ -67,8 +68,7 @@ function resolveOfferedId(int $subjectId, int $sectionId): int
  */
 function handleSetCurrentPeriod(): void
 {
-    try {
-        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+    $body = json_decode(file_get_contents('php://input'), true) ?? [];
     $subjectId = (int)($body['subject_id'] ?? 0);
     $sectionId = (int)($body['section_id'] ?? 0);
     $period = normalizeGradingPeriod($body['period'] ?? 'P1');
@@ -118,17 +118,11 @@ function handleSetCurrentPeriod(): void
     );
 
     echo json_encode(['success' => true, 'data' => ['current_period' => $period]]);
-    } catch (Throwable $e) {
-        error_log('GradebookAPI set-current-period: ' . $e->getMessage());
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Could not update the current term. Please try again.']);
-    }
 }
 
 function handleLessonProgress(): void
 {
-    try {
-        $subjectId = (int)($_GET['subject_id'] ?? 0);
+    $subjectId = (int)($_GET['subject_id'] ?? 0);
     $sectionId = (int)($_GET['section_id'] ?? 0);
     if (!$subjectId || !$sectionId) {
         echo json_encode(['success' => false, 'message' => 'subject_id and section_id required']);
@@ -225,11 +219,6 @@ function handleLessonProgress(): void
             'subject_offered_id' => $offeredId,
         ],
     ]);
-    } catch (Throwable $e) {
-        error_log('GradebookAPI lesson-progress: ' . $e->getMessage());
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Could not load class record data. Please try again.']);
-    }
 }
 
 function enrichLessonRowsWithSections(array &$rows): void

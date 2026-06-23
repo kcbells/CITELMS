@@ -10,6 +10,7 @@
  * ============================================================
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
@@ -24,6 +25,8 @@ ini_set('display_errors', '0');
 ensureQuizBehaviorColumns();
 ensureQuizSectionTable();
 ensureQuizScheduleColumns();
+ensureQuestionMediaColumns();
+fixQuestionOptionFk();
 ensureGradingPeriodColumns();
 
 if (!Auth::check()) {
@@ -89,6 +92,9 @@ switch ($action) {
         break;
     case 'list-questions':
         listQuestionsForInstructor();
+        break;
+    case 'upload-question-media':
+        uploadQuestionMedia();
         break;
     case 'add-question':
         addQuestion();
@@ -204,29 +210,44 @@ function getQuizzesByLesson() {
                 q.quiz_id,
                 q.quiz_title,
                 q.quiz_description,
+                q.quiz_type,
                 q.time_limit,
                 q.passing_rate,
                 q.max_attempts,
                 q.due_date,
+                q.availability_start,
+                q.status,
                 (SELECT COUNT(*) FROM quiz_questions WHERE quiz_id = q.quiz_id) as question_count,
-                (SELECT COUNT(*) FROM student_quiz_attempts WHERE quiz_id = q.quiz_id AND user_student_id = ?) as attempts_used,
-                (SELECT MAX(percentage) FROM student_quiz_attempts WHERE quiz_id = q.quiz_id AND user_student_id = ?) as best_score
+                (SELECT COUNT(*) FROM student_quiz_attempts sqa
+                 WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed') as attempts_used,
+                (SELECT MAX(sqa.percentage) FROM student_quiz_attempts sqa
+                 WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed') as best_score,
+                (SELECT sqa.passed FROM student_quiz_attempts sqa
+                 WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed'
+                 ORDER BY sqa.percentage DESC LIMIT 1) as passed,
+                (SELECT sqa.attempt_id FROM student_quiz_attempts sqa
+                 WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ? AND sqa.status = 'completed'
+                 ORDER BY sqa.percentage DESC LIMIT 1) as best_attempt_id
             FROM quiz q
             JOIN quiz_lessons ql ON ql.quiz_id = q.quiz_id
             WHERE ql.lessons_id = ? AND " . quizVisibleToStudentsSql('q') . "
             ORDER BY q.created_at ASC",
-            [$userId, $userId, $lessonId]
+            [$userId, $userId, $userId, $userId, $lessonId]
         );
 
         foreach ($quizzes as &$quiz) {
-            $now     = time();
-            $due     = $quiz['due_date'] ? strtotime($quiz['due_date']) : null;
-            $overdue = $due && $now > $due;
-            $passed  = $quiz['best_score'] !== null && $quiz['best_score'] >= $quiz['passing_rate'];
-
-            $quiz['passed'] = $passed ? 1 : 0;
-            $quiz['status'] = $passed ? 'passed' : ($overdue ? 'overdue' : ($quiz['attempts_used'] > 0 ? 'attempted' : 'available'));
-            $quiz['quiz_status'] = $quiz['status'];
+            if ($quiz['passed']) {
+                $quiz['quiz_status'] = 'passed';
+            } elseif ((int)$quiz['attempts_used'] > 0 && quizAttemptsExhausted($quiz, (int)$quiz['attempts_used'])) {
+                $quiz['quiz_status'] = 'exhausted';
+            } elseif ((int)$quiz['attempts_used'] > 0) {
+                $quiz['quiz_status'] = 'attempted';
+            } elseif (!isQuizAvailableNow($quiz)) {
+                $quiz['quiz_status'] = 'scheduled';
+            } else {
+                $quiz['quiz_status'] = 'available';
+            }
+            $quiz['status'] = $quiz['quiz_status'];
             enrichQuizAvailability($quiz);
         }
         unset($quiz);
@@ -364,11 +385,21 @@ function getQuestions() {
             ]);
             return;
         }
+
+        if (strtolower((string)($quiz['quiz_type'] ?? '')) !== 'practice' && $attemptCount > 0) {
+            http_response_code(403);
+            echo json_encode([
+                'success' => false,
+                'message' => 'You have already submitted this work.'
+            ]);
+            return;
+        }
         
         // Get questions (shuffle if enabled)
         $orderBy = !empty($quiz['is_randomized']) ? "RAND()" : "q.question_order";
         $questions = db()->fetchAll(
-            "SELECT q.questions_id, q.question_text, q.question_type, q.points
+            "SELECT q.questions_id, q.question_text, q.question_type, q.points,
+                    q.media_type, q.media_url, q.media_name
              FROM quiz_questions qq
              JOIN questions q ON qq.questions_id = q.questions_id
              WHERE qq.quiz_id = ?
@@ -523,7 +554,7 @@ function createQuiz() {
             ],
         ]);
     } catch (InvalidArgumentException $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[QuizzesAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Throwable $e) {
         error_log('createQuiz: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to create quiz. Please try again.']);
@@ -573,7 +604,7 @@ function updateQuiz() {
         }
         echo json_encode(['success' => true, 'message' => 'Quiz updated']);
     } catch (InvalidArgumentException $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[QuizzesAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed']);
     }
@@ -642,7 +673,8 @@ function listQuestionsForInstructor() {
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Quiz not found']); return; }
 
     $questions = db()->fetchAll(
-        "SELECT q.questions_id, q.question_text, q.question_type, q.points, q.question_order
+        "SELECT q.questions_id, q.question_text, q.question_type, q.points, q.question_order,
+                q.media_type, q.media_url, q.media_name
          FROM quiz_questions qq
          JOIN questions q ON qq.questions_id = q.questions_id
          WHERE qq.quiz_id = ?
@@ -661,6 +693,72 @@ function listQuestionsForInstructor() {
     echo json_encode(['success' => true, 'data' => ['quiz' => $quiz, 'questions' => $questions]]);
 }
 
+function uploadQuestionMedia() {
+    // Return JSON error for role mismatch (don't redirect — this is an API endpoint)
+    if (!in_array(Auth::role(), ['teacher', 'admin', 'instructor'])) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied']); return;
+    }
+
+    $mediaType = $_POST['media_type'] ?? 'image';
+
+    // Check upload error code and give a clear message
+    if (!isset($_FILES['file'])) {
+        echo json_encode(['success' => false, 'message' => 'No file field received']); return;
+    }
+    $errCode = $_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($errCode !== UPLOAD_ERR_OK) {
+        $errMsg = [
+            UPLOAD_ERR_INI_SIZE   => 'File exceeds server upload limit (upload_max_filesize)',
+            UPLOAD_ERR_FORM_SIZE  => 'File exceeds form size limit',
+            UPLOAD_ERR_PARTIAL    => 'File was only partially uploaded',
+            UPLOAD_ERR_NO_FILE    => 'No file was uploaded',
+            UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder on server',
+            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+            UPLOAD_ERR_EXTENSION  => 'Upload blocked by server extension',
+        ][$errCode] ?? "Upload error code $errCode";
+        echo json_encode(['success' => false, 'message' => $errMsg]); return;
+    }
+    $file = $_FILES['file'];
+
+    // Extended allowed types — browsers & OS report slightly different MIME strings
+    $allowedImage = ['image/jpeg','image/jpg','image/pjpeg','image/png','image/gif','image/webp','image/svg+xml','image/bmp'];
+    $allowedAudio = ['audio/mpeg','audio/mp3','audio/wav','audio/ogg','audio/aac','audio/x-m4a','audio/mp4','audio/webm','video/ogg'];
+    $allowed = $mediaType === 'audio' ? $allowedAudio : $allowedImage;
+
+    $mime = function_exists('mime_content_type') ? strtolower(mime_content_type($file['tmp_name'])) : '';
+    $clientMime = strtolower($file['type'] ?? '');
+    if (!in_array($mime, $allowed) && !in_array($clientMime, $allowed)) {
+        echo json_encode(['success' => false, 'message' => "Invalid file type ($mime). Allowed: " . implode(', ', $allowed)]); return;
+    }
+    if ($file['size'] > 10 * 1024 * 1024) {
+        echo json_encode(['success' => false, 'message' => 'File too large (max 10 MB)']); return;
+    }
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $safeExt = preg_replace('/[^a-z0-9]/', '', $ext) ?: ($mediaType === 'audio' ? 'mp3' : 'jpg');
+    $fileName  = 'q_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $safeExt;
+    $uploadDir = __DIR__ . '/../uploads/questions/';
+
+    if (!is_dir($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            echo json_encode(['success' => false, 'message' => 'Could not create upload directory']); return;
+        }
+    }
+    if (!is_writable($uploadDir)) {
+        echo json_encode(['success' => false, 'message' => 'Upload directory is not writable']); return;
+    }
+
+    if (!move_uploaded_file($file['tmp_name'], $uploadDir . $fileName)) {
+        echo json_encode(['success' => false, 'message' => 'Failed to move uploaded file — check folder permissions']); return;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'url'     => 'uploads/questions/' . $fileName,
+        'name'    => htmlspecialchars($file['name'], ENT_QUOTES),
+    ]);
+}
+
 function addQuestion() {
     $d = json_decode(file_get_contents('php://input'), true);
     $quizId = (int)($d['quiz_id'] ?? 0);
@@ -668,13 +766,16 @@ function addQuestion() {
     $type = $d['question_type'] ?? 'multiple_choice';
     $points = (int)($d['points'] ?? 1);
     $options = $d['options'] ?? [];
+    $mediaType = in_array($d['media_type'] ?? '', ['image','audio','link']) ? $d['media_type'] : 'none';
+    $mediaUrl  = trim($d['media_url'] ?? '');
+    $mediaName = trim($d['media_name'] ?? '');
 
     if (!$quizId || !$text) { echo json_encode(['success' => false, 'message' => 'Quiz ID and question text required']); return; }
 
     $quiz = db()->fetchOne("SELECT * FROM quiz WHERE quiz_id = ? AND user_teacher_id = ?", [$quizId, Auth::id()]);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Quiz not found']); return; }
 
-    if (in_array($type, ['multiple_choice', 'true_false'])) {
+    if (in_array($type, ['multiple_choice', 'true_false', 'checkboxes', 'dropdown'])) {
         $hasCorrect = false;
         foreach ($options as $opt) { if (!empty($opt['is_correct'])) $hasCorrect = true; }
         if (!$hasCorrect) { echo json_encode(['success' => false, 'message' => 'Select at least one correct answer']); return; }
@@ -686,8 +787,8 @@ function addQuestion() {
 
         $maxOrder = db()->fetchOne("SELECT MAX(q.question_order) as m FROM quiz_questions qq JOIN questions q ON qq.questions_id = q.questions_id WHERE qq.quiz_id = ?", [$quizId])['m'] ?? 0;
 
-        $stmt = $pdo->prepare("INSERT INTO questions (question_text, question_type, points, question_order, users_id) VALUES (?, ?, ?, ?, ?)");
-        $stmt->execute([$text, $type, $points, $maxOrder + 1, Auth::id()]);
+        $stmt = $pdo->prepare("INSERT INTO questions (question_text, question_type, points, question_order, users_id, media_type, media_url, media_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$text, $type, $points, $maxOrder + 1, Auth::id(), $mediaType, $mediaUrl ?: null, $mediaName ?: null]);
         $questionId = $pdo->lastInsertId();
 
         $stmt = $pdo->prepare("INSERT INTO quiz_questions (quiz_id, questions_id) VALUES (?, ?)");
@@ -716,13 +817,16 @@ function updateQuestion() {
     $type = $d['question_type'] ?? 'multiple_choice';
     $points = (int)($d['points'] ?? 1);
     $options = $d['options'] ?? [];
+    $mediaType = in_array($d['media_type'] ?? '', ['image','audio','link']) ? $d['media_type'] : 'none';
+    $mediaUrl  = trim($d['media_url'] ?? '');
+    $mediaName = trim($d['media_name'] ?? '');
 
     if (!$questionId || !$text) { echo json_encode(['success' => false, 'message' => 'Question ID and text required']); return; }
 
     $quiz = db()->fetchOne("SELECT q.quiz_id FROM quiz q JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id WHERE qq.questions_id = ? AND q.user_teacher_id = ?", [$questionId, Auth::id()]);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Question not found']); return; }
 
-    if (in_array($type, ['multiple_choice', 'true_false'])) {
+    if (in_array($type, ['multiple_choice', 'true_false', 'checkboxes', 'dropdown'])) {
         $hasCorrect = false;
         foreach ($options as $opt) { if (!empty($opt['is_correct'])) $hasCorrect = true; }
         if (!$hasCorrect) { echo json_encode(['success' => false, 'message' => 'Select at least one correct answer']); return; }
@@ -732,8 +836,8 @@ function updateQuestion() {
         $pdo = pdo();
         $pdo->beginTransaction();
 
-        $pdo->prepare("UPDATE questions SET question_text=?, question_type=?, points=? WHERE questions_id=?")
-            ->execute([$text, $type, $points, $questionId]);
+        $pdo->prepare("UPDATE questions SET question_text=?, question_type=?, points=?, media_type=?, media_url=?, media_name=? WHERE questions_id=?")
+            ->execute([$text, $type, $points, $mediaType, $mediaUrl ?: null, $mediaName ?: null, $questionId]);
 
         $pdo->prepare("DELETE FROM question_option WHERE quiz_question_id = ?")->execute([$questionId]);
         foreach ($options as $i => $opt) {
@@ -784,8 +888,8 @@ function browseSharedQuizzes() {
         return;
     }
 
-    $where = "q.status = 'published' AND q.subject_id IN ({$handled['sql']}) AND q.user_teacher_id != ?";
-    $params = array_merge($handled['params'], [$userId]);
+    $where = "q.status = 'published' AND q.subject_id IN ({$handled['sql']})";
+    $params = $handled['params'];
 
     if ($search) {
         $where .= " AND (q.quiz_title LIKE ? OR q.quiz_description LIKE ?)";
@@ -803,13 +907,14 @@ function browseSharedQuizzes() {
                 q.max_attempts, q.total_points, q.created_at,
                 s.subject_code, s.subject_name,
                 u.first_name, u.last_name,
+                (q.user_teacher_id = ?) AS is_own,
                 (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.quiz_id) AS question_count
          FROM quiz q
          JOIN subject s ON q.subject_id = s.subject_id
          JOIN users u ON q.user_teacher_id = u.users_id
          WHERE $where
          ORDER BY q.created_at DESC",
-        $params
+        array_merge([$userId], $params)
     );
 
     enrichQuizzesWithSections($quizzes);
@@ -845,16 +950,23 @@ function sharedQuizPreview() {
     $quiz = db()->fetchOne(
         "SELECT q.quiz_id, q.quiz_title, q.quiz_description, q.subject_id, q.time_limit, q.passing_rate,
                 q.max_attempts, q.total_points, q.quiz_type, q.status, q.availability_start, q.created_at,
+                q.user_teacher_id,
                 s.subject_code, s.subject_name,
                 u.first_name, u.last_name
          FROM quiz q
          JOIN subject s ON q.subject_id = s.subject_id
          JOIN users u ON q.user_teacher_id = u.users_id
-         WHERE q.quiz_id = ? AND q.status = 'published' AND q.user_teacher_id != ?",
-        [$quizId, $userId]
+         WHERE q.quiz_id = ? AND q.status = 'published'",
+        [$quizId]
     );
 
-    if (!$quiz || !instructorTeachesSubject($userId, (int)$quiz['subject_id'])) {
+    if (!$quiz) {
+        echo json_encode(['success' => false, 'message' => 'Quiz not available for preview']);
+        return;
+    }
+
+    $isOwner = (int)$quiz['user_teacher_id'] === $userId;
+    if (!$isOwner && !instructorTeachesSubject($userId, (int)$quiz['subject_id'])) {
         echo json_encode(['success' => false, 'message' => 'Quiz not available for preview']);
         return;
     }
@@ -1013,7 +1125,7 @@ function copySharedQuiz() {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[QuizzesAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Throwable $e) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();

@@ -4,6 +4,7 @@
  * Provides report data for instructors and admins.
  * Dean reports use DashboardAPI?action=dean instead.
  */
+require_once __DIR__ . '/../config/cors.php';
 ob_start();
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -21,6 +22,7 @@ $action = $_GET['action'] ?? '';
 
 switch ($action) {
     case 'instructor':
+        Auth::requireRole(['admin', 'instructor']);
         handleInstructorReport();
         break;
     case 'admin':

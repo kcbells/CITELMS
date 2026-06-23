@@ -42,10 +42,16 @@ export function renderClassworkPostCard(opts) {
         rowClass = '',
         viewsFooter = '',
         menuHtml = '',
+        dueLabel = '',   // e.g. "Jan 15"  — omit to hide
+        dueLate = false, // true = past due → red pill
     } = opts;
 
     const dataAttrs = workType && workId
         ? `data-work="${workType}" data-id="${workId}"`
+        : '';
+
+    const duePill = dueLabel
+        ? `<span class="gc-cw-due-pill ${dueLate ? 'late' : ''}">${dueLate ? 'Past due' : 'Due'} ${esc(dueLabel)}</span>`
         : '';
 
     return `
@@ -58,6 +64,7 @@ export function renderClassworkPostCard(opts) {
                             <span class="gc-cw-author-name">${esc(authorName)}</span>
                             ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
                         </div>
+                        ${duePill}
                     </header>
                     <div class="gc-post-card__work">
                         <span class="gc-cw-icon gc-cw-icon--subj">${icon(iconName, { size: 20 })}</span>
@@ -554,21 +561,65 @@ export function classroomCss(accent) {
             max-height:calc(100vh - 200px);
         }
 
-        .gc-due-editor {
-            display:flex; flex-wrap:wrap; align-items:center; gap:10px;
-            padding:14px 16px; margin:0 0 16px;
-            background:#F8F9FA; border:1px solid #E8EAED; border-radius:12px;
+        /* ── Due date button in submissions panel header ─────────── */
+        .gc-sub-panel-hdr {
+            display:flex; flex-direction:column; gap:8px;
         }
-        .gc-due-editor-label { font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:.3px; }
-        .gc-due-editor input[type="date"] {
-            padding:8px 10px; border:1px solid #DADCE0; border-radius:8px; font-size:13px;
+        .gc-sub-due-btn {
+            display:inline-flex; align-items:center; gap:6px;
+            padding:6px 12px; border-radius:20px; cursor:pointer; font-family:inherit;
+            font-size:12px; font-weight:600; transition:background .12s, border-color .12s, color .12s;
+            border:1.5px solid #DADCE0; background:#F8F9FA; color:#5F6368;
         }
-        .gc-due-editor-save {
-            padding:8px 14px; border:none; border-radius:8px;
-            background:var(--subj, ${G}); color:#fff; font-size:12px; font-weight:700; cursor:pointer;
+        .gc-sub-due-btn:hover { border-color:var(--subj, ${G}); color:var(--subj, ${G}); background:var(--subj-soft, #E8F5EC); }
+        .gc-sub-due-btn--set { border-color:#BBDDC4; background:#E8F5EC; color:#00461B; }
+        .gc-sub-due-btn--set.late { border-color:#FECACA; background:#FEE2E2; color:#991B1B; }
+        /* ── Due date modal ─────────────────────────────────────────── */
+        .gc-due-modal-body { display:flex; flex-direction:column; gap:20px; }
+        .gc-due-modal-current {
+            display:flex; align-items:center; gap:16px;
+            padding:16px; background:#F8F9FA; border:1px solid #E8EAED; border-radius:12px;
         }
-        .gc-due-editor-save:hover { background:var(--subj-dark, ${G2}); }
-        .gc-due-editor-hint { flex:1 1 100%; font-size:11px; color:#5F6368; margin:0; }
+        .gc-due-modal-cal {
+            width:60px; height:68px; border-radius:12px; flex-shrink:0;
+            background:var(--subj, ${G}); display:flex; flex-direction:column;
+            align-items:center; justify-content:center; gap:2px;
+            box-shadow:0 2px 8px rgba(0,0,0,.16);
+        }
+        .gc-due-modal-cal.empty { background:#D1D5DB; box-shadow:none; }
+        .gc-due-cal-month { font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,.85); line-height:1; }
+        .gc-due-cal-day   { font-size:28px; font-weight:900; color:#fff; line-height:1; }
+        .gc-due-modal-info { display:flex; flex-direction:column; gap:4px; }
+        .gc-due-modal-info-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#9CA3AF; }
+        .gc-due-modal-info-date  { font-size:15px; font-weight:600; color:#111827; }
+        .gc-due-modal-form { display:flex; flex-direction:column; gap:8px; }
+        .gc-due-modal-label { font-size:12px; font-weight:700; color:#374151; }
+        .gc-due-modal-input {
+            padding:10px 14px; border:1.5px solid #DADCE0; border-radius:10px;
+            font-size:14px; font-family:inherit; color:#111827; background:#fff;
+            width:100%; box-sizing:border-box; cursor:pointer;
+        }
+        .gc-due-modal-input:focus { outline:none; border-color:var(--subj, ${G}); box-shadow:0 0 0 3px rgba(0,70,27,.12); }
+        .gc-due-modal-hint { font-size:12px; color:#6B7280; margin:0; }
+        .gc-due-modal-actions { display:flex; gap:10px; flex-wrap:wrap; }
+        .gc-due-modal-save {
+            flex:1; padding:11px 20px; border:none; border-radius:10px;
+            background:var(--subj, ${G}); color:#fff; font-size:14px; font-weight:700;
+            cursor:pointer; font-family:inherit; transition:background .12s;
+        }
+        .gc-due-modal-save:hover { background:var(--subj-dark, ${G2}); }
+        .gc-due-modal-save:disabled { opacity:.6; cursor:not-allowed; }
+        .gc-due-modal-remove {
+            padding:11px 18px; border:1.5px solid #D1D5DB; border-radius:10px;
+            background:#fff; color:#6B7280; font-size:13px; font-weight:600;
+            cursor:pointer; font-family:inherit; transition:background .12s, border-color .12s, color .12s;
+        }
+        .gc-due-modal-remove:hover { border-color:#DC2626; color:#DC2626; background:#FEF2F2; }
+        .gc-due-modal-remove:disabled { opacity:.6; cursor:not-allowed; }
+        /* ── Viewers row (above comments) ───────────────────────────── */
+        .gc-detail-viewers-row {
+            display:flex; margin:0 0 12px;
+        }
 
         /* Private comments rail (Google Classroom style) */
         .sc-rail--private-focus { position:sticky; top:88px; align-self:start; }
@@ -765,8 +816,9 @@ export function classroomCss(accent) {
 
         .gc-cw-stream { display:flex; flex-direction:column; gap:16px; padding-top:4px; }
         .gc-post-card {
-            border:1px solid #DADCE0; border-radius:12px; background:#fff;
-            overflow:visible; box-shadow:0 1px 3px rgba(0,0,0,.04);
+            border:1px solid #E5E7EB; border-radius:12px; background:#fff;
+            overflow:visible;
+            box-shadow:0 2px 8px rgba(0,0,0,.06), 0 0 0 3px rgba(255,255,255,.8), 0 0 0 4px #E9ECEF;
         }
         .gc-post-card__row {
             display:flex; align-items:stretch; position:relative;
@@ -809,6 +861,14 @@ export function classroomCss(accent) {
             display:flex; align-items:center; gap:10px;
             padding:14px 16px 10px; border-bottom:1px solid #F0F0F0;
         }
+        .gc-cw-due-pill {
+            margin-left:auto; flex-shrink:0;
+            display:inline-flex; align-items:center; gap:4px;
+            padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700;
+            background:#FEF3C7; color:#92400E;
+            white-space:nowrap; letter-spacing:.1px;
+        }
+        .gc-cw-due-pill.late { background:#FEE2E2; color:#991B1B; }
         .gc-post-card__work {
             display:flex; align-items:center; gap:16px;
             padding:14px 16px 16px;
@@ -1131,6 +1191,7 @@ export function classroomCss(accent) {
             font-size:12px; color:#5F6368; margin:12px 0 0; line-height:1.45;
         }
         .gc-focus-card-note--muted { margin-top:8px; }
+        .gc-focus-card-note--success { color:#137333; font-weight:600; margin-top:8px; background:#E6F4EA; padding:10px 12px; border-radius:8px; }
         .gc-focus-card-note--warn { color:#C5221F; font-weight:600; margin-top:8px; }
         .gc-work-status { font-size:13px; font-weight:500; color:#5F6368; }
         .gc-work-status.done { color:#137333; }

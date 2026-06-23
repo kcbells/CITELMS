@@ -3,6 +3,7 @@
  */
 import { Api } from '../../api.js';
 import { openAnnouncementModal } from '../../components/announcement-modal.js';
+import { notify } from '../../utils/notify.js';
 
 let subjects = [];
 let classesData = [];
@@ -138,10 +139,10 @@ async function renderList(container, filterSubject = '', filterStatus = '') {
 
     container.querySelectorAll('[data-delete]').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm(`Delete "${btn.dataset.name}"?`)) return;
+            if (!await notify.confirm(`Delete "${btn.dataset.name}"?`, { danger: true, confirmText: 'Delete' })) return;
             const del = await Api.post('/AnnouncementsAPI.php?action=delete', { announcement_id: parseInt(btn.dataset.delete) });
             if (del.success) renderList(container, filterSubject, filterStatus);
-            else alert(del.message);
+            else notify.error(del.message);
         });
     });
 }

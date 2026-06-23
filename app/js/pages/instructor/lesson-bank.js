@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -430,13 +431,13 @@ function openPreviewModal(lesson) {
 }
 
 async function confirmDelete(bankId) {
-    if (!confirm('Remove this lesson from the bank? Other instructors who already copied it keep their copy.')) return;
+    if (!await notify.confirm('Remove this lesson from the bank? Other instructors who already copied it keep their copy.', { danger: true, confirmText: 'Remove' })) return;
 
     const res = await Api.post('/LessonBankAPI.php?action=delete', { bank_id: parseInt(bankId) });
     if (res.success) {
         loadContent();
     } else {
-        alert(res.message || 'Failed to remove lesson.');
+        notify.error(res.message || 'Failed to remove lesson.');
     }
 }
 

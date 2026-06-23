@@ -4,6 +4,7 @@
  * Handles Groq API calls for generating quiz questions
  */
 
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
@@ -105,7 +106,7 @@ function extractDocumentText() {
             ],
         ]);
     } catch (InvalidArgumentException $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log('[AIQuizAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Exception $e) {
         error_log('AIQuiz extract-text: ' . $e->getMessage());
         echo json_encode([
@@ -167,7 +168,7 @@ function generateQuestions($input) {
         ]);
 
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'error' => 'AI Error: ' . $e->getMessage()]);
+        error_log('[AIQuizAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }
 }
 
@@ -522,6 +523,8 @@ function saveQuiz($input, $userId) {
     ensureQuizSectionTable();
     ensureQuizScheduleColumns();
     ensureQuizBehaviorColumns();
+    ensureQuestionMediaColumns();
+    fixQuestionOptionFk();
 
     try {
         $pdo = pdo();
@@ -597,17 +600,27 @@ function saveQuiz($input, $userId) {
 
         foreach ($allQuestions as $q) {
             $questionType = mapQuestionType($q['type']);
+            $mediaType    = in_array($q['media_type'] ?? '', ['image','audio','link']) ? $q['media_type'] : 'none';
+            $mediaUrl     = ($mediaType !== 'none' && !empty($q['media_url'])) ? substr($q['media_url'], 0, 500) : null;
+            $mediaName    = !empty($q['media_name']) ? substr($q['media_name'], 0, 200) : null;
 
-            $stmt = $pdo->prepare("INSERT INTO questions (question_text, question_type, points, question_order, users_id) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$q['question'], $questionType, $q['points'] ?? 1, $orderNum, $userId]);
+            $stmt = $pdo->prepare("INSERT INTO questions (question_text, question_type, points, question_order, users_id, media_type, media_url, media_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$q['question'], $questionType, $q['points'] ?? 1, $orderNum, $userId, $mediaType, $mediaUrl, $mediaName]);
             $questionId = $pdo->lastInsertId();
 
             $pdo->prepare("INSERT INTO quiz_questions (quiz_id, questions_id) VALUES (?, ?)")
                 ->execute([$quizId, $questionId]);
 
-            if ($q['type'] === 'multiple_choice' && !empty($q['options'])) {
+            if (in_array($q['type'], ['multiple_choice','dropdown']) && !empty($q['options'])) {
                 foreach ($q['options'] as $idx => $optText) {
                     $isCorrect = ($idx === ($q['correct_index'] ?? 0)) ? 1 : 0;
+                    $pdo->prepare("INSERT INTO question_option (quiz_question_id, option_text, is_correct, order_number) VALUES (?, ?, ?, ?)")
+                        ->execute([$questionId, $optText, $isCorrect, $idx + 1]);
+                }
+            } elseif ($q['type'] === 'checkboxes' && !empty($q['options'])) {
+                $correctSet = array_flip((array)($q['correct_indices'] ?? []));
+                foreach ($q['options'] as $idx => $optText) {
+                    $isCorrect = isset($correctSet[$idx]) ? 1 : 0;
                     $pdo->prepare("INSERT INTO question_option (quiz_question_id, option_text, is_correct, order_number) VALUES (?, ?, ?, ?)")
                         ->execute([$questionId, $optText, $isCorrect, $idx + 1]);
                 }
@@ -621,7 +634,6 @@ function saveQuiz($input, $userId) {
                 $pdo->prepare("INSERT INTO question_option (quiz_question_id, option_text, is_correct, order_number) VALUES (?, ?, 1, 1)")
                     ->execute([$questionId, $q['answer']]);
             } elseif (in_array($q['type'], ['short_answer', 'essay']) && !empty($q['answer'])) {
-                // Store model answer so AI grading has something to compare against
                 $pdo->prepare("INSERT INTO question_option (quiz_question_id, option_text, is_correct, order_number) VALUES (?, ?, 1, 1)")
                     ->execute([$questionId, $q['answer']]);
             }
@@ -655,7 +667,7 @@ function saveQuiz($input, $userId) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        error_log('[AIQuizAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     } catch (Throwable $e) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -671,10 +683,12 @@ function saveQuiz($input, $userId) {
 function mapQuestionType($type) {
     $map = [
         'multiple_choice' => 'multiple_choice',
-        'true_false' => 'true_false',
-        'fill_blank' => 'fill_blank',
-        'short_answer' => 'short_answer',
-        'essay' => 'essay'
+        'checkboxes'      => 'checkboxes',
+        'dropdown'        => 'dropdown',
+        'true_false'      => 'true_false',
+        'fill_blank'      => 'fill_blank',
+        'short_answer'    => 'short_answer',
+        'essay'           => 'essay',
     ];
     return $map[$type] ?? 'multiple_choice';
 }

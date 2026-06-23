@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -186,10 +187,10 @@ async function renderList(container, filterSubject = '') {
 
     container.querySelectorAll('[data-delete]').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm(`Delete "${btn.dataset.name}"?`)) return;
+            if (!await notify.confirm(`Delete "${btn.dataset.name}"?`, { danger: true, confirmText: 'Delete' })) return;
             const res = await Api.post('/QuizzesAPI.php?action=delete', { quiz_id: parseInt(btn.dataset.delete) });
             if (res.success) renderList(container, filterSubject);
-            else alert(res.message);
+            else notify.error(res.message);
         });
     });
 }

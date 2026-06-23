@@ -61,6 +61,13 @@ class PasswordOtpHelper {
             return ['ok' => false, 'message' => 'Enter the 6-digit code from your email.'];
         }
 
+        // Rate-limit OTP attempts per user in session (brute-force protection)
+        $attemptKey = 'otp_attempts_' . (int)$userId;
+        $attemptsData = $_SESSION[$attemptKey] ?? ['count' => 0, 'locked_until' => 0];
+        if (time() < ($attemptsData['locked_until'] ?? 0)) {
+            return ['ok' => false, 'message' => 'Too many incorrect attempts. Request a new code.'];
+        }
+
         $row = db()->fetchOne(
             "SELECT id, otp_hash, new_password_hash, expires_at, used_at
              FROM password_otp
@@ -83,8 +90,18 @@ class PasswordOtpHelper {
         }
 
         if (!password_verify($otp, $row['otp_hash'])) {
+            // Track failed attempts; lock after 5 wrong guesses
+            $attemptsData['count'] = ($attemptsData['count'] ?? 0) + 1;
+            if ($attemptsData['count'] >= 5) {
+                $attemptsData['locked_until'] = time() + 300;
+                self::invalidateForUser($userId); // burn the OTP so they must request a new one
+            }
+            $_SESSION[$attemptKey] = $attemptsData;
             return ['ok' => false, 'message' => 'Incorrect verification code.'];
         }
+
+        // Correct — clear attempt counter
+        unset($_SESSION[$attemptKey]);
 
         $pdo = pdo();
         $pdo->beginTransaction();
@@ -106,6 +123,51 @@ class PasswordOtpHelper {
             error_log('OTP apply password: ' . $e->getMessage());
             return ['ok' => false, 'message' => 'Could not update password. Please try again.'];
         }
+    }
+
+    public static function verifyOnly(int $userId, string $otp): array {
+        self::ensureTable();
+
+        $otp = trim((string)$otp);
+        if (!preg_match('/^\d{6}$/', $otp)) {
+            return ['ok' => false, 'message' => 'Enter the 6-digit code from your email.'];
+        }
+
+        $attemptKey = 'otp_fp_attempts_' . (int)$userId;
+        $attemptsData = $_SESSION[$attemptKey] ?? ['count' => 0, 'locked_until' => 0];
+        if (time() < ($attemptsData['locked_until'] ?? 0)) {
+            return ['ok' => false, 'message' => 'Too many incorrect attempts. Request a new code.'];
+        }
+
+        $row = db()->fetchOne(
+            "SELECT id, otp_hash, expires_at, used_at FROM password_otp
+             WHERE users_id = ? ORDER BY id DESC LIMIT 1",
+            [$userId]
+        );
+
+        if (!$row) {
+            return ['ok' => false, 'message' => 'No verification code found. Request a new one.'];
+        }
+        if (!empty($row['used_at'])) {
+            return ['ok' => false, 'message' => 'This code was already used. Request a new one.'];
+        }
+        if (strtotime($row['expires_at']) < time()) {
+            return ['ok' => false, 'message' => 'Verification code expired. Request a new one.'];
+        }
+
+        if (!password_verify($otp, $row['otp_hash'])) {
+            $attemptsData['count'] = ($attemptsData['count'] ?? 0) + 1;
+            if ($attemptsData['count'] >= 5) {
+                $attemptsData['locked_until'] = time() + 300;
+                self::invalidateForUser($userId);
+            }
+            $_SESSION[$attemptKey] = $attemptsData;
+            return ['ok' => false, 'message' => 'Incorrect verification code.'];
+        }
+
+        unset($_SESSION[$attemptKey]);
+        pdo()->prepare("UPDATE password_otp SET used_at = NOW() WHERE id = ?")->execute([$row['id']]);
+        return ['ok' => true, 'message' => 'Code verified.'];
     }
 
     private static function invalidateForUser($userId) {

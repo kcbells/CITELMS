@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($newPassword !== $confirmPassword) {
             $error = 'New passwords do not match.';
         } elseif (strlen($newPassword) < 6) {
-            $error = 'Password must be at least 6 characters.';
+            $error = $_pwErr;
         } else {
             $user = db()->fetchOne("SELECT password FROM users WHERE users_id = ?", [$userId]);
 
@@ -305,7 +305,7 @@ $stats = db()->fetchOne(
 
                         <div class="form-group">
                             <label>New Password</label>
-                            <input type="password" name="new_password" required minlength="6">
+                            <input type="password" name="new_password" required minlength="8">
                         </div>
 
                         <div class="form-group">

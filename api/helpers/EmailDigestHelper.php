@@ -242,7 +242,7 @@ class EmailDigestHelper {
             $body .= '</ul></div>';
         }
 
-        $appUrl = htmlspecialchars(EmailHelper::appBaseUrl() . '/app/index.html', ENT_QUOTES, 'UTF-8');
+        $appUrl = htmlspecialchars(EmailHelper::appBaseUrl() . '/index.html', ENT_QUOTES, 'UTF-8');
         $body .= '<p style="margin:0;font-size:13px;color:#6b7280;">'
             . '<a href="' . $appUrl . '" style="color:#00461B;">Open COC-LMS</a> to view everything.</p>';
 

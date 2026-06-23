@@ -2,8 +2,8 @@
 /**
  * Programs API - CRUD for program management
  */
+require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
@@ -37,6 +37,7 @@ switch ($action) {
     case 'create': handleCreate(); break;
     case 'update': handleUpdate(); break;
     case 'delete': handleDelete(); break;
+    case 'archive': handleArchive(); break;
     case 'departments': handleDepartments(); break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -163,6 +164,27 @@ function handleDelete() {
     } catch (Exception $e) {
         error_log('Delete program error: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to deactivate program']);
+    }
+}
+
+function handleArchive() {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $id = (int)($data['program_id'] ?? 0);
+    if (!$id) { echo json_encode(['success' => false, 'message' => 'Program ID required']); return; }
+
+    $activeUsers = db()->fetchOne("SELECT COUNT(*) as count FROM users WHERE program_id = ? AND status = 'active'", [$id])['count'] ?? 0;
+    if ($activeUsers > 0) {
+        echo json_encode(['success' => false, 'message' => "Cannot archive: program has {$activeUsers} active enrolled user(s)"]);
+        return;
+    }
+
+    try {
+        pdo()->prepare("UPDATE program SET status = 'archived', updated_at = NOW() WHERE program_id = ?")
+             ->execute([$id]);
+        echo json_encode(['success' => true, 'message' => 'Program archived']);
+    } catch (Exception $e) {
+        error_log('Archive program error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to archive program']);
     }
 }
 

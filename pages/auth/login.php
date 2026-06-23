@@ -141,7 +141,7 @@
                                         placeholder="Enter your password"
                                         autocomplete="current-password"
                                         required
-                                        minlength="6"
+                                        minlength="8"
                                         style="padding-right: 48px;"
                                     >
                                     <button type="button" id="password-toggle" class="password-toggle" title="Show/Hide Password">

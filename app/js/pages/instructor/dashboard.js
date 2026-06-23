@@ -66,15 +66,6 @@ export async function render(container) {
                         </div>
                     </div>
                 </div>
-                <div class="sd-ring">
-                    <svg width="74" height="74" viewBox="0 0 74 74">
-                        <circle cx="37" cy="37" r="30" fill="none" stroke="#F0F0F0" stroke-width="6"/>
-                        <circle cx="37" cy="37" r="30" fill="none" stroke="${G}" stroke-width="6"
-                            stroke-dasharray="${progressValue * 1.885} 188.5" stroke-linecap="round"/>
-                    </svg>
-                    <div class="sd-ring-val">${progressValue}%</div>
-                    <div class="sd-ring-label">${stats.avg_score ? 'Avg Score' : 'Completion'}</div>
-                </div>
             </div>
 
             <div class="sd-panel">
@@ -101,9 +92,9 @@ export async function render(container) {
 
 function styles() {
     return `
-        .sd-wrap { background:#fff; min-height:100%; }
-        .page-content.sd-page-white { background:#fff !important; }
-        .sd-loading { display:flex; justify-content:center; padding:80px; background:#fff; }
+        .sd-wrap { background:transparent; min-height:100%; }
+        .page-content.sd-page-white { background:#F7F5E8 !important; }
+        .sd-loading { display:flex; justify-content:center; padding:80px; background:transparent; }
         .sd-spin {
             width:40px; height:40px; border:3px solid #eee; border-top-color:${G};
             border-radius:50%; animation:sdSpin .8s linear infinite;

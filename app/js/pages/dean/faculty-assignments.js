@@ -15,16 +15,19 @@ let _subjects      = [];        // full list from API
 let _original      = new Set(); // subject_offered_ids originally assigned
 let _pending       = new Set(); // current checked state
 let _deptFilter    = '';        // currently selected department/program filter
+let _deanSelf      = null;      // current logged-in dean's own profile
 
 export async function render(container) {
     container.innerHTML = `<style>${css()}</style><div class="fa-boot"><div class="spinner"></div></div>`;
 
-    const [instRes, semRes] = await Promise.all([
+    const [instRes, semRes, meRes] = await Promise.all([
         Api.get('/UsersAPI.php?action=list&role=instructor'),
         Api.get('/SubjectOfferingsAPI.php?action=semesters'),
+        Api.get('/AuthAPI.php?action=me'),
     ]);
     _instructors = instRes.success ? instRes.data.users : [];
     _semesters   = semRes.success  ? semRes.data        : [];
+    _deanSelf    = meRes.success   ? meRes.data         : null;
 
     // Default to active semester
     const active = _semesters.find(s => s.status === 'active') || _semesters[0];
@@ -73,6 +76,7 @@ export async function render(container) {
                 </div>
                 <input id="fa-instr-search" class="fa-instr-search" type="text" placeholder="Search by name or ID...">
             </div>
+            ${_deanSelf ? renderDeanSelfCard() : ''}
             <div id="fa-instr-list" class="fa-instr-list">
                 ${renderInstructorList(_instructors)}
             </div>
@@ -106,6 +110,38 @@ export async function render(container) {
     container.querySelector('#fa-instr-search').addEventListener('input', () => applyFilters(container));
 
     bindInstructorClicks();
+    bindDeanSelfCard();
+}
+
+function renderDeanSelfCard() {
+    if (!_deanSelf) return '';
+    const init = (((_deanSelf.first_name||'?')[0]) + ((_deanSelf.last_name||'?')[0])).toUpperCase();
+    const isActive = _selectedInstr && _selectedInstr.users_id === _deanSelf.users_id;
+    return `
+    <div class="fa-dean-self-section">
+        <div class="fa-dean-self-label">Assign Yourself</div>
+        <div class="fa-instr-card fa-dean-self-card ${isActive ? 'active' : ''}" id="fa-dean-self-card">
+            <div class="fa-instr-av fa-dean-av">${init}</div>
+            <div class="fa-instr-info">
+                <div class="fa-instr-name">${esc(_deanSelf.first_name)} ${esc(_deanSelf.last_name)}</div>
+                <div class="fa-instr-meta">${esc(_deanSelf.employee_id||'—')}</div>
+                <div class="fa-instr-dept fa-dean-badge">Dean (You)</div>
+            </div>
+            <div class="fa-instr-badge" id="badge-self">—</div>
+        </div>
+        <div class="fa-dean-self-divider"></div>
+    </div>`;
+}
+
+function bindDeanSelfCard() {
+    const card = document.getElementById('fa-dean-self-card');
+    if (!card || !_deanSelf) return;
+    card.addEventListener('click', () => {
+        _selectedInstr = _deanSelf;
+        document.querySelectorAll('.fa-instr-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        loadSubjects(_deanSelf);
+    });
 }
 
 /** Build unique sorted program options from instructor list */
@@ -416,7 +452,8 @@ function bindSaveBar(instr) {
 }
 
 function updateBadge(instrId) {
-    const badge = document.getElementById(`badge-${instrId}`);
+    const isDean = _deanSelf && _deanSelf.users_id === instrId;
+    const badge = document.getElementById(isDean ? 'badge-self' : `badge-${instrId}`);
     if (!badge) return;
     const count = _subjects.filter(s => s.is_assigned == 1).length;
     badge.textContent = count;
@@ -563,6 +600,16 @@ function css() { return `
     .fa-btn-save { padding:8px 20px;border:none;border-radius:8px;background:#00461B;color:#fff;font-size:13px;font-weight:700;cursor:pointer; }
     .fa-btn-save:hover { background:#006428; }
     .fa-btn-save:disabled { opacity:.6;cursor:not-allowed; }
+
+    /* Dean self-assign card */
+    .fa-dean-self-section { padding:10px 12px 0; }
+    .fa-dean-self-label { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#9ca3af;padding:0 2px 6px; }
+    .fa-dean-self-card { border-radius:10px;border:1.5px dashed #00461B;margin-bottom:0; }
+    .fa-dean-self-card:hover { background:#E8F5E9; }
+    .fa-dean-self-card.active { background:#E8F5E9;border-color:#00461B;border-style:solid; }
+    .fa-dean-av { background:#7C3AED !important; }
+    .fa-dean-badge { background:#EDE9FE !important;color:#6D28D9 !important; }
+    .fa-dean-self-divider { height:1px;background:#f0f0f0;margin:10px 0 2px; }
 
     @media (max-width:768px) {
         .fa-layout { grid-template-columns:1fr; }
