@@ -38,10 +38,7 @@ const PAGE_PERMISSIONS = {
     'admin/programs':            'programs.view',
     // Admin academic pages still guarded (accessible via direct URL if RBAC granted)
     'admin/subjects':            'subjects.view',
-    'admin/curriculum':          'curriculum.view',
-    'admin/sections':            'sections.view',
     'admin/subject-offerings':   'subject_offerings.view',
-    'admin/faculty-assignments': 'faculty_assignments.view',
     // Dean — academic pages are role-intrinsic (no RBAC gate needed)
     'dean/curriculum':           null,
     'dean/sections':             null,
@@ -95,8 +92,6 @@ const PAGE_ALIASES = {
     'instructor/settings':          'admin/settings',
     // Dean accessing shared admin modules
     'dean/departments':             'admin/departments',
-    'dean/programs':                'admin/programs',
-    'dean/sections':                'admin/curriculum',
     'dean/faculty-assignments':     'dean/faculty',
     'dean/users':                   'admin/users',
     'dean/rbac':                    'admin/rbac',

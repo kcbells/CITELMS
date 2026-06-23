@@ -342,20 +342,11 @@ export async function render(container) {
                 <a class="ad-ql" href="#admin/departments">
                     <div class="ad-ql-icon">${icon('building', { size: 16 })}</div>Departments
                 </a>
-                <a class="ad-ql" href="#admin/programs">
-                    <div class="ad-ql-icon">${icon('graduation', { size: 16 })}</div>Programs
-                </a>
                 <a class="ad-ql" href="#admin/subjects">
                     <div class="ad-ql-icon">${icon('book', { size: 16 })}</div>Subjects
                 </a>
-                <a class="ad-ql" href="#admin/sections">
-                    <div class="ad-ql-icon">${icon('school', { size: 16 })}</div>Sections
-                </a>
                 <a class="ad-ql" href="#admin/subject-offerings">
                     <div class="ad-ql-icon">${icon('clipboard', { size: 16 })}</div>Offerings
-                </a>
-                <a class="ad-ql" href="#admin/faculty-assignments">
-                    <div class="ad-ql-icon">${icon('instructor', { size: 16 })}</div>Faculty
                 </a>
                 <a class="ad-ql" href="#admin/settings">
                     <div class="ad-ql-icon">${icon('settings', { size: 16 })}</div>Settings

@@ -14,7 +14,6 @@ const menus = {
         ]},
         { section: 'Organization', items: [
             { icon: 'building', text: 'Departments', page: 'departments', permission: null },
-            { icon: 'graduation', text: 'Curriculum', page: 'programs', permission: null },
         ]},
         { section: 'System', items: [
             { icon: 'settings', text: 'Settings', page: 'settings', permission: null },
