@@ -1,0 +1,41 @@
+{
+    "name": "COC LMS",
+    "short_name": "COC LMS",
+    "description": "PHINMA Cagayan de Oro College — Learning Management System",
+    "start_url": "./app/dashboard.html",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#00461B",
+    "theme_color": "#00461B",
+    "orientation": "any",
+    "categories": ["education"],
+    "icons": [
+        {
+            "src": "./assets/images/phinma_logo2.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "./assets/images/phinma_logo2.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "screenshots": [],
+    "shortcuts": [
+        {
+            "name": "Dashboard",
+            "short_name": "Dashboard",
+            "url": "./app/dashboard.html#dean/home",
+            "icons": [{ "src": "./assets/images/phinma_logo2.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Messages",
+            "short_name": "Messages",
+            "url": "./app/dashboard.html#dean/messages",
+            "icons": [{ "src": "./assets/images/phinma_logo2.png", "sizes": "192x192" }]
+        }
+    ]
+}

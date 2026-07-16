@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COC LMS | PHINMA Cagayan de Oro College</title>
+    <link rel="manifest" href="../manifest.json">
+    <meta name="theme-color" content="#003d1f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="COC LMS">
+    <link rel="apple-touch-icon" href="../assets/images/phinma_logo2.png">
+    <link rel="icon" type="image/png" href="../assets/images/phinma_logo2.png">
+    <style>
+        /* ── Tokens ── */
+        :root {
+            --green:      #003d1f;
+            --green-mid:  #1a5c35;
+            --green-pale: #edf4ef;
+            --gold:       #c49a00;
+            --gold-hi:    #deb01c;
+            --gold-pale:  #fdf8e1;
+            --ink:        #111b15;
+            --body:       #3d4f44;
+            --muted:      #6b7f72;
+            --line:       #dde3de;
+            --surface:    #f6f8f6;
+            --white:      #ffffff;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: var(--ink);
+            background: var(--white);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ════════════════════════════════════════
+           1. HEADER
+        ════════════════════════════════════════ */
+        .topstrip {
+            background: var(--green);
+            color: rgba(255,255,255,.68);
+            font-size: 12px;
+            padding: 7px 48px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .topstrip a { color: rgba(255,255,255,.68); text-decoration: none; transition: color .15s; }
+        .topstrip a:hover { color: var(--gold-hi); }
+        .topstrip .pipe { opacity: .3; margin: 0 10px; }
+
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 200;
+            background: var(--white);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            padding: 0 48px;
+            height: 68px;
+            gap: 0;
+        }
+        .h-brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            text-decoration: none;
+            margin-right: auto;
+        }
+        .h-brand img { height: 42px; width: auto; }
+        .h-brand-name { display: block; font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.2; }
+        .h-brand-sub  { display: block; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--green-mid); }
+
+        .h-nav { display: flex; align-items: center; gap: 2px; margin-right: 20px; }
+        .h-nav a {
+            font-size: 13.5px; font-weight: 500; color: var(--body);
+            text-decoration: none; padding: 7px 13px; border-radius: 7px;
+            transition: background .15s, color .15s;
+        }
+        .h-nav a:hover { background: var(--green-pale); color: var(--green); }
+
+        .h-actions { display: flex; align-items: center; gap: 8px; }
+        .btn-nav-ghost {
+            font-size: 13px; font-weight: 600; color: var(--ink);
+            padding: 8px 18px; border: 1.5px solid var(--line);
+            border-radius: 7px; text-decoration: none; background: transparent;
+            transition: border-color .15s, background .15s;
+        }
+        .btn-nav-ghost:hover { border-color: var(--green); background: var(--green-pale); }
+        .btn-nav-solid {
+            font-size: 13px; font-weight: 700; color: #110e00;
+            padding: 8px 20px; background: var(--gold);
+            border-radius: 7px; text-decoration: none; border: none;
+            transition: background .15s;
+        }
+        .btn-nav-solid:hover { background: var(--gold-hi); }
+
+        /* ════════════════════════════════════════
+           2. HERO
+        ════════════════════════════════════════ */
+        .hero {
+            position: relative;
+            min-height: 90vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 80px 24px;
+            overflow: hidden;
+        }
+        .hero-bg {
+            position: absolute;
+            inset: 0;
+            background: url('../assets/images/campus-building.jpg') center 38% / cover no-repeat;
+            z-index: 0;
+        }
+        .hero-bg::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 20, 10, 0.42);
+        }
+
+        .hero-body {
+            position: relative;
+            z-index: 2;
+            max-width: 720px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 24px;
+        }
+
+        .hero-eyebrow { display: none; }
+
+        .hero-title {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(30px, 5vw, 56px);
+            font-weight: 700;
+            color: var(--white);
+            line-height: 1.15;
+            margin-bottom: 8px;
+            text-wrap: balance;
+        }
+
+        .hero-tagline {
+            font-size: 13px; font-weight: 600;
+            letter-spacing: .08em; text-transform: uppercase;
+            color: var(--gold-hi);
+            margin-bottom: 18px;
+        }
+
+        .hero-desc {
+            font-size: 16px; line-height: 1.72;
+            color: rgba(255,255,255,.72);
+            max-width: 520px;
+            margin-bottom: 36px;
+        }
+
+        .hero-ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+        .btn-hero-reg {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--white); color: var(--ink);
+            font-weight: 700; font-size: 15px;
+            padding: 14px 34px; border-radius: 8px;
+            text-decoration: none;
+            border: 2.5px solid var(--gold);
+            transition: background .15s, transform .1s, box-shadow .15s;
+        }
+        .btn-hero-reg:hover { background: var(--gold-pale); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+
+        .btn-hero-signin {
+            display: inline-flex; align-items: center; gap: 8px;
+            color: rgba(255,255,255,.85); font-weight: 600; font-size: 14px;
+            padding: 14px 26px; border-radius: 8px;
+            text-decoration: none;
+            border: 1.5px solid rgba(255,255,255,.3);
+            transition: background .15s, border-color .15s;
+        }
+        .btn-hero-signin:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.6); }
+
+        /* ════════════════════════════════════════
+           3. FEATURES
+        ════════════════════════════════════════ */
+        .features-sec {
+            background: var(--surface);
+            padding: 80px 48px;
+        }
+
+        /* ── Shared section heading ── */
+        .sec-head { text-align: center; margin-bottom: 52px; }
+        .sec-eyebrow {
+            display: inline-block; font-size: 11px; font-weight: 700;
+            letter-spacing: .15em; text-transform: uppercase;
+            color: var(--green-mid); margin-bottom: 10px;
+        }
+        .sec-title {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(22px, 2.8vw, 34px);
+            font-weight: 700; color: var(--ink);
+            line-height: 1.25; text-wrap: balance;
+        }
+        .sec-sub {
+            margin-top: 12px; font-size: 15px; color: var(--muted);
+            max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.7;
+        }
+
+        .feat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1060px;
+            margin: 0 auto;
+        }
+        .feat-card {
+            background: var(--white);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 30px 26px;
+            transition: box-shadow .2s, transform .2s;
+        }
+        .feat-card:hover { box-shadow: 0 8px 32px rgba(0,61,31,.09); transform: translateY(-3px); }
+        .feat-icon {
+            width: 48px; height: 48px;
+            background: var(--green-pale); border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--green-mid); margin-bottom: 16px;
+        }
+        .feat-title { font-size: 14.5px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+        .feat-desc  { font-size: 13px; color: var(--muted); line-height: 1.65; }
+
+        /* ════════════════════════════════════════
+           4. PRIMARY CONTENT
+        ════════════════════════════════════════ */
+        .primary-sec {
+            padding: 88px 48px;
+            background: var(--white);
+        }
+        .primary-inner {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 64px;
+            align-items: center;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* ── Photo mosaic ── */
+        .mosaic {
+            display: grid;
+            grid-template-rows: 220px 160px 120px;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        /* Top: full-width large photo */
+        .mosaic-top {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            overflow: hidden;
+        }
+        .mosaic-top img {
+            width: 100%; height: 100%;
+            object-fit: cover; object-position: center 30%;
+            display: block;
+            transition: transform .4s ease;
+        }
+        .mosaic-top:hover img { transform: scale(1.04); }
+
+        /* Middle left: 2 stacked small photos */
+        .mosaic-mid-left {
+            grid-column: 1;
+            grid-row: 2;
+            overflow: hidden;
+        }
+        .mosaic-mid-left img {
+            width: 100%; height: 100%;
+            object-fit: cover; object-position: center bottom;
+            display: block;
+            transition: transform .4s ease;
+        }
+        .mosaic-mid-left:hover img { transform: scale(1.05); }
+
+        /* Middle right: caption card */
+        .mosaic-caption {
+            grid-column: 2;
+            grid-row: 2;
+            background: var(--green);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 20px 22px;
+            gap: 4px;
+        }
+        .mosaic-caption-year {
+            font-family: Georgia, serif;
+            font-size: 38px; font-weight: 700;
+            color: var(--gold-hi); line-height: 1;
+        }
+        .mosaic-caption-label {
+            font-size: 11px; font-weight: 600;
+            letter-spacing: .1em; text-transform: uppercase;
+            color: rgba(255,255,255,.65);
+        }
+
+        /* Bottom row: 3 small photos */
+        .mosaic-bot {
+            grid-column: 1 / -1;
+            grid-row: 3;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+        .mosaic-bot-img {
+            overflow: hidden;
+            height: 120px;
+        }
+        .mosaic-bot-img img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform .4s ease;
+        }
+        .mosaic-bot-img:hover img { transform: scale(1.06); }
+
+        /* ── Text side ── */
+        .primary-content {}
+        .primary-eyebrow {
+            display: inline-block; font-size: 11px; font-weight: 700;
+            letter-spacing: .15em; text-transform: uppercase;
+            color: var(--green-mid); margin-bottom: 14px;
+        }
+        .primary-title {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(22px, 2.5vw, 34px);
+            font-weight: 700; color: var(--ink);
+            line-height: 1.25; margin-bottom: 6px;
+            text-wrap: balance;
+        }
+        .primary-title-sub {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(18px, 2vw, 26px);
+            font-weight: 400; font-style: italic;
+            color: var(--green-mid);
+            margin-bottom: 20px;
+            line-height: 1.3;
+        }
+        .primary-desc {
+            font-size: 15px; color: var(--body);
+            line-height: 1.8; margin-bottom: 28px;
+        }
+
+        .checklist { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+        .check-item { display: flex; align-items: flex-start; gap: 10px; }
+        .check-dot {
+            flex-shrink: 0; margin-top: 3px;
+            width: 20px; height: 20px;
+            background: var(--green-pale); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--green-mid);
+        }
+        .check-text { font-size: 14px; color: var(--body); line-height: 1.55; }
+
+        .primary-stats {
+            display: flex; gap: 28px;
+            padding: 20px 0;
+            border-top: 1px solid var(--line);
+            margin-bottom: 28px;
+        }
+        .p-stat-num {
+            font-family: Georgia, serif;
+            font-size: 28px; font-weight: 700;
+            color: var(--green); line-height: 1;
+        }
+        .p-stat-label {
+            font-size: 11px; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .07em;
+            margin-top: 3px;
+        }
+
+        .btn-link {
+            display: inline-flex; align-items: center; gap: 7px;
+            font-size: 14px; font-weight: 700; color: var(--green);
+            text-decoration: none;
+            border-bottom: 2px solid var(--gold);
+            padding-bottom: 2px;
+            transition: color .15s, border-color .15s;
+        }
+        .btn-link:hover { color: var(--green-mid); border-color: var(--green); }
+
+        /* ════════════════════════════════════════
+           5. SECONDARY CONTENT  (3-campus strip)
+        ════════════════════════════════════════ */
+        .secondary-sec {
+            background: var(--green);
+            padding: 80px 48px;
+        }
+        .secondary-sec .sec-title { color: var(--white); }
+        .secondary-sec .sec-sub   { color: rgba(255,255,255,.62); }
+        .secondary-sec .sec-eyebrow { color: var(--gold-hi); }
+
+        .campus-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1060px;
+            margin: 0 auto;
+        }
+        .campus-card {
+            background: rgba(255,255,255,.07);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 12px;
+            padding: 32px 28px;
+            transition: background .2s;
+        }
+        .campus-card:hover { background: rgba(255,255,255,.12); }
+        .campus-num {
+            font-family: Georgia, serif;
+            font-size: 36px; font-weight: 700;
+            color: var(--gold-hi); line-height: 1;
+            margin-bottom: 8px;
+        }
+        .campus-name {
+            font-size: 16px; font-weight: 700;
+            color: var(--white); margin-bottom: 6px;
+        }
+        .campus-loc {
+            font-size: 12px; color: rgba(255,255,255,.5);
+            letter-spacing: .05em; text-transform: uppercase;
+            margin-bottom: 14px;
+        }
+        .campus-desc {
+            font-size: 13.5px; color: rgba(255,255,255,.68);
+            line-height: 1.65;
+        }
+
+        /* stat pills */
+        .campus-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+        .campus-pill {
+            font-size: 11px; font-weight: 600; color: var(--gold-hi);
+            background: rgba(196,154,0,.15); border: 1px solid rgba(196,154,0,.25);
+            border-radius: 20px; padding: 4px 10px;
+        }
+
+        /* ════════════════════════════════════════
+           6. CALL TO ACTION
+        ════════════════════════════════════════ */
+        .cta-sec {
+            background: var(--white);
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 80px 48px;
+            text-align: center;
+        }
+        .cta-seal {
+            width: 76px; height: 76px;
+            object-fit: contain;
+            display: block; margin: 0 auto 20px;
+        }
+        .cta-title {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(24px, 3vw, 38px);
+            font-weight: 700; color: var(--ink);
+            line-height: 1.2; margin-bottom: 12px;
+        }
+        .cta-sub {
+            font-size: 15.5px; color: var(--body);
+            max-width: 480px; margin: 0 auto 36px;
+            line-height: 1.7;
+        }
+        .cta-btns { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+        .btn-cta-primary {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--green); color: var(--white);
+            font-weight: 700; font-size: 14.5px;
+            padding: 14px 32px; border-radius: 8px;
+            text-decoration: none;
+            transition: background .15s, transform .1s;
+        }
+        .btn-cta-primary:hover { background: var(--green-mid); transform: translateY(-2px); }
+        .btn-cta-outline {
+            display: inline-flex; align-items: center; gap: 8px;
+            color: var(--green); font-weight: 600; font-size: 14px;
+            padding: 13px 24px; border-radius: 8px;
+            text-decoration: none;
+            border: 1.5px solid var(--green);
+            transition: background .15s;
+        }
+        .btn-cta-outline:hover { background: var(--green-pale); }
+
+        /* ════════════════════════════════════════
+           7. FAQ
+        ════════════════════════════════════════ */
+        .faq-sec {
+            padding: 88px 48px;
+            background: var(--surface);
+        }
+        .faq-list {
+            max-width: 760px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        .faq-item { border-bottom: 1px solid var(--line); background: var(--white); }
+        .faq-item:last-child { border-bottom: none; }
+
+        .faq-q {
+            width: 100%; background: none; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 22px 28px;
+            font-size: 15px; font-weight: 600; color: var(--ink);
+            text-align: left; gap: 16px;
+            transition: background .15s;
+        }
+        .faq-q:hover { background: var(--surface); }
+        .faq-q.open { color: var(--green); }
+
+        .faq-icon {
+            flex-shrink: 0; width: 24px; height: 24px;
+            border-radius: 50%; background: var(--green-pale);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--green-mid);
+            transition: transform .25s, background .15s;
+        }
+        .faq-q.open .faq-icon { transform: rotate(45deg); background: var(--green); color: var(--white); }
+
+        .faq-a {
+            max-height: 0; overflow: hidden;
+            transition: max-height .3s ease, padding .3s ease;
+            font-size: 14px; color: var(--body); line-height: 1.72;
+            padding: 0 28px;
+        }
+        .faq-a.open { max-height: 400px; padding: 0 28px 22px; }
+
+        /* ════════════════════════════════════════
+           8. FOOTER
+        ════════════════════════════════════════ */
+        .footer {
+            background: #0b1a0f;
+        }
+        .footer-main {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 40px;
+            padding: 56px 48px 40px;
+            border-bottom: 1px solid rgba(255,255,255,.07);
+        }
+        .footer-brand-col {}
+        .footer-f-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .footer-f-logo img { height: 38px; opacity: .8; }
+        .footer-f-logo-name { font-size: 14px; font-weight: 700; color: rgba(255,255,255,.8); }
+        .footer-f-desc { font-size: 13px; color: rgba(255,255,255,.38); line-height: 1.7; max-width: 260px; }
+
+        .footer-col-title { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.4); margin-bottom: 14px; }
+        .footer-col-links { display: flex; flex-direction: column; gap: 10px; }
+        .footer-col-links a { font-size: 13px; color: rgba(255,255,255,.5); text-decoration: none; transition: color .15s; }
+        .footer-col-links a:hover { color: rgba(255,255,255,.85); }
+
+        .footer-bottom {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 18px 48px; gap: 12px; flex-wrap: wrap;
+        }
+        .footer-copy { font-size: 12px; color: rgba(255,255,255,.25); }
+        .footer-bottom-links { display: flex; gap: 18px; }
+        .footer-bottom-links a { font-size: 12px; color: rgba(255,255,255,.35); text-decoration: none; transition: color .15s; }
+        .footer-bottom-links a:hover { color: rgba(255,255,255,.7); }
+
+        /* PWA update bar */
+        #pwa-update-bar {
+            display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 99999;
+            background: #1B4D2E; color: #fff;
+            padding: 14px 20px;
+            align-items: center; justify-content: center; gap: 14px;
+            font-size: 14px; font-weight: 500;
+            box-shadow: 0 -4px 20px rgba(0,0,0,.2);
+        }
+        #pwa-update-bar button {
+            background: #C8941A; color: #0f2e1a; border: none; border-radius: 6px;
+            padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+            .primary-inner { grid-template-columns: 1fr; gap: 40px; }
+            .mosaic { grid-template-rows: 200px 140px 110px; }
+            .campus-grid { grid-template-columns: 1fr; }
+            .footer-main { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 768px) {
+            .topstrip, .h-nav { display: none; }
+            .header { padding: 0 20px; }
+            .hero { min-height: 100svh; }
+            .features-sec, .primary-sec, .secondary-sec, .cta-sec, .faq-sec { padding: 56px 20px; }
+            .feat-grid { grid-template-columns: 1fr; }
+            .footer-main { grid-template-columns: 1fr; padding: 40px 20px 24px; gap: 28px; }
+            .footer-bottom { padding: 16px 20px; flex-direction: column; align-items: flex-start; }
+            .h-actions .btn-nav-ghost { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ════════════ 1. HEADER ════════════ -->
+
+<header class="header">
+    <nav class="h-nav">
+        <a href="#features">Features</a>
+        <a href="#about">About</a>
+        <a href="#campuses">Campuses</a>
+        <a href="#faq">FAQ</a>
+    </nav>
+    <div class="h-actions" style="margin-left:auto;">
+        <a href="./index.html#register" class="btn-nav-solid">Register Here</a>
+    </div>
+</header>
+
+<!-- ════════════ 2. HERO ════════════ -->
+<section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-body">
+        <h1 class="hero-title">Learning Management<br>System</h1>
+        <div class="hero-tagline">Making Lives Better Through Education</div>
+        <p class="hero-desc">
+            The official digital learning platform of PHINMA COC — connecting students, instructors,
+            and administrators across all three campuses in one seamless system.
+        </p>
+        <div class="hero-ctas">
+            <a href="./index.html#register" class="btn-hero-reg">
+                Register Here
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════ 3. FEATURES ════════════ -->
+<section class="features-sec" id="features">
+    <div class="sec-head">
+        <div class="sec-eyebrow">Platform Features</div>
+        <h2 class="sec-title">Everything you need to learn, teach, and manage</h2>
+        <p class="sec-sub">Built for PHINMA COC students, instructors, and administrators — with every tool in one place.</p>
+    </div>
+    <div class="feat-grid">
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            </div>
+            <div class="feat-title">Lessons &amp; Materials</div>
+            <div class="feat-desc">Access course files, videos, and reading materials organized per subject. Available offline once loaded.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="feat-title">Timed Quizzes</div>
+            <div class="feat-desc">Multiple choice, true/false, essay, and short-answer types with anti-cheat proctoring and auto-grading.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="feat-title">Real-Time Messaging</div>
+            <div class="feat-desc">Direct and group chat between students and instructors, with offline message queuing and auto-send on reconnect.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="feat-title">Grades &amp; Progress</div>
+            <div class="feat-desc">Real-time grade tracking for students and analytics dashboard for instructors, with a printable report card.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div class="feat-title">AI-Assisted Grading</div>
+            <div class="feat-desc">Essay questions are evaluated with AI feedback, helping instructors grade faster and more consistently.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="feat-title">Role-Based Access</div>
+            <div class="feat-desc">Separate dashboards for Students, Instructors, Deans, and Admins. Every action is permissioned and auditable.</div>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════ 4. PRIMARY CONTENT ════════════ -->
+<section class="primary-sec" id="about">
+    <div class="primary-inner">
+
+        <!-- Photo mosaic (left) -->
+        <div class="mosaic">
+            <!-- Top: big photo -->
+            <div class="mosaic-top">
+                <img src="../assets/images/campus-building.jpg" alt="PHINMA COC Main Campus">
+            </div>
+            <!-- Middle left: campus aerial -->
+            <div class="mosaic-mid-left">
+                <img src="../assets/images/campus-building.png" alt="PHINMA COC Campus">
+            </div>
+            <!-- Middle right: stats caption -->
+            <div class="mosaic-caption">
+                <div class="mosaic-caption-year">1948</div>
+                <div class="mosaic-caption-label">Years in service</div>
+            </div>
+            <!-- Bottom: 3 small photos -->
+            <div class="mosaic-bot">
+                <div class="mosaic-bot-img">
+                    <img src="../assets/images/campus-building.jpg" alt="Campus" style="object-position: left bottom;">
+                </div>
+                <div class="mosaic-bot-img">
+                    <img src="../assets/images/campus-building.png" alt="Campus" style="object-position: right center;">
+                </div>
+                <div class="mosaic-bot-img">
+                    <img src="../assets/images/campus-building.jpg" alt="Campus" style="object-position: center top;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Text (right) -->
+        <div class="primary-content">
+            <div class="primary-eyebrow">About COC LMS</div>
+            <h2 class="primary-title">A Smarter Way to<br>Learn and Teach</h2>
+            <p class="primary-title-sub">Empowering PHINMA COC since day one.</p>
+            <p class="primary-desc">
+                COC LMS is the official digital learning platform of PHINMA Cagayan de Oro College —
+                designed to make higher education more accessible, efficient, and engaging for every
+                student, instructor, and administrator across all three campuses.
+            </p>
+            <div class="checklist">
+                <div class="check-item">
+                    <div class="check-dot">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span class="check-text">Access all enrolled subjects from one dashboard</span>
+                </div>
+                <div class="check-item">
+                    <div class="check-dot">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span class="check-text">Submit requirements and take assessments online</span>
+                </div>
+                <div class="check-item">
+                    <div class="check-dot">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span class="check-text">Monitor grades and academic progress in real time</span>
+                </div>
+                <div class="check-item">
+                    <div class="check-dot">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span class="check-text">Works offline — lessons cached without internet</span>
+                </div>
+            </div>
+            <div class="primary-stats">
+                <div>
+                    <div class="p-stat-num">3</div>
+                    <div class="p-stat-label">Campuses</div>
+                </div>
+                <div>
+                    <div class="p-stat-num">24/7</div>
+                    <div class="p-stat-label">Availability</div>
+                </div>
+                <div>
+                    <div class="p-stat-num">AI</div>
+                    <div class="p-stat-label">Assisted Grading</div>
+                </div>
+            </div>
+            <a href="./index.html#register" class="btn-link">
+                Create your account
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════ 5. SECONDARY CONTENT ════════════ -->
+<section class="secondary-sec" id="campuses">
+    <div class="sec-head">
+        <div class="sec-eyebrow">Our Campuses</div>
+        <h2 class="sec-title">One platform, three campuses</h2>
+        <p class="sec-sub">COC LMS serves all PHINMA Cagayan de Oro College campuses — each with its own dean, faculty, and student body managed in a unified system.</p>
+    </div>
+    <div class="campus-grid">
+        <div class="campus-card">
+            <div class="campus-num">01</div>
+            <div class="campus-name">Carmen Campus</div>
+            <div class="campus-loc">Max Suniel St., Carmen, CDO</div>
+            <div class="campus-desc">The main campus of PHINMA COC and home to the majority of undergraduate programs. Located in the heart of Cagayan de Oro City.</div>
+            <div class="campus-pills">
+                <span class="campus-pill">BSIT</span>
+                <span class="campus-pill">BSBA</span>
+                <span class="campus-pill">BSN</span>
+                <span class="campus-pill">BSED</span>
+            </div>
+        </div>
+        <div class="campus-card">
+            <div class="campus-num">02</div>
+            <div class="campus-name">Puerto Campus</div>
+            <div class="campus-loc">Puerto, Cagayan de Oro</div>
+            <div class="campus-desc">A growing campus offering select undergraduate programs with a focus on serving students from the eastern part of the city.</div>
+            <div class="campus-pills">
+                <span class="campus-pill">BSIT</span>
+                <span class="campus-pill">BSBA</span>
+                <span class="campus-pill">BEED</span>
+            </div>
+        </div>
+        <div class="campus-card">
+            <div class="campus-num">03</div>
+            <div class="campus-name">Iligan Campus</div>
+            <div class="campus-loc">Iligan City, Lanao del Norte</div>
+            <div class="campus-desc">Extending PHINMA COC's reach to Iligan City, bringing accessible quality education to students in Lanao del Norte.</div>
+            <div class="campus-pills">
+                <span class="campus-pill">BSIT</span>
+                <span class="campus-pill">BSCrim</span>
+                <span class="campus-pill">BSBA</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════ 6. CALL TO ACTION ════════════ -->
+<section class="cta-sec">
+    <img src="../assets/images/phinma_logo2.png" alt="PHINMA COC" class="cta-seal">
+    <h2 class="cta-title">Start your digital learning journey today</h2>
+    <p class="cta-sub">Create your COC LMS account in minutes and gain full access to your subjects, quizzes, grades, and more.</p>
+    <div class="cta-btns">
+        <a href="./index.html#register" class="btn-cta-primary">
+            Register Here
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+        <a href="./index.html" class="btn-cta-outline">Sign In</a>
+    </div>
+</section>
+
+<!-- ════════════ 7. FAQ ════════════ -->
+<section class="faq-sec" id="faq">
+    <div class="sec-head">
+        <div class="sec-eyebrow">Frequently Asked Questions</div>
+        <h2 class="sec-title">Got questions? We have answers.</h2>
+        <p class="sec-sub">Everything you need to know about COC LMS before you get started.</p>
+    </div>
+    <div class="faq-list">
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                What is COC LMS?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                COC LMS (Learning Management System) is the official digital platform of PHINMA Cagayan de Oro College. It allows students to access course materials, take quizzes, submit requirements, communicate with instructors, and track their grades — all in one place.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                Who can use COC LMS?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                COC LMS is available to all officially enrolled students, faculty instructors, program deans, and system administrators of PHINMA Cagayan de Oro College. Only users with a valid school account can sign in.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                How do I create an account?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                Click the <strong>Register Here</strong> button and fill in your school ID, full name, COC email, and a password. Your account will be tied to your official enrollment record. Once registered, an administrator will verify and activate your account.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                Can I use COC LMS without internet?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                Yes — partially. Once you have visited your subjects while online, lessons and materials are cached and available to read offline. Messaging is queued and automatically sent when you reconnect. However, taking quizzes and joining new classes require an active internet connection.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                Is COC LMS available on mobile?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                Yes. COC LMS is fully responsive and works on smartphones, tablets, and desktop browsers. You can also install it as an app on your home screen using the "Add to Home Screen" option in your mobile browser — no download from an app store needed.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                Which campuses does COC LMS support?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                COC LMS supports all three PHINMA COC campuses: <strong>Carmen Campus</strong>, <strong>Puerto Campus</strong>, and <strong>Iligan Campus</strong>. Each campus has its own separate data environment managed by its dean, while sharing the same platform infrastructure.
+            </div>
+        </div>
+        <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+                I forgot my password. What do I do?
+                <span class="faq-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+            </button>
+            <div class="faq-a">
+                On the Sign In page, click <strong>Forgot Password</strong> and enter your registered school email. You will receive a one-time password reset link. If you continue to have trouble, contact your campus administrator.
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ════════════ 8. FOOTER ════════════ -->
+<footer class="footer">
+    <div class="footer-main">
+        <div class="footer-brand-col">
+            <div class="footer-f-logo">
+                <img src="../assets/images/phinma_logo2.png" alt="PHINMA COC">
+                <span class="footer-f-logo-name">PHINMA Cagayan de Oro College</span>
+            </div>
+            <p class="footer-f-desc">The official Learning Management System of PHINMA COC — empowering students and faculty across all three campuses.</p>
+        </div>
+        <div>
+            <div class="footer-col-title">Platform</div>
+            <div class="footer-col-links">
+                <a href="#features">Features</a>
+                <a href="#about">About</a>
+                <a href="#campuses">Campuses</a>
+                <a href="./index.html">Sign In</a>
+                <a href="./index.html#register">Register</a>
+            </div>
+        </div>
+        <div>
+            <div class="footer-col-title">Programs</div>
+            <div class="footer-col-links">
+                <a href="#">BSIT</a>
+                <a href="#">BSBA</a>
+                <a href="#">BSN</a>
+                <a href="#">BSED / BEED</a>
+                <a href="#">BSCrim</a>
+            </div>
+        </div>
+        <div>
+            <div class="footer-col-title">Contact</div>
+            <div class="footer-col-links">
+                <a href="mailto:info@coc.phinma.edu.ph">info@coc.phinma.edu.ph</a>
+                <a href="tel:0888808420">(088) 880-8420</a>
+                <a href="#">Max Suniel St., Carmen, CDO</a>
+            </div>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <span class="footer-copy">&copy; 2026 PHINMA Education Network. All rights reserved.</span>
+        <div class="footer-bottom-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Use</a>
+            <a href="#faq">FAQ</a>
+        </div>
+    </div>
+</footer>
+
+<!-- PWA update bar -->
+<div id="pwa-update-bar">
+    <span>A new version of COC LMS is available.</span>
+    <button id="pwa-update-btn">Update Now</button>
+</div>
+
+<script>
+    /* FAQ accordion */
+    function toggleFaq(btn) {
+        const item = btn.closest('.faq-item');
+        const answer = item.querySelector('.faq-a');
+        const isOpen = btn.classList.contains('open');
+        /* close all */
+        document.querySelectorAll('.faq-q.open').forEach(b => {
+            b.classList.remove('open');
+            b.closest('.faq-item').querySelector('.faq-a').classList.remove('open');
+        });
+        /* open clicked if it was closed */
+        if (!isOpen) {
+            btn.classList.add('open');
+            answer.classList.add('open');
+        }
+    }
+
+    /* PWA */
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('../sw.js', { scope: '../' })
+                .then(reg => {
+                    function showUpdateBar(worker) {
+                        const bar = document.getElementById('pwa-update-bar');
+                        if (bar) bar.style.display = 'flex';
+                        document.getElementById('pwa-update-btn')?.addEventListener('click', () => {
+                            worker.postMessage({ type: 'SKIP_WAITING' });
+                        });
+                    }
+                    if (reg.waiting) showUpdateBar(reg.waiting);
+                    reg.addEventListener('updatefound', () => {
+                        const nw = reg.installing;
+                        nw.addEventListener('statechange', () => {
+                            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar(nw);
+                        });
+                    });
+                }).catch(() => {});
+            navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+        });
+    }
+    window._pwaInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        window._pwaInstallPrompt = e;
+        document.querySelectorAll('.pwa-install-btn').forEach(b => b.style.display = '');
+    });
+    window.addEventListener('appinstalled', () => {
+        window._pwaInstallPrompt = null;
+        document.querySelectorAll('.pwa-install-btn').forEach(b => b.style.display = 'none');
+    });
+</script>
+</body>
+</html>
