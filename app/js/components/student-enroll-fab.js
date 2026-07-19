@@ -50,19 +50,19 @@ function injectStyles() {
     style.textContent = `
         ${enrollmentFormStyles(true)}
         #sef-root {
-            position: fixed; bottom: 24px; right: 24px; z-index: 950;
+            position: fixed; bottom: 24px; right: 96px; z-index: 950;
             font-family: inherit;
         }
         #sef-root * { box-sizing: border-box; }
         .sef-fab {
             width: 58px; height: 58px; border-radius: 50%;
-            background: ${G};
-            color: #fff; border: none; cursor: pointer;
-            box-shadow: 0 6px 28px rgba(0,70,27,.4);
+            background: #fff;
+            color: #111; border: 2px solid #111; cursor: pointer;
+            box-shadow: 0 6px 28px rgba(0,0,0,.18);
             display: flex; align-items: center; justify-content: center;
             transition: transform .2s, box-shadow .2s;
         }
-        .sef-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,70,27,.5); }
+        .sef-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,0,0,.24); }
         .sef-fab svg { width: 28px; height: 28px; }
         .sef-panel {
             position: absolute; bottom: 72px; right: 0;
@@ -79,23 +79,23 @@ function injectStyles() {
             to   { opacity: 1; transform: scale(1) translateY(0); }
         }
         .sef-head {
-            background: ${G};
-            color: #fff; padding: 14px 16px;
+            background: #fff; border-bottom: 1px solid #E5E7EB;
+            color: #111; padding: 14px 16px;
             display: flex; align-items: center; justify-content: space-between;
             flex-shrink: 0;
         }
-        .sef-head-title { font-size: 15px; font-weight: 700; margin: 0; }
-        .sef-head-sub { font-size: 11px; opacity: .85; margin: 2px 0 0; }
+        .sef-head-title { font-size: 15px; font-weight: 700; margin: 0; color: #111; }
+        .sef-head-sub { font-size: 11px; color: #6B7280; margin: 2px 0 0; }
         .sef-icon-btn {
             width: 32px; height: 32px; border-radius: 50%; border: none;
-            background: rgba(255,255,255,.15); color: #fff; cursor: pointer;
+            background: #F3F4F6; color: #111; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             font-size: 18px; line-height: 1;
         }
-        .sef-icon-btn:hover { background: rgba(255,255,255,.28); }
+        .sef-icon-btn:hover { background: #E5E7EB; }
         .sef-body { padding: 18px 16px 20px; overflow-y: auto; max-height: min(420px, calc(100vh - 200px)); }
         @media (max-width: 640px) {
-            #sef-root { bottom: 16px; right: 16px; }
+            #sef-root { bottom: 16px; right: 88px; }
             .sef-panel { bottom: 68px; width: calc(100vw - 32px); }
         }
     `;

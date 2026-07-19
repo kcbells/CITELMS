@@ -10,6 +10,7 @@ import {
     buildPeriodGroups, isItemMissing, gradingPeriodTableCss,
 } from '../../utils/gradebook-periods.js';
 import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
+import { computeStudentReport, formatGrade, PERIODS } from '../../utils/grading-engine.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G = '#00461B';
@@ -60,6 +61,8 @@ async function renderGradesView(container, { subjectId = '', embedded = false, l
         return;
     }
 
+    await attachGlobalReports(subjects);
+
     if (embedded && lockSubject) {
         const activeId = subjectId || String(subjects[0]?.subject_id || '');
         const subject = subjects.find(s => String(s.subject_id) === String(activeId)) || subjects[0];
@@ -70,9 +73,65 @@ async function renderGradesView(container, { subjectId = '', embedded = false, l
     renderReportCardPage(container, { subjects, myName, myStudentId, me });
 }
 
+/**
+ * For subjects the dean set to Global grading, fetch the student's own
+ * module/project grades and compute the same EL/Mastery report used in the
+ * instructor's Summary & Remarks tab — attached as subject._globalReport so
+ * the report card reflects the actual grading standard for that subject
+ * instead of a generic raw quiz-score average.
+ */
+async function attachGlobalReports(subjects) {
+    const globalSubjects = subjects.filter(s => s.grading_type === 'global' && s.subject_offered_id);
+    if (!globalSubjects.length) return;
+
+    await Promise.all(globalSubjects.map(async (subject) => {
+        try {
+            const res = await Api.get(`/GlobalGradebookAPI.php?action=student-summary&subject_offered_id=${subject.subject_offered_id}`);
+            if (!res.success) return;
+            const { modules = {}, project = {} } = res.data || {};
+            subject._globalReport = computeStudentReport({
+                getModuleInput: (m) => {
+                    const mg = modules[m] || {};
+                    return {
+                        soc1: mg.soc1 ?? null,
+                        soc2: mg.soc2 ?? null,
+                        letsPractice: mg.lets_practice ?? null,
+                        letsPracticeOptional: mg.lets_practice_optional ?? null,
+                        reflection: mg.reflection ?? null,
+                        wrapUpQuiz: mg.wrap_up_quiz ?? null,
+                    };
+                },
+                getPeriodProject: (period) => {
+                    const pg = project[period] || {};
+                    return {
+                        checkins: [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
+                        finalOutput: pg.final_output ?? null,
+                    };
+                },
+            });
+        } catch (err) {
+            console.error('Global report fetch failed:', subject.subject_id, err);
+        }
+    }));
+}
+
 /* ─── Report Card page ──────────────────────────────────────── */
 
 function buildSubjectSummary(subject) {
+    if (subject._globalReport) {
+        const { periods, masteryStatus, remarks } = subject._globalReport;
+        const pct = periods.Final.periodGrade;
+        const hasGrade = pct !== null && pct !== undefined;
+        const statusCls = remarks === 'Passed' ? 'pass' : remarks?.startsWith('INC') ? 'fail' : 'none';
+        return {
+            earned: hasGrade ? Number(pct.toFixed(1)) : 0,
+            possible: hasGrade ? 100 : 0,
+            pct: hasGrade ? pct : null,
+            passedQuizzes: 0, totalQuizzes: 0, completedLessons: 0, totalLessons: 0,
+            status: remarks || (masteryStatus ? masteryStatus : 'No scores yet'),
+            statusCls, hasGrade, isGlobal: true,
+        };
+    }
     const quizzes = subject.quizzes || [];
     const lessons = subject.lessons || [];
 
@@ -175,7 +234,7 @@ function renderReportCardPage(container, { subjects, myName, myStudentId, me }) 
 
                 <!-- School header -->
                 <div class="rc-school-hdr">
-                    <img class="rc-logo" src="../assets/images/phinma_logo2.png" alt="PHINMA COC">
+                    <img class="rc-logo" src="../assets/images/app-icon.png" alt="PHINMA COC">
                     <div class="rc-school-text">
                         <div class="rc-school-name">PHINMA — CAGAYAN DE ORO COLLEGE</div>
                         <div class="rc-doc-title">STUDENT REPORT CARD</div>
@@ -259,9 +318,13 @@ function renderReportCardPage(container, { subjects, myName, myStudentId, me }) 
             if (isOpen && panel && !panel.dataset.loaded) {
                 panel.dataset.loaded = '1';
                 const subject = subjects[idx];
-                const record = buildStudentRecord(subject, myName, myStudentId);
-                panel.innerHTML = renderClassRecordTable(subject, record, { embedded: true });
-                bindQuizReviewTriggers(panel);
+                if (subject._globalReport) {
+                    panel.innerHTML = renderGlobalSummaryTable(subject, myName, myStudentId);
+                } else {
+                    const record = buildStudentRecord(subject, myName, myStudentId);
+                    panel.innerHTML = renderClassRecordTable(subject, record, { embedded: true });
+                    bindQuizReviewTriggers(panel);
+                }
             }
         });
     });
@@ -270,6 +333,15 @@ function renderReportCardPage(container, { subjects, myName, myStudentId, me }) 
 /* ─── Embedded class record (subject tab) ───────────────────── */
 
 function renderClassRecordOnly(container, { subject, myName, myStudentId }) {
+    if (subject._globalReport) {
+        container.innerHTML = `
+            <style>${pageCss()}${curriculumTableCss()}</style>
+            <div class="sg-page sg-embedded">
+                <div id="sg-record-host">${renderGlobalSummaryTable(subject, myName, myStudentId)}</div>
+            </div>
+        `;
+        return;
+    }
     const record = buildStudentRecord(subject, myName, myStudentId);
     container.innerHTML = `
         <style>${pageCss()}${curriculumTableCss()}</style>
@@ -470,6 +542,89 @@ function renderClassRecordTable(subject, record, { embedded = false } = {}) {
     `;
 }
 
+/* ─── Global (EL/Mastery) grading summary ────────────────────── */
+/* Mirrors the instructor's Summary & Remarks tab in global-gradebook.js —
+   same periods, same formulas — just for this one student. */
+
+function renderGlobalSummaryTable(subject, myName, myStudentId) {
+    const { periods, masteryStatus, remarks } = subject._globalReport;
+    const toRow = (p) => periods[p];
+    const p1 = toRow('P1'), p2 = toRow('P2'), final = toRow('Final');
+    const passClass = remarks === 'Passed' ? 'gc-cur-badge-pass' : remarks?.startsWith('INC') ? 'gc-cur-badge-fail' : 'gc-cur-badge-none';
+    const fmt = formatGrade;
+
+    const meta = [
+        esc(subject.subject_code), esc(subject.subject_name),
+        subject.section_name ? esc(subject.section_name) : '',
+        subject.instructor_name ? `Instructor: ${esc(subject.instructor_name)}` : '',
+    ].filter(Boolean).join(' · ');
+
+    return `
+        <div class="gb-record-head">
+            <span class="gb-role-pill">${icon('gradebook', inl)} Student view</span>
+            <h2>Global Grading Summary</h2>
+            <p>${meta}</p>
+            <p class="gb-period-legend">Effortful Learning / Mastery model — the same standard shown on your instructor's Summary &amp; Remarks sheet.</p>
+        </div>
+        <div class="gc-cur-wrap">
+            <div class="gc-cur-label">SUMMARY &amp; REMARKS — ${esc(subject.subject_code)}${subject.section_name ? ` / ${esc(subject.section_name)}` : ''}</div>
+            <div class="gb-table-scroll">
+                <table class="gc-cur-table ggb-summary-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" class="gc-th-info">#</th>
+                            <th rowspan="2" class="gc-th-info th-left">Student ID</th>
+                            <th rowspan="2" class="gc-th-info th-left">Name</th>
+                            <th colspan="3" class="gb-period-th">Period 1 — Modules 1–4</th>
+                            <th colspan="3" class="gb-period-th gb-period-th--p2">Period 2 — Modules 1–9</th>
+                            <th colspan="3" class="gb-period-th gb-period-th--p3">Final — Modules 1–14</th>
+                            <th rowspan="2" class="gb-item-th">Mastery Status</th>
+                            <th rowspan="2" class="gb-item-th">Remarks</th>
+                        </tr>
+                        <tr>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P1 Final</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P2 Final</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                            <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">Final<br>Grade</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="td-rank">1</td>
+                            <td class="td-id">${esc(myStudentId || '—')}</td>
+                            <td class="td-name">${esc(myName)}</td>
+                            <td class="td-num${p1.effortfulLearningGrade !== null && p1.effortfulLearningGrade < 60 ? ' td-low' : ''}">${fmt(p1.effortfulLearningGrade)}</td>
+                            <td class="td-num${p1.masteryGrade !== null && p1.masteryGrade < 80 ? ' td-low' : ''}">${fmt(p1.masteryGrade)}</td>
+                            <td class="td-num td-grade${p1.periodGrade !== null && p1.periodGrade < 75 ? ' td-low' : ''}">${fmt(p1.periodGrade)}</td>
+                            <td class="td-num${p2.effortfulLearningGrade !== null && p2.effortfulLearningGrade < 60 ? ' td-low' : ''}">${fmt(p2.effortfulLearningGrade)}</td>
+                            <td class="td-num${p2.masteryGrade !== null && p2.masteryGrade < 80 ? ' td-low' : ''}">${fmt(p2.masteryGrade)}</td>
+                            <td class="td-num td-grade${p2.periodGrade !== null && p2.periodGrade < 75 ? ' td-low' : ''}">${fmt(p2.periodGrade)}</td>
+                            <td class="td-num${final.effortfulLearningGrade !== null && final.effortfulLearningGrade < 60 ? ' td-low' : ''}">${fmt(final.effortfulLearningGrade)}</td>
+                            <td class="td-num${final.masteryGrade !== null && final.masteryGrade < 80 ? ' td-low' : ''}">${fmt(final.masteryGrade)}</td>
+                            <td class="td-num td-grade${final.periodGrade !== null && final.periodGrade < 75 ? ' td-low' : ''}">${fmt(final.periodGrade)}</td>
+                            <td class="td-num">${masteryStatus
+                                ? `<span class="ggb-mastery-badge ${masteryStatus === 'Met Mastery' ? 'met' : 'retry'}">${esc(masteryStatus)}</span>`
+                                : '—'}</td>
+                            <td class="td-num ${passClass}">${remarks
+                                ? `<span class="ggb-remark-badge">${esc(remarks)}</span>`
+                                : '—'}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p class="sg-footnote">
+            ${icon('info', { size: 14, className: 'ui-icon-inline' })}
+            EL = Effortful Learning (SOC 5% + Let's Practice 35% + Reflection 15%). Mastery = Wrap Up Quiz 15% + Project 30%. Grade = EL × 55% + Mastery × 45%. Mastery threshold: 80.
+        </p>
+    `;
+}
+
 /* ─── Shared UI helpers ─────────────────────────────────────── */
 
 function emptyBox(msg) {
@@ -500,7 +655,7 @@ function pageCss() {
             background:#F8FDF9; border:1px solid #C5D9CB; border-radius:10px; font-size:12px; color:#374151; line-height:1.5; }
 
         /* ── Report Card page ── */
-        .rc-page-wrap { padding:20px; max-width:960px; margin:0 auto; }
+        .rc-page-wrap { padding:20px; max-width:100%; margin:0; }
         .rc-doc { background:#fff; border:1px solid #d1d5db; border-radius:16px;
             box-shadow:0 6px 32px rgba(0,0,0,.10); overflow:hidden; }
 
@@ -571,11 +726,11 @@ function pageCss() {
         .rc-detail-panel { padding:20px 0 4px; background:#fafafa; border-top:1px solid ${G}; }
 
         /* Summary bar */
-        .rc-summary-bar { background:${G}; padding:16px 28px; display:flex; flex-wrap:wrap; gap:0; }
-        .rc-summary-item { flex:1; text-align:center; padding:4px 12px; border-right:1px solid rgba(255,255,255,.15); min-width:100px; }
+        .rc-summary-bar { background:#fff; border-top:1px solid #E5E7EB; padding:16px 28px; display:flex; flex-wrap:wrap; gap:0; }
+        .rc-summary-item { flex:1; text-align:center; padding:4px 12px; border-right:1px solid #E5E7EB; min-width:100px; }
         .rc-summary-item:last-child { border-right:none; }
-        .rc-summary-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:rgba(255,255,255,.6); margin-bottom:4px; }
-        .rc-summary-value { font-size:20px; font-weight:900; color:#fff; }
+        .rc-summary-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#6B7280; margin-bottom:4px; }
+        .rc-summary-value { font-size:20px; font-weight:900; color:#111; }
 
         /* Class record (embedded in expand panel) */
         .gb-role-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
@@ -599,12 +754,31 @@ function pageCss() {
         .gb-table-scroll { overflow-x:auto; padding:0 20px; }
         .gb-record-table { min-width:640px; }
 
+        /* Global (EL/Mastery) summary table */
+        .ggb-summary-table { min-width:900px; }
+        .ggb-summary-table .gb-item-th { min-width:110px !important; max-width:none !important; white-space:normal !important; }
+        .gc-cur-table .td-grade { background:${GL} !important; color:${G} !important; font-weight:800; }
+        .gc-cur-table .td-low   { color:#B91C1C !important; background:#FEF2F2 !important; }
+        .ggb-mastery-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:700; white-space:nowrap; }
+        .ggb-mastery-badge.met   { background:#E8F5E9; color:${G}; }
+        .ggb-mastery-badge.retry { background:#FEE2E2; color:#B91C1C; }
+        .ggb-remark-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:700; white-space:nowrap; }
+        td.gc-cur-badge-pass .ggb-remark-badge { background:#E8F5E9; color:${G}; }
+        td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
+
         /* Print styles */
         @media print {
             .rc-print-btn, .rc-detail-btn, .rc-expand-row { display:none !important; }
             .rc-page-wrap { padding:0; }
             .rc-doc { box-shadow:none; border:none; }
             body { background:#fff; }
+
+            /* Hide the app shell so only the report card prints */
+            #sidebar, .topbar, #nav-spinner,
+            #fa-root, #fm-root { display:none !important; }
+            .app-container { display:block !important; }
+            .main-content { margin:0 !important; padding:0 !important; }
+            .page-content { padding:0 !important; }
         }
 
         @media(max-width:640px) {

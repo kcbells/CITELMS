@@ -10,13 +10,13 @@ const MODAL_STYLES = `
     .ann-m { background:#fff; border-radius:18px; width:100%; max-width:560px; max-height:92vh; overflow:hidden;
         display:flex; flex-direction:column; box-shadow:0 24px 48px rgba(0,0,0,.18); animation:annSlideUp .25s ease; }
     @keyframes annSlideUp { from { transform:translateY(16px); opacity:0; } to { transform:translateY(0); opacity:1; } }
-    .ann-m-hdr { padding:22px 24px; background:#00461B; color:#fff; display:flex;
+    .ann-m-hdr { padding:22px 24px; background:#fff; border-bottom:1px solid #E5E7EB; color:#111; display:flex;
         justify-content:space-between; align-items:flex-start; gap:12px; }
-    .ann-m-hdr h3 { font-size:18px; font-weight:800; margin:0 0 4px; }
-    .ann-m-hdr p { font-size:12px; margin:0; opacity:.85; }
-    .ann-m-close { background:rgba(255,255,255,.15); border:none; color:#fff; width:32px; height:32px;
+    .ann-m-hdr h3 { font-size:18px; font-weight:800; margin:0 0 4px; color:#111; }
+    .ann-m-hdr p { font-size:12px; margin:0; color:#6B7280; }
+    .ann-m-close { background:none; border:none; color:#374151; width:32px; height:32px;
         border-radius:8px; font-size:20px; cursor:pointer; flex-shrink:0; line-height:1; }
-    .ann-m-close:hover { background:rgba(255,255,255,.25); }
+    .ann-m-close:hover { background:#F3F4F6; }
     .ann-m-body { padding:22px 24px; overflow-y:auto; flex:1; }
     .ann-m-ft { padding:16px 24px; border-top:1px solid #f0f0f0; display:flex; justify-content:flex-end; gap:10px; background:#fafafa; }
     .ann-m-label { display:block; font-size:12px; font-weight:700; color:#374151; margin-bottom:6px; text-transform:uppercase; letter-spacing:.4px; }

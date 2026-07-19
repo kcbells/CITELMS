@@ -54,6 +54,51 @@ function ensureAnnouncementStudentTable() {
     }
 }
 
+function ensureAnnouncementMaterialsTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec(
+            "CREATE TABLE IF NOT EXISTS announcement_materials (
+                material_id INT NOT NULL AUTO_INCREMENT,
+                announcement_id INT NOT NULL,
+                file_name VARCHAR(255) NOT NULL,
+                original_name VARCHAR(255) NOT NULL,
+                file_path VARCHAR(500) NOT NULL,
+                file_type VARCHAR(50) DEFAULT NULL,
+                file_size INT DEFAULT NULL,
+                uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (material_id),
+                KEY idx_ann_materials (announcement_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    } catch (Exception $e) {
+        error_log('announcement_materials table: ' . $e->getMessage());
+    }
+}
+
+function enrichAnnouncementsWithMaterials(array &$rows) {
+    if (!$rows) return;
+    ensureAnnouncementMaterialsTable();
+    $ids = array_column($rows, 'announcement_id');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $materials = db()->fetchAll(
+        "SELECT material_id, announcement_id, original_name, file_path, file_type, file_size
+         FROM announcement_materials WHERE announcement_id IN ($placeholders)
+         ORDER BY uploaded_at ASC",
+        $ids
+    );
+    $byAnn = [];
+    foreach ($materials as $m) {
+        $byAnn[$m['announcement_id']][] = $m;
+    }
+    foreach ($rows as &$row) {
+        $row['attachments'] = $byAnn[$row['announcement_id']] ?? [];
+    }
+    unset($row);
+}
+
 function attachAnnouncementStudents($announcementId, array $studentIds) {
     ensureAnnouncementStudentTable();
     $pdo = pdo();
@@ -115,6 +160,7 @@ switch ($action) {
     case 'delete':            deleteAnnouncement();         break;
     case 'student-list':      getStudentAnnouncements();    break;
     case 'new-announcements': getNewAnnouncements();        break;
+    case 'upload-material':   uploadAnnouncementMaterial(); break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -145,6 +191,7 @@ function getInstructorAnnouncements() {
         $sql .= " ORDER BY a.created_at DESC";
         $data = db()->fetchAll($sql, $params);
         enrichAnnouncementsWithSections($data);
+        enrichAnnouncementsWithMaterials($data);
         ob_clean();
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
@@ -211,7 +258,7 @@ function createAnnouncement() {
         }
 
         ob_clean();
-        echo json_encode(['success' => true, 'message' => 'Announcement created']);
+        echo json_encode(['success' => true, 'message' => 'Announcement created', 'data' => ['announcement_id' => $annId]]);
     } catch (Throwable $e) {
         error_log("Announcement create error: " . $e->getMessage());
         ob_clean();
@@ -355,6 +402,7 @@ function getStudentAnnouncements() {
 
         $sql .= " ORDER BY a.created_at DESC";
         $data = db()->fetchAll($sql, $params);
+        enrichAnnouncementsWithMaterials($data);
         ob_clean();
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
@@ -433,5 +481,106 @@ function getNewAnnouncements() {
         echo json_encode(['success' => true, 'data' => $data]);
     } catch (Exception $e) {
         echo json_encode(['success' => true, 'data' => []]);
+    }
+}
+
+/**
+ * Upload a file attachment directly onto an announcement (multipart/form-data).
+ */
+function uploadAnnouncementMaterial() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+
+    $annId = (int)($_POST['announcement_id'] ?? 0);
+    if (!$annId) {
+        echo json_encode(['success' => false, 'message' => 'Announcement ID required']);
+        return;
+    }
+
+    $owner = db()->fetchOne(
+        "SELECT announcement_id FROM announcement WHERE announcement_id = ? AND user_id = ?",
+        [$annId, Auth::id()]
+    );
+    if (!$owner) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        return;
+    }
+
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] === UPLOAD_ERR_NO_FILE) {
+        echo json_encode(['success' => false, 'message' => 'No file uploaded']);
+        return;
+    }
+
+    $file = $_FILES['file'];
+    $maxFileSize = 25 * 1024 * 1024; // 25MB
+
+    $allowedTypes = [
+        'application/pdf' => 'document',
+        'image/jpeg' => 'image', 'image/png' => 'image', 'image/gif' => 'image',
+        'image/webp' => 'image', 'image/bmp' => 'image', 'image/svg+xml' => 'image',
+        'application/msword' => 'document',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'document',
+        'application/vnd.ms-powerpoint' => 'document',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'document',
+        'application/vnd.ms-excel' => 'document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'document',
+        'text/plain' => 'document', 'text/csv' => 'document', 'application/csv' => 'document',
+        'application/rtf' => 'document', 'text/rtf' => 'document',
+        'application/zip' => 'other', 'application/x-rar-compressed' => 'other', 'application/vnd.rar' => 'other',
+        'audio/mpeg' => 'audio', 'audio/mp3' => 'audio', 'audio/wav' => 'audio', 'audio/ogg' => 'audio',
+        'audio/mp4' => 'audio', 'audio/aac' => 'audio', 'audio/flac' => 'audio',
+        'audio/x-wav' => 'audio', 'audio/x-m4a' => 'audio',
+        'video/mp4' => 'video', 'video/webm' => 'video', 'video/quicktime' => 'video',
+    ];
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'message' => 'Upload failed (error code: ' . $file['error'] . ')']);
+        return;
+    }
+    if ($file['size'] > $maxFileSize) {
+        echo json_encode(['success' => false, 'message' => 'File too large. Maximum size is 25MB.']);
+        return;
+    }
+
+    $mimeType = mime_content_type($file['tmp_name']);
+    if (!isset($allowedTypes[$mimeType])) {
+        echo json_encode(['success' => false, 'message' => 'File type not allowed: ' . $mimeType]);
+        return;
+    }
+
+    ensureAnnouncementMaterialsTable();
+    $uploadDir = __DIR__ . '/../uploads/materials/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $fileName = 'ann_' . $annId . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $filePath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+        echo json_encode(['success' => false, 'message' => 'Failed to save file']);
+        return;
+    }
+
+    try {
+        pdo()->prepare(
+            "INSERT INTO announcement_materials (announcement_id, file_name, original_name, file_path, file_type, file_size, uploaded_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())"
+        )->execute([$annId, $fileName, $file['name'], 'uploads/materials/' . $fileName, $allowedTypes[$mimeType], $file['size']]);
+
+        echo json_encode(['success' => true, 'message' => 'File uploaded', 'data' => [
+            'material_id' => pdo()->lastInsertId(),
+            'original_name' => $file['name'],
+            'file_path' => 'uploads/materials/' . $fileName,
+            'file_type' => $allowedTypes[$mimeType],
+            'file_size' => $file['size'],
+        ]]);
+    } catch (Exception $e) {
+        if (file_exists($filePath)) unlink($filePath);
+        error_log('Upload announcement material: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to save material record']);
     }
 }

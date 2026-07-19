@@ -38,9 +38,9 @@ export async function render(container) {
     container.innerHTML = `
         <style>
             .sa-wrap { max-width:100%; }
-            .sa-hero { background:${G}; color:#fff; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
-            .sa-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; }
-            .sa-hero p { margin:0; opacity:.88; font-size:14px; }
+            .sa-hero { background:#fff; border:1px solid #E5E7EB; color:#111; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .sa-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; color:#111; }
+            .sa-hero p { margin:0; color:#6B7280; font-size:14px; }
             .sa-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-bottom:24px; }
             .sa-stat { background:#fff; border-radius:14px; padding:18px; }
             .sa-stat-val { font-size:26px; font-weight:800; color:#111; }
@@ -65,7 +65,6 @@ export async function render(container) {
         </style>
         <div class="sa-wrap">
             <div class="sa-hero">
-                <h1>My Analytics</h1>
                 <p>See where you are doing well and which subjects need more focus.</p>
             </div>
             <div class="sa-stats">

@@ -57,7 +57,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
 
     container.innerHTML = `
         <style>
-            .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
+            .page-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
             .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
@@ -156,7 +156,6 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
         </style>
 
         <div class="page-header">
-            <h2>Sections <span class="count-badge">${sections.length}</span></h2>
             <button class="btn-primary" id="btn-add">+ Add Section</button>
         </div>
 

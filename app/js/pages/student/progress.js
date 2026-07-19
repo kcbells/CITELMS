@@ -18,28 +18,23 @@ export async function render(container) {
         <style>
             /* ─── Progress Page Layout ─── */
             .sp-wrap { max-width:100%; width:100%; }
-            .sp-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+            .sp-header { display:flex; align-items:center; justify-content:flex-end; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .sp-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
             .sp-select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:260px; background:#fff; }
             .sp-select:focus { outline:none; border-color:#1B4D3E; }
 
             /* ─── Subject Banner ─── */
-            .sp-banner { background:#00461B; border-radius:14px; padding:28px 32px; margin-bottom:24px; color:#fff; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
-            .sp-banner-left h3 { font-size:20px; font-weight:700; margin:0 0 4px; }
-            .sp-banner-left p { font-size:14px; margin:0; opacity:.85; }
+            .sp-banner { background:#fff; border:1px solid #E5E7EB; border-radius:14px; padding:28px 32px; margin-bottom:24px; color:#111; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+            .sp-banner-left h3 { font-size:20px; font-weight:700; margin:0 0 4px; color:#111; }
+            .sp-banner-left p { font-size:14px; margin:0; color:#6B7280; }
             .sp-banner-ring { position:relative; width:90px; height:90px; flex-shrink:0; }
             .sp-banner-ring svg { width:90px; height:90px; transform:rotate(-90deg); }
-            .sp-banner-ring .ring-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:20px; font-weight:800; color:#fff; }
+            .sp-banner-ring .ring-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:20px; font-weight:800; color:#111; }
 
             /* ─── Stat Cards Row ─── */
             .sp-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(155px, 1fr)); gap:14px; margin-bottom:28px; }
             .sp-stat { background:#fff; border:1px solid #f1f5f9; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.07); padding:18px; display:flex; align-items:flex-start; gap:12px; }
-            .sp-stat-icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-            .sp-stat-icon.green { background:#E8F5E9; }
-            .sp-stat-icon.blue { background:#DBEAFE; }
-            .sp-stat-icon.purple { background:#EDE9FE; }
-            .sp-stat-icon.amber { background:#FEF3C7; }
-            .sp-stat-icon.red { background:#FEE2E2; }
+            .sp-stat-icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; background:#F3F4F6; color:#111; }
             .sp-stat-body {}
             .sp-stat-val { font-size:22px; font-weight:800; color:#262626; line-height:1.1; }
             .sp-stat-label { font-size:12px; color:#737373; margin-top:2px; }
@@ -132,7 +127,6 @@ export async function render(container) {
 
         <div class="sp-wrap">
             <div class="sp-header">
-                <h2>My Progress</h2>
                 <select class="sp-select" id="sp-filter">
                     <option value="">Select a subject...</option>
                     ${subjects.map(s => `<option value="${s.subject_id}" ${filterSubject==s.subject_id?'selected':''}>${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
@@ -186,7 +180,7 @@ async function loadProgress(container, subjectId) {
                 <p>${completedLessons} of ${totalLessons} lessons completed · ${quizzesPassed} of ${totalQuizzes} quizzes passed</p>
             </div>
             <div class="sp-banner-ring">
-                ${buildRing(overallPct, 40, 5, 'rgba(255,255,255,0.2)', '#fff')}
+                ${buildRing(overallPct, 40, 5, '#E5E7EB', '#00461B')}
                 <span class="ring-text">${overallPct}%</span>
             </div>
         </div>
@@ -194,35 +188,35 @@ async function loadProgress(container, subjectId) {
         <!-- Stat Cards -->
         <div class="sp-stats">
             <div class="sp-stat">
-                <div class="sp-stat-icon green">${icon('lessons', { size: 22 })}</div>
+                <div class="sp-stat-icon">${icon('lessons', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${completedLessons}/${totalLessons}</div>
                     <div class="sp-stat-label">Lessons Done</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon blue">${icon('quiz', { size: 22 })}</div>
+                <div class="sp-stat-icon">${icon('quiz', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${quizzesAttempted}/${totalQuizzes}</div>
                     <div class="sp-stat-label">Quizzes Taken</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon green">${icon('check', { size: 22 })}</div>
+                <div class="sp-stat-icon">${icon('check', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${quizzesPassed}</div>
                     <div class="sp-stat-label">Quizzes Passed</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon purple">${icon('chart', { size: 22 })}</div>
+                <div class="sp-stat-icon">${icon('chart', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${avgScore !== null ? avgScore + '%' : '—'}</div>
                     <div class="sp-stat-label">Avg Quiz Score</div>
                 </div>
             </div>
             <div class="sp-stat">
-                <div class="sp-stat-icon amber">${icon('checkCircle', { size: 22 })}</div>
+                <div class="sp-stat-icon">${icon('checkCircle', { size: 22 })}</div>
                 <div class="sp-stat-body">
                     <div class="sp-stat-val">${lessonPct}%</div>
                     <div class="sp-stat-label">Lesson Progress</div>

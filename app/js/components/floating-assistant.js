@@ -1,7 +1,7 @@
 /**
  * Floating AI Assistant — free Groq-powered study helper (bottom-right, left of messenger).
  */
-import { Api } from '../api.js';
+import { Api, BASE_URL } from '../api.js';
 import { Auth } from '../auth.js';
 import { icon } from '../utils/icons.js';
 import { isAssistantAllowed } from '../utils/quiz-guard.js';
@@ -9,6 +9,7 @@ import { getAssistantContext, onAssistantContextChange, setAssistantContext } fr
 
 const G  = '#00461B';
 const G2 = '#006428';
+const GL = '#E8F5EC';
 
 let rootEl = null;
 let isOpen = false;
@@ -38,7 +39,7 @@ function roleGreeting() {
     }
     if (role === 'instructor') return 'Ask for teaching ideas, quiz tips, or topic explanations.';
     if (role === 'dean') return 'Ask about curriculum, faculty, or academic planning.';
-    return 'Ask anything about using CIT-LMS.';
+    return 'Ask anything about using Phinmaed Learning.';
 }
 
 function renderWelcomeActions(ctx) {
@@ -95,6 +96,17 @@ function injectStyles() {
         }
         .fa-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,70,27,.5); }
         .fa-fab svg { width: 28px; height: 28px; pointer-events: none; }
+        .fa-fab-img {
+            width: 100%; height: 100%; border-radius: 50%;
+            object-fit: cover; object-position: top center;
+            background: #fff; pointer-events: none;
+        }
+        .fa-fab-fallback { display: none; align-items: center; justify-content: center; pointer-events: none; }
+        .fa-head-av-img {
+            width: 100%; height: 100%; border-radius: 50%;
+            object-fit: cover; object-position: top center; background: #fff;
+        }
+        .fa-head-av-fallback { display: none; align-items: center; justify-content: center; }
         #fa-root.fa-dragging .fa-fab { cursor: grabbing; }
         .fa-head { cursor: grab; }
         #fa-root.fa-dragging .fa-head { cursor: grabbing; }
@@ -116,31 +128,33 @@ function injectStyles() {
         }
 
         .fa-head {
-            background: ${G};
-            color: #fff; padding: 14px 16px;
+            background: #fff;
+            color: #111827; padding: 14px 16px;
+            border-bottom: 1px solid #e5e7eb;
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
         }
         .fa-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
         .fa-head-av {
             width: 36px; height: 36px; border-radius: 50%;
-            background: rgba(255,255,255,.2);
+            background: ${GL};
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
-        .fa-head-title { font-size: 15px; font-weight: 700; margin: 0; }
-        .fa-head-sub { font-size: 11px; opacity: .85; margin: 2px 0 0; }
+        .fa-head-av-fallback { color: ${G}; }
+        .fa-head-title { font-size: 15px; font-weight: 700; margin: 0; color: #111827; }
+        .fa-head-sub { font-size: 11px; opacity: .7; margin: 2px 0 0; color: #4b5563; }
         .fa-context-chip {
             display: block; margin-top: 6px; max-width: 200px;
             font-size: 10px; font-weight: 600; line-height: 1.3;
-            background: rgba(255,255,255,.18); border-radius: 6px;
+            background: ${GL}; color: ${G}; border-radius: 6px;
             padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .fa-context-chip[hidden] { display: none !important; }
         .fa-icon-btn {
-            background: rgba(255,255,255,.15); border: none; color: #fff;
+            background: #f3f4f6; border: none; color: #374151;
             width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
             font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center;
         }
-        .fa-icon-btn:hover { background: rgba(255,255,255,.25); }
+        .fa-icon-btn:hover { background: #e5e7eb; }
 
         .fa-body {
             flex: 1; overflow-y: auto; padding: 16px;
@@ -235,7 +249,7 @@ function renderMessages() {
         body.innerHTML = `
             <div class="fa-welcome">
                 <strong>Ali</strong>
-                Your free AI study helper, powered by Groq.<br><span class="fa-greeting">${roleGreeting()}</span>
+                Here to help you learn, teach, and stay organized.<br><span class="fa-greeting">${roleGreeting()}</span>
             </div>
             ${renderWelcomeActions(ctx)}`;
         body.querySelectorAll('.fa-quick-btn').forEach(btn => {
@@ -470,10 +484,14 @@ export function mountFloatingAssistant() {
         <div class="fa-panel" id="fa-panel" aria-hidden="true">
             <div class="fa-head">
                 <div class="fa-head-left">
-                    <div class="fa-head-av">${icon('robot', { size: 20 })}</div>
+                    <div class="fa-head-av">
+                        <img src="${BASE_URL}/assets/images/assistant-ali.png" alt="" class="fa-head-av-img"
+                             onerror="this.style.display='none';this.parentElement.querySelector('.fa-head-av-fallback').style.display='inline-flex'">
+                        <span class="fa-head-av-fallback">${icon('robot', { size: 20 })}</span>
+                    </div>
                     <div>
                         <p class="fa-head-title">Ali</p>
-                        <p class="fa-head-sub">Your AI study helper · Groq</p>
+                        <p class="fa-head-sub">Your AI study helper</p>
                         <span class="fa-context-chip" id="fa-context-chip" hidden></span>
                     </div>
                 </div>
@@ -486,7 +504,9 @@ export function mountFloatingAssistant() {
             </div>
         </div>
         <button type="button" class="fa-fab" id="fa-bubble" aria-label="Open Ali">
-            ${icon('robot', { size: 28 })}
+            <img src="${BASE_URL}/assets/images/assistant-ali.png" alt="Ali" class="fa-fab-img"
+                 onerror="this.style.display='none';this.parentElement.querySelector('.fa-fab-fallback').style.display='flex'">
+            <span class="fa-fab-fallback">${icon('robot', { size: 28 })}</span>
         </button>
     `;
 

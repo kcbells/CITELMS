@@ -33,17 +33,17 @@ async function renderList(container, filterSubject = '') {
 
     container.innerHTML = `
         <style>
-            .ls-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .ls-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .ls-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .ls-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
-            .ls-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
-            .ls-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .ls-banner-sub { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
+            .ls-banner-inner { display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
+            .ls-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
+            .ls-banner-sub { font-size:14px; color:#6B7280; margin:0; }
             .ls-banner-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-            .ls-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.25); border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
-            .ls-back-btn:hover { background:rgba(255,255,255,.25); }
-            .btn-primary { background:#fff; color:#1B4D3E; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
-            .btn-primary:hover { background:#f0fdf4; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
+            .ls-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .ls-back-btn:hover { background:#d9efe0; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
+            .btn-primary:hover { background:#00351a; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
 
             .ls-filter-bar { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
             .ls-filter-bar select { padding:9px 14px; border:1px solid #e8ecef; border-radius:10px; font-size:13px; min-width:240px; background:#fff; color:#374151; cursor:pointer; outline:none; transition:border-color .15s; box-shadow:0 1px 2px rgba(0,0,0,.04); }
@@ -64,7 +64,7 @@ async function renderList(container, filterSubject = '') {
             .data-table tr:first-child th:first-child { border-top-left-radius: 12px; }
             .data-table tr:first-child th:last-child { border-top-right-radius: 12px; }
 
-            .order-circle { width:28px; height:28px; border-radius:50%; background:#E8F5E9; color:#1B4D3E; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+            .order-circle { width:28px; height:28px; border-radius:50%; background:#F3F4F6; color:#111; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
             .lesson-title { font-weight:600; color:#262626; }
             .lesson-desc { font-size:12px; color:#737373; margin-top:2px; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
@@ -131,12 +131,12 @@ async function renderList(container, filterSubject = '') {
                 display:flex; align-items:center; justify-content:center;
                 flex-shrink:0; font-size:16px;
             }
-            .mat-item-icon.video { background:#FEE2E2; color:#b91c1c; }
-            .mat-item-icon.document { background:#DBEAFE; color:#1E40AF; }
-            .mat-item-icon.image { background:#D1FAE5; color:#059669; }
-            .mat-item-icon.link { background:#EDE9FE; color:#5B21B6; }
-            .mat-item-icon.audio { background:#FEF3C7; color:#B45309; }
-            .mat-item-icon.other { background:#F3F4F6; color:#6B7280; }
+            .mat-item-icon.video,
+            .mat-item-icon.document,
+            .mat-item-icon.image,
+            .mat-item-icon.link,
+            .mat-item-icon.audio,
+            .mat-item-icon.other { background:#F3F4F6; color:#111; }
             .mat-item-info { flex:1; min-width:0; }
             .mat-item-name { font-weight:600; color:#1f2937; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
             .mat-item-meta { font-size:11px; color:#9ca3af; }
@@ -149,10 +149,6 @@ async function renderList(container, filterSubject = '') {
 
         <div class="ls-banner">
             <div class="ls-banner-inner">
-                <div>
-                    <h2 class="ls-banner-title">Lessons <span style="font-size:16px;font-weight:600;opacity:.8;">(${lessons.length})</span></h2>
-                    <p class="ls-banner-sub">Manage and publish lessons for your classes</p>
-                </div>
                 <div class="ls-banner-actions">
                     <a href="#instructor/my-classes" class="ls-back-btn">
                         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>

@@ -1,6 +1,6 @@
 {
-    "name": "COC LMS",
-    "short_name": "COC LMS",
+    "name": "Phinmaed Learning",
+    "short_name": "Phinmaed",
     "description": "PHINMA Cagayan de Oro College — Learning Management System",
     "start_url": "./app/dashboard.html",
     "scope": "./",
@@ -11,16 +11,22 @@
     "categories": ["education"],
     "icons": [
         {
-            "src": "./assets/images/phinma_logo2.png",
+            "src": "./assets/images/pwa-icon-192.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "any"
         },
         {
-            "src": "./assets/images/phinma_logo2.png",
+            "src": "./assets/images/pwa-icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "./assets/images/pwa-icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
         }
     ],
     "screenshots": [],
@@ -29,13 +35,13 @@
             "name": "Dashboard",
             "short_name": "Dashboard",
             "url": "./app/dashboard.html#dean/home",
-            "icons": [{ "src": "./assets/images/phinma_logo2.png", "sizes": "192x192" }]
+            "icons": [{ "src": "./assets/images/pwa-icon-192.png", "sizes": "192x192" }]
         },
         {
             "name": "Messages",
             "short_name": "Messages",
             "url": "./app/dashboard.html#dean/messages",
-            "icons": [{ "src": "./assets/images/phinma_logo2.png", "sizes": "192x192" }]
+            "icons": [{ "src": "./assets/images/pwa-icon-192.png", "sizes": "192x192" }]
         }
     ]
 }

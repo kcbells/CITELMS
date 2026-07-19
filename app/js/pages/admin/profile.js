@@ -42,8 +42,8 @@ export async function render(container) {
             <div class="p-main">
                 <div class="p-panel">
                     <div class="p-panel-hd">
-                        <div class="p-panel-icon" style="background:#f0fdf4;">
-                            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#00461B" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+                        <div class="p-panel-icon" style="background:#F3F4F6;">
+                            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#111" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                         </div>
                         <div>
                             <h3>Personal Information</h3>
@@ -74,8 +74,8 @@ export async function render(container) {
 
                 <div class="p-panel">
                     <div class="p-panel-hd">
-                        <div class="p-panel-icon" style="background:#fff1f2;">
-                            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#b91c1c" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                        <div class="p-panel-icon" style="background:#F3F4F6;">
+                            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#111" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                         </div>
                         <div>
                             <h3>Security &amp; Password</h3>

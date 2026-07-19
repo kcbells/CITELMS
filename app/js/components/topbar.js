@@ -315,105 +315,87 @@ async function loadNotifications(role) {
     }
 
     if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length) {
-        body.innerHTML = `<div class="notif-empty">${icon('checkCircle', { size: 20 })} You're all caught up!</div>`;
+        body.innerHTML = `<div class="notif-empty">You're all caught up!</div>`;
         return;
     }
+
+    // Facebook-style rows: round avatar for people, plain text otherwise —
+    // no icon boxes. Unread state is shown with a green dot on the right.
+    const avatarOf = (name) => {
+        const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        return `<span class="notif-avatar">${initials}</span>`;
+    };
 
     let html = '';
 
     // ── Unread Messages (all roles) ────────────────────────────────────
     if (unreadMsgs.length) {
-        html += `<div class="notif-section-label">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Messages</div>`;
+        html += `<div class="notif-section-label">Messages</div>`;
         html += unreadMsgs.map(t => {
-            const initials = (t.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-            const preview  = (t.last_message || '').slice(0, 55);
+            const preview = (t.last_message || '').slice(0, 55);
             return `
                 <div class="notification-item unread notif-msg-item" style="cursor:pointer"
                      data-id="${t.other_id}" data-name="${escapeHtml(t.name)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:50%;background:#1B4D3E;
-                                     color:#fff;font-size:13px;font-weight:700;
-                                     display:flex;align-items:center;justify-content:center;">
-                            ${initials}
-                        </span>
-                    </span>
+                    ${avatarOf(t.name)}
                     <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(t.name)}</span>
-                        <span class="notification-time" style="display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;font-size:12px;color:#555">
-                            ${escapeHtml(preview)}
-                        </span>
+                        <span class="notification-title"><strong>${escapeHtml(t.name)}</strong> sent you a message</span>
+                        <span class="notification-preview">${escapeHtml(preview)}</span>
                         <span class="notification-time">${relativeTime(t.last_at)} · ${parseInt(t.unread)} new</span>
                     </div>
+                    <span class="notif-dot"></span>
                 </div>`;
         }).join('');
     }
 
     // ── New Lessons (student) ──────────────────────────────────────────
     if (newLessons.length) {
-        html += `<div class="notif-section-label">${icon('document', { size: 14, className: 'ui-icon-inline' })} New Lessons</div>`;
+        html += `<div class="notif-section-label">New Lessons</div>`;
         html += newLessons.map(l => {
-            const subLabel = l.subject_code
-                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(l.subject_code)}</span>`
-                : '';
             const href = `#student/subject?subject_id=${l.subject_id}&work=lesson&work_id=${l.lessons_id}`;
             return `
                 <div class="notification-item unread notif-lesson-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;background:#E8F5E9;display:flex;align-items:center;justify-content:center;">
-                            ${icon('document', { size: 18 })}
-                        </span>
-                    </span>
                     <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(l.lesson_title || 'New lesson')}${subLabel}</span>
-                        <span class="notification-time">Uploaded · ${relativeTime(l.notify_at || l.updated_at || l.created_at)}</span>
+                        <span class="notification-title">New lesson posted${l.subject_code ? ` in <strong>${escapeHtml(l.subject_code)}</strong>` : ''}: <strong>${escapeHtml(l.lesson_title || 'Untitled')}</strong></span>
+                        <span class="notification-time">${relativeTime(l.notify_at || l.updated_at || l.created_at)}</span>
                     </div>
+                    <span class="notif-dot"></span>
                 </div>`;
         }).join('');
     }
 
     // ── Private comment replies (student) ─────────────────────────────
     if (replies.length) {
-        html += `<div class="notif-section-label">${icon('messages', { size: 14, className: 'ui-icon-inline' })} Comment Replies</div>`;
+        html += `<div class="notif-section-label">Comment Replies</div>`;
         html += replies.map(r => {
             const href = r.lessons_id
                 ? `#student/subject?subject_id=${r.subject_id}&work=lesson&work_id=${r.lessons_id}`
                 : r.quiz_id
                     ? `#student/subject?subject_id=${r.subject_id}&work=quiz&work_id=${r.quiz_id}`
                     : `#student/subject?subject_id=${r.subject_id}`;
-            const subLabel = r.subject_code
-                ? `<span style="font-size:10px;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px;">${escapeHtml(r.subject_code)}</span>`
-                : '';
             const preview = (r.content || '').slice(0, 60);
             return `
                 <div class="notification-item unread notif-reply-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
-                    <span class="notification-icon">
-                        <span style="width:36px;height:36px;border-radius:10px;background:#F0F9FF;display:flex;align-items:center;justify-content:center;">
-                            ${icon('messages', { size: 18 })}
-                        </span>
-                    </span>
+                    ${avatarOf(r.replier_name)}
                     <div class="notification-content">
-                        <span class="notification-title">${escapeHtml(r.replier_name)} replied to your comment${subLabel}</span>
-                        <span class="notification-time" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;font-size:12px;color:#555;margin-top:2px">${escapeHtml(preview)}</span>
+                        <span class="notification-title"><strong>${escapeHtml(r.replier_name)}</strong> replied to your comment${r.subject_code ? ` in <strong>${escapeHtml(r.subject_code)}</strong>` : ''}</span>
+                        <span class="notification-preview">${escapeHtml(preview)}</span>
                         <span class="notification-time">${relativeTime(r.created_at)}</span>
                     </div>
+                    <span class="notif-dot"></span>
                 </div>`;
         }).join('');
     }
 
     // ── Teaching alerts (instructor) ───────────────────────────────────
     if (teachingAlerts.length) {
-        html += `<div class="notif-section-label">${icon('clipboard', { size: 14, className: 'ui-icon-inline' })} Teaching Updates</div>`;
+        html += `<div class="notif-section-label">Teaching Updates</div>`;
         html += teachingAlerts.map(a => `
             <div class="notification-item unread notif-teach-item" style="cursor:pointer" data-href="${escapeHtml(a.href)}">
-                <span class="notification-icon">
-                    <span class="notif-teach-icon notif-teach-icon--${a.tone}">
-                        ${icon(a.icon, { size: 18 })}
-                    </span>
-                </span>
                 <div class="notification-content">
                     <span class="notification-title">${escapeHtml(a.title)}</span>
                     <span class="notification-time">${escapeHtml(a.meta)}</span>
                 </div>
+                <span class="notif-dot"></span>
             </div>
         `).join('');
     }
@@ -559,38 +541,37 @@ function addTopbarStyles() {
         .dropdown-item.danger:hover { background: var(--danger-bg); color: var(--danger); }
         .dropdown-divider { height: 1px; background: var(--gray-100); margin: 4px 0; }
         .notification-dropdown { width: 320px; }
+        /* Facebook-style notification rows — avatars & text only, no icon boxes */
         .notification-item {
-            display: flex; align-items: flex-start; gap: 12px;
-            padding: 12px 16px; border-bottom: 1px solid var(--gray-50);
+            display: flex; align-items: center; gap: 12px;
+            padding: 11px 16px; border-bottom: 1px solid var(--gray-50);
+            border-radius: 8px; margin: 2px 6px;
         }
         .notification-item:hover { background: var(--gray-50); }
-        .notification-item.unread { background: var(--cream-light); }
-        .notification-icon { font-size: 20px; flex-shrink: 0; }
-        .notification-content { flex: 1; }
-        .notification-title { display: block; font-size: 13px; font-weight: 500; color: var(--gray-800); }
-        .notification-time { font-size: 11px; color: var(--gray-500); }
+        .notification-item.unread { background: transparent; }
+        .notification-item.unread:hover { background: var(--gray-50); }
+        .notif-avatar {
+            width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+            background: #1B4D3E; color: #fff; font-size: 14px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .notification-content { flex: 1; min-width: 0; }
+        .notification-title { display: block; font-size: 13px; font-weight: 400; color: var(--gray-800); line-height: 1.4; }
+        .notification-title strong { font-weight: 700; }
+        .notification-preview {
+            display: block; font-size: 12px; color: #65676B; margin-top: 1px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+        }
+        .notification-time { display: block; font-size: 12px; color: #00461B; font-weight: 600; margin-top: 2px; }
+        .notif-dot {
+            width: 10px; height: 10px; border-radius: 50%; background: #00461B; flex-shrink: 0;
+        }
         .notif-loading, .notif-empty {
             padding: 24px 16px; text-align: center; color: var(--gray-400); font-size: 13px;
         }
         .notif-section-label {
-            padding: 8px 16px 4px;
-            font-size: 10px; font-weight: 800; color: #9ca3af;
-            text-transform: uppercase; letter-spacing: .06em;
-            border-top: 1px solid #f3f4f6;
-        }
-        .notif-section-label:first-child { border-top: none; }
-        .notif-teach-icon {
-            width: 36px; height: 36px; border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .notif-teach-icon--info {
-            background: #E8F5E9; color: #00461B;
-        }
-        .notif-teach-icon--warn {
-            background: #FEF3C7; color: #92400E;
-        }
-        .notif-teach-icon--danger {
-            background: #FEE2E2; color: #B91C1C;
+            padding: 10px 16px 4px;
+            font-size: 12px; font-weight: 700; color: #374151;
         }
         .topbar-user {
             display: flex; align-items: center; gap: 12px;
@@ -809,10 +790,10 @@ export function showLogoutModal() {
             }
             #logout-modal .lm-icon-wrap {
                 width:60px; height:60px; border-radius:16px;
-                background:#E8F5E9;
+                background:#F3F4F6; color:#111;
                 display:flex; align-items:center; justify-content:center;
                 font-size:28px; margin:0 auto 18px;
-                box-shadow:0 4px 12px rgba(27,77,62,.12);
+                box-shadow:0 4px 12px rgba(0,0,0,.08);
             }
             #logout-modal h3 {
                 font-size:19px; font-weight:800; color:#111827; margin:0 0 8px;

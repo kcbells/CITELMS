@@ -31,11 +31,11 @@ async function renderList(container, filterSubject = '', filterStatus = '') {
 
     container.innerHTML = `
         <style>
-            .ac-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .ac-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .ac-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-            .ac-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .ac-banner-sub { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
-            .btn-primary { background:#fff; color:#1B4D3E; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+            .ac-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
+            .ac-banner-sub { font-size:14px; color:#6B7280; margin:0; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
             .ac-filter-bar { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
             .ac-filter-bar select { padding:9px 14px; border:1px solid #e8ecef; border-radius:10px; font-size:13px; min-width:200px; background:#fff; }
             .ann-list { display:flex; flex-direction:column; gap:12px; }
@@ -59,7 +59,6 @@ async function renderList(container, filterSubject = '', filterStatus = '') {
         <div class="ac-banner">
             <div class="ac-banner-inner">
                 <div>
-                    <h2 class="ac-banner-title">Announcements (${announcements.length})</h2>
                     <p class="ac-banner-sub">Post to all sections or choose specific sections</p>
                 </div>
                 <button class="btn-primary" id="btn-add">+ New Announcement</button>

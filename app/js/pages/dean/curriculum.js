@@ -33,11 +33,7 @@ export async function render(container) {
     container.innerHTML = `<style>${css()}</style>
     <div class="ps-page">
 
-        <div class="ps-header">
-            <div>
-                <h2 class="ps-title">Program Curriculum</h2>
-                <p class="ps-subtitle">Academic subject checklist per year level and semester</p>
-            </div>
+        <div class="ps-header" style="justify-content:flex-end">
             <button class="ps-btn-add" id="ps-add-prog-btn">+ Add Program</button>
         </div>
 

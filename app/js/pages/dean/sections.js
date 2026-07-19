@@ -42,7 +42,6 @@ export async function render(container) {
             @media(max-width:768px) { .sections-grid { grid-template-columns:1fr; } }
         </style>
 
-        <div class="page-header"><h2>Sections <span class="count">${sections.length}</span></h2></div>
         <div class="filters"><input type="text" id="search" placeholder="Search section, subject, or instructor..."></div>
 
         <div class="sections-grid" id="grid">

@@ -40,7 +40,6 @@ export async function render(container) {
                     </svg>
                 </div>
                 <div>
-                    <h2 class="lp-banner-title">My Lessons</h2>
                     <p class="lp-banner-sub">Track your progress across all enrolled subjects</p>
                 </div>
             </div>

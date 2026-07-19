@@ -23,9 +23,7 @@ export async function render(container) {
 
             .eg-stats { display:flex; gap:14px; margin-bottom:24px; flex-wrap:wrap; }
             .eg-stat { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; min-width:150px; }
-            .eg-stat-icon { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:18px; }
-            .eg-stat-icon.warn { background:#FEF3C7; }
-            .eg-stat-icon.ok   { background:#E8F5E9; }
+            .eg-stat-icon { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:18px; background:#F3F4F6; color:#111; }
             .eg-stat-num { font-size:20px; font-weight:700; color:#222; display:block; }
             .eg-stat-lbl { font-size:11px; color:#777; display:block; }
 
@@ -161,16 +159,16 @@ async function loadList(container, subjectId) {
     const flaggedAttempts  = attempts.filter(a => parseInt(a.tab_switch_count || 0) > 0);
     statsEl.innerHTML = `
         <div class="eg-stat">
-            <div class="eg-stat-icon warn">${icon('edit', { size: 22 })}</div>
+            <div class="eg-stat-icon">${icon('edit', { size: 22 })}</div>
             <div><span class="eg-stat-num">${pendingAttempts.length}</span><span class="eg-stat-lbl">Submissions Pending</span></div>
         </div>
         <div class="eg-stat">
-            <div class="eg-stat-icon ok">${icon('checkCircle', { size: 22 })}</div>
+            <div class="eg-stat-icon">${icon('checkCircle', { size: 22 })}</div>
             <div><span class="eg-stat-num">${totalAnswers}</span><span class="eg-stat-lbl">Answers to Grade</span></div>
         </div>
         ${flaggedAttempts.length > 0 ? `
         <div class="eg-stat" style="border-color:#FCA5A5;">
-            <div class="eg-stat-icon" style="background:#FEE2E2;">${icon('siren', { size: 22 })}</div>
+            <div class="eg-stat-icon" style="background:#F3F4F6;">${icon('siren', { size: 22 })}</div>
             <div><span class="eg-stat-num" style="color:#b91c1c;">${flaggedAttempts.length}</span><span class="eg-stat-lbl">Integrity Flags</span></div>
         </div>` : ''}`;
 

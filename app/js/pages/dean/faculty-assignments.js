@@ -39,7 +39,7 @@ export async function render(container) {
     <div class="fa-banner">
         <div class="fa-banner-left">
             <div class="fa-banner-icon">
-                <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="2">
+                <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#111" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
             </div>
@@ -490,15 +490,15 @@ function css() { return `
     @keyframes spin { to { transform:rotate(360deg); } }
 
     /* Banner */
-    .fa-banner { background:#00461B;border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
+    .fa-banner { background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
     .fa-banner-left { display:flex;align-items:center;gap:14px; }
-    .fa-banner-icon { width:46px;height:46px;background:rgba(255,255,255,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
-    .fa-banner-title { font-size:19px;font-weight:800;color:#fff;margin:0 0 2px; }
-    .fa-banner-sub { font-size:12px;color:rgba(255,255,255,.7);margin:0; }
+    .fa-banner-icon { width:46px;height:46px;background:#F3F4F6;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+    .fa-banner-title { font-size:19px;font-weight:800;color:#111;margin:0 0 2px; }
+    .fa-banner-sub { font-size:12px;color:#6B7280;margin:0; }
     .fa-banner-right { display:flex;flex-direction:column;gap:4px; }
-    .fa-sem-label { font-size:11px;color:rgba(255,255,255,.65);font-weight:600;letter-spacing:.5px; }
-    .fa-sem-sel { padding:8px 12px;border:1px solid rgba(255,255,255,.3);border-radius:8px;background:rgba(255,255,255,.1);color:#fff;font-size:13px;font-weight:600;cursor:pointer; }
-    .fa-sem-sel option { background:#1B4D3E;color:#fff; }
+    .fa-sem-label { font-size:11px;color:#6B7280;font-weight:600;letter-spacing:.5px; }
+    .fa-sem-sel { padding:8px 12px;border:1px solid #E5E7EB;border-radius:8px;background:#F3F4F6;color:#111;font-size:13px;font-weight:600;cursor:pointer; }
+    .fa-sem-sel option { background:#fff;color:#111; }
 
     /* Two-column layout */
     .fa-layout { display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start; }

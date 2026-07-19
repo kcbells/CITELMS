@@ -33,9 +33,6 @@ export async function render(container) {
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
         </style>
 
-        <div class="page-header">
-            <h2>Subjects <span class="count" id="total-count">${allSubjects.length}</span></h2>
-        </div>
         <div class="filters">
             <input type="text" id="search" placeholder="Search subject code or name...">
             <select id="filter-program">

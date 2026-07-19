@@ -47,29 +47,6 @@ export async function render(container) {
     <style>
         .rp-wrap { max-width: 100%; }
 
-        /* ── Banner ── */
-        .rp-banner {
-            background: #00461B;
-            border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
-            display: flex; align-items: center; justify-content: space-between;
-            box-shadow: 0 2px 10px rgba(0,70,27,.1);
-        }
-        .rp-banner-left { display:flex; align-items:center; gap:16px; }
-        .rp-banner-icon {
-            width:52px; height:52px; border-radius:14px;
-            background:rgba(255,255,255,.18); border:none;
-            display:flex; align-items:center; justify-content:center; font-size:24px;
-            flex-shrink:0;
-        }
-        .rp-banner h1 { font-size:22px; font-weight:800; color:#fff; margin:0 0 4px; }
-        .rp-banner p  { color:rgba(255,255,255,.72); font-size:13px; margin:0; }
-        .rp-banner-stat {
-            background:rgba(255,255,255,.15); border:none;
-            border-radius:12px; padding:10px 20px; text-align:center; flex-shrink:0;
-        }
-        .rp-banner-stat-num { font-size:22px; font-weight:800; color:#fff; }
-        .rp-banner-stat-lbl { font-size:11px; color:rgba(255,255,255,.7); margin-top:1px; }
-
         /* ── Role cards ── */
         .rp-roles { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
         .rp-role-card {
@@ -178,7 +155,7 @@ export async function render(container) {
         .rp-perm-info { flex:1; min-width:0; }
         .rp-perm-name {
             font-size:12px; font-weight:600; color:#1e293b;
-            font-family:'Courier New',monospace;
+            font-family:inherit;
             background:#f1f5f9; display:inline-block;
             padding:1px 7px; border-radius:5px; margin-bottom:2px;
             border:none;
@@ -198,20 +175,6 @@ export async function render(container) {
     </style>
 
     <div class="rp-wrap">
-        <div class="rp-banner">
-            <div class="rp-banner-left">
-                <div class="rp-banner-icon">${icon('lock', { size: 28 })}</div>
-                <div>
-                    <h1>Roles &amp; Permissions</h1>
-                    <p>Control what each role can access. Select a role, review permissions by module, then save your changes.</p>
-                </div>
-            </div>
-            <div class="rp-banner-stat">
-                <div class="rp-banner-stat-num" id="rpTotalPerms">—</div>
-                <div class="rp-banner-stat-lbl">Total Permissions</div>
-            </div>
-        </div>
-
         <div class="rp-roles" id="rpRoles"></div>
 
         <div class="rp-toolbar">
@@ -260,7 +223,7 @@ export async function render(container) {
     });
 
     const totalPerms = res.data.permissions.length;
-    container.querySelector('#rpTotalPerms').textContent = totalPerms;
+
 
     renderRoles();
     renderMatrix();

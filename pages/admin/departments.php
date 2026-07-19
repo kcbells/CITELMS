@@ -27,39 +27,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($postAction === 'create' || $postAction === 'update') {
         $campusId = $_POST['campus_id'] ?? '';
         $departmentName = trim($_POST['department_name'] ?? '');
-        $departmentCode = trim($_POST['department_code'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $status = $_POST['status'] ?? 'active';
 
-        if (empty($campusId) || empty($departmentName) || empty($departmentCode)) {
+        if (empty($campusId) || empty($departmentName)) {
             $error = 'Please fill in all required fields.';
         } else {
-            // Check code uniqueness
-            $existing = db()->fetchOne(
-                "SELECT department_id FROM department WHERE department_code = ? AND department_id != ?",
-                [$departmentCode, $_POST['department_id'] ?? 0]
-            );
-
-            if ($existing) {
-                $error = 'Department code already exists.';
+            if ($postAction === 'create') {
+                db()->execute(
+                    "INSERT INTO department (campus_id, department_name, description, status, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, NOW(), NOW())",
+                    [$campusId, $departmentName, $description, $status]
+                );
+                header("Location: departments.php?success=created");
+                exit;
             } else {
-                if ($postAction === 'create') {
-                    db()->execute(
-                        "INSERT INTO department (campus_id, department_name, department_code, description, status, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, NOW(), NOW())",
-                        [$campusId, $departmentName, $departmentCode, $description, $status]
-                    );
-                    header("Location: departments.php?success=created");
-                    exit;
-                } else {
-                    db()->execute(
-                        "UPDATE department SET campus_id = ?, department_name = ?, department_code = ?, description = ?, status = ?, updated_at = NOW()
-                         WHERE department_id = ?",
-                        [$campusId, $departmentName, $departmentCode, $description, $status, $_POST['department_id']]
-                    );
-                    header("Location: departments.php?success=updated");
-                    exit;
-                }
+                db()->execute(
+                    "UPDATE department SET campus_id = ?, department_name = ?, description = ?, status = ?, updated_at = NOW()
+                     WHERE department_id = ?",
+                    [$campusId, $departmentName, $description, $status, $_POST['department_id']]
+                );
+                header("Location: departments.php?success=updated");
+                exit;
             }
         }
     }
@@ -137,7 +126,6 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Code</th>
                             <th>Department</th>
                             <th>Campus</th>
                             <th>Programs</th>
@@ -147,11 +135,10 @@ include __DIR__ . '/../../includes/sidebar.php';
                     </thead>
                     <tbody>
                         <?php if (empty($departments)): ?>
-                        <tr><td colspan="6" class="text-center text-muted" style="padding:40px;">No departments found</td></tr>
+                        <tr><td colspan="5" class="text-center text-muted" style="padding:40px;">No departments found</td></tr>
                         <?php else: ?>
                         <?php foreach ($departments as $dept): ?>
                         <tr>
-                            <td><span class="dept-code"><?= e($dept['department_code']) ?></span></td>
                             <td>
                                 <div class="dept-name"><?= e($dept['department_name']) ?></div>
                                 <?php if ($dept['description']): ?>
@@ -211,11 +198,6 @@ include __DIR__ . '/../../includes/sidebar.php';
                             <option value="<?= $campus['campus_id'] ?>"><?= e($campus['campus_name']) ?></option>
                             <?php endforeach; ?>
                         </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="department_code">Department Code <span class="required">*</span></label>
-                        <input type="text" name="department_code" id="department_code" class="form-control" placeholder="e.g., CIT" required>
                     </div>
                 </div>
 
@@ -536,7 +518,6 @@ function editDepartment(dept) {
     document.getElementById('formAction').value = 'update';
     document.getElementById('departmentId').value = dept.department_id;
     document.getElementById('campus_id').value = dept.campus_id;
-    document.getElementById('department_code').value = dept.department_code;
     document.getElementById('department_name').value = dept.department_name;
     document.getElementById('description').value = dept.description || '';
     document.getElementById('status').value = dept.status;

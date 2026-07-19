@@ -17,11 +17,11 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .lb-banner { background:#00461B; border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
-            .lb-banner h2 { font-size:20px; font-weight:700; margin:0; }
-            .lb-banner p  { font-size:13px; opacity:.85; margin:4px 0 0; }
-            .lb-banner-btn { padding:9px 18px; background:rgba(255,255,255,.18); color:#fff; border:1.5px solid rgba(255,255,255,.5); border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
-            .lb-banner-btn:hover { background:rgba(255,255,255,.28); }
+            .lb-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:24px 28px; color:#111; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+            .lb-banner h2 { font-size:20px; font-weight:700; margin:0; color:#111; }
+            .lb-banner p  { font-size:13px; color:#6B7280; margin:4px 0 0; }
+            .lb-banner-btn { padding:9px 18px; background:#00461B; color:#fff; border:1.5px solid #00461B; border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+            .lb-banner-btn:hover { background:#00351a; }
 
             .lb-tabs { display:flex; gap:4px; margin-bottom:20px; background:#f3f4f6; border-radius:10px; padding:4px; width:fit-content; }
             .lb-tab { padding:8px 20px; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; color:#555; border:none; background:none; transition:all .15s; }

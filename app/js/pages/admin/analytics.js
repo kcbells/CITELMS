@@ -16,8 +16,9 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .aa-hero { background:${G}; color:#fff; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
-            .aa-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; }
+            .aa-hero { background:#fff; border:1px solid #E5E7EB; color:#111; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .aa-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; color:#111; }
+            .aa-hero p { color:#6B7280; }
             .aa-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px; }
             .aa-stat { background:#fff; border-radius:14px; padding:18px; }
             .aa-stat-val { font-size:26px; font-weight:800; color:#111; }
@@ -29,10 +30,6 @@ export async function render(container) {
             .aa-bar { height:10px; background:#F3F4F6; border-radius:5px; overflow:hidden; flex:1; margin:0 12px; }
             .aa-fill { height:100%; background:${G}; border-radius:5px; }
         </style>
-        <div class="aa-hero">
-            <h1>System Analytics</h1>
-            <p>Overview of users, content, and enrollment across the institution.</p>
-        </div>
         <div class="aa-grid">
             <div class="aa-stat"><div class="aa-stat-val">${stats.total_users ?? 0}</div><div class="aa-stat-lbl">Total Users</div></div>
             <div class="aa-stat"><div class="aa-stat-val">${stats.total_students ?? 0}</div><div class="aa-stat-lbl">Students</div></div>

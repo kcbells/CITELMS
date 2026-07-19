@@ -10,17 +10,16 @@ const STYLES = `
     .qz-pick { background:#fff; border-radius:18px; width:100%; max-width:480px; overflow:hidden;
         box-shadow:0 24px 48px rgba(0,0,0,.2); animation:qzPickIn .25s ease; }
     @keyframes qzPickIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
-    .qz-pick-hdr { padding:22px 24px; background:#00461B; color:#fff; }
-    .qz-pick-hdr h3 { margin:0 0 4px; font-size:20px; font-weight:800; }
-    .qz-pick-hdr p { margin:0; font-size:13px; opacity:.88; }
+    .qz-pick-hdr { padding:22px 24px; background:#fff; border-bottom:1px solid #E5E7EB; color:#111; }
+    .qz-pick-hdr h3 { margin:0 0 4px; font-size:20px; font-weight:800; color:#111; }
+    .qz-pick-hdr p { margin:0; font-size:13px; color:#6B7280; }
     .qz-pick-body { padding:20px 24px 24px; display:flex; flex-direction:column; gap:12px; }
     .qz-pick-opt { display:flex; align-items:flex-start; gap:14px; padding:16px; border:2px solid #e5e7eb;
         border-radius:14px; background:#fff; cursor:pointer; text-align:left; transition:border-color .15s, background .15s; width:100%; }
     .qz-pick-opt:hover { border-color:#00461B; background:#F8FDF9; }
     .qz-pick-icon { width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center;
         flex-shrink:0; font-size:22px; }
-    .qz-pick-icon.manual { background:#E8F5EC; color:#00461B; }
-    .qz-pick-icon.ai { background:#EDE9FE; color:#5B21B6; }
+    .qz-pick-icon.manual, .qz-pick-icon.ai { background:#F3F4F6; color:#111; }
     .qz-pick-title { font-size:15px; font-weight:800; color:#111; display:block; margin-bottom:4px; }
     .qz-pick-desc { font-size:12px; color:#6B7280; line-height:1.45; display:block; }
     .qz-pick-cancel { width:100%; margin-top:4px; padding:10px; border:none; background:none; color:#6B7280;

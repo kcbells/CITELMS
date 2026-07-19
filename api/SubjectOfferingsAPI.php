@@ -58,6 +58,7 @@ switch ($action) {
     case 'list':                 handleList();                break;
     case 'list-multi':           handleListMulti();           break;
     case 'create':               handleCreate();              break;
+    case 'open-all-term':        handleOpenAllTerm();          break;
     case 'update':               handleUpdate();              break;
     case 'delete':               handleDelete();              break;
     case 'assign':               handleAssign();              break;
@@ -66,12 +67,15 @@ switch ($action) {
     case 'dean-assign':          handleDeanAssign();          break;
     case 'subject-instructors':  handleSubjectInstructors();  break;
     case 'subject-assign':       handleSubjectAssign();       break;
+    case 'set-grading-type':     handleSetGradingType();      break;
+    case 'set-ph-scope':         handleSetProgramHeadScope(); break;
     case 'instructors':          handleInstructors();         break;
     case 'generate-offerings':   handleGenerateOfferings();   break;
     case 'subjects':             handleSubjects();            break;
     case 'semesters':            handleSemesters();           break;
     case 'departments':          handleDepartments();         break;
     case 'programs':        handlePrograms();       break;
+    case 'offered-list':    handleOfferedList();    break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
@@ -305,24 +309,122 @@ function handleCreate() {
         }
     }
 
-    // Subjects are available all year — one active offering per subject is enough
-    $exists = db()->fetchOne(
-        "SELECT subject_offered_id FROM subject_offered WHERE subject_id = ? AND status NOT IN ('cancelled','archived')",
-        [$subjectId]
-    );
+    $semesterId = isset($data['semester_id']) && $data['semester_id'] ? (int)$data['semester_id'] : null;
+
+    // One offering per subject PER SCHOOL SEMESTER — matched by academic_year +
+    // sem_type_id (not raw semester_id, since duplicate semester rows exist).
+    // A subject offered in a past/other semester must not block opening it
+    // again for the current one.
+    if ($semesterId) {
+        $exists = db()->fetchOne(
+            "SELECT so.subject_offered_id FROM subject_offered so
+             JOIN semester sx ON so.semester_id = sx.semester_id
+             JOIN semester sy ON sy.semester_id = ?
+             WHERE so.subject_id = ?
+               AND so.status NOT IN ('cancelled','archived')
+               AND sx.academic_year  = sy.academic_year
+               AND sx.semester_name = sy.semester_name",
+            [$semesterId, $subjectId]
+        );
+    } else {
+        // No semester given — fall back to the old semester-agnostic check.
+        $exists = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered WHERE subject_id = ? AND semester_id IS NULL AND status NOT IN ('cancelled','archived')",
+            [$subjectId]
+        );
+    }
     if ($exists) {
-        echo json_encode(['success' => false, 'message' => 'This subject is already offered']);
+        echo json_encode(['success' => false, 'message' => 'This subject is already offered for this semester']);
         return;
     }
 
     try {
-        pdo()->prepare("INSERT INTO subject_offered (subject_id, semester_id, batch, status, created_at, updated_at) VALUES (?, NULL, ?, ?, NOW(), NOW())")
-            ->execute([$subjectId, $batch, $status]);
+        pdo()->prepare("INSERT INTO subject_offered (subject_id, semester_id, batch, status, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())")
+            ->execute([$subjectId, $semesterId, $batch, $status]);
         echo json_encode(['success' => true, 'message' => 'Subject offering created', 'data' => ['id' => pdo()->lastInsertId()]]);
     } catch (Exception $e) {
         error_log('Create offering: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to create offering']);
     }
+}
+
+/**
+ * Bulk-open every active-curriculum subject in a program whose own curriculum
+ * term (1st/2nd/Summer) matches the currently active school semester's term —
+ * one click instead of opening each subject one by one. Subjects already open
+ * for this term are skipped; nothing off-term is touched.
+ */
+function handleOpenAllTerm() {
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $programId = (int)($data['program_id'] ?? 0);
+    if (!$programId) {
+        echo json_encode(['success' => false, 'message' => 'Program is required']);
+        return;
+    }
+
+    // Dean: only their own department's programs
+    if (Auth::role() === 'dean') {
+        $scope  = deanScope();
+        $owns   = null;
+        if ($scope['department_id']) {
+            $owns = db()->fetchOne(
+                "SELECT 1 FROM department_program WHERE program_id = ? AND department_id = ?",
+                [$programId, $scope['department_id']]
+            );
+        } elseif ($scope['program_id']) {
+            $owns = ($programId === (int)$scope['program_id']) ? true : null;
+        }
+        if (!$owns) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: program is not in your department']);
+            return;
+        }
+    }
+
+    $activeSem = db()->fetchOne(
+        "SELECT semester_id, academic_year, sem_type_id, semester_name FROM semester WHERE status = 'active' LIMIT 1"
+    );
+    if (!$activeSem) {
+        echo json_encode(['success' => false, 'message' => 'No active school semester. Ask an admin to activate one first.']);
+        return;
+    }
+
+    $subjects = db()->fetchAll(
+        "SELECT DISTINCT s.subject_id
+         FROM curriculum c
+         JOIN subject s ON s.subject_id = c.course_id
+         WHERE c.program_id = ? AND c.status = 'active' AND s.status = 'active'
+           AND COALESCE(c.sem_num, s.semester, c.semester_id, 1) = ?",
+        [$programId, $activeSem['sem_type_id']]
+    );
+
+    $opened = 0;
+    foreach ($subjects as $row) {
+        $subjectId = (int)$row['subject_id'];
+
+        $exists = db()->fetchOne(
+            "SELECT so.subject_offered_id FROM subject_offered so
+             JOIN semester sx ON so.semester_id = sx.semester_id
+             WHERE so.subject_id = ?
+               AND so.status NOT IN ('cancelled','archived')
+               AND sx.academic_year = ? AND sx.sem_type_id = ?",
+            [$subjectId, $activeSem['academic_year'], $activeSem['sem_type_id']]
+        );
+        if ($exists) continue;
+
+        pdo()->prepare(
+            "INSERT INTO subject_offered (subject_id, semester_id, status, created_at, updated_at) VALUES (?, ?, 'open', NOW(), NOW())"
+        )->execute([$subjectId, $activeSem['semester_id']]);
+        $opened++;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => $opened
+            ? "Opened {$opened} subject" . ($opened === 1 ? '' : 's') . " for {$activeSem['semester_name']}"
+            : "Every subject for {$activeSem['semester_name']} was already open",
+        'data' => ['opened' => $opened],
+    ]);
 }
 
 function handleUpdate() {
@@ -613,24 +715,121 @@ function handleSubjectInstructors() {
         $qParams[] = $deptId;
         $qParams[] = $deptId;
     }
+    // Deans may only appear in the list as themselves (not other deans in the same dept)
+    $qParams[] = Auth::id();
 
     // is_assigned = has any active offering for this subject
+    // Candidates: instructors + program heads in the dean's dept/campus, plus the dean themselves.
     $instructors = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.last_name, u.employee_id, u.email,
+                u.role, u.year_level_from, u.year_level_to,
                 p.program_code, p.program_name,
                 CASE WHEN so.subject_offered_id IS NOT NULL THEN 1 ELSE 0 END AS is_assigned,
-                so.subject_offered_id AS assigned_offering_id
+                so.subject_offered_id AS assigned_offering_id,
+                so.grading_type
          FROM users u
          LEFT JOIN program p ON p.program_id = u.program_id
          LEFT JOIN subject_offered so
                ON so.subject_id = ? AND so.user_teacher_id = u.users_id
               AND so.status NOT IN ('cancelled','archived')
-         WHERE u.campus_id = ? $deptCond AND u.role = 'instructor' AND u.status = 'active'
-         ORDER BY u.last_name, u.first_name",
+         WHERE u.campus_id = ? $deptCond
+           AND u.role IN ('instructor', 'program_head', 'dean')
+           AND (u.role != 'dean' OR u.users_id = ?)
+           AND u.status = 'active'
+         ORDER BY FIELD(u.role, 'dean', 'program_head', 'instructor'), u.last_name, u.first_name",
         $qParams
     );
 
     echo json_encode(['success' => true, 'data' => $instructors]);
+}
+
+// ─── Toggle raw_score / global grading for one subject offering ───────────────
+// POST body: { subject_offered_id, grading_type: 'raw_score'|'global' }
+function handleSetGradingType() {
+    if (!in_array(Auth::role(), ['dean', 'admin'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $offeredId = (int)($data['subject_offered_id'] ?? 0);
+    $type      = $data['grading_type'] ?? '';
+
+    if (!$offeredId || !in_array($type, ['raw_score', 'global'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        return;
+    }
+
+    if (Auth::role() === 'dean') {
+        $scope = deanScope();
+        $owns = db()->fetchOne(
+            "SELECT so.subject_offered_id FROM subject_offered so
+             JOIN subject s ON s.subject_id = so.subject_id
+             LEFT JOIN department_program dp ON dp.program_id = s.program_id
+             WHERE so.subject_offered_id = ?
+               AND (dp.department_id = ? OR s.program_id = ?) LIMIT 1",
+            [$offeredId, $scope['department_id'], $scope['program_id']]
+        );
+        if (!$owns) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: offering is not in your department']);
+            return;
+        }
+    }
+
+    try {
+        pdo()->prepare("UPDATE subject_offered SET grading_type = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+            ->execute([$type, $offeredId]);
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        error_log('SetGradingType: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to update grading type']);
+    }
+}
+
+// ─── Set a Program Head's year-level supervision scope ────────────────────────
+// POST body: { users_id, year_level_from, year_level_to } (either may be null to clear)
+function handleSetProgramHeadScope() {
+    if (Auth::role() !== 'dean') {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $data   = json_decode(file_get_contents('php://input'), true) ?? [];
+    $userId = (int)($data['users_id'] ?? 0);
+    $from   = $data['year_level_from'] ?? null;
+    $to     = $data['year_level_to']   ?? null;
+    $from   = ($from !== null && $from !== '') ? max(1, min(4, (int)$from)) : null;
+    $to     = ($to   !== null && $to   !== '') ? max(1, min(4, (int)$to))   : null;
+
+    if (!$userId) {
+        echo json_encode(['success' => false, 'message' => 'users_id required']);
+        return;
+    }
+
+    $scope = deanScope();
+    $target = db()->fetchOne(
+        "SELECT users_id FROM users
+         WHERE users_id = ? AND role = 'program_head' AND campus_id = ?
+           AND (department_id = ? OR program_id = ?) LIMIT 1",
+        [$userId, $scope['campus_id'], $scope['department_id'], $scope['program_id']]
+    );
+    if (!$target) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: not a program head in your department']);
+        return;
+    }
+
+    try {
+        pdo()->prepare("UPDATE users SET year_level_from = ?, year_level_to = ?, updated_at = NOW() WHERE users_id = ?")
+            ->execute([$from, $to, $userId]);
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        error_log('SetProgramHeadScope: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to update scope']);
+    }
 }
 
 // ─── Assign/unassign multiple instructors to one subject ──────────────────────
@@ -681,6 +880,12 @@ function handleSubjectAssign() {
         }
     }
 
+    // Assignments should target the row for the CURRENT active semester —
+    // a subject can carry old rows from past semesters (see handleCreate's
+    // semester-scoped "already offered" check for why those must not be
+    // touched here).
+    $activeSem = db()->fetchOne("SELECT semester_id, academic_year, semester_name FROM semester WHERE status = 'active' LIMIT 1");
+
     try {
         $pdo = pdo();
         $pdo->beginTransaction();
@@ -694,20 +899,30 @@ function handleSubjectAssign() {
             );
             if ($mine) continue;
 
-            // Unclaimed offering exists? Claim it.
-            $empty = db()->fetchOne(
-                "SELECT subject_offered_id FROM subject_offered
-                  WHERE subject_id = ? AND user_teacher_id IS NULL AND status = 'open' LIMIT 1",
-                [$subjectId]
-            );
+            // Unclaimed offering for the ACTIVE semester exists? Claim it.
+            if ($activeSem) {
+                $empty = db()->fetchOne(
+                    "SELECT so.subject_offered_id FROM subject_offered so
+                     JOIN semester sx ON so.semester_id = sx.semester_id
+                     WHERE so.subject_id = ? AND so.user_teacher_id IS NULL AND so.status = 'open'
+                       AND sx.academic_year = ? AND sx.semester_name = ? LIMIT 1",
+                    [$subjectId, $activeSem['academic_year'], $activeSem['semester_name']]
+                );
+            } else {
+                $empty = db()->fetchOne(
+                    "SELECT subject_offered_id FROM subject_offered
+                      WHERE subject_id = ? AND user_teacher_id IS NULL AND status = 'open' AND semester_id IS NULL LIMIT 1",
+                    [$subjectId]
+                );
+            }
             if ($empty) {
                 $pdo->prepare("UPDATE subject_offered SET user_teacher_id = ?, updated_at = NOW() WHERE subject_offered_id = ?")
                     ->execute([$instrId, $empty['subject_offered_id']]);
             } else {
                 $pdo->prepare(
                     "INSERT INTO subject_offered (subject_id, semester_id, user_teacher_id, status, created_at, updated_at)
-                     VALUES (?, NULL, ?, 'open', NOW(), NOW())"
-                )->execute([$subjectId, $instrId]);
+                     VALUES (?, ?, ?, 'open', NOW(), NOW())"
+                )->execute([$subjectId, $activeSem['semester_id'] ?? null, $instrId]);
             }
         }
 
@@ -799,6 +1014,71 @@ function handlePrograms() {
         }
     }
     echo json_encode(['success' => true, 'data' => $programs]);
+}
+
+/**
+ * Returns subjects that have been opened as offerings for a given semester,
+ * scoped to the dean's department/programs. Used by Faculty Assignments.
+ */
+function handleOfferedList() {
+    $semId  = (int)($_GET['semester_id'] ?? 0);
+    // A subject_offered row can outlive the curriculum it came from (e.g. a
+    // program's curriculum gets replaced and the old subjects retired) — only
+    // surface offerings whose subject is still part of an active curriculum,
+    // so retired subjects never show up as assignable in Faculty Assignments.
+    $where  = [
+        "so.status NOT IN ('cancelled','archived')",
+        "EXISTS (SELECT 1 FROM curriculum c WHERE c.course_id = s.subject_id AND c.status = 'active')",
+    ];
+    $params = [];
+
+    // Semester filter: match by academic_year + sem_type_id (handles duplicate
+    // semester rows). This is what "only current-semester subjects" means —
+    // an offering counts if it was opened FOR this school semester period,
+    // whether it's an on-term subject or one the dean opened off-term via the
+    // "Open Anyway" override on Subject Offered (both get tagged with the
+    // active semester_id at the moment they're opened).
+    if ($semId) {
+        $sem = db()->fetchOne(
+            "SELECT academic_year, sem_type_id FROM semester WHERE semester_id = ?", [$semId]
+        );
+        if ($sem) {
+            $where[]  = "sem.academic_year = ?";
+            $where[]  = "sem.sem_type_id = ?";
+            $params[] = $sem['academic_year'];
+            $params[] = $sem['sem_type_id'];
+        }
+    }
+
+    // Dean scope: restrict to their department's programs
+    if (Auth::role() === 'dean') {
+        $scope = deanScope();
+        if ($scope['department_id']) {
+            $where[]  = "EXISTS (SELECT 1 FROM department_program dp WHERE dp.program_id = s.program_id AND dp.department_id = ?)";
+            $params[] = $scope['department_id'];
+        } elseif ($scope['program_id']) {
+            $where[]  = "s.program_id = ?";
+            $params[] = $scope['program_id'];
+        }
+    }
+
+    $whereSQL = 'WHERE ' . implode(' AND ', $where);
+
+    $rows = db()->fetchAll(
+        "SELECT s.subject_id, s.subject_code, s.subject_name, s.units,
+                s.year_level, s.semester AS subject_semester, s.status,
+                p.program_code, p.program_name, p.program_id,
+                so.subject_offered_id, so.status AS offering_status
+         FROM subject_offered so
+         JOIN subject s ON s.subject_id = so.subject_id
+         LEFT JOIN program p ON p.program_id = s.program_id
+         LEFT JOIN semester sem ON sem.semester_id = so.semester_id
+         $whereSQL
+         ORDER BY p.program_code, s.year_level, s.semester, s.subject_code",
+        $params
+    );
+
+    echo json_encode(['success' => true, 'data' => $rows]);
 }
 
 function handleSemesters() {

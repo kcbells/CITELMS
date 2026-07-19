@@ -1,11 +1,12 @@
-/**
+﻿/**
  * Student My Subjects — polished full-width classroom grid
  */
 import { Api } from '../../api.js';
-import { subjectColor } from '../../utils/subject-colors.js';
+import { subjectColor, programPatternSvg } from '../../utils/subject-colors.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { openJoinPanel } from '../../components/student-enroll-fab.js';
 import { subjectHash } from './quizzes.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G  = '#00461B';
@@ -48,7 +49,6 @@ export async function render(container) {
     const subjects = view === 'archived' ? archivedSubjects : activeSubjects;
 
     const annBySubject = groupAnnouncements(annRes.success ? annRes.data : []);
-    const sectionNames = [...new Set(subjects.map(s => s.section_name).filter(Boolean))];
 
     const emptyArchivedHtml = `
         <div class="ms-empty-state">
@@ -74,23 +74,9 @@ export async function render(container) {
             ${buildShell(activeSubjects.length, archivedSubjects.length, view)}
             <div id="ms-panel-subjects">
         ${subjects.length === 0 ? (view === 'archived' ? emptyArchivedHtml : emptyActiveHtml) : `
-                <div class="ms-toolbar">
-                    <div class="ms-search-box">
-                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                        <input class="ms-search" id="ms-search" type="search" placeholder="Search by name, code, or instructor…" autocomplete="off">
-                </div>
-                ${sectionNames.length > 1 ? `
-                    <select class="ms-select" id="ms-sec-filter" aria-label="Filter by section">
-                        <option value="">All sections</option>
-                    ${sectionNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
-                </select>` : ''}
-                    <span class="ms-count" id="ms-result-info">${subjects.length} subject${subjects.length !== 1 ? 's' : ''}</span>
-            </div>
-
-            <div class="ms-grid" id="ms-grid">
+                <div class="ms-grid" id="ms-grid">
                     ${subjects.map(s => renderCard(s, annBySubject)).join('')}
                 </div>
-                <p class="ms-no-results" id="ms-no-results" hidden>No subjects match your search.</p>
             `}
             </div>
         </div>
@@ -109,55 +95,64 @@ export async function render(container) {
 
     if (subjects.length === 0) return;
 
-    const searchEl   = container.querySelector('#ms-search');
-    const secFilter  = container.querySelector('#ms-sec-filter');
-    const resultInfo = container.querySelector('#ms-result-info');
-    const cards      = [...container.querySelectorAll('.ms-card')];
-    const noResults  = container.querySelector('#ms-no-results');
+    bindCardMenus(container);
+}
 
-    function applyFilters() {
-        const q   = searchEl.value.toLowerCase().trim();
-        const sec = secFilter?.value || '';
-        let visible = 0;
-        cards.forEach(card => {
-            const show = (!q || card.dataset.search.includes(q)) && (!sec || card.dataset.section === sec);
-            card.hidden = !show;
-            if (show) visible++;
+/* ── Card kebab menu: Unenroll ────────────────────────────────── */
+
+function bindCardMenus(container) {
+    const closeAllMenus = () => {
+        container.querySelectorAll('[data-kebab-menu]').forEach(m => m.setAttribute('hidden', ''));
+    };
+
+    container.querySelectorAll('[data-kebab-toggle]').forEach(toggle => {
+        toggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const menu = toggle.nextElementSibling;
+            const isOpen = !menu.hasAttribute('hidden');
+            closeAllMenus();
+            if (!isOpen) menu.removeAttribute('hidden');
         });
-        resultInfo.textContent = visible === subjects.length
-            ? `${subjects.length} subject${subjects.length !== 1 ? 's' : ''}`
-            : `${visible} of ${subjects.length}`;
-        noResults.hidden = visible > 0;
-        const grid = container.querySelector('#ms-grid');
-        if (grid) grid.style.display = visible === 0 ? 'none' : '';
-    }
+    });
 
-    searchEl.addEventListener('input', applyFilters);
-    secFilter?.addEventListener('change', applyFilters);
+    document.addEventListener('click', closeAllMenus);
+
+    container.querySelectorAll('.ms-card').forEach(card => {
+        const ssId = card.dataset.studentSubjectId;
+        const title = card.querySelector('.ms-card-title')?.textContent || 'this subject';
+
+        card.querySelector('[data-card-action="unenroll"]')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAllMenus();
+            if (!ssId) return;
+            const ok = await notify.confirm(
+                `Unenroll from "${title}"? You'll lose access to its lessons, quizzes, and grades.`,
+                { confirmText: 'Unenroll', danger: true }
+            );
+            if (!ok) return;
+            const res = await Api.post('/EnrollmentAPI.php?action=drop', { student_subject_id: parseInt(ssId, 10) });
+            if (res.success) {
+                notify.success('Unenrolled from subject');
+                card.remove();
+            } else {
+                notify.error(res.message || 'Failed to unenroll');
+            }
+        });
+    });
 }
 
 function buildShell(activeCount, archivedCount, view) {
     return `
         <header class="ms-hero">
-            <div class="ms-hero-text">
-                <p class="ms-hero-label">Learning</p>
-                <h1 class="ms-hero-title">${view === 'archived' ? 'Archived Classes' : 'My Subjects'}</h1>
-                <p class="ms-hero-sub">${view === 'archived' ? 'Subjects archived by your instructor' : 'Open a class to view classwork, quizzes, classmates, and announcements'}</p>
-            </div>
-            <div class="ms-hero-right">
-                <div class="ms-tabs">
-                    <a href="#student/my-subjects" class="ms-tab${view !== 'archived' ? ' active' : ''}">
-                        Active${activeCount > 0 ? ` (${activeCount})` : ''}
-                    </a>
-                    <a href="#student/my-subjects?view=archived" class="ms-tab${view === 'archived' ? ' active' : ''}">
-                        Archived${archivedCount > 0 ? ` (${archivedCount})` : ''}
-                    </a>
-                </div>
-                ${view !== 'archived' ? `
-                <button type="button" class="ms-join-btn" id="ms-join-btn">
-                    <span class="ms-join-icon">${icon('plus', { size: 18 })}</span>
-                    Join Class
-                </button>` : ''}
+            <div class="ms-tabs">
+                <a href="#student/my-subjects" class="ms-tab${view !== 'archived' ? ' active' : ''}">
+                    Active${activeCount > 0 ? ` (${activeCount})` : ''}
+                </a>
+                <a href="#student/my-subjects?view=archived" class="ms-tab${view === 'archived' ? ' active' : ''}">
+                    Archived${archivedCount > 0 ? ` (${archivedCount})` : ''}
+                </a>
             </div>
         </header>
     `;
@@ -171,8 +166,16 @@ function renderCard(s, annBySubject) {
     return `
     <a class="ms-card" href="#student/subject?subject_id=${s.subject_id}"
        data-search="${esc((s.subject_code + ' ' + s.subject_name + ' ' + (s.instructor_name || '')).toLowerCase())}"
-       data-section="${esc(s.section_name || '')}">
+       data-section="${esc(s.section_name || '')}"
+       data-student-subject-id="${s.student_subject_id || ''}">
         <div class="ms-card-top" style="background:${color}">
+            ${programPatternSvg(s.program_code, s.subject_id)}
+            <span class="ms-card-kebab" data-kebab-toggle title="More">
+                <span class="material-symbols-outlined">more_vert</span>
+            </span>
+            <div class="ms-card-menu" data-kebab-menu hidden>
+                <span data-card-action="unenroll">${icon('logout', inl)} Unenroll</span>
+            </div>
             <span class="ms-card-code">${esc(s.subject_code)}</span>
             <h3 class="ms-card-title">${esc(s.subject_name)}</h3>
             ${s.section_name ? `<span class="ms-card-section">${esc(s.section_name)}</span>` : ''}
@@ -213,7 +216,7 @@ function styles() {
         .ms-page {
             width: 100%;
             min-height: calc(100vh - 120px);
-            background: #F7F5E8;
+            background: #fff;
         }
         .ms-loading { display:flex; justify-content:center; align-items:center; min-height:320px; background:#fff; }
         .ms-spin {
@@ -223,84 +226,40 @@ function styles() {
         @keyframes msSpin { to { transform:rotate(360deg); } }
 
         .ms-hero {
-            display:flex; align-items:flex-start; justify-content:space-between;
+            display:flex; align-items:center; justify-content:flex-end;
             gap:20px; flex-wrap:wrap;
-            padding:28px 32px; margin:0 0 24px;
-            background: ${G};
-            border-radius:16px; color:#fff;
-            box-shadow: 0 2px 10px rgba(0,70,27,.1);
-        }
-        .ms-hero-text { flex:1; min-width:0; }
-        .ms-hero-label {
-            font-size:11px; font-weight:700; text-transform:uppercase;
-            letter-spacing:1.2px; opacity:.75; margin:0 0 6px;
-        }
-        .ms-hero-title { font-size:28px; font-weight:800; margin:0 0 6px; letter-spacing:-.5px; }
-        .ms-hero-sub { font-size:14px; opacity:.88; margin:0 0 12px; max-width:480px; line-height:1.5; }
-        .ms-hero-badge {
-            display:inline-block; font-size:12px; font-weight:600;
-            background:rgba(255,255,255,.2); border:none;
-            padding:5px 12px; border-radius:20px;
+            margin:0 0 20px;
         }
         .ms-join-btn {
             display:inline-flex; align-items:center; gap:8px;
             padding:11px 20px; background:#fff; color:${G};
-            border:none; border-radius:10px; font-size:14px; font-weight:700;
+            border:1px solid #111; border-radius:10px; font-size:14px; font-weight:700;
             font-family:inherit; cursor:pointer; white-space:nowrap;
-            box-shadow:0 2px 8px rgba(0,0,0,.12);
-            transition:transform .15s, box-shadow .15s;
+            transition:background .15s;
         }
-        .ms-join-btn:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.16); }
+        .ms-join-btn:hover { background:#F3F4F6; }
         .ms-join-icon {
-            width:22px; height:22px; border-radius:50%; background:${G}; color:#fff;
+            width:22px; height:22px; border-radius:50%; background:#fff; color:#111;
             display:flex; align-items:center; justify-content:center;
         }
-        .ms-join-icon svg { stroke:#fff; }
+        .ms-join-icon svg { stroke:#111; }
         .ms-join-btn-lg { margin-top:8px; }
 
-        .ms-hero-right { display:flex; flex-direction:column; align-items:flex-end; gap:12px; }
         .ms-tabs {
             display:flex; gap:4px; flex-wrap:wrap;
-            padding:4px; background:rgba(255,255,255,.15); border-radius:12px;
+            padding:4px; background:#F3F4F6; border-radius:12px;
         }
         .ms-tab {
             display:inline-flex; align-items:center; gap:6px;
             padding:8px 16px; border-radius:8px;
-            font-size:13px; font-weight:700; color:rgba(255,255,255,.75);
+            font-size:13px; font-weight:700; color:#6B7280;
             text-decoration:none; transition:all .15s;
         }
-        .ms-tab:hover { color:#fff; background:rgba(255,255,255,.15); }
-        .ms-tab.active { background:#fff; color:${G}; }
+        .ms-tab:hover { color:#111; background:#E5E7EB; }
+        .ms-tab.active { background:#fff; color:${G}; border:1px solid #111; }
         .ms-tab-icon { display:flex; align-items:center; }
         .ms-tab.active .ms-tab-icon svg { stroke:${G}; }
 
-        .ms-toolbar {
-            display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-            margin-bottom:20px; padding:14px 16px;
-            background:#F3F4F6; border:none; border-radius:12px;
-        }
-        .ms-search-box {
-            flex:1; min-width:200px; position:relative;
-            display:flex; align-items:center;
-        }
-        .ms-search-box svg {
-            position:absolute; left:12px; color:#9CA3AF; pointer-events:none;
-        }
-        .ms-search {
-            width:100%; padding:10px 14px 10px 38px;
-            border:none; border-radius:8px;
-            font-size:14px; background:#ECEFF1; outline:none;
-            transition:outline .15s;
-        }
-        .ms-search:focus { outline:2px solid ${G}; }
-        .ms-select {
-            padding:10px 14px; border:none; border-radius:8px;
-            font-size:13px; background:#ECEFF1; color:#374151; min-width:140px;
-        }
-        .ms-count {
-            font-size:12px; font-weight:700; color:${G};
-            background:${GL}; padding:8px 14px; border-radius:20px; white-space:nowrap;
-        }
 
         .ms-grid {
             display:grid;
@@ -329,6 +288,24 @@ function styles() {
             display:flex; flex-direction:column; justify-content:flex-end;
             position:relative;
         }
+        .ms-card-kebab {
+            position:absolute; top:8px; right:8px; z-index:2;
+            width:32px; height:32px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            color:#fff; cursor:pointer;
+        }
+        .ms-card-kebab:hover { background:rgba(255,255,255,.2); }
+        .ms-card-kebab .material-symbols-outlined { font-size:19px; }
+        .ms-card-menu {
+            position:absolute; top:40px; right:8px; z-index:20; min-width:160px;
+            background:#fff; border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.2);
+            border:1px solid ${BORDER}; overflow:hidden; padding:6px;
+        }
+        .ms-card-menu span {
+            display:flex; align-items:center; gap:10px; padding:9px 10px;
+            border-radius:7px; cursor:pointer; font-size:13px; font-weight:600; color:#B91C1C;
+        }
+        .ms-card-menu span:hover { background:#FEE2E2; }
         .ms-card-code {
             font-size:11px; font-weight:700; font-family:ui-monospace, monospace;
             color:rgba(255,255,255,.9); letter-spacing:.6px;
@@ -381,16 +358,9 @@ function styles() {
         .ms-empty-icon { font-size:48px; margin-bottom:12px; }
         .ms-empty-state h2 { font-size:20px; font-weight:700; color:#111; margin:0 0 8px; }
         .ms-empty-state p { font-size:14px; color:${MUTED}; margin:0 0 20px; line-height:1.5; }
-        .ms-no-results {
-            text-align:center; padding:32px; color:#9CA3AF; font-size:14px; margin:0;
-        }
-
         @media (max-width:768px) {
             .ms-hero { padding:22px 20px; }
-            .ms-hero-title { font-size:24px; }
             .ms-grid { grid-template-columns:1fr; }
-            .ms-toolbar { flex-direction:column; align-items:stretch; }
-            .ms-count { text-align:center; }
         }
         @media (min-width:1400px) {
             .ms-grid { grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); }

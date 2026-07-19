@@ -4,11 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <title>COC LMS | PHINMA Cagayan de Oro College</title>
+    <title>Phinmaed Learning | PHINMA Cagayan de Oro College</title>
     <meta name="description" content="The official Learning Management System of PHINMA Cagayan de Oro College.">
-    <link rel="icon" type="image/png" href="assets/images/phinma_logo1.png">
+    <link rel="icon" type="image/png" href="assets/images/app-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00461B">
+    <link rel="apple-touch-icon" href="assets/images/pwa-icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -32,7 +35,7 @@
             --shadow-lg:   0 16px 48px rgba(0,0,0,.14);
         }
         html { scroll-behavior: smooth; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: var(--gray-900); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+        body { font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: var(--gray-900); line-height: 1.6; -webkit-font-smoothing: antialiased; }
         img { display: block; max-width: 100%; }
         a { text-decoration: none; }
 
@@ -59,8 +62,8 @@
         .nav-links a { display: block; padding: 7px 15px; font-size: 13.5px; font-weight: 500; color: var(--gray-700); border-radius: 6px; transition: color .15s, background .15s; }
         .nav-links a:hover { color: var(--green); background: #eef6f1; }
         .nav-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .btn-nav-reg { padding: 9px 20px; background: var(--gold); color: #fff; border: 2px solid var(--gold); border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background .15s, border-color .15s; white-space: nowrap; }
-        .btn-nav-reg:hover { background: var(--gold-dark); border-color: var(--gold-dark); }
+        .btn-nav-reg { padding: 9px 20px; background: transparent; color: var(--gold); border: 2px solid var(--gold); border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background .15s, color .15s; white-space: nowrap; }
+        .btn-nav-reg:hover { background: var(--gold); color: #fff; }
         .btn-nav-login { padding: 9px 20px; background: transparent; color: var(--green); border: 2px solid var(--green); border-radius: 6px; font-size: 13px; font-weight: 700; display: inline-block; white-space: nowrap; transition: background .15s; cursor:pointer; font-family:inherit; }
         .btn-nav-login:hover { background: #eef6f1; }
         .hamburger { display: none; background: none; border: 1.5px solid var(--gray-300); border-radius: 6px; padding: 7px 9px; cursor: pointer; color: var(--gray-700); }
@@ -84,30 +87,34 @@
         }
         .hero-overlay {
             position: absolute; inset: 0;
-            background: linear-gradient(to bottom, rgba(10,32,18,.82) 0%, rgba(10,32,18,.72) 60%, rgba(10,32,18,.90) 100%);
+            background: linear-gradient(to bottom, rgba(0,0,0,.55) 0%, rgba(0,0,0,.42) 55%, rgba(0,0,0,.68) 100%);
+        }
+        .hero-inner {
+            position: relative; z-index: 1;
+            max-width: 860px; width: 100%; margin: 0 auto; padding: 0 28px;
         }
         .hero-content {
-            position: relative; z-index: 1;
-            max-width: 860px; padding: 0 28px;
+            text-align: center;
         }
+
         .hero-badge {
             display: inline-block;
             border: 1.5px solid var(--gold);
-            color: var(--gold); font-size: 11.5px; font-weight: 700;
+            color: var(--gold-dark); font-size: 11.5px; font-weight: 700;
             letter-spacing: 1.5px; text-transform: uppercase;
             padding: 8px 22px; border-radius: 100px;
             margin-bottom: 28px;
             animation: fadeDown .7s ease both; animation-delay: .1s;
         }
         .hero h1 {
-            font-size: clamp(36px, 6vw, 74px); font-weight: 900;
+            font-size: clamp(32px, 5vw, 64px); font-weight: 900;
             line-height: 1.08; letter-spacing: -1.5px; margin-bottom: 22px;
             animation: fadeDown .7s ease both; animation-delay: .25s;
         }
         .hero h1 .white { color: #fff; display: block; }
         .hero h1 .gold  { color: var(--gold); display: block; }
         .hero-desc {
-            font-size: 17px; color: rgba(255,255,255,.78);
+            font-size: 17px; color: rgba(255,255,255,.85);
             line-height: 1.75; margin-bottom: 44px; max-width: 600px; margin-left: auto; margin-right: auto;
             animation: fadeDown .7s ease both; animation-delay: .4s;
         }
@@ -116,13 +123,13 @@
             animation: fadeDown .7s ease both; animation-delay: .55s;
         }
         .btn-gold {
-            padding: 15px 36px; background: var(--gold); color: var(--green-dark);
+            padding: 15px 36px; background: var(--gold); color: #fff;
             border: 2px solid var(--gold); border-radius: 8px;
             font-size: 15px; font-weight: 800; cursor: pointer;
             font-family: inherit; display: inline-flex; align-items: center; gap: 9px;
             transition: background .15s, transform .12s, box-shadow .15s;
         }
-        .btn-gold:hover { background: var(--gold-light); border-color: var(--gold-light); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(200,148,26,.4); }
+        .btn-gold:hover { background: var(--gold-dark); border-color: var(--gold-dark); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(200,148,26,.35); }
         .btn-ghost-white {
             padding: 15px 32px; background: transparent; color: #fff;
             border: 2px solid rgba(255,255,255,.55); border-radius: 8px;
@@ -167,6 +174,39 @@
         .center-block .sec-kicker { justify-content: center; }
         .center-block .sec-desc   { margin: 0 auto; }
         .gold-divider { width: 56px; height: 3px; background: var(--gold); border-radius: 2px; margin: 18px auto 0; }
+
+        /* ── MOBILE APP PREVIEW ──────────────────────── */
+        .mobile-preview { background: var(--green-dark); overflow: hidden; }
+        .mobile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+        .mp-text .sec-kicker { color: var(--gold-light); }
+        .mp-text .sec-title { color: #fff; }
+        .mp-text .sec-title em { color: var(--gold-light); }
+        .mp-text .sec-desc { color: rgba(255,255,255,.72); }
+        .mp-points { margin-top: 28px; display: flex; flex-direction: column; gap: 16px; }
+        .mp-point { display: flex; gap: 14px; align-items: flex-start; }
+        .mp-point-icon { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,.1); color: var(--gold-light); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .mp-point strong { display: block; font-size: 14px; color: #fff; margin-bottom: 2px; }
+        .mp-point span { font-size: 13px; color: rgba(255,255,255,.6); }
+        .mp-visual { display: flex; align-items: center; justify-content: center; }
+        .phone-mockup {
+            width: 240px; background: #111; border-radius: 34px; padding: 12px 10px;
+            box-shadow: 0 30px 70px rgba(0,0,0,.45);
+        }
+        .phone-notch { width: 70px; height: 18px; background: #111; border-radius: 0 0 12px 12px; margin: 0 auto 8px; position: relative; z-index: 2; }
+        .phone-screen { background: #fff; border-radius: 22px; overflow: hidden; margin-top: -18px; }
+        .phone-topbar { background: var(--green); padding: 22px 14px 12px; }
+        .phone-topbar span { display: block; height: 8px; width: 70%; background: rgba(255,255,255,.85); border-radius: 4px; margin-bottom: 6px; }
+        .phone-topbar small { display: block; height: 6px; width: 40%; background: rgba(255,255,255,.45); border-radius: 3px; }
+        .phone-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        .phone-card { background: var(--gray-100); border-radius: 10px; padding: 10px; display: flex; align-items: center; gap: 8px; }
+        .phone-card-icon { width: 26px; height: 26px; border-radius: 7px; background: var(--gold); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .phone-card-lines { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+        .phone-card-lines span { display: block; height: 5px; border-radius: 3px; background: var(--gray-300); }
+        .phone-card-lines span:last-child { width: 55%; }
+        .phone-nav { display: flex; justify-content: space-around; padding: 12px 8px; border-top: 1px solid var(--gray-100); }
+        .phone-nav span { width: 20px; height: 20px; border-radius: 6px; background: var(--gray-200); display: block; }
+        .phone-nav span.active { background: var(--green); }
+        @media (max-width: 860px) { .mobile-grid { grid-template-columns: 1fr; gap: 40px; text-align: center; } .mp-point { text-align: left; } }
 
         /* â”€â”€ ABOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .about { background: #fff; }
@@ -322,13 +362,13 @@
         @keyframes bdFadeIn { from{opacity:0;} to{opacity:1;} }
         .reg-modal { background:#fff; border-radius:16px; width:100%; max-width:700px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 32px 80px rgba(0,0,0,.32); animation:modalSlide .22s cubic-bezier(.4,0,.2,1); }
         @keyframes modalSlide { from{opacity:0;transform:translateY(24px) scale(.97);} to{opacity:1;transform:translateY(0) scale(1);} }
-        .modal-hdr { background:var(--green); border-radius:16px 16px 0 0; padding:22px 28px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:3px solid var(--gold); }
+        .modal-hdr { background:#fff; border-radius:16px 16px 0 0; padding:20px 28px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:1.5px solid var(--gray-200); }
         .modal-hdr img { width:44px; height:44px; object-fit:contain; flex-shrink:0; }
         .modal-hdr-text { flex:1; }
-        .modal-hdr-text h2 { font-size:17px; font-weight:800; color:#fff; line-height:1.2; margin-bottom:2px; }
-        .modal-hdr-text p  { font-size:12px; color:rgba(255,255,255,.7); }
-        .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
-        .modal-close:hover { background:rgba(200,148,26,.4); color:#fff; }
+        .modal-hdr-text h2 { font-size:17px; font-weight:800; color:var(--green); line-height:1.2; margin-bottom:2px; }
+        .modal-hdr-text p  { font-size:12px; color:var(--gray-500); }
+        .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:var(--gray-100); color:var(--gray-600); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
+        .modal-close:hover { background:var(--gray-200); }
         .modal-tabs { display:flex; border-bottom:1.5px solid var(--gray-200); flex-shrink:0; }
         .modal-tab { flex:1; padding:13px 20px; border:none; background:transparent; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; color:var(--gray-500); border-bottom:3px solid transparent; margin-bottom:-1.5px; transition:all .15s; }
         .modal-tab:hover { color:var(--green); }
@@ -454,32 +494,12 @@
 </head>
 <body>
 
-<!-- TOPBAR -->
-<div class="topbar">
-    <div class="topbar-inner">
-        <div class="tb-left">
-            <div class="tb-item">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                Max Suniel St. Carmen, Cagayan de Oro City 9000
-            </div>
-            <div class="tb-item">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg>
-                (088) 880-8420
-            </div>
-        </div>
-        <div class="tb-right">
-            <a href="mailto:info@coc.phinma.edu.ph">info@coc.phinma.edu.ph</a>
-            <div class="tb-divider"></div>
-            <a href="#" onclick="openSignIn();return false;">Student Portal</a>
-        </div>
-    </div>
-</div>
 
 <!-- NAVBAR -->
 <nav class="navbar" id="navbar">
     <div class="nav-inner">
         <a href="#" class="nav-brand">
-            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="nav-brand-text">
                 <span class="nav-brand-name">Cagayan de Oro College</span>
                 <span class="nav-brand-sub">PHINMA Education Network</span>
@@ -487,12 +507,10 @@
         </a>
         <ul class="nav-links">
             <li><a href="#about">About</a></li>
-            <li><a href="#campuses">Campuses</a></li>
-            <li><a href="#features">Features</a></li>
             <li><a href="#programs">Programs</a></li>
         </ul>
         <div class="nav-actions">
-            <button class="btn-nav-reg" onclick="openReg()">Create Account</button>
+            <button class="btn-nav-reg" onclick="openReg()">Register Here</button>
                 <button class="btn-nav-login" onclick="openSignIn()">Sign In</button>
         </div>
         <button class="hamburger" id="hamburger" aria-label="Menu">
@@ -506,11 +524,9 @@
 <!-- MOBILE NAV -->
 <div class="mobile-nav" id="mobile-nav">
     <a href="#about"    onclick="closeNav()">About</a>
-    <a href="#campuses" onclick="closeNav()">Campuses</a>
-    <a href="#features" onclick="closeNav()">Features</a>
     <a href="#programs" onclick="closeNav()">Programs</a>
     <div class="mobile-nav-btns">
-        <button class="btn-nav-reg" onclick="closeNav();openReg()">Create Account</button>
+        <button class="btn-nav-reg" onclick="closeNav();openReg()">Register Here</button>
                 <button class="btn-nav-login" onclick="closeNav();openSignIn()">Sign In</button>
     </div>
 </div>
@@ -519,18 +535,19 @@
 <section class="hero" id="home">
     <div class="hero-bg"></div>
     <div class="hero-overlay"></div>
-    <div class="hero-content">
-        <div class="hero-badge">Welcome to the Future of Learning</div>
-        <h1>
-            <span class="white">Learning</span>
-            <span class="gold">Management System</span>
-        </h1>
-        <p class="hero-desc">Empowering higher education through smart learning, automated assessments, and seamless real-time communication for the PHINMA COC community.</p>
-        <div class="hero-btns">
-            <button class="btn-gold" onclick="openReg()">
-                Create Account
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </button>
+    <div class="hero-inner">
+        <div class="hero-content">
+            <h1>
+                <span class="white">Learning</span>
+                <span class="gold">Management System</span>
+            </h1>
+            <p class="hero-desc">Empowering higher education through smart learning, automated assessments, and seamless real-time communication for the PHINMA COC community.</p>
+            <div class="hero-btns">
+                <button class="btn-gold" onclick="openReg()">
+                    Register Here
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </button>
+            </div>
         </div>
     </div>
     <div class="hero-scroll">
@@ -569,10 +586,10 @@
                 </div>
             </div>
             <div data-anim="right">
-                <div class="sec-kicker"><span class="sec-kicker-line"></span> About COC LMS</div>
+                <div class="sec-kicker"><span class="sec-kicker-line"></span> About Phinmaed Learning</div>
                 <h2 class="sec-title">A Smarter Way to<br><em>Learn and Teach</em></h2>
                 <div class="gold-divider" style="margin:0 0 20px;"></div>
-                <p class="sec-desc">COC LMS is the official digital learning hub of PHINMA Cagayan de Oro College &mdash; connecting students, instructors, and administrators across all three campuses in one seamless platform.</p>
+                <p class="sec-desc">Phinmaed Learning is the official digital learning hub of PHINMA Cagayan de Oro College &mdash; connecting students, instructors, and administrators across all three campuses in one seamless platform.</p>
                 <div class="about-points">
                     <div class="about-point">
                         <div class="ap-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
@@ -597,152 +614,57 @@
     </div>
 </section>
 
-<!-- CAMPUSES -->
-<section class="section campuses" id="campuses">
+<!-- MOBILE APP PREVIEW -->
+<section class="section mobile-preview">
     <div class="sec-inner">
-        <div class="center-block" data-anim="up">
-            <div class="sec-kicker"><span class="sec-kicker-line"></span> Our Campuses <span class="sec-kicker-line"></span></div>
-            <h2 class="sec-title">Three Campuses, <em>One Community</em></h2>
-            <div class="gold-divider"></div>
-            <p class="sec-desc" style="margin-top:16px;">PHINMA COC operates across Northern Mindanao, with each campus offering complete academic facilities and a dedicated community of faculty and students.</p>
-        </div>
-        <div class="campus-grid">
-            <div class="campus-card" data-anim="up" data-delay="1">
-                <div class="campus-photo">
-                    <img src="assets/images/campus-building.jpg" alt="Carmen Campus">
-                    <div class="campus-photo-overlay"></div>
-                    <div class="campus-label"><h3>Carmen Campus</h3><p>Main Campus</p></div>
-                </div>
-                <div class="campus-body">
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Max Suniel Street, Carmen, Cagayan de Oro City, 9000, Misamis Oriental</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0917-376-5105 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
-                    <span class="campus-tag">Established 1948</span>
-                </div>
-            </div>
-            <div class="campus-card" data-anim="up" data-delay="3">
-                <div class="campus-photo">
-                    <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2023/08/369054271_620105453631752_5866736303991850769_n.jpg" alt="Iligan Campus" crossorigin="anonymous">
-                    <div class="campus-photo-overlay"></div>
-                    <div class="campus-label"><h3>Iligan Campus</h3><p>City of Majestic Waterfalls</p></div>
-                </div>
-                <div class="campus-body">
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Pedro Permites Rd., Brgy. Pala-o, Iligan City</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0927-120-9941 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
-                    <span class="campus-tag">New 8-Storey Building</span>
+        <div class="mobile-grid">
+            <div class="mp-text" data-anim="left">
+                <div class="sec-kicker"><span class="sec-kicker-line"></span> Take It With You</div>
+                <h2 class="sec-title">Learning That <em>Goes With You</em></h2>
+                <p class="sec-desc">Phinmaed Learning brings lessons, quizzes, grades, enrollment, and messaging together in one connected system — so students, instructors, and admins can teach, learn, and track progress from anywhere, on any device.</p>
+                <div class="mp-points">
+                    <div class="mp-point">
+                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
+                        <div><strong>Works on Any Device</strong><span>Phone, tablet, or desktop — same account, same data.</span></div>
+                    </div>
+                    <div class="mp-point">
+                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+                        <div><strong>Instant Notifications</strong><span>Never miss an announcement, quiz, or message.</span></div>
+                    </div>
+                    <div class="mp-point">
+                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+                        <div><strong>Works Offline Too</strong><span>Keep learning even with a spotty connection.</span></div>
+                    </div>
                 </div>
             </div>
-            <div class="campus-card" data-anim="up" data-delay="5">
-                <div class="campus-photo">
-                    <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2026/05/image-55.png?resize=1024%2C675&ssl=1" alt="Puerto Campus" crossorigin="anonymous">
-                    <div class="campus-photo-overlay"></div>
-                    <div class="campus-label"><h3>Puerto Campus</h3><p>Cagayan de Oro City</p></div>
-                </div>
-                <div class="campus-body">
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> Purok 6, Puerto, Cagayan de Oro City, 9000, Misamis Oriental</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.52 2 2 0 0 1 3.58 1.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6 6l1.02-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.72 17Z"/></svg> 0916-131-8980 &nbsp;|&nbsp; (088) 858-5867 to 69</div>
-                    <div class="campus-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> info.coc@phinmaed.com</div>
-                    <span class="campus-tag">New 6-Storey Building 2026</span>
+            <div class="mp-visual" data-anim="right">
+                <div class="phone-mockup">
+                    <div class="phone-notch"></div>
+                    <div class="phone-screen">
+                        <div class="phone-topbar"><span></span><small></small></div>
+                        <div class="phone-body">
+                            <div class="phone-card">
+                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                <div class="phone-card-lines"><span></span><span></span></div>
+                            </div>
+                            <div class="phone-card">
+                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                <div class="phone-card-lines"><span></span><span></span></div>
+                            </div>
+                            <div class="phone-card">
+                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
+                                <div class="phone-card-lines"><span></span><span></span></div>
+                            </div>
+                        </div>
+                        <div class="phone-nav">
+                            <span class="active"></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </section>
-</section>
-<!-- FEATURES -->
-<section class="section features" id="features">
-    <div class="sec-inner">
-        <div class="center-block" data-anim="up">
-            <div class="sec-kicker"><span class="sec-kicker-line"></span> Platform Features <span class="sec-kicker-line"></span></div>
-            <h2 class="sec-title">Everything You Need <em>in One Place</em></h2>
-            <div class="gold-divider"></div>
-        </div>
-
-        <div class="feat-layout">
-
-            <!-- LEFT: explanation -->
-            <div class="feat-left" data-anim="left">
-                <div class="fl-kicker"><span></span> What is COC LMS?</div>
-                <h3>A Learning Management<br>System built for <em>PHINMA COC</em></h3>
-                <p>LMS stands for <strong>Learning Management System</strong> &mdash; a digital platform where all academic activity happens in one place. COC LMS is the official platform of PHINMA Cagayan de Oro College, designed to make teaching and learning more structured, efficient, and accessible.</p>
-                <p style="font-size:14px;color:#4a5568;line-height:1.75;margin-bottom:28px;">Whether you are a student submitting outputs, an instructor managing grades, or an admin overseeing enrollment &mdash; COC LMS is your single workspace for everything academic.</p>
-                <!-- AI card -->
-                <div class="feat-ai-card">
-                    <div class="fai-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    </div>
-                    <div>
-                        <div class="fai-tag">AI-Powered</div>
-                        <h4>AI Learning Assistant</h4>
-                        <p>An intelligent study companion built into the platform &mdash; ask questions, get guidance, and receive tailored support anytime.</p>
-                    </div>
-                </div>
-            </div>
-            <!-- RIGHT: feature card stack -->
-            <div class="feat-right" data-anim="right">
-
-                <div class="fi-card">
-                    <div class="fi-card-icon fi-dark">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                    </div>
-                    <div class="fi-card-text">
-                        <h4>Online Lessons</h4>
-                        <p>Structured modules with video content, materials, and real-time progress tracking.</p>
-                    </div>
-                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-
-                <div class="fi-card">
-                    <div class="fi-card-icon fi-dark">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                    </div>
-                    <div class="fi-card-text">
-                        <h4>Quizzes &amp; Assessments</h4>
-                        <p>Auto-graded quizzes with timers and anti-cheat measures for fair evaluations.</p>
-                    </div>
-                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-
-                <div class="fi-card">
-                    <div class="fi-card-icon fi-dark">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    </div>
-                    <div class="fi-card-text">
-                        <h4>Grade Management</h4>
-                        <p>Live gradebook for instructors with real-time visibility for every enrolled student.</p>
-                    </div>
-                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-
-                <div class="fi-card">
-                    <div class="fi-card-icon fi-dark">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    </div>
-                    <div class="fi-card-text">
-                        <h4>Messaging System</h4>
-                        <p>Direct messages and announcements between students and instructors.</p>
-                    </div>
-                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-
-                <div class="fi-card">
-                    <div class="fi-card-icon fi-dark">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    </div>
-                    <div class="fi-card-text">
-                        <h4>Class Enrollment</h4>
-                        <p>Seamless online enrollment with section management, offerings, and enrollment codes.</p>
-                    </div>
-                    <svg class="fi-card-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
-
-            </div>
-            </div>
-        </div>
-    </div>
-</section>
-
 
 <!-- PROGRAMS -->
 <section class="section programs" id="programs">
@@ -885,7 +807,7 @@
         <div class="footer-grid">
             <div>
                 <div class="footer-brand-row">
-                    <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+                    <img src="assets/images/app-icon.png" alt="COC Seal">
                     <div>
                         <span class="footer-brand-name">Cagayan de Oro College</span>
                         <span class="footer-brand-sub">PHINMA Education Network</span>
@@ -929,61 +851,149 @@
 <!-- REGISTRATION MODAL -->
 <div class="modal-backdrop" id="reg-backdrop" onclick="if(event.target===this)closeReg()">
     <div class="reg-modal">
+        <!-- Header -->
         <div class="modal-hdr">
-            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
-                <h2>Create Your LMS Account</h2>
-                <p>PHINMA Cagayan de Oro College &mdash; Student Registration</p>
+                <h2 id="reg-modal-title">Create Your LMS Account</h2>
+                <p id="reg-modal-sub">PHINMA Cagayan de Oro College &mdash; Student Registration</p>
             </div>
             <button class="modal-close" onclick="closeReg()">&#x2715;</button>
         </div>
+
+        <!-- Step tracker -->
+        <div style="padding:20px 32px 16px;border-bottom:1.5px solid var(--gray-200);flex-shrink:0;">
+            <div style="display:flex;align-items:center;justify-content:center;">
+
+                <!-- Step 1 -->
+                <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:72px;">
+                    <div id="reg-ind-1" style="width:36px;height:36px;border-radius:50%;background:var(--green);color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s;border:2.5px solid var(--green);">1</div>
+                    <span id="reg-lbl-1" style="font-size:11px;font-weight:700;color:var(--green);text-align:center;letter-spacing:.3px;">Terms</span>
+                </div>
+
+                <!-- Connector 1→2 -->
+                <div style="flex:1;height:3px;background:var(--gray-200);border-radius:2px;margin-bottom:18px;position:relative;overflow:hidden;">
+                    <div id="reg-line-1" style="position:absolute;left:0;top:0;height:100%;width:0%;background:var(--green);transition:width .35s ease;border-radius:2px;"></div>
+                </div>
+
+                <!-- Step 2 -->
+                <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:72px;">
+                    <div id="reg-ind-2" style="width:36px;height:36px;border-radius:50%;background:#fff;color:var(--gray-400);font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s;border:2.5px solid var(--gray-300);">2</div>
+                    <span id="reg-lbl-2" style="font-size:11px;font-weight:700;color:var(--gray-400);text-align:center;letter-spacing:.3px;">Details</span>
+                </div>
+
+                <!-- Connector 2→3 -->
+                <div style="flex:1;height:3px;background:var(--gray-200);border-radius:2px;margin-bottom:18px;position:relative;overflow:hidden;">
+                    <div id="reg-line-2" style="position:absolute;left:0;top:0;height:100%;width:0%;background:var(--green);transition:width .35s ease;border-radius:2px;"></div>
+                </div>
+
+                <!-- Step 3 -->
+                <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:72px;">
+                    <div id="reg-ind-3" style="width:36px;height:36px;border-radius:50%;background:#fff;color:var(--gray-400);font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s;border:2.5px solid var(--gray-300);">3</div>
+                    <span id="reg-lbl-3" style="font-size:11px;font-weight:700;color:var(--gray-400);text-align:center;letter-spacing:.3px;">Verify</span>
+                </div>
+
+            </div>
+        </div>
+
         <div class="modal-body">
             <div class="rmsg" id="rmsg" role="alert"></div>
-            <form id="form-register" onsubmit="submitReg(event)" novalidate>
-                <div class="rrow">
-                    <div class="rf"><label class="rl" for="r-fn">First Name <span class="req">*</span></label><input class="ri" type="text" id="r-fn" placeholder="Juan" required maxlength="80" autocomplete="given-name"></div>
-                    <div class="rf"><label class="rl" for="r-mn">Middle Name</label><input class="ri" type="text" id="r-mn" placeholder="Santos (optional)" maxlength="80" autocomplete="additional-name"></div>
-                </div>
-                <div class="rrow">
-                    <div class="rf"><label class="rl" for="r-ln">Last Name <span class="req">*</span></label><input class="ri" type="text" id="r-ln" placeholder="Dela Cruz" required maxlength="80" autocomplete="family-name"></div>
-                    <div class="rf"><label class="rl" for="r-sx">Extension / Suffix</label><input class="ri" type="text" id="r-sx" placeholder="Jr., Sr., III… (optional)" maxlength="20" autocomplete="honorific-suffix"></div>
-                </div>
-                <div class="rrow">
-                    <div class="rf"><label class="rl" for="r-em">Email Address <span class="req">*</span></label><input class="ri" type="email" id="r-em" placeholder="juan@email.com" required maxlength="120" autocomplete="email"></div>
-                    <div class="rf"><label class="rl" for="r-ph">Mobile Number <span class="req">*</span></label><input class="ri" type="tel" id="r-ph" placeholder="09XX XXX XXXX" required maxlength="15" autocomplete="tel"></div>
-                </div>
-                <div class="rrow s1">
-                    <div class="rf">
-                        <label class="rl" for="r-sid">Student ID <span style="font-weight:400;color:#6b7a8d;font-size:11px;">&mdash; leave blank if you do not have one yet</span></label>
-                        <input class="ri" type="text" id="r-sid" placeholder="e.g. 2024-00001 (optional)" maxlength="30" autocomplete="off">
-                        <span class="rf-hint">If left blank, a Student ID will be generated and sent to your email along with your login credentials.</span>
-                    </div>
-                </div>
-                <div class="rrow">
-                    <div class="rf"><label class="rl" for="r-ca">Campus <span class="req">*</span></label><select class="rs" id="r-ca" required><option value="">Select Campus</option><option>Carmen</option><option>Iligan</option><option>Puerto</option></select></div>
-                    <div class="rf"><label class="rl" for="r-co">College <span class="req">*</span></label><select class="rs" id="r-co" required onchange="loadRegPrograms(this)"><option value="">Select College</option><option value="CIT">College of Information Technology (CIT)</option><option value="CEA">College of Engineering and Architecture (CEA)</option><option value="COE">College of Education (COE)</option><option value="CAHS">College of Allied Health Sciences (CAHS)</option><option value="CMA">College of Management and Accountancy (CMA)</option><option value="SCCJ">School of Criminology and Criminal Justice (SCCJ)</option></select></div>
-                </div>
-                <div class="rrow s1">
-                    <div class="rf"><label class="rl" for="r-pg">Program <span class="req">*</span></label><select class="rs" id="r-pg" required><option value="">Select a College first</option></select></div>
-                </div>
-                <!-- Terms of Use & Privacy Policy -->
+
+            <!-- ── STEP 1: Terms ─────────────────────────── -->
+            <div id="reg-step-1">
+                <p style="font-size:13.5px;color:var(--gray-600);margin-bottom:14px;line-height:1.6;">Before creating your account, please read and accept our Terms of Use and Privacy Policy.</p>
                 <div class="terms-box">
                     <div class="terms-scroll">
                         <h5>Terms of Use</h5>
-                        <p>By creating an account on COC LMS, you agree to use the platform solely for academic purposes as a student, instructor, or staff of PHINMA Cagayan de Oro College. You are responsible for maintaining the confidentiality of your login credentials. Unauthorized access, sharing of accounts, academic dishonesty, or misuse of the platform is strictly prohibited and may result in account suspension.</p>
+                        <p>By creating an account on Phinmaed Learning, you agree to use the platform solely for academic purposes as a student, instructor, or staff of PHINMA Cagayan de Oro College. You are responsible for maintaining the confidentiality of your login credentials. Unauthorized access, sharing of accounts, academic dishonesty, or misuse of the platform is strictly prohibited and may result in account suspension.</p>
                         <h5>Privacy Policy</h5>
-                        <p>PHINMA Cagayan de Oro College collects your personal information (name, email, student ID, mobile number, and academic details) solely for the purpose of managing your academic account on COC LMS. Your data will not be shared with third parties without your consent, except as required by law. You have the right to request access, correction, or deletion of your data by contacting info.coc@phinmaed.com.</p>
+                        <p>PHINMA Cagayan de Oro College collects your personal information (name, email, student ID, and academic details) solely for managing your academic account on Phinmaed Learning. Your data will not be shared with third parties without your consent, except as required by law. You have the right to request access, correction, or deletion of your data by contacting info.coc@phinmaed.com.</p>
                     </div>
                     <div class="terms-accept">
-                        <input type="checkbox" id="r-ag" required>
-                        <label for="r-ag">I have read and agree to the <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a> of COC LMS.</label>
+                        <input type="checkbox" id="r-agree">
+                        <label for="r-agree">I have read and agree to the <a href="#" onclick="return false;">Terms of Use</a> and <a href="#" onclick="return false;">Privacy Policy</a> of Phinmaed Learning.</label>
                     </div>
                 </div>
-            </form>
+            </div>
+
+            <!-- ── STEP 2: Registration form ─────────────── -->
+            <div id="reg-step-2" style="display:none;">
+                <form id="form-register" onsubmit="submitRegRequest(event)" novalidate>
+                    <div class="rrow">
+                        <div class="rf"><label class="rl" for="r-fn">First Name <span class="req">*</span></label><input class="ri" type="text" id="r-fn" placeholder="Juan" required maxlength="80" autocomplete="given-name"></div>
+                        <div class="rf"><label class="rl" for="r-mn">Middle Name</label><input class="ri" type="text" id="r-mn" placeholder="Santos (optional)" maxlength="80" autocomplete="additional-name"></div>
+                    </div>
+                    <div class="rrow">
+                        <div class="rf"><label class="rl" for="r-ln">Last Name <span class="req">*</span></label><input class="ri" type="text" id="r-ln" placeholder="Dela Cruz" required maxlength="80" autocomplete="family-name"></div>
+                        <div class="rf"><label class="rl" for="r-sx">Extension / Suffix</label><input class="ri" type="text" id="r-sx" placeholder="Jr., Sr., III… (optional)" maxlength="20" autocomplete="honorific-suffix"></div>
+                    </div>
+                    <div class="rrow s1">
+                        <div class="rf">
+                            <label class="rl" for="r-em">Email Address <span class="req">*</span></label>
+                            <input class="ri" type="email" id="r-em" placeholder="your@email.com" required maxlength="120" autocomplete="email">
+                            <span class="rf-hint">Any email address — your verification code and Student ID will be sent here.</span>
+                        </div>
+                    </div>
+                    <div class="rrow s1">
+                        <div class="rf">
+                            <label class="rl" for="r-sid">Student ID</label>
+                            <input class="ri" type="text" id="r-sid" placeholder="e.g. 2024-00001 (numbers and dashes only)" maxlength="30" autocomplete="off">
+                            <div class="ragree" style="margin-top:8px;margin-bottom:0;">
+                                <input type="checkbox" id="r-no-id" onchange="toggleNoStudentId(this)">
+                                <label for="r-no-id" style="font-size:12.5px;color:var(--gray-700);font-weight:600;">I do not have a Student ID yet &mdash; assign one automatically</label>
+                            </div>
+                            <span class="rf-hint" id="r-sid-hint" style="display:none;color:#16a34a;">&#10003; A Student ID will be auto-generated and sent to your email.</span>
+                        </div>
+                    </div>
+                    <div class="rrow">
+                        <div class="rf">
+                            <label class="rl" for="r-ca">Campus <span class="req">*</span></label>
+                            <select class="rs" id="r-ca" required><option value="">Loading campuses…</option></select>
+                        </div>
+                        <div class="rf">
+                            <label class="rl" for="r-co">College <span class="req">*</span></label>
+                            <select class="rs" id="r-co" required onchange="regFilterPrograms()"><option value="">Loading…</option></select>
+                        </div>
+                    </div>
+                    <div class="rrow s1">
+                        <div class="rf">
+                            <label class="rl" for="r-pg">Program <span class="req">*</span></label>
+                            <select class="rs" id="r-pg" required><option value="">Select a College first</option></select>
+                        </div>
+                    </div>
+                    <div id="r-major-row" class="rrow s1" style="display:none;">
+                        <div class="rf">
+                            <label class="rl" for="r-mj">Major / Specialization <span class="req">*</span></label>
+                            <select class="rs" id="r-mj" required><option value="">Select major</option></select>
+                        </div>
+                    </div>
+                    <div class="rdivider">Password</div>
+                    <div class="rrow">
+                        <div class="rf"><label class="rl" for="r-pw">Password <span class="req">*</span></label><input class="ri" type="password" id="r-pw" placeholder="Min. 8 characters" required maxlength="128" autocomplete="new-password"></div>
+                        <div class="rf"><label class="rl" for="r-cpw">Confirm Password <span class="req">*</span></label><input class="ri" type="password" id="r-cpw" placeholder="Repeat your password" required maxlength="128" autocomplete="new-password"></div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ── STEP 3: OTP Verification ──────────────── -->
+            <div id="reg-step-3" style="display:none;text-align:center;padding:12px 0;">
+                <div style="width:64px;height:64px;border-radius:50%;background:#f0fdf4;border:2px solid #bbf7d0;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;color:#16a34a;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                </div>
+                <h3 style="font-size:16px;font-weight:800;color:var(--green);margin:0 0 8px;">Check Your Email</h3>
+                <p style="font-size:13.5px;color:var(--gray-600);margin:0 0 4px;">A 6-digit verification code was sent to</p>
+                <p style="font-size:14px;font-weight:700;color:var(--gray-900);margin:0 0 20px;" id="reg-masked-email"></p>
+                <input class="fp-otp-input" type="text" id="reg-otp" placeholder="&mdash; &mdash; &mdash; &mdash; &mdash; &mdash;" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="margin-bottom:10px;">
+                <p id="reg-otp-timer" style="font-size:12px;color:var(--gray-500);margin:0 0 14px;"></p>
+                <div id="reg-otp-msg"></div>
+            </div>
         </div>
-        <div class="modal-ft">
-            <button class="btn-cancel" onclick="closeReg()">Cancel</button>
-            <button class="btn-submit" id="btn-submit" onclick="document.getElementById('form-register').requestSubmit()">Create Account</button>
+
+        <!-- Footer -->
+        <div class="modal-ft" id="reg-modal-ft">
+            <button class="btn-cancel" id="reg-btn-back" onclick="regGoBack()" style="display:none;">&#8592; Back</button>
+            <button class="btn-cancel" id="reg-btn-cancel" onclick="closeReg()">Cancel</button>
+            <button class="btn-submit" id="reg-btn-next" onclick="regNext()">I Agree &amp; Continue</button>
         </div>
     </div>
 </div>
@@ -992,7 +1002,7 @@
 <div class="modal-backdrop" id="signin-backdrop" onclick="if(event.target===this)closeSignIn()">
     <div class="reg-modal" style="max-width:480px;">
         <div class="modal-hdr">
-            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
                 <h2>Welcome Back!</h2>
                 <p>Sign in to continue to your home page</p>
@@ -1049,7 +1059,7 @@
                 <button type="submit" class="si-btn">Sign In</button>
             </form>
 
-            <p class="si-switch">No account? <button type="button" class="si-switch-link" onclick="closeSignIn();openReg()">Go to Create Account</button></p>
+            <p class="si-switch">No account? <button type="button" class="si-switch-link" onclick="closeSignIn();openReg()">Go to Register Here</button></p>
         </div>
     </div>
 </div>
@@ -1058,7 +1068,7 @@
 <div class="modal-backdrop" id="fp-backdrop" onclick="if(event.target===this)closeForgotPw()">
     <div class="reg-modal" style="max-width:480px;">
         <div class="modal-hdr">
-            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
                 <h2>Reset Password</h2>
                 <p id="fp-modal-sub">Enter your registered email or School ID</p>
@@ -1140,7 +1150,7 @@
 <div id="set-password-modal" hidden aria-hidden="true">
     <div class="reg-modal" style="max-width:460px;">
         <div class="modal-hdr">
-            <img src="assets/images/phinma_logo1.png" alt="COC Seal">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
                 <h2>Set Your Password</h2>
                 <p>Secure your account before entering the system</p>
@@ -1203,17 +1213,293 @@
     }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
     document.querySelectorAll('[data-anim]').forEach(el => animObs.observe(el));
 
-    // Registration modal
-    function openReg()  { document.getElementById('reg-backdrop').classList.add('open'); document.body.style.overflow='hidden'; clearMsg(); }
-    function closeReg() { document.getElementById('reg-backdrop').classList.remove('open'); document.body.style.overflow=''; }
+    // ── Registration modal (3-step) ─────────────────────────────
+    let regStep = 1;
+    let regToken = null;
+    let regOtpTimerInterval = null;
+    let regCatalog = [];
+
+    function openReg() {
+        regStep = 1;
+        regToken = null;
+        clearInterval(regOtpTimerInterval);
+        document.getElementById('reg-backdrop').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        clearMsg();
+        regSetStep(1);
+        regLoadCatalog();
+    }
+    function closeReg() {
+        document.getElementById('reg-backdrop').classList.remove('open');
+        document.body.style.overflow = '';
+        clearInterval(regOtpTimerInterval);
+    }
+
+    function clearMsg() { const m=document.getElementById('rmsg'); m.className='rmsg'; m.textContent=''; m.style.display='none'; }
+    function showMsg(txt, type) {
+        const m = document.getElementById('rmsg');
+        m.className = 'rmsg ' + type;
+        m.innerHTML = txt;
+        m.style.display = 'block';
+        document.querySelector('#reg-backdrop .modal-body').scrollTop = 0;
+    }
+
+    function regSetStep(n) {
+        regStep = n;
+        document.getElementById('reg-step-1').style.display = n === 1 ? '' : 'none';
+        document.getElementById('reg-step-2').style.display = n === 2 ? '' : 'none';
+        document.getElementById('reg-step-3').style.display = n === 3 ? '' : 'none';
+        clearMsg();
+
+        // Booking-style step tracker
+        [1,2,3].forEach(i => {
+            const circle = document.getElementById('reg-ind-' + i);
+            const label  = document.getElementById('reg-lbl-' + i);
+            const done   = i < n;
+            const active = i === n;
+            if (done) {
+                // Completed: solid green circle with a checkmark
+                circle.style.background    = 'var(--green)';
+                circle.style.borderColor   = 'var(--green)';
+                circle.style.color         = '#fff';
+                circle.innerHTML           = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+                label.style.color          = 'var(--green)';
+            } else if (active) {
+                // Active: gold-bordered green circle
+                circle.style.background    = 'var(--gold)';
+                circle.style.borderColor   = 'var(--gold)';
+                circle.style.color         = '#fff';
+                circle.innerHTML           = String(i);
+                label.style.color          = 'var(--green)';
+                label.style.fontWeight     = '800';
+            } else {
+                // Future: gray
+                circle.style.background    = '#fff';
+                circle.style.borderColor   = 'var(--gray-300)';
+                circle.style.color         = 'var(--gray-400)';
+                circle.innerHTML           = String(i);
+                label.style.color          = 'var(--gray-400)';
+                label.style.fontWeight     = '700';
+            }
+        });
+
+        // Progress lines
+        document.getElementById('reg-line-1').style.width = n > 1 ? '100%' : '0%';
+        document.getElementById('reg-line-2').style.width = n > 2 ? '100%' : '0%';
+
+        const back   = document.getElementById('reg-btn-back');
+        const cancel = document.getElementById('reg-btn-cancel');
+        const next   = document.getElementById('reg-btn-next');
+        next.style.display = '';
+
+        if (n === 1) {
+            back.style.display = 'none'; cancel.style.display = ''; next.textContent = 'I Agree & Continue →';
+        } else if (n === 2) {
+            back.style.display = ''; cancel.style.display = 'none'; next.textContent = 'Send Verification Code →';
+        } else {
+            back.style.display = ''; cancel.style.display = 'none'; next.textContent = 'Verify & Register Here';
+        }
+    }
+
+    function regGoBack() {
+        if (regStep === 2) regSetStep(1);
+        else if (regStep === 3) { clearInterval(regOtpTimerInterval); regSetStep(2); }
+    }
+
+    function regNext() {
+        if (regStep === 1) regProceedTerms();
+        else if (regStep === 2) document.getElementById('form-register').requestSubmit();
+        else if (regStep === 3) regVerifyOtp();
+    }
+
+    function regProceedTerms() {
+        if (!document.getElementById('r-agree').checked) {
+            showMsg('Please read and accept the Terms of Use and Privacy Policy to continue.', 'error');
+            return;
+        }
+        regSetStep(2);
+        setTimeout(() => document.getElementById('r-fn').focus(), 80);
+    }
+
+    function toggleNoStudentId(cb) {
+        const sidInput = document.getElementById('r-sid');
+        const hint = document.getElementById('r-sid-hint');
+        sidInput.disabled = cb.checked;
+        if (cb.checked) { sidInput.value = ''; hint.style.display = ''; }
+        else { hint.style.display = 'none'; }
+    }
+
+    // Load campuses + catalog from API
+    async function regLoadCatalog() {
+        try {
+            const [campRes, catRes] = await Promise.all([
+                fetch('api/AuthAPI.php?action=signup-campuses', { credentials: 'include' }).then(r => r.json()),
+                fetch('api/AuthAPI.php?action=signup-catalog',  { credentials: 'include' }).then(r => r.json()),
+            ]);
+
+            // Campuses
+            const camSel = document.getElementById('r-ca');
+            camSel.innerHTML = '<option value="">Select Campus</option>';
+            (campRes.data?.campuses || []).forEach(c => {
+                const o = document.createElement('option');
+                o.value = c.campus_id; o.textContent = c.campus_name; camSel.appendChild(o);
+            });
+
+            // Colleges
+            regCatalog = catRes.data?.departments || [];
+            const colSel = document.getElementById('r-co');
+            colSel.innerHTML = '<option value="">Select College</option>';
+            regCatalog.forEach(d => {
+                const o = document.createElement('option');
+                o.value = d.department_code; o.textContent = d.department_name; colSel.appendChild(o);
+            });
+        } catch (err) {
+            // Fallback silently — dropdowns will just be empty
+        }
+    }
+
+    function regFilterPrograms() {
+        const code = document.getElementById('r-co').value;
+        const dept = regCatalog.find(d => d.department_code === code);
+        const pgSel = document.getElementById('r-pg');
+        pgSel.innerHTML = '<option value="">Select Program</option>';
+        document.getElementById('r-major-row').style.display = 'none';
+        document.getElementById('r-mj').innerHTML = '<option value="">Select major</option>';
+
+        if (dept) {
+            dept.programs.forEach(p => {
+                const o = document.createElement('option');
+                o.value = p.program_code; o.textContent = p.program_name;
+                o.dataset.majors = JSON.stringify(p.majors || []);
+                pgSel.appendChild(o);
+            });
+        }
+    }
+
+    document.getElementById('r-pg').addEventListener('change', function() {
+        const opt = this.options[this.selectedIndex];
+        const majors = JSON.parse(opt.dataset.majors || '[]');
+        const mjRow = document.getElementById('r-major-row');
+        const mjSel = document.getElementById('r-mj');
+        if (majors.length) {
+            mjRow.style.display = '';
+            mjSel.innerHTML = '<option value="">Select major</option>';
+            majors.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; mjSel.appendChild(o); });
+        } else {
+            mjRow.style.display = 'none';
+            mjSel.innerHTML = '<option value="">Select major</option>';
+        }
+    });
+
+    // Submit registration form → send OTP
+    async function submitRegRequest(e) {
+        e.preventDefault();
+        const btn = document.getElementById('reg-btn-next');
+        btn.disabled = true; btn.textContent = 'Sending…'; clearMsg();
+
+        const noId = document.getElementById('r-no-id').checked;
+        const body = {
+            first_name:       document.getElementById('r-fn').value.trim(),
+            middle_name:      document.getElementById('r-mn').value.trim(),
+            last_name:        document.getElementById('r-ln').value.trim(),
+            suffix:           document.getElementById('r-sx').value.trim(),
+            email:            document.getElementById('r-em').value.trim(),
+            student_id:       noId ? '' : document.getElementById('r-sid').value.trim(),
+            no_student_id:    noId,
+            campus_id:        document.getElementById('r-ca').value,
+            program_code:     document.getElementById('r-pg').value,
+            major:            document.getElementById('r-mj').value || '',
+            password:         document.getElementById('r-pw').value,
+            confirm_password: document.getElementById('r-cpw').value,
+        };
+
+        try {
+            const res = await fetch('api/AuthAPI.php?action=register-request', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify(body),
+            }).then(r => r.json());
+
+            if (!res.success) {
+                showMsg(res.message || 'Registration failed. Please try again.', 'error');
+                return;
+            }
+            regToken = res.data.token;
+            document.getElementById('reg-masked-email').textContent = res.data.masked_email;
+            regSetStep(3);
+            regStartOtpTimer(res.data.expires_at, res.data.expires_in || 120);
+            setTimeout(() => document.getElementById('reg-otp').focus(), 80);
+        } catch (err) {
+            showMsg('Connection error. Please try again.', 'error');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Send Verification Code';
+        }
+    }
+
+    function regStartOtpTimer(expiresAt, expiresIn) {
+        clearInterval(regOtpTimerInterval);
+        const expiresAtMs = expiresAt
+            ? new Date(expiresAt.replace(' ', 'T')).getTime()
+            : Date.now() + expiresIn * 1000;
+        const timerEl = document.getElementById('reg-otp-timer');
+        function tick() {
+            const left = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+            if (left === 0) {
+                timerEl.textContent = 'Code expired. Go back to resend.';
+                timerEl.style.color = '#dc2626';
+                clearInterval(regOtpTimerInterval);
+                return;
+            }
+            const m = Math.floor(left / 60), s = left % 60;
+            timerEl.textContent = 'Expires in ' + (m > 0 ? m + ':' + String(s).padStart(2, '0') : s + 's');
+            timerEl.style.color = left <= 20 ? '#d97706' : '#6b7280';
+        }
+        tick();
+        regOtpTimerInterval = setInterval(tick, 1000);
+    }
+
+    async function regVerifyOtp() {
+        const otp = document.getElementById('reg-otp').value.trim();
+        if (!/^\d{6}$/.test(otp)) { showMsg('Enter the 6-digit code from your email.', 'error'); return; }
+
+        const btn = document.getElementById('reg-btn-next');
+        btn.disabled = true; btn.textContent = 'Verifying…'; clearMsg();
+
+        try {
+            const res = await fetch('api/AuthAPI.php?action=register-verify', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ token: regToken, otp }),
+            }).then(r => r.json());
+
+            if (!res.success) {
+                showMsg(res.message || 'Verification failed. Please try again.', 'error');
+                return;
+            }
+            clearInterval(regOtpTimerInterval);
+            const u = res.data.user;
+            const idLine = u.auto_id ? `<br>Your Student ID: <strong>${u.student_id}</strong>` : '';
+            showMsg(
+                `<strong>Account created!</strong>${idLine}<br>You can now <a href="#" onclick="closeReg();openSignIn();return false;" style="color:var(--green);font-weight:700;">sign in</a> with your Student ID and password.`,
+                'success'
+            );
+            document.getElementById('reg-step-3').style.display = 'none';
+            document.getElementById('reg-btn-next').style.display = 'none';
+            document.getElementById('reg-btn-back').style.display = 'none';
+            document.getElementById('reg-btn-cancel').style.display = '';
+            document.getElementById('reg-btn-cancel').textContent = 'Close';
+        } catch (err) {
+            showMsg('Connection error. Please try again.', 'error');
+        } finally {
+            btn.disabled = false; btn.textContent = 'Verify & Register Here';
+        }
+    }
 
     // Sign In modal
     function openSignIn()  { document.getElementById('signin-backdrop').classList.add('open'); document.body.style.overflow='hidden'; }
     function closeSignIn() { document.getElementById('signin-backdrop').classList.remove('open'); document.body.style.overflow=''; }
 
     document.addEventListener('keydown', e => { if (e.key==='Escape') { closeReg(); closeSignIn(); closeForgotPw(); } });
-
-    function clearMsg() { const m=document.getElementById('rmsg'); m.className='rmsg'; m.textContent=''; }
 
     // Programs carousel
     const carouselEl = document.getElementById('prog-carousel');
@@ -1227,58 +1513,9 @@
     function carouselMove(dir) { carouselEl.scrollBy({ left: dir * CARD_W, behavior:'smooth' }); }
     function carouselGo(idx) { carouselEl.scrollTo({ left: idx * CARD_W, behavior:'smooth' }); }
 
-    // Programs dropdown
-    const PROGRAMS = {
-        CIT:  ['Bachelor of Science in Information Technology'],
-        CEA:  ['Bachelor of Science in Architecture','Bachelor of Science in Civil Engineering','Bachelor of Science in Computer Engineering','Bachelor of Science in Electrical Engineering','Bachelor of Science in Mechanical Engineering'],
-        COE:  ['Bachelor in Early Childhood Education','Bachelor of Secondary Education Major in English','Bachelor of Secondary Education Major in Filipino','Bachelor of Secondary Education Major in Math','Bachelor of Elementary Education'],
-        CAHS: ['Bachelor of Science in Medical Technology','Bachelor of Science in Nursing','Bachelor of Science in Pharmacy','Bachelor of Science in Psychology'],
-        CMA:  ['Bachelor of Science in Accountancy','Bachelor of Science in Business Administration Major in Financial Management','Bachelor of Science in Business Administration Major in Marketing Management','Bachelor of Science in Hospitality Management','Bachelor of Science in Tourism Management','Bachelor of Science in Management Accounting'],
-        SCCJ: ['Bachelor of Science in Criminology'],
-    };
-    function loadRegPrograms(sel) {
-        const pg = document.getElementById('r-pg');
-        pg.innerHTML = '<option value="">Select Program</option>';
-        (PROGRAMS[sel.value]||[]).forEach(p => { const o=document.createElement('option'); o.value=p; o.textContent=p; pg.appendChild(o); });
-    }
-    // keep old loadPrograms alias just in case
-    function loadPrograms(sel) { loadRegPrograms(sel); }
-
-    // Generate Student ID
-    function generateStudentId() {
-        const yr = new Date().getFullYear();
-        const n  = String(Math.floor(10000 + Math.random() * 90000));
-        return `COC-${yr}-${n}`;
-    }
-
-    // Submit registration
-    async function submitReg(e) {
-        e.preventDefault();
-        const btn = document.getElementById('btn-submit');
-        const msg = document.getElementById('rmsg');
-        btn.disabled = true; btn.textContent = 'Submitting...'; clearMsg();
-
-        const sidInput = document.getElementById('r-sid').value.trim();
-        const studentId = sidInput || generateStudentId();
-        const email = document.getElementById('r-em').value.trim();
-        const fn  = document.getElementById('r-fn').value.trim();
-        const mn  = document.getElementById('r-mn').value.trim();
-        const ln  = document.getElementById('r-ln').value.trim();
-        const sx  = document.getElementById('r-sx').value.trim();
-        const name = [fn, mn, ln, sx].filter(Boolean).join(' ');
-
-        await new Promise(r => setTimeout(r, 1000));
-
-        msg.innerHTML = `
-            <strong>Registration successful!</strong><br>
-            Your Student ID is: <strong>${studentId}</strong><br>
-            Your login credentials have been sent to <strong>${email}</strong>. Please check your email to sign in.
-        `;
-        msg.classList.add('success');
-        e.target.reset();
-        btn.disabled = false; btn.textContent = 'Create Account';
-        document.querySelector('#reg-backdrop .modal-body').scrollTop = 0;
-    }
+    // Programs carousel dropdown (keep for page display)
+    function loadRegPrograms(sel) {}
+    function loadPrograms(sel) {}
 
     // Sign in modal — CAPTCHA
     let siCaptchaAnswer = 0;
@@ -1667,26 +1904,26 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </div>
         <div class="vc-head-info">
-            <h5>COC LMS Assistant</h5>
-            <span>Ask me anything about COC LMS</span>
+            <h5>Phinmaed Learning Assistant</h5>
+            <span>Ask me anything about Phinmaed Learning</span>
         </div>
         <div class="vc-online"></div>
     </div>
     <div class="vc-msgs" id="vc-msgs">
-        <div class="vc-msg bot">Hello! I am the COC LMS Assistant. How can I help you today?</div>
+        <div class="vc-msg bot">Hello! I am the Phinmaed Learning Assistant. How can I help you today?</div>
     </div>
     <div class="vc-chips" id="vc-chips">
         <button class="vc-chip" onclick="vcAsk('How can I create an account?')">How can I create an account?</button>
         <button class="vc-chip" onclick="vcAsk('What are the requirements to register?')">What are the requirements to register?</button>
-        <button class="vc-chip" onclick="vcAsk('Is COC LMS free to use?')">Is COC LMS free?</button>
-        <button class="vc-chip" onclick="vcAsk('What devices can I use COC LMS on?')">What devices can I use?</button>
+        <button class="vc-chip" onclick="vcAsk('Is Phinmaed Learning free to use?')">Is Phinmaed Learning free?</button>
+        <button class="vc-chip" onclick="vcAsk('What devices can I use Phinmaed Learning on?')">What devices can I use?</button>
         <button class="vc-chip" onclick="vcAsk('How do I enroll in a class?')">How do I enroll in a class?</button>
         <button class="vc-chip" onclick="vcAsk('I forgot my password, what do I do?')">Forgot my password</button>
         <button class="vc-chip" onclick="vcAsk('How do I view my grades?')">How do I view my grades?</button>
         <button class="vc-chip" onclick="vcAsk('How do I contact my instructor?')">How do I contact my instructor?</button>
         <button class="vc-chip" onclick="vcAsk('What colleges and programs are offered?')">What colleges are offered?</button>
         <button class="vc-chip" onclick="vcAsk('Where are the COC campuses located?')">Campus locations?</button>
-        <button class="vc-chip" onclick="vcAsk('Who can use COC LMS?')">Who can use COC LMS?</button>
+        <button class="vc-chip" onclick="vcAsk('Who can use Phinmaed Learning?')">Who can use Phinmaed Learning?</button>
         <button class="vc-chip" onclick="vcAsk('How do I contact COC for help?')">Contact COC support</button>
     </div>
 
@@ -1700,20 +1937,20 @@
 
 <script>
     const vcQA = [
-        { k:['how can i create','create an account','sign up','register','registration','how to join','new account','make an account'], a:'Click the "Create Account" button at the top of this page. You will see two options:\n\n• Already enrolled at COC — fill in your student ID and details to activate your LMS account.\n• New applicant / not yet enrolled — submit a pre-registration form and our admissions team will contact you within 2 to 3 business days.' },
-        { k:['requirement','requirements','need to register','what do i need','documents','needed'], a:'To register on COC LMS you will need:\n\n• A valid COC student ID number (for enrolled students)\n• Your full name, email address, and date of birth\n• Your campus and college/program\n\nNew applicants only need a valid email address and basic personal information to pre-register.' },
-        { k:['free','cost','pay','fee','subscription','price'], a:'Yes, COC LMS is completely free for all enrolled PHINMA COC students, instructors, and staff. There are no subscription fees or hidden charges. Access is provided as part of your enrollment at COC.' },
-        { k:['device','devices','mobile','phone','tablet','laptop','computer','app','browser','android','ios'], a:'COC LMS is fully web-based and works on any device with a modern browser — laptop, desktop, smartphone, or tablet. No app download is required. Simply visit the LMS website and log in from any device.' },
-        { k:['enroll','enrollment','how do i enroll','join class','section','subject','class'], a:'To enroll in a class:\n\n1. Log in to your COC LMS account\n2. Go to the Enrollment section\n3. Select your semester, program, and section\n4. Enter the enrollment code given by your instructor or registrar\n5. Submit your enrollment\n\nContact your registrar if you do not have your enrollment code.' },
-        { k:['forgot','password','reset password','cannot login','lost password','change password'], a:'If you forgot your password:\n\n1. Go to the COC LMS Sign In page\n2. Click "Forgot Password"\n3. Enter your registered email address\n4. Check your email for a password reset link\n\nIf you still cannot access your account, contact your campus registrar or email info.coc@phinmaed.com.' },
-        { k:['view grades','check grades','my grades','grade','gradebook','gwa','result','scores'], a:'To view your grades:\n\n1. Log in to COC LMS\n2. Open the class where you want to check your grade\n3. Click on "Gradebook" or "My Grades"\n\nYour instructor updates grades after each quiz or activity. Contact your instructor directly if you notice any missing or incorrect grade.' },
-        { k:['contact instructor','message instructor','talk to teacher','reach instructor','communicate','messaging'], a:'COC LMS has a built-in messaging system. To contact your instructor:\n\n1. Log in and open your class\n2. Click on the "Messages" or chat icon\n3. Type your message and send\n\nYou can also see class announcements posted by your instructor in the Announcements section.' },
+        { k:['how can i create','create an account','sign up','register','registration','how to join','new account','make an account'], a:'Click the "Register Here" button at the top of this page. You will see two options:\n\n• Already enrolled at COC — fill in your student ID and details to activate your LMS account.\n• New applicant / not yet enrolled — submit a pre-registration form and our admissions team will contact you within 2 to 3 business days.' },
+        { k:['requirement','requirements','need to register','what do i need','documents','needed'], a:'To register on Phinmaed Learning you will need:\n\n• A valid COC student ID number (for enrolled students)\n• Your full name, email address, and date of birth\n• Your campus and college/program\n\nNew applicants only need a valid email address and basic personal information to pre-register.' },
+        { k:['free','cost','pay','fee','subscription','price'], a:'Yes, Phinmaed Learning is completely free for all enrolled PHINMA COC students, instructors, and staff. There are no subscription fees or hidden charges. Access is provided as part of your enrollment at COC.' },
+        { k:['device','devices','mobile','phone','tablet','laptop','computer','app','browser','android','ios'], a:'Phinmaed Learning is fully web-based and works on any device with a modern browser — laptop, desktop, smartphone, or tablet. No app download is required. Simply visit the LMS website and log in from any device.' },
+        { k:['enroll','enrollment','how do i enroll','join class','section','subject','class'], a:'To enroll in a class:\n\n1. Log in to your Phinmaed Learning account\n2. Go to the Enrollment section\n3. Select your semester, program, and section\n4. Enter the enrollment code given by your instructor or registrar\n5. Submit your enrollment\n\nContact your registrar if you do not have your enrollment code.' },
+        { k:['forgot','password','reset password','cannot login','lost password','change password'], a:'If you forgot your password:\n\n1. Go to the Phinmaed Learning Sign In page\n2. Click "Forgot Password"\n3. Enter your registered email address\n4. Check your email for a password reset link\n\nIf you still cannot access your account, contact your campus registrar or email info.coc@phinmaed.com.' },
+        { k:['view grades','check grades','my grades','grade','gradebook','gwa','result','scores'], a:'To view your grades:\n\n1. Log in to Phinmaed Learning\n2. Open the class where you want to check your grade\n3. Click on "Gradebook" or "My Grades"\n\nYour instructor updates grades after each quiz or activity. Contact your instructor directly if you notice any missing or incorrect grade.' },
+        { k:['contact instructor','message instructor','talk to teacher','reach instructor','communicate','messaging'], a:'Phinmaed Learning has a built-in messaging system. To contact your instructor:\n\n1. Log in and open your class\n2. Click on the "Messages" or chat icon\n3. Type your message and send\n\nYou can also see class announcements posted by your instructor in the Announcements section.' },
         { k:['college','colleges','programs','courses','offered','bsit','bsn','architecture','engineering','education','criminology','cit','cea','coe','cahs','cma','sccj'], a:'COC has six colleges:\n\n• CIT — College of Information Technology (BSIT)\n• CEA — College of Engineering and Architecture (BS Architecture, Civil, Computer, Electrical, Mechanical Engineering)\n• COE — College of Education (BEEd, BSEd English/Filipino/Math, BECE)\n• CAHS — College of Allied Health Sciences (Medical Technology, Nursing, Pharmacy, Psychology)\n• CMA — College of Management and Accountancy (Accountancy, BSBA, Hospitality, Tourism)\n• SCCJ — School of Criminology and Criminal Justice (BS Criminology)' },
         { k:['campus','location','where','address','carmen','iligan','puerto','cdo','cagayan'], a:'COC has three campuses:\n\n• Carmen Campus — Max Suniel St., Carmen, Cagayan de Oro 9000 · 0917-376-5105\n• Iligan Campus — Pedro Permites Rd., Brgy. Pala-o, Iligan City · 0927-120-9941\n• Puerto Campus — Purok 6, Puerto, Cagayan de Oro 9000 · 0916-131-8980' },
-        { k:['who can use','who uses','users','for students','for teachers','for faculty','for admin','roles','access'], a:'COC LMS is designed for three types of users:\n\n• Students — access lessons, take quizzes, view grades, enroll in classes, and message instructors\n• Instructors / Faculty — manage lessons, create quizzes, update grades, and communicate with students\n• Administrators / Dean — oversee enrollment, manage users, generate reports, and manage the academic system' },
-        { k:['what is','lms','learning management','platform','coc lms','about coc lms'], a:'COC LMS stands for Learning Management System. It is the official digital academic platform of PHINMA Cagayan de Oro College. It brings together everything needed for teaching and learning — online lessons, quizzes, grades, enrollment, messaging, and an AI assistant — all in one place.' },
-        { k:['quiz','assessment','exam','test','anti-cheat','timer'], a:'COC LMS supports auto-graded quizzes with countdown timers and anti-cheat measures such as tab-switch detection. Your instructor sets the quiz schedule and duration. Results are available immediately after submission.' },
-        { k:['ai','artificial intelligence','ai assistant','smart assistant'], a:'COC LMS includes an AI Learning Assistant available once you are logged in. You can ask it academic questions, get explanations on lessons, and receive personalized study guidance — anytime, anywhere.' },
+        { k:['who can use','who uses','users','for students','for teachers','for faculty','for admin','roles','access'], a:'Phinmaed Learning is designed for three types of users:\n\n• Students — access lessons, take quizzes, view grades, enroll in classes, and message instructors\n• Instructors / Faculty — manage lessons, create quizzes, update grades, and communicate with students\n• Administrators / Dean — oversee enrollment, manage users, generate reports, and manage the academic system' },
+        { k:['what is','lms','learning management','platform','coc lms','about coc lms'], a:'Phinmaed Learning stands for Learning Management System. It is the official digital academic platform of PHINMA Cagayan de Oro College. It brings together everything needed for teaching and learning — online lessons, quizzes, grades, enrollment, messaging, and an AI assistant — all in one place.' },
+        { k:['quiz','assessment','exam','test','anti-cheat','timer'], a:'Phinmaed Learning supports auto-graded quizzes with countdown timers and anti-cheat measures such as tab-switch detection. Your instructor sets the quiz schedule and duration. Results are available immediately after submission.' },
+        { k:['ai','artificial intelligence','ai assistant','smart assistant'], a:'Phinmaed Learning includes an AI Learning Assistant available once you are logged in. You can ask it academic questions, get explanations on lessons, and receive personalized study guidance — anytime, anywhere.' },
         { k:['contact','email','phone','number','reach','help','support','hotline'], a:'For assistance, contact COC through:\n\n• Email: info.coc@phinmaed.com\n• Carmen Campus: 0917-376-5105 · (088) 858-5867\n• Iligan Campus: 0927-120-9941\n• Puerto Campus: 0916-131-8980' },
     ];
 
@@ -1757,6 +1994,31 @@
         div.textContent = text;
         msgs.appendChild(div);
         msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    /* PWA — register here too (not just app/home.html) so offline caching
+       is active from the very first visit, before the user even logs in. */
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js', { scope: './' })
+                .then(reg => {
+                    function showUpdateBar(worker) {
+                        const bar = document.getElementById('pwa-update-bar');
+                        if (bar) bar.style.display = 'flex';
+                        document.getElementById('pwa-update-btn')?.addEventListener('click', () => {
+                            worker.postMessage({ type: 'SKIP_WAITING' });
+                        });
+                    }
+                    if (reg.waiting) showUpdateBar(reg.waiting);
+                    reg.addEventListener('updatefound', () => {
+                        const nw = reg.installing;
+                        nw.addEventListener('statechange', () => {
+                            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar(nw);
+                        });
+                    });
+                }).catch(() => {});
+            navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+        });
     }
 </script>
 </body>

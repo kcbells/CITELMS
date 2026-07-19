@@ -81,14 +81,14 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .an-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .an-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .an-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .an-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
-            .an-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
-            .an-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .an-banner-sub { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
-            .an-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.25); border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
-            .an-back-btn:hover { background:rgba(255,255,255,.25); }
+            .an-banner-inner { display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
+            .an-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
+            .an-banner-sub { font-size:14px; color:#6B7280; margin:0; }
+            .an-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .an-back-btn:hover { background:#d9efe0; }
 
             /* Stat cards */
             .analytics-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:14px; margin-bottom:24px; }
@@ -146,10 +146,6 @@ export async function render(container) {
 
         <div class="an-banner">
             <div class="an-banner-inner">
-                <div>
-                    <h2 class="an-banner-title">Analytics</h2>
-                    <p class="an-banner-sub">Teaching performance and student engagement overview</p>
-                </div>
                 <a href="#instructor/gradebook" class="an-back-btn">
                     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                     Gradebook
@@ -160,49 +156,49 @@ export async function render(container) {
         <!-- Stat Cards -->
         <div class="analytics-grid">
             <div class="an-card">
-                <div class="an-icon" style="background:#e8f5e9;color:#1B4D3E;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
                 </div>
                 <div class="an-num" style="color:#1B4D3E;">${stats.classes||0}</div>
                 <div class="an-label">Classes</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#dbeafe;color:#1e40af;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
                 </div>
                 <div class="an-num" style="color:#1e40af;">${stats.students||0}</div>
                 <div class="an-label">Students</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#e8f5e9;color:#16a34a;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25"/></svg>
                 </div>
                 <div class="an-num" style="color:#16a34a;">${publishedLessons}</div>
                 <div class="an-label">Pub. Lessons</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#ede9fe;color:#6D28D9;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c.98 0 1.813.626 2.122 1.5"/></svg>
                 </div>
                 <div class="an-num" style="color:#6D28D9;">${publishedQuizzes}</div>
                 <div class="an-label">Pub. Quizzes</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#fef3c7;color:#B45309;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>
                 </div>
                 <div class="an-num" style="color:#B45309;">${totalQuestions}</div>
                 <div class="an-label">Questions</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#fee2e2;color:#b91c1c;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
                 </div>
                 <div class="an-num" style="color:#b91c1c;">${totalAttempts}</div>
                 <div class="an-label">Attempts</div>
             </div>
             <div class="an-card">
-                <div class="an-icon" style="background:#e8f5e9;color:#1B4D3E;">
+                <div class="an-icon" style="background:#F3F4F6;color:#111;">
                     <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
                 </div>
                 <div class="an-num" style="color:#1B4D3E;">${overallAvg}${overallAvg !== '—' ? '%' : ''}</div>

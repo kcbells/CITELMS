@@ -726,7 +726,8 @@ function handleInstructorClasses() {
 
     $subjects = db()->fetchAll(
         "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name, s.units,
-                so.subject_offered_id, so.status AS offering_status, p.program_code, p.program_name
+                so.subject_offered_id, so.status AS offering_status, so.grading_type,
+                p.program_code, p.program_name
          FROM subject_offered so
          JOIN subject s ON s.subject_id = so.subject_id
          LEFT JOIN program p ON p.program_id = s.program_id

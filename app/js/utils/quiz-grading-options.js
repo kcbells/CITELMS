@@ -6,9 +6,7 @@ const GRADING_STYLES = `
     .qz-grade-section { margin-bottom:20px; }
     .qz-grade-hdr { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
     .qz-grade-hdr-icon { width:28px; height:28px; border-radius:8px; display:flex; align-items:center;
-        justify-content:center; flex-shrink:0; }
-    .qz-grade-hdr-icon.obj { background:#EFF6FF; color:#1D4ED8; }
-    .qz-grade-hdr-icon.sub { background:#FDF4FF; color:#7C3AED; }
+        justify-content:center; flex-shrink:0; background:#F3F4F6; color:#111; }
     .qz-grade-hdr-text { }
     .qz-grade-hdr-title { font-size:13px; font-weight:700; color:#111827; display:block; }
     .qz-grade-hdr-sub { font-size:11px; color:#9CA3AF; display:block; margin-top:1px; }

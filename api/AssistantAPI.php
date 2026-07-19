@@ -186,7 +186,7 @@ function chat() {
 }
 
 function buildAssistantSystemPrompt(string $role, string $name): string {
-    $base = 'You are Ali, the CIT-LMS AI study assistant — a helpful and friendly tutor for a college learning management system. '
+    $base = 'You are Ali, the Phinmaed Learning AI study assistant — a helpful and friendly tutor for a college learning management system. '
         . 'Keep answers clear, accurate, and well-structured. Use simple language. '
         . 'Base explanations on the lesson content provided in context when available — do not guess or invent facts. '
         . 'If the lesson does not cover something, say so honestly and suggest asking the instructor. '

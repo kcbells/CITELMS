@@ -3,44 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>COC-LMS</title>
-    <link rel="icon" type="image/png" href="../assets/images/phinma_logo2.png">
+    <title>Phinmaed Learning</title>
+    <link rel="icon" type="image/png" href="../assets/images/app-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=Inter:wght@700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <link rel="manifest" href="../manifest.json">
+    <meta name="theme-color" content="#00461B">
+    <link rel="apple-touch-icon" href="../assets/images/pwa-icon-192.png">
     <link rel="stylesheet" href="../css/style.css?v=20260624">
     <style>
-        /* ── Boot loader ── */
+        /* ── Boot loader — white background, ring spinner around the logo ── */
         #app-loading {
             position: fixed;
             inset: 0;
-            background: #0f2e1a;
+            background: #fff;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 24px;
+            gap: 20px;
             z-index: 9999;
-            transition: opacity .45s ease, visibility .45s ease;
+            transition: opacity .4s ease, visibility .4s ease;
         }
         #app-loading.fade-out { opacity: 0; visibility: hidden; pointer-events: none; }
-        .al-logo {
-            width: 72px; height: 72px;
-            border-radius: 50%;
-            background: rgba(255,255,255,.08);
-            padding: 10px;
-            animation: al-pulse 2s ease-in-out infinite;
+        .al-ring {
+            position: relative;
+            width: 84px; height: 84px;
+            display: flex; align-items: center; justify-content: center;
         }
+        .al-ring::before {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: 50%;
+            border: 4px solid #E8F5EC;
+        }
+        .al-ring::after {
+            content: '';
+            position: absolute; inset: 0;
+            border-radius: 50%;
+            border: 4px solid transparent;
+            border-top-color: #00461B;
+            border-right-color: #00461B;
+            animation: al-spin .9s linear infinite;
+        }
+        .al-logo {
+            width: 56px; height: 56px;
+            border-radius: 50%;
+            object-fit: cover;
+            position: relative;
+        }
+        @keyframes al-spin { to { transform: rotate(360deg); } }
         .al-label {
-            color: rgba(255,255,255,.4);
+            color: #9CA3AF;
             font-size: 11px;
             letter-spacing: 2.5px;
             text-transform: uppercase;
             font-family: sans-serif;
         }
-        @keyframes al-pulse {
-            0%,100% { transform:scale(1); opacity:1; }
-            50%      { transform:scale(1.06); opacity:.8; }
-        }
 
-        /* ── Page-transition spinner ── */
+        /* ── Page-transition spinner — small, floating, non-blocking ── */
         .page-spinner {
             display: flex;
             flex-direction: column;
@@ -59,77 +82,38 @@
         }
         @keyframes ps-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
-        /* ── Blade spinner — UIverse by mrhyddenn ── */
         .spinner {
-            font-size: 36px;
-            position: relative;
-            display: inline-block;
-            width: 1em;
-            height: 1em;
+            width: 1em; height: 1em; font-size: 36px;
+            border-radius: 50%;
+            border: .1em solid #E8F5EC;
+            border-top-color: #00461B;
+            animation: spinner-rotate .8s linear infinite;
         }
-        .spinner .spinner-blade {
-            position: absolute;
-            left: 0.4629em;
-            bottom: 0;
-            width: 0.074em;
-            height: 0.2777em;
-            border-radius: 0.0555em;
-            background-color: transparent;
-            transform-origin: center -0.2222em;
-            animation: spinner-fade 1s infinite linear;
-        }
-        .spinner .spinner-blade:nth-child(1)  { animation-delay: 0s;     transform: rotate(0deg); }
-        .spinner .spinner-blade:nth-child(2)  { animation-delay: 0.083s; transform: rotate(30deg); }
-        .spinner .spinner-blade:nth-child(3)  { animation-delay: 0.166s; transform: rotate(60deg); }
-        .spinner .spinner-blade:nth-child(4)  { animation-delay: 0.249s; transform: rotate(90deg); }
-        .spinner .spinner-blade:nth-child(5)  { animation-delay: 0.332s; transform: rotate(120deg); }
-        .spinner .spinner-blade:nth-child(6)  { animation-delay: 0.415s; transform: rotate(150deg); }
-        .spinner .spinner-blade:nth-child(7)  { animation-delay: 0.498s; transform: rotate(180deg); }
-        .spinner .spinner-blade:nth-child(8)  { animation-delay: 0.581s; transform: rotate(210deg); }
-        .spinner .spinner-blade:nth-child(9)  { animation-delay: 0.664s; transform: rotate(240deg); }
-        .spinner .spinner-blade:nth-child(10) { animation-delay: 0.747s; transform: rotate(270deg); }
-        .spinner .spinner-blade:nth-child(11) { animation-delay: 0.83s;  transform: rotate(300deg); }
-        .spinner .spinner-blade:nth-child(12) { animation-delay: 0.913s; transform: rotate(330deg); }
+        @keyframes spinner-rotate { to { transform: rotate(360deg); } }
 
-        /* Boot loader blades — gold on dark green */
-        #app-loading .spinner-blade {
-            animation-name: spinner-fade-light;
+        /* Floating nav spinner — shown top-right during page navigation while
+           the previous page's content stays visible underneath */
+        #nav-spinner {
+            position: fixed; top: 18px; right: 24px; z-index: 2000;
+            width: 26px; height: 26px; border-radius: 50%;
+            border: 3px solid #E8F5EC; border-top-color: #00461B;
+            animation: spinner-rotate .8s linear infinite;
+            display: none; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+            background: #fff;
         }
-        @keyframes spinner-fade-light {
-            0%   { background-color: #C8941A; }
-            100% { background-color: transparent; }
-        }
-
-        /* Page spinner blades — green on white content */
-        .page-spinner .spinner-blade {
-            animation-name: spinner-fade-dark;
-        }
-        @keyframes spinner-fade-dark {
-            0%   { background-color: #1a5c36; }
-            100% { background-color: transparent; }
-        }
+        #nav-spinner.show { display: block; }
     </style>
 </head>
 <body>
     <!-- Boot loader (full-screen while JS initialises) -->
     <div id="app-loading">
-        <img src="../assets/images/phinma_logo2.png" alt="" class="al-logo">
-        <div class="spinner">
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
-            <div class="spinner-blade"></div>
+        <div class="al-ring">
+            <img src="../assets/images/app-icon.png" alt="" class="al-logo">
         </div>
         <p class="al-label">Loading</p>
     </div>
+    <!-- Floating spinner shown during in-app navigation; page stays visible underneath -->
+    <div id="nav-spinner"></div>
 
     <!-- App shell (hidden until JS ready) -->
     <div id="app" class="app-container" style="display:none;">
@@ -141,5 +125,32 @@
     </div>
 
     <script type="module" src="./js/app.js?v=202606241500"></script>
+    <script>
+        /* PWA — this is the actual SPA shell users spend their session in
+           (lessons, my subjects, chat, gradebook), so offline caching must
+           be active here, not just on the marketing home page. */
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('../sw.js', { scope: '../' })
+                    .then(reg => {
+                        function showUpdateBar(worker) {
+                            const bar = document.getElementById('pwa-update-bar');
+                            if (bar) bar.style.display = 'flex';
+                            document.getElementById('pwa-update-btn')?.addEventListener('click', () => {
+                                worker.postMessage({ type: 'SKIP_WAITING' });
+                            });
+                        }
+                        if (reg.waiting) showUpdateBar(reg.waiting);
+                        reg.addEventListener('updatefound', () => {
+                            const nw = reg.installing;
+                            nw.addEventListener('statechange', () => {
+                                if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar(nw);
+                            });
+                        });
+                    }).catch(() => {});
+                navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+            });
+        }
+    </script>
 </body>
 </html>

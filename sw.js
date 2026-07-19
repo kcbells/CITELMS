@@ -7,8 +7,8 @@
  * BACKGROUND SYNC — outgoing messages queued in IndexedDB, flushed on reconnect
  */
 
-const SHELL_VER = 'coc-shell-v5';
-const DATA_VER  = 'coc-data-v5';
+const SHELL_VER = 'coc-shell-v72';
+const DATA_VER  = 'coc-data-v72';
 
 // Static shell — precached on install
 const SHELL_FILES = [
@@ -25,6 +25,9 @@ const SHELL_FILES = [
 // API path segments that are safe to cache offline (GET only)
 const CACHEABLE_API = [
     'SubjectsAPI',
+    'EnrollmentAPI',
+    'ClassroomAPI',
+    'ProgressAPI',
     'LessonsAPI',
     'GradebookAPI',
     'GlobalGradebookAPI',

@@ -46,6 +46,46 @@ class EmailHelper {
         return GmailSmtpHelper::isConfigured();
     }
 
+    public static function sendRegistrationOtp($toEmail, $firstName, $otp, $studentId, $autoId = false) {
+        $name    = htmlspecialchars(trim($firstName) ?: 'Student', ENT_QUOTES, 'UTF-8');
+        $code    = htmlspecialchars($otp, ENT_QUOTES, 'UTF-8');
+        $sid     = htmlspecialchars($studentId, ENT_QUOTES, 'UTF-8');
+        $logo    = self::logoCidSrc();
+        $school  = htmlspecialchars(defined('SCHOOL_NAME') ? SCHOOL_NAME : 'PHINMA Cagayan de Oro College', ENT_QUOTES, 'UTF-8');
+        $idNote  = $autoId
+            ? "<p style=\"margin:0 0 10px;font-size:13px;color:#374151;\">Your assigned Student ID is: <strong style=\"color:#1B4D2E\">{$sid}</strong> — save this, you will need it to log in.</p>"
+            : '';
+        $subject = 'Your Phinmaed Learning Registration Verification Code';
+        $html = <<<HTML
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);">
+  <tr><td style="background:#1B4D2E;padding:28px 32px;text-align:center;border-bottom:3px solid #C8941A;">
+    <img src="{$logo}" alt="{$school}" width="52" height="52" style="display:inline-block;vertical-align:middle;margin-right:14px;">
+    <span style="font-size:20px;font-weight:800;color:#fff;vertical-align:middle;">Phinmaed Learning</span>
+  </td></tr>
+  <tr><td style="padding:32px;">
+    <p style="margin:0 0 18px;font-size:15px;color:#111827;">Hello <strong>{$name}</strong>,</p>
+    <p style="margin:0 0 18px;font-size:14px;color:#374151;line-height:1.6;">Thank you for registering on <strong>Phinmaed Learning</strong>. Use the verification code below to complete your account setup. This code expires in <strong>2 minutes</strong>.</p>
+    {$idNote}
+    <div style="background:#f0fdf4;border:2px solid #C8941A;border-radius:10px;padding:22px;text-align:center;margin:20px 0;">
+      <div style="font-size:36px;font-weight:900;color:#1B4D2E;letter-spacing:10px;font-family:'Courier New',monospace;">{$code}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:8px;">Expires in 2 minutes</div>
+    </div>
+    <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">If you did not attempt to register on Phinmaed Learning, please ignore this email.</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px 32px;text-align:center;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;">&copy; {$school} &mdash; Phinmaed Learning</p>
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+        $text = "Hello {$name},\n\nYour Phinmaed Learning registration verification code is: {$otp}\n\n"
+              . ($autoId ? "Your Student ID: {$studentId}\n\n" : '')
+              . "This code expires in 2 minutes.\n\nIf you did not register, ignore this email.";
+
+        return self::send($toEmail, $subject, $html, $text, ['priority' => true, 'require_delivery' => true]);
+    }
+
     public static function sendPasswordOtp($toEmail, $firstName, $otp) {
         $ttl = max(30, (int)(defined('PASSWORD_OTP_TTL') ? PASSWORD_OTP_TTL : 60));
         $mins = $ttl >= 60 ? '1 minute' : $ttl . ' seconds';

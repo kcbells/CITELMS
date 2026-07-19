@@ -17,29 +17,21 @@ let _yrFilter     = '';
 export async function render(container) {
     container.innerHTML = `<style>${css()}</style><div class="fc-boot"><div class="fc-spin"></div></div>`;
 
-    // Get only this dean's programs, then subjects within each program
-    const progRes = await Api.get('/CurriculumAPI.php?action=programs');
-    const deanProgs = progRes.success ? progRes.data : [];
+    // Faculty can only be assigned to subjects that have actually been
+    // Opened (see "Subject Offered" page) for the currently active school
+    // semester — not every curriculum subject.
+    const semRes = await Api.get('/SubjectOfferingsAPI.php?action=semesters');
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSemester = semesters.find(s => s.status === 'active') || semesters[0] || null;
 
-    // Fetch subjects for each program in parallel, then deduplicate
-    const seen = new Set();
-    const allSubj = [];
-    if (deanProgs.length) {
-        const results = await Promise.all(
-            deanProgs.map(p => Api.get(`/CurriculumAPI.php?action=view&program_id=${p.program_id}`)
-                .then(r => ({ prog: p, subjects: r.success ? r.data : [] }))
-            )
-        );
-        for (const { prog, subjects } of results) {
-            for (const s of subjects) {
-                if (!seen.has(s.subject_id)) {
-                    seen.add(s.subject_id);
-                    allSubj.push({ ...s, program_code: prog.program_code, program_name: prog.program_name });
-                }
-            }
-        }
-    }
-    _subjects = allSubj.filter(s => s.status === 'active');
+    const offRes = await Api.get(
+        `/SubjectOfferingsAPI.php?action=offered-list${activeSemester ? `&semester_id=${activeSemester.semester_id}` : ''}`
+    );
+    const offered = offRes.success ? offRes.data : [];
+
+    _subjects = offered
+        .filter(s => s.offering_status === 'open' && s.status === 'active')
+        .map(s => ({ ...s, subject_offered_id: s.subject_offered_id }));
 
     const programs = [...new Map(_subjects.filter(s => s.program_code).map(s => [s.program_code, s.program_name])).entries()]
         .sort(([a],[b]) => a.localeCompare(b));
@@ -50,13 +42,12 @@ export async function render(container) {
     <div class="fc-banner">
         <div class="fc-banner-left">
             <div class="fc-banner-icon">
-                <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="2">
+                <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#111" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
                 </svg>
             </div>
             <div>
-                <h2 class="fc-banner-title">Faculty Assignments</h2>
-                <p class="fc-banner-sub">Select a subject then check which instructors teach it — review before confirming</p>
+                <p class="fc-banner-sub">Only subjects Opened for the active semester appear here — see Subject Offered. Select a subject then check which instructors teach it.</p>
             </div>
         </div>
     </div>
@@ -156,7 +147,7 @@ function applySubjFilters(container) {
 }
 
 function renderSubjList(list) {
-    if (!list.length) return `<div class="fc-empty">No subjects found</div>`;
+    if (!list.length) return `<div class="fc-empty">No subjects offered for the active semester yet.<br>Open subjects first from the "Subject Offered" page.</div>`;
     return list.map(s => {
         const isActive = _selectedSubj && _selectedSubj.subject_id === s.subject_id;
         const aCount   = s._assignedCount ?? '';
@@ -294,42 +285,95 @@ function renderRight(subj, container) {
     right.querySelector('#fc-review-btn')?.addEventListener('click', () => openReview(subj, container));
 }
 
+const ROLE_LABELS = { dean: 'Dean (Self)', program_head: 'Program Heads', instructor: 'Instructors' };
+const ROLE_ORDER  = ['dean', 'program_head', 'instructor'];
+
 function renderInstrChecklist(list) {
     if (!list.length) return `<div class="fc-empty" style="padding:24px;">No instructors found</div>`;
 
     const groups = {};
     list.forEach(i => {
-        const g = i.program_code || 'Other';
-        if (!groups[g]) groups[g] = { name: i.program_name, items: [] };
-        groups[g].items.push(i);
+        const g = i.role || 'instructor';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(i);
     });
 
-    return Object.entries(groups).map(([code, grp]) => `
+    return ROLE_ORDER.filter(r => groups[r]?.length).map(role => `
     <div class="fc-instr-group">
         <div class="fc-instr-group-hdr">
-            <span class="fc-prog-tag">${esc(code)}</span>
-            <span class="fc-instr-group-name">${esc(grp.name||'')}</span>
+            <span class="fc-prog-tag fc-role-${role}">${esc(ROLE_LABELS[role] || role)}</span>
         </div>
-        ${grp.items.map(i => {
-            const id      = String(i.users_id);
-            const checked = _cart.has(id);
-            const init    = ((i.first_name||'?')[0]+(i.last_name||'?')[0]).toUpperCase();
-            return `
-            <label class="fc-instr-row ${checked?'is-assigned':''}" data-id="${id}">
-                <input type="checkbox" class="fc-instr-cb" data-id="${id}" ${checked?'checked':''}>
-                <div class="fc-instr-av">${init}</div>
-                <div class="fc-instr-info">
-                    <div class="fc-instr-name">${esc(i.first_name)} ${esc(i.last_name)}</div>
-                    <div class="fc-instr-meta">${esc(i.employee_id||'—')}${i.email?' · '+esc(i.email):''}</div>
-                </div>
-                <div class="fc-instr-status ${checked?'assigned':'free'}">
-                    ${checked
-                        ? `<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Assigned`
-                        : 'Unassigned'}
-                </div>
-            </label>`;
-        }).join('')}
+        ${groups[role].map(i => instrRowHtml(i)).join('')}
     </div>`).join('');
+}
+
+function instrRowHtml(i) {
+    const id      = String(i.users_id);
+    const checked = _cart.has(id);
+    const init    = ((i.first_name||'?')[0]+(i.last_name||'?')[0]).toUpperCase();
+
+    return `
+    <div class="fc-instr-row-wrap" data-id="${id}">
+        <label class="fc-instr-row ${checked?'is-assigned':''}">
+            <input type="checkbox" class="fc-instr-cb" data-id="${id}" ${checked?'checked':''}>
+            <div class="fc-instr-av">${init}</div>
+            <div class="fc-instr-info">
+                <div class="fc-instr-name">${esc(i.first_name)} ${esc(i.last_name)}</div>
+                <div class="fc-instr-meta">${esc(i.employee_id||'—')}${i.program_code?' · '+esc(i.program_code):''}</div>
+            </div>
+            <div class="fc-instr-status ${checked?'assigned':'free'}">
+                ${checked
+                    ? `<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Assigned`
+                    : 'Unassigned'}
+            </div>
+        </label>
+        <div class="fc-row-extra-slot">${instrRowExtraHtml(i, checked)}</div>
+    </div>`;
+}
+
+/** The variable part of a row: grading-type select + Program Head year-scope. */
+function instrRowExtraHtml(i, checked) {
+    const id      = String(i.users_id);
+    // Extras need a real subject_offered_id, which only exists once the
+    // assignment is actually saved server-side — not for a row that's
+    // merely checked in the pending cart (not yet confirmed).
+    const isSaved = _original.has(id) && !!i.assigned_offering_id;
+    if (!checked) return '';
+    if (!isSaved) {
+        return `<div class="fc-instr-extra fc-instr-extra--pending">
+            <span class="fc-extra-lbl">Grading options &amp; scope become available after you confirm this assignment.</span>
+        </div>`;
+    }
+
+    const gType = i.grading_type || 'raw_score';
+    const isPh  = i.role === 'program_head';
+    const yFrom = i.year_level_from ? Number(i.year_level_from) : null;
+    const yTo   = i.year_level_to   ? Number(i.year_level_to)   : null;
+
+    return `
+    <div class="fc-instr-extra">
+        <div class="fc-grading-toggle">
+            <span class="fc-extra-lbl">Grading:</span>
+            <select class="fc-grading-sel" data-offering-id="${i.assigned_offering_id||''}">
+                <option value="raw_score" ${gType==='raw_score'?'selected':''}>Raw Score</option>
+                <option value="global"    ${gType==='global'   ?'selected':''}>Global (EL/Mastery)</option>
+            </select>
+            <span class="fc-grading-save-note" data-grading-note="${id}"></span>
+        </div>
+        ${isPh ? `
+        <div class="fc-ph-scope">
+            <span class="fc-extra-lbl">Handles year level(s):</span>
+            <div class="fc-ph-years">
+                ${[1,2,3,4].map(y => `
+                <label class="fc-ph-year-cb">
+                    <input type="checkbox" class="fc-ph-year" data-users-id="${id}" value="${y}"
+                        ${yFrom !== null && yTo !== null && y >= yFrom && y <= yTo ? 'checked' : ''}>
+                    <span>${y}${ordinal(y)}</span>
+                </label>`).join('')}
+            </div>
+            <span class="fc-ph-save-note" data-ph-note="${id}"></span>
+        </div>` : ''}
+    </div>`;
 }
 
 function bindCheckboxes(right) {
@@ -345,6 +389,15 @@ function bindCheckboxes(right) {
             status.innerHTML = cb.checked
                 ? `<svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Assigned`
                 : 'Unassigned';
+
+            // Re-render just this row's extra slot (grading type / PH scope)
+            const wrap = cb.closest('.fc-instr-row-wrap');
+            const person = _instructors.find(x => String(x.users_id) === id);
+            const slot = wrap?.querySelector('.fc-row-extra-slot');
+            if (slot && person) {
+                slot.innerHTML = instrRowExtraHtml(person, cb.checked);
+                bindRowExtras(slot);
+            }
 
             const countEl = right.querySelector('#fc-instr-count');
             if (countEl) {
@@ -363,6 +416,60 @@ function bindCheckboxes(right) {
                 if (removed.length) parts.push(`−${removed.length} to remove`);
                 lbl.textContent = parts.join('  ·  ');
             }
+        });
+    });
+
+    bindRowExtras(right);
+}
+
+/** Binds the grading-type <select> and Program Head year-scope checkboxes within `scope`. */
+function bindRowExtras(scope) {
+    scope.querySelectorAll('.fc-grading-sel').forEach(sel => {
+        sel.addEventListener('change', async () => {
+            const offeringId = sel.dataset.offeringId;
+            const note = sel.parentElement.querySelector('.fc-grading-save-note');
+            if (!offeringId) return;
+            sel.disabled = true;
+            const res = await Api.post('/SubjectOfferingsAPI.php?action=set-grading-type', {
+                subject_offered_id: parseInt(offeringId),
+                grading_type: sel.value,
+            });
+            sel.disabled = false;
+            if (note) {
+                note.textContent = res.success ? 'Saved' : (res.message || 'Failed to save');
+                note.className = `fc-grading-save-note ${res.success ? 'ok' : 'err'}`;
+                setTimeout(() => { if (note) note.textContent = ''; }, 2500);
+            }
+            if (!res.success) notify.error(res.message || 'Failed to update grading type');
+        });
+    });
+
+    scope.querySelectorAll('.fc-ph-year').forEach(cb => {
+        cb.addEventListener('change', async () => {
+            const usersId = cb.dataset.usersId;
+            const group = scope.querySelectorAll(`.fc-ph-year[data-users-id="${usersId}"]`);
+            const checkedYears = [...group].filter(c => c.checked).map(c => parseInt(c.value));
+            const note = scope.querySelector(`[data-ph-note="${usersId}"]`);
+
+            const yearFrom = checkedYears.length ? Math.min(...checkedYears) : null;
+            const yearTo   = checkedYears.length ? Math.max(...checkedYears) : null;
+
+            group.forEach(c => c.disabled = true);
+            const res = await Api.post('/SubjectOfferingsAPI.php?action=set-ph-scope', {
+                users_id: parseInt(usersId),
+                year_level_from: yearFrom,
+                year_level_to: yearTo,
+            });
+            group.forEach(c => c.disabled = false);
+
+            if (note) {
+                note.textContent = res.success
+                    ? (checkedYears.length ? 'Saved' : 'Cleared')
+                    : (res.message || 'Failed to save');
+                note.className = `fc-ph-save-note ${res.success ? 'ok' : 'err'}`;
+                setTimeout(() => { if (note) note.textContent = ''; }, 2500);
+            }
+            if (!res.success) notify.error(res.message || 'Failed to update program head scope');
         });
     });
 }
@@ -492,11 +599,11 @@ function css() { return `
     .fc-spin { width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#00461B;border-radius:50%;animation:fcSpin .7s linear infinite; }
     @keyframes fcSpin { to { transform:rotate(360deg); } }
 
-    .fc-banner { background:#00461B;border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
+    .fc-banner { background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px; }
     .fc-banner-left { display:flex;align-items:center;gap:14px; }
-    .fc-banner-icon { width:46px;height:46px;background:rgba(255,255,255,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
-    .fc-banner-title { font-size:19px;font-weight:800;color:#fff;margin:0 0 2px; }
-    .fc-banner-sub { font-size:12px;color:rgba(255,255,255,.7);margin:0; }
+    .fc-banner-icon { width:46px;height:46px;background:#F3F4F6;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+    .fc-banner-title { font-size:19px;font-weight:800;color:#111;margin:0 0 2px; }
+    .fc-banner-sub { font-size:12px;color:#6B7280;margin:0; }
     .fc-banner-right { display:flex;flex-direction:column;gap:4px; }
     .fc-sem-label { font-size:11px;color:rgba(255,255,255,.65);font-weight:600;letter-spacing:.5px;text-transform:uppercase; }
     .fc-sem-sel { padding:8px 12px;border:1px solid rgba(255,255,255,.3);border-radius:8px;background:rgba(255,255,255,.1);color:#fff;font-size:13px;font-weight:600;cursor:pointer; }
@@ -569,6 +676,27 @@ function css() { return `
     .fc-instr-status.assigned { background:#D1FAE5;color:#065F46; }
     .fc-instr-status.free { background:#f3f4f6;color:#9ca3af; }
 
+    .fc-role-dean { background:#7C3AED; }
+    .fc-role-program_head { background:#B45309; }
+    .fc-role-instructor { background:#1B4D3E; }
+
+    .fc-instr-row-wrap { margin-bottom:4px; }
+    .fc-instr-row-wrap .fc-instr-row { margin-bottom:0; }
+    .fc-instr-extra { margin:2px 0 8px 48px;padding:10px 12px;background:#F9FAFB;border:1px solid #EEF0F2;border-radius:10px;display:flex;flex-direction:column;gap:10px; }
+    .fc-instr-extra--pending { color:#9ca3af;font-size:11.5px;font-style:italic; }
+    .fc-extra-lbl { font-size:11.5px;font-weight:600;color:#6B7280; }
+    .fc-grading-toggle { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+    .fc-grading-sel { padding:5px 9px;border:1px solid #e0e0e0;border-radius:7px;font-size:12px;background:#fff;cursor:pointer;outline:none; }
+    .fc-grading-sel:focus { border-color:#00461B; }
+    .fc-grading-save-note, .fc-ph-save-note { font-size:11px;font-weight:700; }
+    .fc-grading-save-note.ok, .fc-ph-save-note.ok { color:#15803d; }
+    .fc-grading-save-note.err, .fc-ph-save-note.err { color:#b91c1c; }
+    .fc-ph-scope { display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px dashed #E5E7EB; }
+    .fc-ph-years { display:flex;gap:6px;flex-wrap:wrap; }
+    .fc-ph-year-cb { display:flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid #e0e0e0;border-radius:20px;font-size:11.5px;font-weight:600;color:#374151;cursor:pointer;background:#fff; }
+    .fc-ph-year-cb:has(input:checked) { background:#FEF3C7;border-color:#F59E0B;color:#92400E; }
+    .fc-ph-year-cb input { accent-color:#B45309;margin:0; }
+
     .fc-cart-bar { position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border-top:2px solid #00461B;padding:12px 20px;border-radius:0 0 14px 14px;box-shadow:0 -4px 16px rgba(0,0,0,.08);flex-wrap:wrap; }
     .fc-cart-info { display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#374151; }
     .fc-btn-discard { padding:8px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-size:13px;font-weight:600;cursor:pointer;color:#374151; }
@@ -578,11 +706,11 @@ function css() { return `
 
     .fc-modal-backdrop { position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px; }
     .fc-modal { background:#fff;border-radius:16px;width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.2);overflow:hidden; }
-    .fc-modal-hdr { background:#00461B;padding:18px 22px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-shrink:0; }
-    .fc-modal-title { font-size:17px;font-weight:800;color:#fff;margin:0 0 3px; }
-    .fc-modal-sub { font-size:12px;color:rgba(255,255,255,.75);margin:0; }
-    .fc-modal-close { background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:.8; }
-    .fc-modal-close:hover { opacity:1; }
+    .fc-modal-hdr { background:#fff;border-bottom:1px solid #E5E7EB;padding:18px 22px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-shrink:0; }
+    .fc-modal-title { font-size:17px;font-weight:800;color:#111;margin:0 0 3px; }
+    .fc-modal-sub { font-size:12px;color:#6B7280;margin:0; }
+    .fc-modal-close { background:none;border:none;color:#374151;font-size:24px;cursor:pointer;line-height:1;opacity:.8;border-radius:6px; }
+    .fc-modal-close:hover { opacity:1;background:#F3F4F6; }
     .fc-modal-body { overflow-y:auto;flex:1;padding:20px; }
     .fc-modal-foot { display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid #f0f0f0;flex-shrink:0; }
     .fc-btn-cancel { padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-size:14px;font-weight:600;cursor:pointer;color:#374151; }

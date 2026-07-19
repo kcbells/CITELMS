@@ -149,15 +149,15 @@ export function gradingPeriodTableCss() {
         .gb-period-section { margin-bottom:20px; }
         .gb-period-section-hdr {
             display:flex; align-items:center; gap:10px; padding:12px 16px;
-            background:linear-gradient(90deg,#00461B,#006428); color:#fff; border-radius:12px 12px 0 0;
+            background:#fff; border:1px solid #E5E7EB; border-bottom:none; color:#111; border-radius:12px 12px 0 0;
         }
-        .gb-period-section-hdr.p2 { background:linear-gradient(90deg,#006428,#2E7D32); }
-        .gb-period-section-hdr.p3 { background:linear-gradient(90deg,#1B5E20,#388E3C); }
-        .gb-period-section-code { font-size:18px; font-weight:900; font-family:monospace; }
-        .gb-period-section-title { font-size:13px; opacity:.9; }
+        .gb-period-section-hdr.p2 { background:#fff; }
+        .gb-period-section-hdr.p3 { background:#fff; }
+        .gb-period-section-code { font-size:18px; font-weight:900; font-family:monospace; color:#00461B; }
+        .gb-period-section-title { font-size:13px; color:#6B7280; }
         .gb-period-section-sub {
             margin-left:auto; font-size:12px; font-weight:700;
-            background:rgba(255,255,255,.15); padding:4px 10px; border-radius:20px;
+            background:#E8F5EC; color:#00461B; padding:4px 10px; border-radius:20px;
         }
         .gb-period-panel {
             border:1px solid #e5e7eb; border-top:none; border-radius:0 0 12px 12px;

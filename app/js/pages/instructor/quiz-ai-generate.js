@@ -18,12 +18,13 @@ const AI_MODAL_SHELL_CSS = `
         overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 48px rgba(0,0,0,.2);
         animation:qzaiIn .22s ease; }
     @keyframes qzaiIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
-    .qzai-modal-hdr { padding:20px 24px; background:#00461B; color:#fff; flex-shrink:0;
+    .qzai-modal-hdr { padding:20px 24px; background:#fff; border-bottom:1px solid #E5E7EB; color:#111; flex-shrink:0;
         display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-    .qzai-modal-hdr h3 { font-size:18px; font-weight:800; margin:0 0 3px; }
-    .qzai-modal-hdr p { font-size:12px; margin:0; opacity:.85; }
-    .qzai-modal-close { background:rgba(255,255,255,.15); border:none; color:#fff; width:32px; height:32px;
+    .qzai-modal-hdr h3 { font-size:18px; font-weight:800; margin:0 0 3px; color:#111; }
+    .qzai-modal-hdr p { font-size:12px; margin:0; color:#6B7280; }
+    .qzai-modal-close { background:none; border:none; color:#374151; width:32px; height:32px;
         border-radius:8px; font-size:20px; cursor:pointer; flex-shrink:0; line-height:1; }
+    .qzai-modal-close:hover { background:#F3F4F6; }
     .qzai-modal-body { overflow-y:auto; flex:1; padding:20px 24px; }
 `;
 

@@ -6,7 +6,7 @@ import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { renderMessageBody, validateMessageFile, bindImagePreview } from '../../utils/message-ui.js';
 import {
-    messagePageStyles, messagePageHeader, messageSidebarShell,
+    messagePageStyles, messageSidebarShell,
     messagePlaceholder, applyMessagePageBg, enterMobileChat, exitMobileChat,
 } from '../../utils/message-page-ui.js';
 import { L, icon } from '../../utils/action-labels.js';
@@ -58,7 +58,6 @@ export async function render(container) {
     container.innerHTML = `
         <style>${messagePageStyles()}</style>
         <div class="msg-page">
-            ${messagePageHeader('Reach your students about assignments, lessons, and class updates.')}
             <div class="msg-layout">
                 ${messageSidebarShell(L.newMessage)}
                 <div class="msg-main" id="msg-main">

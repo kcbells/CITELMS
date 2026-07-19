@@ -8,6 +8,10 @@ import { subjectColor } from '../../utils/subject-colors.js';
 import { icon } from '../../utils/icons.js';
 import { curriculumTableCss } from '../../utils/classroom-ui.js';
 import { gradingPeriodTableCss } from '../../utils/gradebook-periods.js';
+import {
+    rubricToPercent, socGrade, letsPracticeGrade, projectOverallGrade,
+    computeStudentReport, formatGrade, PERIOD_MODULES, PERIODS,
+} from '../../utils/grading-engine.js';
 
 const G      = '#00461B';
 const G2     = '#006428';
@@ -30,72 +34,14 @@ const WUQ_OPTS = [
 ];
 
 // ── Grading computation engine ────────────────────────────────────────────
-
-const RUBRIC_SCALE = { 0: 0, 1: 60, 2: 80, 3: 100 };
-
-function rubricToPercent(score) {
-    if (score === null || score === undefined || score === '') return null;
-    const v = RUBRIC_SCALE[parseInt(score)];
-    return v !== undefined ? v : null;
-}
-
-function socGrade(soc1, soc2) {
-    const entries = [soc1, soc2].filter(x => x === 'P' || x === 'A');
-    if (!entries.length) return null;
-    return (entries.filter(x => x === 'P').length / entries.length) * 100;
-}
-
-function letsPracticeGrade(lp, lpOpt) {
-    const vals = [lp, lpOpt]
-        .filter(x => x !== null && x !== undefined && x !== '')
-        .map(x => rubricToPercent(parseInt(x)));
-    const valid = vals.filter(v => v !== null);
-    if (!valid.length) return null;
-    return valid.reduce((a, b) => a + b, 0) / valid.length;
-}
-
-function moduleELGrade(soc, lp, reflection) {
-    let num = 0, den = 0;
-    if (soc !== null)        { num += (soc / 100) * 5;         den += 5; }
-    if (lp !== null)         { num += (lp / 100) * 35;         den += 35; }
-    if (reflection !== null) { num += (reflection / 100) * 15; den += 15; }
-    if (!den) return null;
-    return (num / den) * 100;
-}
-
-function moduleMasteryGrade(wuq, projectScore) {
-    if (wuq === null && projectScore === null) return null;
-    const w = wuq          !== null ? (wuq          / 100) * 15 : 0;
-    const p = projectScore !== null ? (projectScore / 100) * 30 : 0;
-    return ((w + p) / 45) * 100;
-}
-
-function projectOverallGrade(checkins, finalOutput) {
-    const valid = checkins.filter(x => x !== null && x !== undefined);
-    const avg   = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
-    if (avg === null && finalOutput === null) return null;
-    if (avg === null)         return finalOutput;
-    if (finalOutput === null) return avg;
-    const [cw, fw] = valid.length === 1 ? [0.5, 0.5] : [0.65, 0.35];
-    return avg * cw + finalOutput * fw;
-}
-
-function avgNonNull(arr) {
-    const v = arr.filter(x => x !== null);
-    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-}
+// rubricToPercent / socGrade / letsPracticeGrade / projectOverallGrade /
+// computeStudentReport / PERIOD_MODULES / PERIODS all come from
+// ../../utils/grading-engine.js — the single source of truth for the
+// EL/Mastery formulas. See that file for the exact spec.
 
 function fmt(v, dec = 2) {
-    if (v === null || v === undefined) return '—';
-    return Number(v).toFixed(dec);
+    return formatGrade(v, dec);
 }
-
-const PERIOD_MODULES = {
-    P1:    [1, 2, 3, 4],
-    P2:    [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    Final: Array.from({ length: 14 }, (_, i) => i + 1),
-};
-const PERIODS = ['P1', 'P2', 'Final'];
 
 // ── Main entry point ───────────────────────────────────────────────────────
 
@@ -159,7 +105,6 @@ function renderSubjectsView(container, opts) {
     <div class="ggb-page">
         <header class="ggb-hero">
             <span class="ggb-pill">${icon('gradebook', { size: 13, className: 'ui-icon-inline' })} Global Gradebook</span>
-            <h1 class="ggb-hero-title">Global Gradebook</h1>
             <p class="ggb-hero-sub">14-module Effortful Learning / Mastery grading</p>
         </header>
         ${subjects.length === 0
@@ -287,8 +232,6 @@ async function renderClassRecord(container, opts) {
         return;
     }
 
-    const offeredId = String(section.subject_offered_id || subject.subject_offered_id || '');
-
     container.innerHTML = `<style>${css()}</style>
     <div class="ggb-page">
         <button class="ggb-back" id="ggb-back-sec">
@@ -305,6 +248,20 @@ async function renderClassRecord(container, opts) {
     );
 
     const host = container.querySelector('#ggb-record-host');
+    await mountGlobalClassRecord(host, subject, section, opts);
+}
+
+/**
+ * Fetches and mounts the module-based (EL/Mastery) class record directly
+ * into `host`, given a subject + section object. Used both by this page's
+ * own navigation and by the raw-score gradebook (gradebook.js) when a
+ * subject's grading_type is 'global', so both entry points share one
+ * implementation instead of duplicating the fetch/render logic.
+ */
+export async function mountGlobalClassRecord(host, subject, section, opts = {}) {
+    const offeredId = String(section.subject_offered_id || subject.subject_offered_id || '');
+    host.innerHTML = `<style>${css()}</style><div class="ggb-loading"><div class="ggb-spin"></div><p>Loading gradebook…</p></div>`;
+
     try {
         const [mgRes, pgRes, studRes, rtRes] = await Promise.all([
             Api.get(`/GlobalGradebookAPI.php?action=module-grades&subject_offered_id=${offeredId}&section_id=${section.section_id}`),
@@ -330,10 +287,10 @@ async function renderClassRecord(container, opts) {
         const project = pgRes.success ? (pgRes.data?.project || pgRes.project || {}) : {};
         const retries = rtRes.success ? (rtRes.data          || {})                  : {};
 
-        mountRecord(host, container, subject, section, offeredId, students, grades, project, retries, opts);
+        mountRecord(host, host, subject, section, offeredId, students, grades, project, retries, { view: opts.view || 'modules', embedded: true });
     } catch (err) {
         console.error(err);
-        host.innerHTML = emptyBox('Could not load gradebook data. ' + err.message);
+        host.innerHTML = `<style>${css()}</style>` + emptyBox('Could not load gradebook data. ' + err.message);
     }
 }
 
@@ -367,7 +324,7 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
     function renderShell() {
         const schedule = [section.schedule, section.room].filter(Boolean).join(' · ');
         host.innerHTML = `
-        <style>${curriculumTableCss()}${gradingPeriodTableCss()}${tableCss()}</style>
+        <style>${css()}${curriculumTableCss()}${gradingPeriodTableCss()}${tableCss()}</style>
         <div class="gb-record-head">
             <div class="gb-record-titlerow">
                 <div>
@@ -414,15 +371,20 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
         );
 
         const guideOverlay = host.querySelector('#ggb-guide-overlay');
+        // Mount the fixed-position overlay on <body> — nesting it inside the
+        // classroom page's tabs (which sit in a sibling z-index stacking
+        // context) traps its z-index and lets those tabs render on top of it.
+        document.querySelectorAll('#ggb-guide-overlay').forEach(el => { if (el !== guideOverlay) el.remove(); });
+        document.body.appendChild(guideOverlay);
         host.querySelector('#ggb-guide-btn').addEventListener('click', () => guideOverlay.removeAttribute('hidden'));
-        host.querySelector('#ggb-guide-close').addEventListener('click', () => guideOverlay.setAttribute('hidden', ''));
+        guideOverlay.querySelector('#ggb-guide-close').addEventListener('click', () => guideOverlay.setAttribute('hidden', ''));
         guideOverlay.addEventListener('click', e => { if (e.target === guideOverlay) guideOverlay.setAttribute('hidden', ''); });
 
-        host.querySelectorAll('.ggb-gtab').forEach(tab => {
+        guideOverlay.querySelectorAll('.ggb-gtab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const t = tab.dataset.gtab;
-                host.querySelectorAll('.ggb-gtab').forEach(b => b.classList.toggle('active', b.dataset.gtab === t));
-                host.querySelectorAll('.ggb-guide-body').forEach(b => b.classList.toggle('ggb-gtab-hidden', b.id !== `ggb-gtab-${t}`));
+                guideOverlay.querySelectorAll('.ggb-gtab').forEach(b => b.classList.toggle('active', b.dataset.gtab === t));
+                guideOverlay.querySelectorAll('.ggb-guide-body').forEach(b => b.classList.toggle('ggb-gtab-hidden', b.id !== `ggb-gtab-${t}`));
             });
         });
 
@@ -774,49 +736,40 @@ function renderSummaryTable(students, grades, project, subjectCode = '', section
 }
 
 function computeStudentGrades(sid, grades, project) {
-    function periodResult(modRange, periodKey) {
-        const pg = project[sid]?.[periodKey] || {};
-        const projScore = projectOverallGrade(
-            [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
-            pg.final_output ?? null
-        );
-        const els = [], masts = [];
-        for (const m of modRange) {
-            const mg   = grades[sid]?.[m] || {};
-            const soc  = socGrade(mg.soc1 ?? null, mg.soc2 ?? null);
-            const lp   = letsPracticeGrade(mg.lets_practice ?? null, mg.lets_practice_optional ?? null);
-            const refl = rubricToPercent(mg.reflection ?? null);
-            const wuq  = mg.wrap_up_quiz ?? null;
-            const el   = moduleELGrade(soc, lp, refl);
-            const mast = moduleMasteryGrade(wuq, projScore);
-            if (el   !== null) els.push(el);
-            if (mast !== null) masts.push(mast);
-        }
-        const el      = avgNonNull(els);
-        const mastery = avgNonNull(masts);
-        const grade   = el !== null && mastery !== null ? el * 0.55 + mastery * 0.45
-                      : el !== null ? el : mastery;
-        return { el, mastery, grade };
-    }
+    const report = computeStudentReport({
+        getModuleInput: (m) => {
+            const mg = grades[sid]?.[m] || {};
+            return {
+                soc1: mg.soc1 ?? null,
+                soc2: mg.soc2 ?? null,
+                letsPractice: mg.lets_practice ?? null,
+                letsPracticeOptional: mg.lets_practice_optional ?? null,
+                reflection: mg.reflection ?? null,
+                wrapUpQuiz: mg.wrap_up_quiz ?? null,
+            };
+        },
+        getPeriodProject: (periodKey) => {
+            const pg = project[sid]?.[periodKey] || {};
+            return {
+                checkins: [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
+                finalOutput: pg.final_output ?? null,
+            };
+        },
+    });
 
-    const p1    = periodResult(PERIOD_MODULES.P1,    'P1');
-    const p2    = periodResult(PERIOD_MODULES.P2,    'P2');
-    const final = periodResult(PERIOD_MODULES.Final, 'Final');
+    const toLegacy = (p) => ({
+        el: report.periods[p].effortfulLearningGrade,
+        mastery: report.periods[p].masteryGrade,
+        grade: report.periods[p].periodGrade,
+    });
 
-    const masteryStatus = final.mastery === null ? null
-        : final.mastery >= 80 ? 'Met Mastery' : 'Retry Mastery';
-
-    let remarks = null;
-    if (masteryStatus !== null && final.grade !== null) {
-        const elOk   = final.el      !== null && final.el      >= 60;
-        const mastOk = final.mastery !== null && final.mastery >= 80;
-        if      (elOk   && mastOk)  remarks = 'Passed';
-        else if (mastOk && !elOk)   remarks = 'INC - Retry Effortful';
-        else if (elOk   && !mastOk) remarks = 'INC - Retry Mastery';
-        else                         remarks = 'INC - Retry Effortful and Mastery';
-    }
-
-    return { p1, p2, final, masteryStatus, remarks };
+    return {
+        p1: toLegacy('P1'),
+        p2: toLegacy('P2'),
+        final: toLegacy('Final'),
+        masteryStatus: report.masteryStatus,
+        remarks: report.remarks,
+    };
 }
 
 // ── For SIS Table ─────────────────────────────────────────────────────────
@@ -869,7 +822,7 @@ function renderSisTable(students, grades, project, subjectCode = '', sectionName
             </table>
         </div>
     </div>
-    <p class="ggb-proj-note">CS = Cumulative Score (Effortful Learning). PE = Period Effort. CFE = Cumulative Final Effort (Mastery). Passing: CS &ge; 60 and CFE &ge; 80.</p>`;
+    <p class="ggb-proj-note">CS = Cumulative Score (Effortful Learning). PE = Period Effort. CFE = Cumulative Final Effort (Mastery). Remarks are based on CFE (Mastery Status, threshold 80) and the Final Period Grade (threshold 80) — see Overview tab.</p>`;
 }
 
 // ── Students for Retry Table ──────────────────────────────────────────────
@@ -1051,7 +1004,7 @@ function guideModalHtml() {
                             <div class="ggb-ov-soc-line">
                                 <span class="ggb-soc-p">P = Present</span>
                                 <span class="ggb-soc-a">A = Absent</span>
-                                <span class="ggb-ov-dim">Grade = (# P &divide; 2) &times; 100%</span>
+                                <span class="ggb-ov-dim">Grade = (# P &divide; # entries) &times; 100%</span>
                             </div>
                         </div>
                         <div class="ggb-ov-sec" style="flex:1">
@@ -1102,10 +1055,11 @@ function guideModalHtml() {
                         <div class="ggb-ov-sec" style="flex:1;margin-bottom:0">
                             <div class="ggb-ov-sh">Remarks</div>
                             <div class="ggb-thresh-grid">
-                                <div class="ggb-thresh-row ggb-thresh-pass"><span>EL &ge;60 <strong>and</strong> Mastery &ge;80</span><span class="ggb-thresh-tag">Passed</span></div>
-                                <div class="ggb-thresh-row ggb-thresh-inc"><span>EL &lt;60, Mastery &ge;80</span><span class="ggb-thresh-tag">INC &ndash; Retry EL</span></div>
-                                <div class="ggb-thresh-row ggb-thresh-inc"><span>EL &ge;60, Mastery &lt;80</span><span class="ggb-thresh-tag">INC &ndash; Retry Mastery</span></div>
-                                <div class="ggb-thresh-row ggb-thresh-fail"><span>EL &lt;60 <strong>and</strong> Mastery &lt;80</span><span class="ggb-thresh-tag">INC &ndash; Retry Both</span></div>
+                                <div class="ggb-thresh-row ggb-thresh-pass"><span>Met Mastery <strong>and</strong> Final Grade &ge;80</span><span class="ggb-thresh-tag">Passed</span></div>
+                                <div class="ggb-thresh-row ggb-thresh-inc"><span>Met Mastery, Final Grade &lt;80</span><span class="ggb-thresh-tag">INC &ndash; Retry Effortful</span></div>
+                                <div class="ggb-thresh-row ggb-thresh-inc"><span>Retry Mastery, Final Grade &ge;80</span><span class="ggb-thresh-tag">INC &ndash; Retry Mastery</span></div>
+                                <div class="ggb-thresh-row ggb-thresh-fail"><span>Retry Mastery, Final Grade &lt;80</span><span class="ggb-thresh-tag">INC &ndash; Retry Both</span></div>
+                                <div class="ggb-ov-dim" style="margin-top:6px;">Mastery Status: Final Mastery grade &ge;80 &rarr; &ldquo;Met Mastery&rdquo;, else &ldquo;Retry Mastery components&rdquo;.</div>
                             </div>
                         </div>
                     </div>
@@ -1460,10 +1414,10 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 .ggb-ov-rub span:nth-child(2) { font-size:10px; font-weight:700; color:#6B7280; }
 .ggb-ov-rub.ggb-rub-2 strong, .ggb-ov-rub.ggb-rub-3 strong { color:${G}; }
 .ggb-ov-rub.ggb-rub-2 span:nth-child(2), .ggb-ov-rub.ggb-rub-3 span:nth-child(2) { color:${G}; }
-/* SOC line — replace red A-badge with green */
+/* SOC line — P green, A dark red (clear present/absent contrast) */
 .ggb-ov-soc-line { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .ggb-ov-soc-line .ggb-soc-p { padding:3px 8px; font-size:11px; }
-.ggb-ov-soc-line .ggb-soc-a { padding:3px 8px; font-size:11px; background:#fff; color:${G}; border:1px solid #A7D4B5; }
+.ggb-ov-soc-line .ggb-soc-a { padding:3px 8px; font-size:11px; background:#FEE2E2; color:#7F1D1D; border:1px solid #FCA5A5; font-weight:800; }
 .ggb-ov-soc-line .ggb-ov-dim { font-size:10.5px; }
 /* Formula list — all green bars, no amber/blue */
 .ggb-ov-flist { display:flex; flex-direction:column; gap:3px; }
@@ -1476,12 +1430,13 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 .ggb-ov-body .ggb-p-card { padding:5px 6px; }
 .ggb-ov-body .ggb-p-name { font-size:11px; }
 .ggb-ov-body .ggb-p-mods { font-size:9.5px; }
-/* Threshold rows — replace yellow/red with white+green */
-.ggb-ov-body .ggb-thresh-grid { gap:3px; }
-.ggb-ov-body .ggb-thresh-row { padding:4px 8px; font-size:10.5px; background:#fff; color:#374151; border:1px solid #E5E7EB; }
+/* Threshold rows — colour-coded by severity: green (pass) → amber (single retry) → red (both) */
+.ggb-ov-body .ggb-thresh-grid { gap:4px; }
+.ggb-ov-body .ggb-thresh-row { padding:6px 10px; font-size:10.5px; border:1px solid transparent; font-weight:600; }
 .ggb-ov-body .ggb-thresh-pass { background:${GL}; color:${G}; border-color:#A7D4B5; }
-.ggb-ov-body .ggb-thresh-inc { background:#fff; color:${G}; border-color:#A7D4B5; }
-.ggb-ov-body .ggb-thresh-fail { background:#fff; color:#374151; border-color:#D1D5DB; }
+.ggb-ov-body .ggb-thresh-inc  { background:#FEF3C7; color:#92400E; border-color:#FDE68A; }
+.ggb-ov-body .ggb-thresh-fail { background:#FEE2E2; color:#7F1D1D; border-color:#FCA5A5; }
+.ggb-ov-body .ggb-thresh-tag  { padding:2px 8px; border-radius:20px; background:rgba(255,255,255,.6); }
 /* Compact WUQ table */
 .ggb-ov-body .ggb-guide-table th { padding:4px 7px; font-size:9.5px; }
 .ggb-ov-body .ggb-guide-table td { padding:3px 7px; font-size:11px; }
@@ -1500,14 +1455,14 @@ function css() { return `
 @keyframes ggbSpin { to { transform:rotate(360deg); } }
 
 /* ── Hero ── */
-.ggb-hero { padding:22px 26px; margin-bottom:20px; border-radius:16px; color:#fff;
-    background:${G}; box-shadow:0 4px 16px rgba(0,70,27,.15); }
-.ggb-hero-title { font-size:24px; font-weight:800; margin:8px 0 4px; }
-.ggb-hero-sub { font-size:13px; opacity:.85; margin:0; }
+.ggb-hero { padding:22px 26px; margin-bottom:20px; border-radius:16px; color:#111;
+    background:#fff; border:1px solid ${BORDER}; }
+.ggb-hero-title { font-size:24px; font-weight:800; margin:8px 0 4px; color:#111; }
+.ggb-hero-sub { font-size:13px; color:#6B7280; margin:0; }
 .ggb-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
     font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
     background:${GL}; color:${G}; }
-.ggb-hero .ggb-pill { background:rgba(255,255,255,.2); color:#fff; }
+.ggb-hero .ggb-pill { background:${GL}; color:${G}; }
 
 /* ── Back ── */
 .ggb-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600;

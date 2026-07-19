@@ -465,6 +465,7 @@ function getMySubjects() {
         $subjects = db()->fetchAll(
             "SELECT ss.student_subject_id, ss.subject_offered_id, ss.section_id, ss.enrollment_date, ss.status,
                 s.subject_id, s.subject_code, s.subject_name, s.units,
+                p.program_code,
                 so.status AS offering_status,
                 sec.section_name, sec.enrollment_code,
                 secsubj.schedule, secsubj.room,
@@ -479,6 +480,7 @@ function getMySubjects() {
              FROM student_subject ss
              JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
              JOIN subject s ON so.subject_id = s.subject_id
+             LEFT JOIN program p ON p.program_id = s.program_id
              LEFT JOIN users u2 ON u2.users_id = so.user_teacher_id
              LEFT JOIN section sec ON ss.section_id = sec.section_id
              LEFT JOIN section_subject secsubj ON secsubj.section_id = ss.section_id

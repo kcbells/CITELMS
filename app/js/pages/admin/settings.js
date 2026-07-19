@@ -12,22 +12,6 @@ export async function render(container) {
         <style>
             .set-wrap { max-width: 100%; }
 
-            /* ── Banner ── */
-            .set-banner {
-                background: #00461B;
-                border-radius: 20px; padding: 28px 36px; margin-bottom: 28px;
-                display: flex; align-items: center; gap: 20px;
-                box-shadow: 0 2px 10px rgba(0,70,27,.1);
-            }
-            .set-banner-icon {
-                width: 52px; height: 52px; border-radius: 14px;
-                background: rgba(255,255,255,.15);
-                display: flex; align-items: center; justify-content: center;
-                font-size: 24px; flex-shrink: 0;
-            }
-            .set-banner-text h1 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 4px; }
-            .set-banner-text p  { color: rgba(255,255,255,.78); font-size: 14px; }
-
             /* ── Layout ── */
             .set-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
 
@@ -68,12 +52,8 @@ export async function render(container) {
                 width: 40px; height: 40px; border-radius: 10px;
                 display: flex; align-items: center; justify-content: center;
                 font-size: 18px; flex-shrink: 0;
+                background: #F3F4F6; color: #111;
             }
-            .set-card-head-icon.green  { background: #D1FAE5; }
-            .set-card-head-icon.blue   { background: #DBEAFE; }
-            .set-card-head-icon.yellow { background: #FEF3C7; }
-            .set-card-head-icon.purple { background: #EDE9FE; }
-            .set-card-head-icon.red    { background: #FEE2E2; }
             .set-card-title h3 { font-size: 15px; font-weight: 700; color: #262626; }
             .set-card-title p  { font-size: 12.5px; color: #737373; margin-top: 2px; }
 
@@ -185,15 +165,6 @@ export async function render(container) {
         </style>
 
         <div class="set-wrap">
-            <!-- Banner -->
-            <div class="set-banner">
-                <div class="set-banner-icon">${icon('settings', { size: 28 })}</div>
-                <div class="set-banner-text">
-                    <h1>System Administration</h1>
-                    <p>Manage PHINMA COC LMS — academic calendar, system health, and access control</p>
-                </div>
-            </div>
-
             <div class="set-layout">
                 <!-- Left Nav -->
                 <aside class="set-nav">
@@ -205,6 +176,9 @@ export async function render(container) {
                     <div class="set-nav-label">System</div>
                     <div class="set-nav-item" data-section="overview">
                         <span class="nav-icon">${icon('chart')}</span> System Overview
+                    </div>
+                    <div class="set-nav-item" data-section="health">
+                        <span class="nav-icon">${icon('checkCircle')}</span> System Health
                     </div>
                     <div class="set-nav-item" data-section="maintenance">
                         <span class="nav-icon">${icon('wrench')}</span> Maintenance
@@ -228,7 +202,7 @@ export async function render(container) {
                     <div class="set-panel active" data-panel="school-year">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon blue">${icon('calendar', { size: 22 })}</div>
+                                <div class="set-card-head-icon">${icon('calendar', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>School Year &amp; Active Semester</h3>
                                     <p>Toggle which semester is currently active — the academic year updates automatically</p>
@@ -244,7 +218,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="overview">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon green">${icon('chart', { size: 22 })}</div>
+                                <div class="set-card-head-icon">${icon('chart', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>System Overview</h3>
                                     <p>Live snapshot of users, enrollment, academic structure, and content</p>
@@ -256,11 +230,28 @@ export async function render(container) {
                         </div>
                     </div>
 
+                    <!-- ── System Health ── -->
+                    <div class="set-panel" data-panel="health">
+                        <div class="set-card">
+                            <div class="set-card-head">
+                                <div class="set-card-head-icon">${icon('checkCircle', { size: 22 })}</div>
+                                <div class="set-card-title">
+                                    <h3>System Health</h3>
+                                    <p>Live status check of core modules — database, storage, and academic features</p>
+                                </div>
+                                <button class="btn-primary" id="btn-refresh-health" style="margin-left:auto;">${icon('clock', inl)} Refresh</button>
+                            </div>
+                            <div class="set-card-body" id="health-body">
+                                <div class="sov-loading">Checking system health...</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ── Maintenance ── -->
                     <div class="set-panel" data-panel="maintenance">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon red">${icon('wrench', { size: 22 })}</div>
+                                <div class="set-card-head-icon">${icon('wrench', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>Maintenance Mode</h3>
                                     <p>Take the system offline for updates or maintenance</p>
@@ -292,7 +283,7 @@ export async function render(container) {
 
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon yellow">${icon('database', { size: 22 })}</div>
+                                <div class="set-card-head-icon">${icon('database', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>Data Management</h3>
                                     <p>Perform system-level data operations with caution</p>
@@ -332,7 +323,7 @@ export async function render(container) {
                     <div class="set-panel" data-panel="campuses">
                         <div class="set-card">
                             <div class="set-card-head">
-                                <div class="set-card-head-icon green">${icon('building', { size: 22 })}</div>
+                                <div class="set-card-head-icon">${icon('building', { size: 22 })}</div>
                                 <div class="set-card-title">
                                     <h3>Campuses</h3>
                                     <p>Manage PHINMA COC campus locations</p>
@@ -360,7 +351,7 @@ export async function render(container) {
     `;
 
     // ── Nav switching ──
-    const _loaded = { users: false, rbac: false, overview: false, campuses: false };
+    const _loaded = { users: false, rbac: false, overview: false, campuses: false, health: false };
 
     container.querySelectorAll('.set-nav-item').forEach(item => {
         item.addEventListener('click', async () => {
@@ -375,6 +366,10 @@ export async function render(container) {
             if (sec === 'overview' && !_loaded.overview) {
                 _loaded.overview = true;
                 loadSystemOverview();
+            }
+            if (sec === 'health' && !_loaded.health) {
+                _loaded.health = true;
+                loadSystemHealth();
             }
             if (sec === 'campuses') {
                 loadCampuses();
@@ -418,6 +413,8 @@ export async function render(container) {
         });
     });
 
+    container.querySelector('#btn-refresh-health')?.addEventListener('click', () => loadSystemHealth());
+
     // ── Data Management buttons ──
     container.querySelector('#btn-clear-inactive').addEventListener('click', async () => {
         const ok = await notify.confirm('Remove inactive user accounts older than 90 days?\nThis cannot be undone.', { danger: true, confirmText: 'Run Cleanup' });
@@ -445,11 +442,11 @@ export async function render(container) {
         body.innerHTML = `
             <style>
                 .camp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-                .camp-card { border:1px solid #e8e8e8; border-radius:14px; overflow:hidden; }
-                .camp-card-top { background:linear-gradient(135deg,#00461B,#006b2b); padding:18px 20px; display:flex; align-items:center; gap:14px; }
-                .camp-initial { width:44px; height:44px; border-radius:12px; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; color:#fff; flex-shrink:0; }
-                .camp-card-name { font-size:15px; font-weight:700; color:#fff; }
-                .camp-card-code { font-size:11px; color:rgba(255,255,255,.7); margin-top:2px; font-weight:600; letter-spacing:.5px; }
+                .camp-card { border:1px solid #111; border-radius:14px; overflow:hidden; }
+                .camp-card-top { background:#fff; border-bottom:1px solid #111; padding:18px 20px; display:flex; align-items:center; gap:14px; }
+                .camp-initial { width:44px; height:44px; border-radius:12px; background:#F3F4F6; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; color:#111; flex-shrink:0; }
+                .camp-card-name { font-size:15px; font-weight:700; color:#111; }
+                .camp-card-code { font-size:11px; color:#6B7280; margin-top:2px; font-weight:600; letter-spacing:.5px; }
                 .camp-card-body { padding:14px 18px; background:#fff; }
                 .camp-row { display:flex; gap:8px; align-items:flex-start; font-size:12.5px; color:#525252; padding:4px 0; }
                 .camp-row-lbl { color:#9ca3af; font-weight:600; min-width:56px; flex-shrink:0; }
@@ -739,6 +736,76 @@ export async function render(container) {
             : `${sy + 1}-${sy + 2}`;
     }
 
+    // ── System Health ────────────────────────────────────────────────────────
+
+    async function loadSystemHealth() {
+        const body = container.querySelector('#health-body');
+        body.innerHTML = '<div class="sov-loading">Checking system health...</div>';
+
+        const res = await Api.get('/SystemHealthAPI.php?action=check');
+        if (!res.success) {
+            body.innerHTML = `<div style="color:#b91c1c;font-size:13px;padding:20px;">Could not run health check: ${escSy(res.message || 'Unknown error')}</div>`;
+            return;
+        }
+
+        const { modules, summary } = res.data;
+
+        const statusMeta = {
+            ok:      { label: 'Operational',   color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+            warning: { label: 'Needs Attention', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+            error:   { label: 'Problem',        color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+        };
+
+        const overallStatus = summary.error > 0 ? 'error' : (summary.warning > 0 ? 'warning' : 'ok');
+        const overallMeta = statusMeta[overallStatus];
+
+        body.innerHTML = `
+            <style>
+                .health-summary {
+                    display: flex; align-items: center; gap: 14px;
+                    padding: 16px 18px; border-radius: 12px; margin-bottom: 20px;
+                    background: ${overallMeta.bg}; border: 1px solid ${overallMeta.border};
+                }
+                .health-summary-icon { font-size: 22px; color: ${overallMeta.color}; flex-shrink: 0; }
+                .health-summary-text strong { font-size: 14px; color: ${overallMeta.color}; }
+                .health-summary-text p { font-size: 12.5px; color: #6b7280; margin-top: 2px; }
+                .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+                .health-card {
+                    border: 1px solid #e8e8e8; border-radius: 12px; padding: 14px 16px;
+                    display: flex; align-items: flex-start; gap: 12px;
+                }
+                .health-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+                .health-card-name { font-size: 13.5px; font-weight: 700; color: #262626; }
+                .health-card-detail { font-size: 12px; color: #737373; margin-top: 2px; }
+                .health-card-badge {
+                    margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
+                    border-radius: 20px; white-space: nowrap; align-self: center;
+                }
+            </style>
+            <div class="health-summary">
+                <span class="health-summary-icon">${icon(overallStatus === 'ok' ? 'checkCircle' : 'warning', { size: 22 })}</span>
+                <div class="health-summary-text">
+                    <strong>${summary.error > 0 ? `${summary.error} module${summary.error !== 1 ? 's' : ''} with a problem` : summary.warning > 0 ? `${summary.warning} module${summary.warning !== 1 ? 's' : ''} need attention` : 'All systems operational'}</strong>
+                    <p>${summary.ok} of ${summary.total} modules fully healthy — last checked ${new Date(res.data.checked_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
+                </div>
+            </div>
+            <div class="health-grid">
+                ${modules.map(m => {
+                    const meta = statusMeta[m.status] || statusMeta.ok;
+                    return `
+                    <div class="health-card">
+                        <span class="health-dot" style="background:${meta.color}"></span>
+                        <div>
+                            <div class="health-card-name">${escSy(m.name)}</div>
+                            <div class="health-card-detail">${escSy(m.detail)}</div>
+                        </div>
+                        <span class="health-card-badge" style="background:${meta.bg};color:${meta.color};border:1px solid ${meta.border}">${meta.label}</span>
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+    }
+
     async function loadSchoolYear() {
         const body = container.querySelector('#sy-body');
         body.innerHTML = '<div style="text-align:center;padding:40px;color:#737373;">Loading...</div>';
@@ -768,7 +835,7 @@ export async function render(container) {
                 <style>
                     .sy-active-banner {
                         display:flex; align-items:center; gap:14px;
-                        background:#00461B; border-radius:14px;
+                        background:#fff; border:1px solid #111; border-radius:14px;
                         padding:16px 20px; margin-bottom:24px;
                     }
                     .sy-active-pulse {
@@ -781,8 +848,8 @@ export async function render(container) {
                         50%      { box-shadow: 0 0 0 6px rgba(74,222,128,.08); }
                     }
                     .sy-active-info { flex:1; min-width:0; }
-                    .sy-active-name { font-size:15px; font-weight:800; color:#fff; }
-                    .sy-active-meta { font-size:12px; color:rgba(255,255,255,.65); margin-top:2px; }
+                    .sy-active-name { font-size:15px; font-weight:800; color:#111; }
+                    .sy-active-meta { font-size:12px; color:#6B7280; margin-top:2px; }
                     .sy-no-active-banner {
                         display:flex; align-items:center; gap:10px;
                         padding:12px 16px; background:#FEF3C7; border:1.5px solid #FDE68A;
@@ -797,21 +864,21 @@ export async function render(container) {
                     }
                     .sy-sem-row:last-child { margin-bottom:0; }
                     .sy-sem-row.is-active {
-                        border-color:#00461B; background:#f0fdf4;
+                        border-color:#111; background:#fff;
                     }
                     .sy-sem-icon {
                         width:42px; height:42px; border-radius:12px; flex-shrink:0;
                         display:flex; align-items:center; justify-content:center;
                         background:#f3f4f6;
                     }
-                    .sy-sem-row.is-active .sy-sem-icon { background:#d1fae5; }
+                    .sy-sem-row.is-active .sy-sem-icon { background:#f3f4f6; }
                     .sy-sem-icon svg { stroke:#6b7280; }
                     .sy-sem-row.is-active .sy-sem-icon svg { stroke:#00461B; }
                     .sy-sem-info { flex:1; min-width:0; }
                     .sy-sem-name { font-size:14px; font-weight:700; color:#262626; }
                     .sy-sem-row.is-active .sy-sem-name { color:#00461B; }
                     .sy-sem-year { font-size:12px; color:#9ca3af; margin-top:2px; font-weight:500; }
-                    .sy-sem-row.is-active .sy-sem-year { color:#15803d; }
+                    .sy-sem-row.is-active .sy-sem-year { color:#6b7280; }
 
                     /* Toggle switch */
                     .sy-toggle { position:relative; display:inline-block; width:48px; height:26px; flex-shrink:0; }

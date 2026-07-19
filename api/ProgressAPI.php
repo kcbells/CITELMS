@@ -68,7 +68,8 @@ function getGrades() {
         // Order by enrolled first so PHP dedup keeps the active enrollment when duplicates exist.
         $rawSubjects = db()->fetchAll(
             "SELECT s.subject_id, s.subject_code, s.subject_name,
-                sec.section_name,
+                sec.section_name, sec.section_id,
+                so.subject_offered_id, so.grading_type,
                 so.current_period,
                 ss.status AS enrollment_status,
                 CONCAT(u2.first_name, ' ', u2.last_name) AS instructor_name,
@@ -100,7 +101,9 @@ function getGrades() {
         if (empty($subjects)) {
             $subjects = db()->fetchAll(
                 "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name,
-                    NULL AS section_name, 'P1' AS current_period, 'historical' AS enrollment_status,
+                    NULL AS section_name, NULL AS section_id,
+                    NULL AS subject_offered_id, NULL AS grading_type,
+                    'P1' AS current_period, 'historical' AS enrollment_status,
                     NULL AS instructor_name,
                     (SELECT COUNT(*) FROM lessons l WHERE l.subject_id = s.subject_id AND l.status = 'published') AS total_lessons,
                     (SELECT COUNT(*) FROM student_progress sp

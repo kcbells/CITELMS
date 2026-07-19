@@ -53,7 +53,7 @@ export async function render(container) {
     container.innerHTML = `
         <style>
             .sd-wrap { background:transparent; min-height:100%; }
-            .page-content.sd-page-white { background:#F7F5E8 !important; }
+            .page-content.sd-page-white { background:#fff !important; }
 
             .sd-loading { display:flex; justify-content:center; padding:80px; background:#fff; }
             .sd-spin {

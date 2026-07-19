@@ -21,10 +21,10 @@ function injectPreQuizStyles() {
     el.id = 'tq-pre-styles';
     el.textContent = `
         .tq-pre { max-width:640px; margin:32px auto 48px; }
-        .tq-pre-hero { background:#00461B; border-radius:20px 20px 0 0; padding:28px 32px 24px; color:#fff; text-align:center; }
-        .tq-pre-hero-badge { display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.2); border:none; padding:5px 14px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:14px; }
-        .tq-pre-hero h2 { font-size:24px; font-weight:800; margin:0 0 6px; letter-spacing:-.3px; }
-        .tq-pre-hero p { font-size:14px; opacity:.9; margin:0; line-height:1.5; }
+        .tq-pre-hero { background:#fff; border:1px solid #E5E7EB; border-radius:20px 20px 0 0; padding:28px 32px 24px; color:#111; text-align:center; }
+        .tq-pre-hero-badge { display:inline-flex; align-items:center; gap:6px; background:#E8F5EC; color:#00461B; border:none; padding:5px 14px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:14px; }
+        .tq-pre-hero h2 { font-size:24px; font-weight:800; margin:0 0 6px; letter-spacing:-.3px; color:#111; }
+        .tq-pre-hero p { font-size:14px; color:#6B7280; margin:0; line-height:1.5; }
         .tq-pre-card { background:#fff; border:none; border-top:none; border-radius:0 0 20px 20px; box-shadow:none; overflow:hidden; }
         .tq-pre-body { padding:28px 32px 32px; }
         .tq-pre-meta { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }

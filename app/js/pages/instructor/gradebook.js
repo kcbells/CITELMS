@@ -10,6 +10,7 @@ import {
     buildPeriodGroups, isItemMissing, gradingPeriodTableCss,
 } from '../../utils/gradebook-periods.js';
 import { notify } from '../../utils/notify.js';
+import { mountGlobalClassRecord } from './global-gradebook.js';
 
 const inl    = { size: 14, className: 'ui-icon-inline' };
 const G      = '#00461B';
@@ -215,6 +216,15 @@ async function renderClassRecord(container, opts) {
     );
 
     const host = container.querySelector('#gb-record-host');
+
+    // Subjects the dean has marked "Global" use the 14-module Effortful
+    // Learning / Mastery class record instead of the raw quiz-score table —
+    // same Subjects → Sections → Class Record flow, different table.
+    if (subject.grading_type === 'global') {
+        await mountGlobalClassRecord(host, subject, section);
+        return;
+    }
+
     try {
         const record = await loadClassRecord(subject, section);
         host.innerHTML = renderClassRecordTable(subject, section, record);
@@ -553,13 +563,13 @@ function pageCss() {
         .gb-spin { width:40px; height:40px; border:3px solid #eee; border-top-color:${G}; border-radius:50%; animation:gbSpin .75s linear infinite; }
         @keyframes gbSpin { to { transform:rotate(360deg); } }
 
-        .gb-hero { padding:24px 28px; margin-bottom:20px; border-radius:16px; color:#fff; background:${G}; box-shadow:0 4px 16px rgba(0,70,27,.15); }
-        .gb-hero-title { font-size:24px; font-weight:800; margin:8px 0 4px; }
-        .gb-hero-sub { font-size:13px; opacity:.85; margin:0; }
+        .gb-hero { padding:24px 28px; margin-bottom:20px; border-radius:16px; color:#111; background:#fff; border:1px solid ${BORDER}; }
+        .gb-hero-title { font-size:24px; font-weight:800; margin:8px 0 4px; color:#111; }
+        .gb-hero-sub { font-size:13px; color:#6B7280; margin:0; }
 
         .gb-role-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
             font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; background:${GL}; color:${G}; }
-        .gb-role-pill.light { background:rgba(255,255,255,.18); color:#fff; }
+        .gb-role-pill.light { background:${GL}; color:${G}; }
 
         .gb-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600;
             color:${G}; background:none; border:none; cursor:pointer; margin-bottom:16px; padding:0; }

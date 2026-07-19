@@ -38,7 +38,7 @@ async function renderList(container, filters = {}) {
 
     container.innerHTML = `
         <style>
-            .users-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+            .users-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .users-header h2 { font-size:22px; font-weight:700; color:#262626; }
             .users-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
@@ -59,6 +59,7 @@ async function renderList(container, filters = {}) {
             .user-av { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
             .user-av.admin { background:#D1FAE5; color:#065F46; }
             .user-av.dean { background:#FEF3C7; color:#92400E; }
+            .user-av.program_head { background:#FFE4D6; color:#9A3412; }
             .user-av.instructor { background:#DBEAFE; color:#1E40AF; }
             .user-av.student { background:#EDE9FE; color:#5B21B6; }
             .user-name { font-weight:600; color:#262626; display:block; }
@@ -67,6 +68,7 @@ async function renderList(container, filters = {}) {
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:capitalize; }
             .badge-admin { background:#D1FAE5; color:#065F46; }
             .badge-dean { background:#FEF3C7; color:#92400E; }
+            .badge-program_head { background:#FFE4D6; color:#9A3412; }
             .badge-instructor { background:#DBEAFE; color:#1E40AF; }
             .badge-student { background:#EDE9FE; color:#5B21B6; }
             .badge-active { background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
@@ -114,7 +116,6 @@ async function renderList(container, filters = {}) {
         </style>
 
         <div class="users-header">
-            <h2>Users <span class="count">${total}</span></h2>
             <button class="btn-primary" id="btn-add-user">+ Add User</button>
         </div>
 
@@ -124,6 +125,7 @@ async function renderList(container, filters = {}) {
                 <option value="">All Roles</option>
                 <option value="admin" ${filters.role==='admin'?'selected':''}>Admin</option>
                 <option value="dean" ${filters.role==='dean'?'selected':''}>Dean</option>
+                <option value="program_head" ${filters.role==='program_head'?'selected':''}>Program Head</option>
                 <option value="instructor" ${filters.role==='instructor'?'selected':''}>Instructor</option>
                 <option value="student" ${filters.role==='student'?'selected':''}>Student</option>
             </select>
@@ -162,7 +164,7 @@ async function renderList(container, filters = {}) {
                         <tr>
                             <td><div class="user-cell"><div class="user-av ${u.role}">${initials}</div><div><span class="user-name">${esc(u.first_name+' '+u.last_name)}</span><span class="user-email">${esc(u.email)}</span></div></div></td>
                             <td>${esc(id)}</td>
-                            <td><span class="badge badge-${u.role}">${u.role}</span></td>
+                            <td><span class="badge badge-${u.role}">${u.role === 'program_head' ? 'Program Head' : u.role}</span></td>
                             <td>${esc(deptProg)}${campusLabel}</td>
                             <td><span class="badge badge-${u.status}">${u.status}</span></td>
                             <td style="color:#737373;font-size:13px">${date}</td>
@@ -355,10 +357,11 @@ function openModal(container, user = null) {
                     <div class="form-group">
                         <label class="form-label">Role *</label>
                         <select class="form-select" id="m-role">
-                            <option value="student"    ${user?.role==='student'   ?'selected':''}>Student</option>
-                            <option value="instructor" ${user?.role==='instructor'?'selected':''}>Instructor</option>
-                            <option value="dean"       ${user?.role==='dean'      ?'selected':''}>Dean</option>
-                            <option value="admin"      ${user?.role==='admin'     ?'selected':''}>Admin</option>
+                            <option value="student"      ${user?.role==='student'     ?'selected':''}>Student</option>
+                            <option value="instructor"   ${user?.role==='instructor'  ?'selected':''}>Instructor</option>
+                            <option value="program_head" ${user?.role==='program_head'?'selected':''}>Program Head</option>
+                            <option value="dean"         ${user?.role==='dean'        ?'selected':''}>Dean</option>
+                            <option value="admin"        ${user?.role==='admin'       ?'selected':''}>Admin</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -383,7 +386,7 @@ function openModal(container, user = null) {
                             <option value="">Select Department</option>
                             ${deptOptions}
                         </select>
-                        <div class="form-hint">Required for Dean/Instructor</div>
+                        <div class="form-hint">Required for Dean/Program Head/Instructor</div>
                     </div>
                     <div class="form-group" id="prog-group">
                         <label class="form-label">Program</label>

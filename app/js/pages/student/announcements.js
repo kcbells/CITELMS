@@ -5,6 +5,7 @@
 import { Api }  from '../../api.js';
 import { Auth } from '../../auth.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
+import { resolveMaterialUrl } from '../../utils/material-files.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -42,15 +43,15 @@ function renderPage(container, allAnn, subjects, filterSubject) {
     container.innerHTML = `
         <style>
             /* Banner */
-            .an-banner { background:#00461B; border-radius:16px; padding:24px 28px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+            .an-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:24px 28px; margin-bottom:20px; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:16px; }
             .an-banner::before { content:''; position:absolute; right:-30px; top:-30px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .an-banner-left { position:relative; z-index:1; }
-            .an-banner-left h2 { font-size:22px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .an-banner-left p  { font-size:13px; color:rgba(255,255,255,.75); margin:0; }
+            .an-banner-left h2 { font-size:22px; font-weight:800; color:#111; margin:0 0 4px; }
+            .an-banner-left p  { font-size:13px; color:#6B7280; margin:0; }
             .an-banner-right { position:relative; z-index:1; }
-            .an-banner-stat { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:10px 18px; }
-            .an-banner-stat-num { font-size:24px; font-weight:800; color:#fff; line-height:1; }
-            .an-banner-stat-lbl { font-size:12px; color:rgba(255,255,255,.8); font-weight:600; }
+            .an-banner-stat { display:flex; align-items:center; gap:10px; background:#E8F5EC; border:1px solid #E5E7EB; border-radius:12px; padding:10px 18px; }
+            .an-banner-stat-num { font-size:24px; font-weight:800; color:#00461B; line-height:1; }
+            .an-banner-stat-lbl { font-size:12px; color:#6B7280; font-weight:600; }
 
             /* Filter bar */
             .an-filter-bar { background:#fff; border:1px solid #e8e8e8; border-radius:14px; padding:14px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; box-shadow:0 1px 3px rgba(0,0,0,.05); flex-wrap:wrap; }
@@ -81,6 +82,12 @@ function renderPage(container, allAnn, subjects, filterSubject) {
             .an-badge-pinned  { background:#1B4D3E; color:#fff; }
 
             .an-content { font-size:14px; color:#374151; line-height:1.7; white-space:pre-line; margin-bottom:14px; }
+            .an-attachments { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
+            .an-attach-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid #e8ecef;
+                border-radius:20px; background:#F9FAFB; color:#374151; font-size:12.5px; font-weight:600;
+                text-decoration:none; max-width:220px; }
+            .an-attach-chip span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .an-attach-chip:hover { background:#E8F5EC; border-color:#A7D4B5; color:#1B4D3E; }
 
             .an-card-footer { display:flex; justify-content:space-between; align-items:center; padding:10px 22px; background:#fafafa; border-top:1px solid #f1f5f9; font-size:12px; color:#9ca3af; }
             .an-author { font-weight:700; color:#374151; }
@@ -95,19 +102,15 @@ function renderPage(container, allAnn, subjects, filterSubject) {
 
         <!-- Banner -->
         <div class="an-banner">
-            <div class="an-banner-left">
-                <h2>${icon('announce', { size: 22, className: 'ui-icon-inline' })} Announcements</h2>
-                <p>Updates and notices from your instructors</p>
-            </div>
             <div class="an-banner-right">
                 <div class="an-banner-stat">
                     <div>
                         <div class="an-banner-stat-num">${allAnn.length}</div>
                         <div class="an-banner-stat-lbl">Total</div>
                     </div>
-                    ${newCount > 0 ? `<div style="width:1px;height:30px;background:rgba(255,255,255,.2)"></div>
+                    ${newCount > 0 ? `<div style="width:1px;height:30px;background:#E5E7EB"></div>
                     <div>
-                        <div class="an-banner-stat-num" style="color:#FCD34D">${newCount}</div>
+                        <div class="an-banner-stat-num" style="color:#B45309">${newCount}</div>
                         <div class="an-banner-stat-lbl">New</div>
                     </div>` : ''}
                 </div>
@@ -181,12 +184,21 @@ function buildCard(a, i) {
                     </div>
                 </div>
                 <div class="an-content">${esc(a.content)}</div>
+                ${renderAttachments(a.attachments)}
             </div>
             <div class="an-card-footer">
                 <span>By <span class="an-author">${esc(authorName)}</span></span>
                 <span class="an-date">${dateStr}</span>
             </div>
         </div>`;
+}
+
+function renderAttachments(atts) {
+    if (!atts || !atts.length) return '';
+    return `<div class="an-attachments">${atts.map(a => `
+        <a class="an-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}">
+            ${icon('document', inl)}<span>${esc(a.original_name)}</span>
+        </a>`).join('')}</div>`;
 }
 
 function isNew(a) {

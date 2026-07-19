@@ -653,12 +653,7 @@ function getStyles() {
     background:#fafafa; border-radius:8px; text-decoration:none; color:#333; transition:all .2s;
 }
 .resource-item:hover { background:#E8F5E9; }
-.res-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.res-icon.pdf-icon { background:#FEE2E2; color:#b91c1c; }
-.res-icon.doc-icon { background:#DBEAFE; color:#1E40AF; }
-.res-icon.zip-icon { background:#FEF3C7; color:#92400E; }
-.res-icon.link-icon { background:#EDE9FE; color:#5B21B6; }
-.res-icon.video-icon { background:#FEE2E2; color:#b91c1c; }
+.res-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:#F3F4F6; color:#111; }
 .resource-name { font-size:14px; font-weight:500; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .resource-meta { font-size:11px; color:#9ca3af; margin-top:2px; }
 .resource-url { font-size:11px; color:#9ca3af; margin-top:2px; }

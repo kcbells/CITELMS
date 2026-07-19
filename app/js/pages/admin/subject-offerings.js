@@ -97,7 +97,6 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
         <div class="page-header">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
                 ${programFilter ? `<a href="#admin/curriculum" style="color:#1B4D3E;font-size:13px;font-weight:600;text-decoration:none">← Back to Curriculum</a>` : ''}
-                <h2>Subject Offerings <span class="count">${offerings.length}</span></h2>
             </div>
             <span style="font-size:12px;color:#737373">Offerings are auto-generated from the curriculum.</span>
         </div>

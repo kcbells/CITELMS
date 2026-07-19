@@ -135,11 +135,7 @@ export async function render(container, params = {}) {
         </style>
 
         <div class="cur-page">
-        <div class="page-header">
-            <div>
-                <h2>${icon('clipboard', inl)} Curriculum</h2>
-                <p>Programs, subjects, offerings &amp; sections in one place</p>
-            </div>
+        <div class="page-header" style="justify-content:flex-end">
             <div class="header-right">
                 <select class="program-select" id="semester-filter" title="Academic term for offerings &amp; sections">
                     ${_semesters.map(s => `

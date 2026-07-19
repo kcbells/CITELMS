@@ -47,11 +47,11 @@ class UserIdHelper {
             if (!self::isValidStaffId($userId)) {
                 return null;
             }
-            // Try staff/admin/dean first
+            // Try staff/admin/dean/program head first
             $user = db()->fetchOne(
                 "SELECT * FROM users
                  WHERE employee_id = ?
-                   AND role IN ('instructor', 'admin', 'dean')
+                   AND role IN ('instructor', 'admin', 'dean', 'program_head')
                  LIMIT 1",
                 [$userId]
             );

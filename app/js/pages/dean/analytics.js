@@ -23,8 +23,9 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .da-hero { background:${G}; color:#fff; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
-            .da-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; }
+            .da-hero { background:#fff; border:1px solid #E5E7EB; color:#111; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .da-hero h1 { font-size:24px; font-weight:800; margin:0 0 6px; color:#111; }
+            .da-hero p { color:#6B7280; }
             .da-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-bottom:24px; }
             .da-stat { background:#fff; border-radius:14px; padding:18px; }
             .da-stat-val { font-size:24px; font-weight:800; }
@@ -35,7 +36,6 @@ export async function render(container) {
             .da-th { font-size:11px; font-weight:700; color:#9CA3AF; text-transform:uppercase; }
         </style>
         <div class="da-hero">
-            <h1>Department Analytics</h1>
             <p>${esc(dept.department_name || 'Your department')} — performance at a glance</p>
         </div>
         <div class="da-grid">

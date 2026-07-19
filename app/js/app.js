@@ -21,10 +21,20 @@ import {
 import { Api } from './api.js';
 import { icon, iconLg } from './utils/icons.js';
 
-// ── Page-transition blade spinner ────────────────────────────
+// ── Page-transition spinner (used only for the very first paint of a
+//    page, when there's nothing on screen yet) ───────────────────
 function pagePencilHTML() {
-    const blades = '<div class="spinner-blade"></div>'.repeat(12);
-    return `<div class="page-spinner"><div class="spinner">${blades}</div><p class="page-spinner-text">Loading</p></div>`;
+    return `<div class="page-spinner"><div class="spinner"></div><p class="page-spinner-text">Loading</p></div>`;
+}
+
+// ── Floating nav spinner — shown during in-app navigation while the
+//    previous page's content stays visible underneath, instead of
+//    blanking the screen out. ──────────────────────────────────────
+function showNavSpinner() {
+    document.getElementById('nav-spinner')?.classList.add('show');
+}
+function hideNavSpinner() {
+    document.getElementById('nav-spinner')?.classList.remove('show');
 }
 
 // ── Permission map: page → required permission slug ───────────
@@ -45,6 +55,7 @@ const PAGE_PERMISSIONS = {
     'dean/faculty':              null,
     'dean/instructors':          null,
     'dean/reports':              null,
+    'dean/subject-offered':      null,
     // Instructor
     'instructor/departments':    'departments.view',
     'instructor/programs':       'programs.view',
@@ -56,6 +67,7 @@ const PAGE_PERMISSIONS = {
     'instructor/content-bank':   'lessons.view',
     // 'instructor/quizzes' removed — quizzes are now managed inside each subject's Classwork tab
     'instructor/gradebook':      'grades.view',
+    'instructor/global-gradebook': 'grades.view',
     'instructor/reports':        'reports.view',
     'instructor/analytics':      'analytics.view',
     // Student
@@ -97,8 +109,19 @@ const PAGE_ALIASES = {
     'dean/rbac':                    'admin/rbac',
     'dean/settings':                'admin/settings',
     'dean/messages':                'instructor/messages',
+    'dean/global-gradebook':        'instructor/global-gradebook',
+    'dean/gradebook':               'instructor/gradebook',
+    'dean/my-classes':              'instructor/my-classes',
+    'dean/calendar':                'instructor/calendar',
     // Admin messaging — reuse instructor messages page
     'admin/messages':               'instructor/messages',
+    // Program Head — no dedicated pages; teaches like an instructor
+    'program_head/dashboard':       'instructor/dashboard',
+    'program_head/my-classes':      'instructor/my-classes',
+    'program_head/content-bank':    'instructor/content-bank',
+    'program_head/gradebook':       'instructor/gradebook',
+    'program_head/messages':        'instructor/messages',
+    'program_head/calendar':        'instructor/calendar',
     // Student accessing shared modules if granted
     // (student/announcements has its own page — no alias needed)
 };
@@ -167,23 +190,33 @@ async function loadCurrentPage() {
     // Update page title in topbar
     const pageTitle = PAGE_TITLES[route.page]
         || route.page.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    document.title = `${pageTitle} | CIT-LMS`;
+    document.title = `${pageTitle} | Phinmaed Learning`;
 
     // Update sidebar active state
-    const navPage = route.page === 'subject'
-        ? (route.role === 'instructor' ? 'my-classes' : 'my-subjects')
-        : route.page;
+    const navPage = route.page;
+    const navSubjectId = route.params?.subject_id || '';
     const currentFullHash = window.location.hash.replace('#', '');
     document.querySelectorAll('.nav-item').forEach(item => {
+        if (item.classList.contains('nav-group-toggle')) return;
         item.classList.remove('active');
+        // Subject dropdown entries: active on that subject's sections list or class page
+        if (item.dataset.subjectId) {
+            const onSubjectView = route.page === 'subject' || route.page === 'my-classes';
+            if (onSubjectView && String(item.dataset.subjectId) === String(navSubjectId)) {
+                item.classList.add('active');
+            }
+            return;
+        }
         const href = (item.getAttribute('href') || '').replace('#', '');
         if (href.includes('?')) {
-            // Items with query params (e.g. Archived Classes): must match exactly
+            // Items with query params (e.g. Archived): must match exactly
             item.classList.toggle('active', currentFullHash === href || currentFullHash.startsWith(href + '&'));
         } else if (item.dataset.page === navPage) {
-            // Items without query params: active only when NOT on a query-param variant
-            const onArchivedVariant = currentFullHash.includes('?view=archived') && item.dataset.page === 'my-subjects';
-            item.classList.toggle('active', !onArchivedVariant);
+            // Items without query params: not on the archived variant, and the
+            // subject-list pages aren't active while inside one subject.
+            const isSubjectList = item.dataset.page === 'my-subjects' || item.dataset.page === 'my-classes';
+            const onArchived = currentFullHash.includes('view=archived');
+            item.classList.toggle('active', !(isSubjectList && (onArchived || navSubjectId)));
         }
     });
 
@@ -245,8 +278,11 @@ async function loadCurrentPage() {
     const resolvedKey  = PAGE_ALIASES[pageKey] || pageKey;
     const [resolvedRole, resolvedPage] = resolvedKey.split('/');
 
+    // Show a small floating spinner instead of blanking the current page —
+    // the old content stays visible until the new page is actually ready.
+    showNavSpinner();
+
     if (pages[resolvedKey]) {
-        content.innerHTML = pagePencilHTML();
         try {
             await pages[resolvedKey](content, route.params);
         } catch (err) {
@@ -256,7 +292,6 @@ async function loadCurrentPage() {
     } else {
         // Try to dynamically import the page module (use resolved role/page)
         try {
-            content.innerHTML = pagePencilHTML();
             const module = await import(`./pages/${resolvedRole}/${resolvedPage}.js?v=${Date.now()}`);
             if (!module.render) {
                 throw new Error(`Page module has no render export: ${pageKey}`);
@@ -285,6 +320,8 @@ async function loadCurrentPage() {
                 </div>`;
         }
     }
+
+    hideNavSpinner();
 
     mountRoleWidgets(user.role);
 

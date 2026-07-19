@@ -2,7 +2,7 @@
  * Instructor My Classes — subjects → sections → open class
  */
 import { Api } from '../../api.js';
-import { subjectColor } from '../../utils/subject-colors.js';
+import { subjectColor, programPatternSvg } from '../../utils/subject-colors.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { openAnnouncementModal } from '../../components/announcement-modal.js';
 import { openLessonModal } from '../../components/lesson-modal.js';
@@ -52,53 +52,13 @@ function renderSubjectList(container, subjects, view = 'active') {
     container.innerHTML = `
         <style>${styles()}</style>
         <div class="mc-page">
-            <header class="mc-hero">
-                <div>
-                    <p class="mc-hero-label">Teaching</p>
-                    <h1 class="mc-hero-title">${view === 'archived' ? 'Archived Subjects' : 'My Subjects'}</h1>
-                    <p class="mc-hero-sub">${view === 'archived' ? 'Archived subjects are frozen — students can still view lesson materials and past results.' : 'Select a subject to manage its sections, then open a class.'}</p>
-                </div>
-                <div class="mc-view-tabs">
-                    <a href="#instructor/my-classes" class="mc-view-tab${view !== 'archived' ? ' active' : ''}">
-                        Active${activeSubjects.length > 0 ? ` (${activeSubjects.length})` : ''}
-                    </a>
-                    <a href="#instructor/my-classes?view=archived" class="mc-view-tab${view === 'archived' ? ' active' : ''}">
-                        Archived${archivedSubjects.length > 0 ? ` (${archivedSubjects.length})` : ''}
-                    </a>
-                </div>
-            </header>
-
             ${viewSubjects.length === 0 ? emptyState(emptyMsg, null) : `
-                <div class="mc-toolbar">
-                    <div class="mc-search-wrap">
-                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                        <input type="search" id="mc-search" class="mc-search" placeholder="Search subjects…" autocomplete="off">
-                    </div>
-                    <span class="mc-count">${viewSubjects.length} subject${viewSubjects.length !== 1 ? 's' : ''}</span>
-                </div>
                 <div class="mc-subj-grid" id="mc-subj-grid">
                     ${viewSubjects.map(s => subjectCard(s)).join('')}
                 </div>
-                <p class="mc-no-results" id="mc-no-results" hidden>No subjects match your search.</p>
             `}
         </div>
     `;
-
-    const search = container.querySelector('#mc-search');
-    const cards = [...container.querySelectorAll('.mc-subj-card-wrap')];
-    search?.addEventListener('input', () => {
-        const q = search.value.toLowerCase().trim();
-        let n = 0;
-        cards.forEach(c => {
-            const show = !q || c.dataset.search.includes(q);
-            c.hidden = !show;
-            if (show) n++;
-        });
-        const nr = container.querySelector('#mc-no-results');
-        const grid = container.querySelector('#mc-subj-grid');
-        if (nr) nr.hidden = n > 0;
-        if (grid) grid.style.display = n === 0 ? 'none' : '';
-    });
 
     container.querySelectorAll('.mc-archive-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -139,13 +99,15 @@ function renderSubjectSections(container, subject) {
     container.innerHTML = `
         <style>${styles()}</style>
         <div class="mc-page">
-            <a href="#instructor/my-classes" class="mc-back">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                All Subjects
-            </a>
+            <div class="mc-crumb">
+                <a href="#instructor/my-classes">My Classes</a>
+                <span class="mc-crumb-sep">&rsaquo;</span>
+                <span class="mc-crumb-current">${esc(subject.subject_name)}</span>
+            </div>
 
             <header class="mc-subj-hero">
                 <div class="mc-subj-hero-band" style="background:${color}">
+                    ${programPatternSvg(subject.program_code, subject.subject_id, { width: 300, height: 160 })}
                     <span class="mc-subj-code">${esc(subject.subject_code)}</span>
                     <h1>${esc(subject.subject_name)}</h1>
                     ${subject.program_code ? `<span class="mc-subj-prog">${esc(subject.program_code)}</span>` : ''}
@@ -260,6 +222,7 @@ function subjectCard(s) {
              data-search="${esc(search)}">
             <a href="#instructor/my-classes?subject_id=${s.subject_id}" class="mc-subj-card">
                 <div class="mc-subj-top" style="background:${color}${isArchived ? ';filter:saturate(.5)' : ''}">
+                    ${programPatternSvg(s.program_code, s.subject_id)}
                     <span class="mc-subj-card-code">${esc(s.subject_code)}</span>
                     <h3>${esc(s.subject_name)}</h3>
                     ${isArchived ? '<span class="mc-archived-badge">Archived</span>' : ''}
@@ -595,9 +558,13 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
             <div class="mc-preview-box">
                 <p class="mc-preview-title">Read ${parsed} ID(s) from file · ${data.matched?.length || 0} matched · ${data.not_found?.length || 0} not in system</p>
                 ${sources ? `<ul class="mc-preview-sources">${sources}</ul>` : ''}
-                ${(data.matched || []).length ? `<ul class="mc-preview-list">${data.matched.map(s =>
-                    `<li><strong>${esc(s.student_id)}</strong> — ${esc(s.name)}</li>`
-                ).join('')}</ul>` : '<p class="mc-empty-text">No matching student accounts found.</p>'}
+                ${(data.matched || []).length ? `
+                <table class="mc-preview-table">
+                    <thead><tr><th>Student ID</th><th>Name</th></tr></thead>
+                    <tbody>${data.matched.map(s => `
+                        <tr><td>${esc(s.student_id)}</td><td>${esc(s.name)}</td></tr>
+                    `).join('')}</tbody>
+                </table>` : '<p class="mc-empty-text">No matching student accounts found.</p>'}
                 ${(data.not_found || []).length ? `<p class="mc-preview-warn">Not found: ${data.not_found.map(n => esc(n.value)).join(', ')}</p>` : ''}
             </div>
         `;
@@ -753,9 +720,12 @@ function showImportResultPopup(data, message) {
             ${added.length ? `
                 <div class="mc-popup-section">
                     <strong>Added (${added.length})</strong>
-                    <ul class="mc-popup-list">${added.map(s =>
-                        `<li><strong>${esc(s.student_id)}</strong> — ${esc(s.name)}</li>`
-                    ).join('')}</ul>
+                    <table class="mc-preview-table">
+                        <thead><tr><th>Student ID</th><th>Name</th></tr></thead>
+                        <tbody>${added.map(s => `
+                            <tr><td>${esc(s.student_id)}</td><td>${esc(s.name)}</td></tr>
+                        `).join('')}</tbody>
+                    </table>
                 </div>` : ''}
             ${skipped.length ? `
                 <div class="mc-popup-section mc-popup-warn">
@@ -802,18 +772,24 @@ function styles() {
             text-decoration:none; margin-bottom:16px; }
         .mc-back:hover { text-decoration:underline; }
 
+        .mc-crumb { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; font-weight:600; margin-bottom:16px; }
+        .mc-crumb a { color:#6B7280; text-decoration:none; transition:color .15s; }
+        .mc-crumb a:hover { color:${G}; }
+        .mc-crumb-sep { color:#9CA3AF; font-weight:400; }
+        .mc-crumb-current { color:#111; }
+
         .mc-subj-hero { display:flex; gap:0; border:none; border-radius:14px; overflow:hidden; margin-bottom:24px;
             background:#fff; }
-        .mc-subj-hero-band { padding:24px 28px; color:#fff; min-width:240px; }
+        .mc-subj-hero-band { padding:24px 28px; color:#fff; min-width:240px; position:relative; overflow:hidden; }
         .mc-subj-code { font-size:11px; font-weight:700; font-family:monospace; opacity:.9; }
         .mc-subj-hero-band h1 { font-size:22px; font-weight:800; margin:6px 0 4px; }
         .mc-subj-prog { font-size:12px; opacity:.85; }
         .mc-subj-hero-meta { flex:1; padding:24px 28px; display:flex; flex-direction:column; justify-content:center; gap:12px; }
         .mc-subj-hero-meta p { margin:0; color:#6B7280; font-size:14px; }
         .mc-hero-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-        .mc-btn-outline-dark { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:${GL};
-            color:${G}; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; }
-        .mc-btn-outline-dark:hover { background:#DDF3E4; }
+        .mc-btn-outline-dark { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:#fff;
+            color:#374151; border:1px solid #111; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; }
+        .mc-btn-outline-dark:hover { background:#F9FAFB; }
 
         .mc-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding:14px 16px;
             background:#F3F4F6; border:none; border-radius:12px; }
@@ -828,7 +804,7 @@ function styles() {
         .mc-subj-card { text-decoration:none; color:inherit; border:none; border-radius:14px; overflow:hidden;
             background:#fff; box-shadow:none; transition:background .15s; display:flex; flex-direction:column; flex:1; }
         .mc-subj-card:hover { background:#F9FAFB; }
-        .mc-subj-top { padding:20px 18px; min-height:100px; display:flex; flex-direction:column; justify-content:flex-end; }
+        .mc-subj-top { padding:20px 18px; min-height:100px; display:flex; flex-direction:column; justify-content:flex-end; position:relative; overflow:hidden; }
         .mc-subj-card-code { font-size:11px; font-weight:700; font-family:monospace; color:rgba(255,255,255,.9); }
         .mc-subj-top h3 { font-size:17px; font-weight:700; color:#fff; margin:6px 0 0; line-height:1.3; }
         .mc-subj-body { padding:16px 18px; flex:1; display:flex; flex-direction:column; gap:8px; }
@@ -848,7 +824,7 @@ function styles() {
         .mc-archive-divider-label { font-size:12px; font-weight:700; color:#6B7280; white-space:nowrap; }
 
         .mc-sec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; }
-        .mc-sec-card { border:none; border-radius:14px; padding:18px; background:#fff;
+        .mc-sec-card { border:1px solid #111; border-radius:14px; padding:18px; background:#fff;
             box-shadow:none; transition:background .15s; }
         .mc-sec-card:hover { background:#F9FAFB; }
         .mc-sec-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px; }
@@ -861,12 +837,12 @@ function styles() {
         .mc-qr-box canvas,
         .mc-qr-box img.enr-qr-canvas { border-radius:8px; border:1px solid #e5e7eb; }
         .mc-enroll-code { font-family:monospace; font-size:13px; font-weight:800; color:${G};
-            background:${GL}; padding:6px 12px; border-radius:8px; border:1px dashed #A7D4B5;
+            background:#fff; padding:6px 12px; border-radius:8px; border:1px dashed #111;
             cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
         .mc-enroll-code.lg { font-size:18px; padding:10px 16px; letter-spacing:1px; }
-        .mc-enroll-code:hover { background:#DDF3E4; }
+        .mc-enroll-code:hover { background:#F9FAFB; }
         .mc-modal-sub { font-size:12px; color:#6B7280; margin:4px 0 0; }
-        .mc-import-code-banner { background:#F0FDF4; border:1px solid #BBF7D0; border-radius:12px;
+        .mc-import-code-banner { background:#fff; border:1px solid #111; border-radius:12px;
             padding:14px 16px; margin-bottom:18px; }
         .mc-stu-tabs { display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid #E5E7EB; }
         .mc-stu-tab { padding:10px 16px; border:none; background:none; font-size:13px; font-weight:700;
@@ -886,6 +862,13 @@ function styles() {
         .mc-preview-box { margin-top:14px; padding:12px 14px; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:10px; }
         .mc-preview-title { font-size:13px; font-weight:700; color:#111; margin:0 0 8px; }
         .mc-preview-list { margin:0; padding-left:18px; font-size:13px; color:#374151; }
+        .mc-preview-table { width:100%; border-collapse:collapse; margin-top:4px; font-size:13px; background:#fff;
+            border:1px solid #E5E7EB; border-radius:8px; overflow:hidden; }
+        .mc-preview-table th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+            color:#6B7280; background:#F3F4F6; padding:8px 12px; border-bottom:1px solid #E5E7EB; }
+        .mc-preview-table td { padding:7px 12px; color:#374151; border-bottom:1px solid #F3F4F6; }
+        .mc-preview-table tr:last-child td { border-bottom:none; }
+        .mc-preview-table td:first-child { font-weight:700; color:${G}; white-space:nowrap; }
         .mc-preview-warn { font-size:12px; color:#B45309; margin:8px 0 0; }
         .mc-modal-students { max-width:640px; }
         .mc-sec-badge { font-size:10px; font-weight:700; text-transform:uppercase; padding:4px 8px; border-radius:6px;

@@ -177,7 +177,16 @@ function handleList() {
         $s = "%$search%";
         $params = array_merge($params, [$s, $s, $s, $s, $s]);
     }
-    if ($role)      { $where[] = 'u.role = ?';          $params[] = $role; }
+    if ($role) {
+        $roles = array_values(array_filter(array_map('trim', explode(',', $role))));
+        if (count($roles) === 1) {
+            $where[] = 'u.role = ?'; $params[] = $roles[0];
+        } elseif (count($roles) > 1) {
+            $ph = implode(',', array_fill(0, count($roles), '?'));
+            $where[] = "u.role IN ($ph)";
+            $params  = array_merge($params, $roles);
+        }
+    }
     if ($status)    { $where[] = 'u.status = ?';        $params[] = $status; }
     if ($deptId)    { $where[] = 'u.department_id = ?'; $params[] = $deptId; }
     if ($programId) { $where[] = 'u.program_id = ?';    $params[] = $programId; }
@@ -238,12 +247,17 @@ function handleCreate() {
     $employeeId   = trim($data['employee_id']        ?? '');
     $studentId    = trim($data['student_id']         ?? '');
     $yearLevel    = ($data['year_level']    ?? null) ?: null;
+    // Program Head supervision scope (e.g. "handles 1st-2nd year of BSN")
+    $yearLevelFrom = ($data['year_level_from'] ?? null) !== null && $data['year_level_from'] !== ''
+        ? max(1, min(4, (int)$data['year_level_from'])) : null;
+    $yearLevelTo   = ($data['year_level_to']   ?? null) !== null && $data['year_level_to']   !== ''
+        ? max(1, min(4, (int)$data['year_level_to']))   : null;
 
     $isAdmin = Auth::hasRole('admin');
     $isDean  = Auth::role() === 'dean';
 
     // Determine role & status
-    $allowedRoles    = ['admin', 'dean', 'instructor', 'student'];
+    $allowedRoles    = ['admin', 'dean', 'program_head', 'instructor', 'student'];
     $allowedStatuses = ['active', 'inactive', 'suspended'];
 
     if ($isAdmin) {
@@ -251,10 +265,11 @@ function handleCreate() {
         $status   = in_array($data['status'] ?? '', $allowedStatuses) ? $data['status'] : 'active';
         $campusId = $data['campus_id'] ?: null;
     } elseif ($isDean) {
-        // Dean can only create instructor accounts in their own campus/department
-        $scope    = deanScope();
-        $role     = 'instructor';
-        $status   = 'active';
+        // Dean can create instructor or program head accounts in their own campus/department
+        $scope         = deanScope();
+        $requestedRole = $data['role'] ?? 'instructor';
+        $role          = in_array($requestedRole, ['instructor', 'program_head'], true) ? $requestedRole : 'instructor';
+        $status        = 'active';
         $campusId = $scope['campus_id'] ?: null;
         // Always anchor the new instructor to the dean's own department
         if ($scope['department_id']) $departmentId = $scope['department_id'];
@@ -313,13 +328,16 @@ function handleCreate() {
             "INSERT INTO users
              (first_name, middle_name, last_name, suffix, email, password, role, status,
               campus_id, department_id, program_id, employee_id, student_id, year_level,
+              year_level_from, year_level_to,
               created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
         )->execute([
             $firstName, $middleName, $lastName, $suffix, $email,
             $passwordHash,
             $role, $status, $campusId, $departmentId, $programId,
-            $employeeId ?: null, $studentId ?: null, $yearLevel
+            $employeeId ?: null, $studentId ?: null, $yearLevel,
+            $role === 'program_head' ? $yearLevelFrom : null,
+            $role === 'program_head' ? $yearLevelTo   : null,
         ]);
         $newId = (int)pdo()->lastInsertId();
 
@@ -338,7 +356,8 @@ function handleCreate() {
             )->execute([$departmentId, $campusId, $newId]);
         }
 
-        $msg = $role === 'dean' ? 'Dean account created successfully.' : 'Instructor account created successfully.';
+        $roleLabels = ['dean' => 'Dean', 'program_head' => 'Program Head', 'admin' => 'Admin', 'student' => 'Student'];
+        $msg = ($roleLabels[$role] ?? 'Instructor') . ' account created successfully.';
         echo json_encode(['success' => true, 'message' => $msg, 'data' => ['id' => $newId]]);
     } catch (Exception $e) {
         error_log('Create user error: ' . $e->getMessage());
@@ -357,15 +376,15 @@ function handleUpdate() {
     $isAdmin = Auth::hasRole('admin');
     $isDean  = Auth::role() === 'dean';
 
-    // Dean can only edit instructors in their own campus(es)+department
+    // Dean can only edit instructors/program heads in their own campus(es)+department
     if ($isDean) {
         $scope = deanScope();
         $inScope = in_array((int)$current['campus_id'], $scope['campus_ids'])
                    && ($scope['department_id']
                        ? db()->fetchOne("SELECT 1 FROM users WHERE users_id = ? AND department_id = ?", [$id, $scope['department_id']])
                        : true);
-        if ($current['role'] !== 'instructor' || !$inScope) {
-            echo json_encode(['success' => false, 'message' => 'You can only edit instructors in your department.']);
+        if (!in_array($current['role'], ['instructor', 'program_head']) || !$inScope) {
+            echo json_encode(['success' => false, 'message' => 'You can only edit faculty in your department.']);
             return;
         }
     }
@@ -383,7 +402,7 @@ function handleUpdate() {
     $studentId    = trim($data['student_id']         ?? '');
     $yearLevel    = ($data['year_level']    ?? null) ?: null;
 
-    $allowedRoles    = ['admin', 'dean', 'instructor', 'student'];
+    $allowedRoles    = ['admin', 'dean', 'program_head', 'instructor', 'student'];
     $allowedStatuses = ['active', 'inactive', 'suspended'];
     $role     = $isAdmin && in_array($data['role']   ?? '', $allowedRoles)    ? $data['role']   : $current['role'];
     $status   = in_array($data['status'] ?? '', $allowedStatuses) ? $data['status'] : $current['status'];
@@ -465,12 +484,18 @@ function handleDeactivate() {
     $isDean = Auth::role() === 'dean';
     if ($isDean) {
         $scope  = deanScope();
-        $target = db()->fetchOne("SELECT role, campus_id, program_id FROM users WHERE users_id = ?", [$id]);
-        if (!$target || $target['role'] !== 'instructor'
-            || $target['campus_id'] != $scope['campus_id']
-            || $target['program_id'] != $scope['program_id']
-        ) {
-            echo json_encode(['success' => false, 'message' => 'You can only deactivate instructors in your program.']); return;
+        $target = db()->fetchOne("SELECT role, campus_id, department_id, program_id FROM users WHERE users_id = ?", [$id]);
+        $inScope = $target
+            && in_array((int)$target['campus_id'], $scope['campus_ids'])
+            && ($scope['department_id']
+                ? ((int)$target['department_id'] === (int)$scope['department_id']
+                    || ($target['program_id'] && db()->fetchOne(
+                        "SELECT 1 FROM department_program WHERE program_id = ? AND department_id = ?",
+                        [$target['program_id'], $scope['department_id']]
+                    )))
+                : true);
+        if (!$target || !in_array($target['role'], ['instructor', 'program_head']) || !$inScope) {
+            echo json_encode(['success' => false, 'message' => 'You can only deactivate faculty in your department.']); return;
         }
     }
     try {

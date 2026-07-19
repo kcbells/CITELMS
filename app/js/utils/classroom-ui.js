@@ -318,7 +318,7 @@ export function classroomPageFooter() {
     return `
         <footer class="sc-page-footer">
             <div class="sc-page-footer-inner">
-                <span class="sc-page-footer-brand">COC-LMS · PHINMA Education</span>
+                <span class="sc-page-footer-brand">Phinmaed Learning · PHINMA Education</span>
                 <span class="sc-page-footer-copy">© ${year}</span>
             </div>
         </footer>`;
@@ -393,11 +393,20 @@ export function classroomCss(accent) {
         }
         .sc-back:hover { color:${G}; }
 
+        .sc-crumb {
+            display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+            font-size:13px; font-weight:600; margin-bottom:16px; padding:6px 0;
+        }
+        .sc-crumb a { color:#6B7280; text-decoration:none; transition:color .15s; }
+        .sc-crumb a:hover { color:${G}; }
+        .sc-crumb-sep { color:#9CA3AF; font-weight:400; }
+        .sc-crumb-current { color:#111; }
+
         .sc-hero {
             display:flex; align-items:flex-end; justify-content:space-between;
             gap:24px; flex-wrap:wrap;
             padding:28px 32px; border-radius:16px; margin-bottom:20px;
-            color:#fff; box-shadow:none; border:none;
+            background:#fff !important; color:#111; box-shadow:none; border:2px solid #111;
             position:relative; overflow:hidden;
         }
         .sc-hero::before {
@@ -408,16 +417,16 @@ export function classroomCss(accent) {
         .sc-hero-main { position:relative; flex:1; min-width:240px; }
         .sc-hero-code {
             font-size:12px; font-weight:700; font-family:ui-monospace, monospace;
-            opacity:.85; letter-spacing:.5px;
+            color:#6B7280; letter-spacing:.5px;
         }
         .sc-hero-title {
             font-size:26px; font-weight:800; margin:8px 0 14px;
-            letter-spacing:-.4px; line-height:1.25;
+            letter-spacing:-.4px; line-height:1.25; color:#111;
         }
         .sc-hero-chips { display:flex; flex-wrap:wrap; gap:8px; }
         .sc-chip {
-            font-size:12px; font-weight:600;
-            background:rgba(255,255,255,.2); border:none;
+            font-size:12px; font-weight:600; color:#111;
+            background:#fff; border:1px solid #111;
             padding:5px 12px; border-radius:20px;
         }
         .sc-hero-stats {
@@ -425,8 +434,8 @@ export function classroomCss(accent) {
         }
         .sc-stat {
             text-align:center; min-width:72px;
-            background:rgba(255,255,255,.18); border:none;
-            border-radius:12px; padding:12px 16px;
+            background:#fff; border:1px solid #111;
+            border-radius:12px; padding:12px 16px; color:#111;
         }
         .sc-stat strong { display:block; font-size:22px; font-weight:800; line-height:1; margin-bottom:4px; }
         .sc-stat span { font-size:11px; opacity:.85; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }

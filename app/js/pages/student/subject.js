@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Student Subject — Classwork (inline lessons), People, Calendar
  */
 import { Api, BASE_URL } from '../../api.js';
 import { Auth } from '../../auth.js';
-import { subjectColor, subjectThemeVars } from '../../utils/subject-colors.js';
+import { subjectColor, subjectThemeVars, programPatternSvg } from '../../utils/subject-colors.js';
 import { renderEmbedded, getLessonStyles } from './lesson-view.js';
 import { openFloatingChat } from '../../components/floating-messenger.js';
 import { openOnlineClass, preloadOnlineClass } from '../../components/online-class-player.js';
@@ -80,9 +80,9 @@ export async function render(container, params) {
 
     const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const urlTab = params?.tab || hashParams.get('tab') || 'classwork';
-    const validTabs = ['classwork', 'people', 'calendar', 'gradebook'];
-    const normalizedTab = urlTab === 'quizzes' ? 'classwork'
-        : (urlTab === 'announcements' ? 'calendar' : urlTab);
+    const validTabs = ['classwork', 'people', 'gradebook'];
+    const normalizedTab = (urlTab === 'quizzes' || urlTab === 'announcements' || urlTab === 'calendar') ? 'classwork'
+        : urlTab;
 
     const now = new Date();
     const teacherName = teacher
@@ -100,17 +100,12 @@ export async function render(container, params) {
         privateReplyTo: null,
         workMaterials: [],
         studentSubmissions: [],
-        calFilter: 'all',
-        calYear: now.getFullYear(),
-        calMonth: now.getMonth(),
-        calSelectedDay: null,
     };
 
     function renderMainBody() {
         if (state.selectedWork) return renderWorkFocus();
         if (state.tab === 'classwork') return renderClasswork();
         if (state.tab === 'people') return renderPeople();
-        if (state.tab === 'calendar') return renderCalendar();
         if (state.tab === 'gradebook') return '<div id="sc-grades-host"></div>';
         return '';
     }
@@ -122,14 +117,16 @@ export async function render(container, params) {
         const focused = !!state.selectedWork;
 
         container.innerHTML = `
-            <style>${classroomCss(color)}${studentCalendarCss()}${studentClassworkCss()}${materialAttachmentCss()}${focused ? getLessonStyles() : ''}</style>
+            <style>${classroomCss(color)}${studentClassworkCss()}${materialAttachmentCss()}${focused ? getLessonStyles() : ''}</style>
             <div class="sc-page sc-student-class" style="${themeVars}">
-                <a href="${isArchived ? '#student/my-subjects?view=archived' : '#student/my-subjects'}" class="sc-back">
-                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    ${isArchived ? 'Archived Classes' : 'My Subjects'}
-                </a>
+                <div class="sc-crumb">
+                    <a href="${isArchived ? '#student/my-subjects?view=archived' : '#student/my-subjects'}">${isArchived ? 'Archived Classes' : 'My Subjects'}</a>
+                    <span class="sc-crumb-sep">&rsaquo;</span>
+                    <span class="sc-crumb-current">${esc(subject.subject_name)}</span>
+                </div>
 
                 <header class="sc-hero" style="background:${color}${isArchived ? ';filter:saturate(.55)' : ''}">
+                    ${programPatternSvg(subject.program_code, subject.subject_id, { width: 900, height: 180, opacity: 0.13 })}
                     <div class="sc-hero-main">
                         <span class="sc-hero-code">${esc(subject.subject_code)}</span>
                         <h1 class="sc-hero-title">${esc(subject.subject_name)}</h1>
@@ -159,7 +156,6 @@ export async function render(container, params) {
                             <nav class="sc-tabs" id="sc-tabs">
                                 <button class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork">Classwork</button>
                                 <button class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people">People</button>
-                                <button class="sc-tab ${state.tab === 'calendar' ? 'active' : ''}" data-tab="calendar">Calendar</button>
                                 <button class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook">Grades</button>
                             </nav>
                             <div class="sc-body ${focused ? 'sc-body-focus' : ''}">
@@ -232,389 +228,6 @@ export async function render(container, params) {
         if (w.type === 'lesson') return w.data.is_completed == 1;
         const status = w.data.quiz_status || 'none';
         return status === 'passed' || status === 'attempted' || status === 'exhausted';
-    }
-
-    function isLessonDone(l) {
-        return l?.is_completed == 1;
-    }
-
-    function isQuizDone(q) {
-        const status = q?.quiz_status || '';
-        return status === 'passed' || status === 'attempted' || status === 'exhausted';
-    }
-
-    function parseCalDate(v) {
-        if (!v) return null;
-        const d = new Date(String(v).replace(' ', 'T'));
-        return Number.isNaN(d.getTime()) ? null : d;
-    }
-
-    function dateKey(d) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-
-    function formatCalDay(d) {
-        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-    }
-
-    function formatCalTime(d) {
-        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
-
-    function buildCalendarEvents() {
-        const events = [];
-
-        lessons.forEach(l => {
-            const posted = parseCalDate(l.created_at);
-            if (!posted) return;
-            const done = isLessonDone(l);
-            events.push({
-                kind: 'lesson',
-                key: dateKey(posted),
-                id: l.lessons_id,
-                workType: 'lesson',
-                title: l.title || l.lesson_title || 'Lesson',
-                sub: done ? 'Lesson completed' : 'Lesson posted',
-                icon: 'document',
-                date: posted,
-                done,
-                attempted: false,
-                completedAt: done ? parseCalDate(l.completed_at) : null,
-                data: l,
-            });
-        });
-
-        announcements.forEach(a => {
-            const posted = parseCalDate(a.created_at);
-            if (!posted) return;
-            events.push({
-                kind: 'announcement',
-                key: dateKey(posted),
-                id: a.announcement_id || a.id,
-                workType: null,
-                title: a.title || 'Announcement',
-                sub: 'Announcement',
-                icon: 'announce',
-                date: posted,
-                done: false,
-                attempted: false,
-                data: a,
-            });
-        });
-
-        quizzes.forEach(q => {
-            const title = q.quiz_title || 'Quiz';
-            const done = isQuizDone(q);
-            const attempted = (q.quiz_status || '') === 'attempted' || (q.quiz_status || '') === 'exhausted' || (q.quiz_status || '') === 'passed';
-
-            const opens = parseCalDate(q.availability_start || q.created_at);
-            if (opens) {
-                events.push({
-                    kind: 'quiz-opens',
-                    key: dateKey(opens),
-                    id: q.quiz_id,
-                    workType: 'quiz',
-                    title,
-                    sub: done ? 'Quiz completed' : 'Quiz opens',
-                    icon: 'clock',
-                    date: opens,
-                    done,
-                    attempted: attempted && !done,
-                    data: q,
-                });
-            }
-
-            const due = parseCalDate(q.due_date);
-            if (due) {
-                events.push({
-                    kind: 'quiz-due',
-                    key: dateKey(due),
-                    id: q.quiz_id,
-                    workType: 'quiz',
-                    title,
-                    sub: done ? 'Quiz done' : `Quiz due · ${q.total_points != null ? q.total_points + ' pts' : 'Graded'}`,
-                    icon: 'quiz',
-                    date: due,
-                    done,
-                    attempted: attempted && !done,
-                    data: q,
-                });
-            }
-        });
-
-        return events.sort((a, b) => b.date - a.date);
-    }
-
-    function countUpcomingEvents() {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return buildCalendarEvents().filter(e => {
-            if (e.done || e.kind === 'announcement' || !e.workType) return false;
-            const day = new Date(e.date);
-            day.setHours(0, 0, 0, 0);
-            return day >= today;
-        }).length;
-    }
-
-    function calendarEventRow(ev) {
-        const openable = ev.kind === 'lesson' || ev.kind.startsWith('quiz');
-        const doneClass = ev.done ? ' sc-cal-event--done' : (ev.attempted ? ' sc-cal-event--attempted' : '');
-        let badge = '';
-        if (ev.done) {
-            badge = `<span class="sc-cal-event-badge done">${icon('check', inl)} Done</span>`;
-        } else if (ev.attempted) {
-            badge = '<span class="sc-cal-event-badge attempted">Submitted</span>';
-        } else if (ev.kind === 'quiz-due') {
-            badge = '<span class="sc-cal-event-badge urgent">Due</span>';
-        } else if (ev.kind === 'quiz-opens') {
-            badge = '<span class="sc-cal-event-badge opens">Opens</span>';
-        }
-
-        const timeNote = ev.kind !== 'quiz-due' ? ` · ${formatCalTime(ev.date)}` : '';
-        const sub = ev.done && ev.completedAt
-            ? `Completed ${formatCalDay(ev.completedAt)}`
-            : `${ev.sub}${timeNote}`;
-
-        return `
-            <article class="sc-cal-event${openable ? ' sc-cal-event--click' : ''}${doneClass}"
-                ${openable ? `data-cal-open="${ev.kind.startsWith('quiz') ? 'quiz' : 'lesson'}" data-cal-id="${ev.id}"` : ''}>
-                <div class="sc-cal-event-icon sc-cal-event-icon--${ev.kind}">${icon(ev.icon, { size: 18 })}</div>
-                <div class="sc-cal-event-body">
-                    <div class="sc-cal-event-title">${esc(ev.title)}</div>
-                    <div class="sc-cal-event-sub">${esc(sub)}</div>
-                    ${ev.kind === 'announcement' && ev.data.content
-                        ? `<p class="sc-cal-event-msg">${esc(ev.data.content)}</p>` : ''}
-                </div>
-                ${badge}
-                ${openable ? '<span class="sc-cal-event-chevron">›</span>' : ''}
-            </article>`;
-    }
-
-    function renderCalendarPins(dayEvents) {
-        if (!dayEvents.length) return '';
-        const visible = dayEvents.slice(0, 3);
-        const extra = dayEvents.length - visible.length;
-        const pins = visible.map(ev => {
-            const kind = ev.done ? 'done' : ev.kind;
-            const tip = `${ev.title} — ${ev.sub}`;
-            return `<span class="sc-cal-pin sc-cal-pin--${kind}" title="${esc(tip)}">${icon('pin', { size: 20 })}</span>`;
-        }).join('');
-        const more = extra > 0
-            ? `<span class="sc-cal-pin-more" title="${extra} more item${extra === 1 ? '' : 's'}">+${extra}</span>`
-            : '';
-        return `<span class="sc-cal-pins" aria-hidden="true">${pins}${more}</span>`;
-    }
-
-    function showCalendarDayModal(dayKey, dayEvents) {
-        dayEvents.filter(e => e.kind === 'announcement').forEach(e => {
-            recordContentView('announcement', e.id);
-        });
-        container.querySelector('.sc-cal-modal-overlay')?.remove();
-        const overlay = document.createElement('div');
-        overlay.className = 'sc-cal-modal-overlay';
-        const dateLabel = formatCalDay(new Date(dayKey + 'T12:00:00'));
-        const pending = dayEvents.filter(e => !e.done && e.workType).length;
-        const doneCount = dayEvents.filter(e => e.done).length;
-
-        overlay.innerHTML = `
-            <div class="sc-cal-modal" role="dialog" aria-labelledby="sc-cal-modal-title">
-                <div class="sc-cal-modal-hdr">
-                    <div>
-                        <h3 id="sc-cal-modal-title">${esc(dateLabel)}</h3>
-                        <p class="sc-cal-modal-sub">${dayEvents.length
-                            ? `${dayEvents.length} item${dayEvents.length === 1 ? '' : 's'}${pending ? ` · ${pending} to do` : ''}${doneCount ? ` · ${doneCount} done` : ''}`
-                            : 'No tasks or deadlines'}</p>
-                    </div>
-                    <button type="button" class="sc-cal-modal-close" aria-label="Close">&times;</button>
-                </div>
-                <div class="sc-cal-modal-body">
-                    ${dayEvents.length
-                        ? `<div class="sc-cal-events">${dayEvents.map(calendarEventRow).join('')}</div>`
-                        : '<p class="sc-cal-empty">Nothing scheduled on this day.</p>'}
-                </div>
-            </div>`;
-
-        const close = () => overlay.remove();
-        overlay.querySelector('.sc-cal-modal-close')?.addEventListener('click', close);
-        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-        overlay.querySelectorAll('[data-cal-open]').forEach(el => {
-            el.addEventListener('click', () => {
-                close();
-                openWork(el.dataset.calOpen, el.dataset.calId);
-            });
-        });
-        container.appendChild(overlay);
-    }
-
-    function renderCalendar() {
-        const allEvents = buildCalendarEvents();
-        const filter = state.calFilter || 'all';
-        const sel = state.calSelectedDay || null;
-        const year = state.calYear;
-        const month = state.calMonth;
-
-        // Build per-day map for grid dots (uses all events regardless of filter)
-        const allByDay = {};
-        allEvents.forEach(ev => {
-            if (!allByDay[ev.key]) allByDay[ev.key] = [];
-            allByDay[ev.key].push(ev);
-        });
-
-        // Filter events for the list
-        const events = filter === 'lesson'      ? allEvents.filter(e => e.kind === 'lesson')
-                     : filter === 'quiz'         ? allEvents.filter(e => e.kind.startsWith('quiz'))
-                     : filter === 'announcement' ? allEvents.filter(e => e.kind === 'announcement')
-                     : allEvents;
-
-        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-        const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(todayStart.getDate()+1);
-        const dayAfter = new Date(todayStart); dayAfter.setDate(todayStart.getDate()+2);
-        const weekEnd = new Date(todayStart); weekEnd.setDate(todayStart.getDate()+7);
-        const todayKey = dateKey(new Date());
-
-        // ── Mini calendar grid ─────────────────────────────────────────
-        const monthLabel = new Date(year, month, 1)
-            .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const firstDow = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        let cells = '';
-        for (let i = 0; i < firstDow; i++) cells += '<div class="tdc-cell tdc-cell--empty"></div>';
-        for (let d = 1; d <= daysInMonth; d++) {
-            const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const dayEvs = allByDay[key] || [];
-            const kinds = [...new Set(dayEvs.map(e => e.kind.startsWith('quiz') ? 'quiz' : e.kind))];
-            const isToday = key === todayKey;
-            const isSel = key === sel;
-            cells += `
-            <button type="button" class="tdc-cell${isToday?' tdc-today':''}${isSel?' tdc-sel':''}${dayEvs.length?' tdc-has':''}"
-                data-cal-day="${key}">
-                <span class="tdc-num">${d}</span>
-                ${kinds.length?`<span class="tdc-dots">${kinds.map(k=>`<i class="tdc-dot tdc-dot--${k}"></i>`).join('')}</span>`:'<span class="tdc-dots"></span>'}
-            </button>`;
-        }
-
-        const miniGrid = `
-        <div class="tdc-wrap">
-            <div class="tdc-nav">
-                <button type="button" class="tdc-nav-btn" id="sc-cal-prev">‹</button>
-                <span class="tdc-month">${esc(monthLabel)}</span>
-                <button type="button" class="tdc-nav-btn" id="sc-cal-next">›</button>
-                <button type="button" class="tdc-today-btn" id="sc-cal-today">Today</button>
-            </div>
-            <div class="tdc-weekdays">${['S','M','T','W','T','F','S'].map(w=>`<span>${w}</span>`).join('')}</div>
-            <div class="tdc-cells">${cells}</div>
-        </div>`;
-
-        // ── Task row renderer ──────────────────────────────────────────
-        function taskRow(ev) {
-            const isOverdue = ev.kind==='quiz-due' && ev.date<todayStart && !ev.done;
-            let checkClass='td-check--pending', taskClass='';
-            if (ev.done) { checkClass='td-check--done'; taskClass='td-task--done'; }
-            else if (ev.attempted) { checkClass='td-check--attempted'; taskClass='td-task--attempted'; }
-            else if (isOverdue) { checkClass='td-check--overdue'; taskClass='td-task--overdue'; }
-
-            let badge = '';
-            if (ev.done) badge=`<span class="td-badge td-badge--done">${icon('check',{size:10})} Done</span>`;
-            else if (ev.attempted) badge=`<span class="td-badge td-badge--attempted">Submitted</span>`;
-            else if (isOverdue) badge=`<span class="td-badge td-badge--overdue">Overdue</span>`;
-            else if (ev.kind==='quiz-due') badge=`<span class="td-badge td-badge--due">Due</span>`;
-            else if (ev.kind==='quiz-opens') badge=`<span class="td-badge td-badge--opens">Opens</span>`;
-
-            const timeStr = ev.date.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-            const typeLabel = ev.kind==='lesson'?'Lesson':ev.kind==='announcement'?'Announcement'
-                :ev.kind==='quiz-due'?'Quiz — Due':ev.kind==='quiz-opens'?'Quiz — Opens':'Quiz';
-
-            let checkInner = '';
-            if (ev.done) checkInner=`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
-            else if (ev.attempted) checkInner=`<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>`;
-
-            const calOpen = ev.kind==='announcement'?'announcement':(ev.kind.startsWith('quiz')?'quiz':'lesson');
-            return `
-            <article class="td-task ${taskClass} td-task--click" data-cal-open="${calOpen}" data-cal-id="${ev.id}">
-                <div class="td-check ${checkClass}">${checkInner}</div>
-                <div class="td-task-icon td-task-icon--${ev.kind}">${icon(ev.icon,{size:15})}</div>
-                <div class="td-task-body">
-                    <div class="td-task-title">${esc(ev.title)}</div>
-                    <div class="td-task-meta">${esc(typeLabel)} · ${esc(timeStr)}</div>
-                </div>
-                <div class="td-task-right">${badge}<span class="td-chevron">›</span></div>
-            </article>`;
-        }
-
-        function section(label, items, opts={}) {
-            if (!items.length) return '';
-            return `
-            <div class="td-section${opts.variant?' td-section--'+opts.variant:''}">
-                <div class="td-section-hdr">
-                    <span class="td-section-dot${opts.variant?' td-section-dot--'+opts.variant:''}"></span>
-                    <span class="td-section-label">${label}</span>
-                    ${opts.dateStr?`<span class="td-section-date">${esc(opts.dateStr)}</span>`:''}
-                    <span class="td-section-count">${items.length}</span>
-                </div>
-                <div class="td-tasks">${items.map(taskRow).join('')}</div>
-            </div>`;
-        }
-
-        // ── List section (day-filtered or grouped) ─────────────────────
-        let listHtml = '';
-        if (sel) {
-            const selDate = new Date(sel + 'T12:00:00');
-            const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-            const selEvs = events.filter(e => e.key === sel).sort((a,b) => a.date - b.date);
-            listHtml = `
-            <div class="td-day-hdr">
-                <div class="td-day-hdr-label">${esc(selLabel)}</div>
-                <span class="td-section-count">${selEvs.length}</span>
-                <button type="button" class="td-clear-day" data-cal-clear>Show all</button>
-            </div>
-            <div class="td-tasks td-tasks--flat">
-                ${selEvs.length
-                    ? selEvs.map(taskRow).join('')
-                    : '<p class="td-empty-day">Nothing scheduled on this day.</p>'}
-            </div>`;
-        } else {
-            const overdue=[], todayEvs=[], tomorrowEvs=[], thisWeek=[], upcoming=[], past=[];
-            events.forEach(ev => {
-                const d = ev.date;
-                if (d>=todayStart && d<tomorrowStart) todayEvs.push(ev);
-                else if (d>=tomorrowStart && d<dayAfter) tomorrowEvs.push(ev);
-                else if (d>=dayAfter && d<weekEnd) thisWeek.push(ev);
-                else if (d>=weekEnd) upcoming.push(ev);
-                else if (ev.kind==='quiz-due' && !ev.done) overdue.push(ev);
-                else past.push(ev);
-            });
-            const asc=(a,b)=>a.date-b.date, desc=(a,b)=>b.date-a.date;
-            overdue.sort(asc); todayEvs.sort(asc); tomorrowEvs.sort(asc);
-            thisWeek.sort(asc); upcoming.sort(asc); past.sort(desc);
-            const todayLabel = todayStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-            const tomorrowLabel = tomorrowStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-            const totalOverdue = allEvents.filter(e=>e.kind==='quiz-due'&&e.date<todayStart&&!e.done).length;
-            listHtml = `
-            ${totalOverdue>0?`<div class="td-overdue-banner"><span class="td-overdue-pill">${totalOverdue} overdue</span></div>`:''}
-            ${section('Overdue', overdue, {variant:'overdue'})}
-            ${section('Today', todayEvs, {variant:'today', dateStr:todayLabel})}
-            ${section('Tomorrow', tomorrowEvs, {dateStr:tomorrowLabel})}
-            ${section('This Week', thisWeek)}
-            ${section('Upcoming', upcoming)}
-            ${section('Past', past, {variant:'past'})}
-            ${!events.length?`<div class="td-empty">
-                <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#D1D5DB" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <p class="td-empty-msg">No activity yet for this subject.</p>
-            </div>`:''}`;
-        }
-
-        return `
-        <div class="td-wrap">
-            ${miniGrid}
-            <div class="td-filters">
-                <button class="td-filter${filter==='all'?' td-filter--active':''}" data-td-filter="all">All</button>
-                <button class="td-filter${filter==='lesson'?' td-filter--active':''}" data-td-filter="lesson">Lessons</button>
-                <button class="td-filter${filter==='quiz'?' td-filter--active':''}" data-td-filter="quiz">Quizzes</button>
-                <button class="td-filter${filter==='announcement'?' td-filter--active':''}" data-td-filter="announcement">Announcements</button>
-            </div>
-            <div class="td-sections">${listHtml}</div>
-        </div>`;
     }
 
     function isPastDue(w) {
@@ -805,6 +418,14 @@ export async function render(container, params) {
             </div>`;
     }
 
+    function renderAnnAttachments(atts) {
+        if (!atts || !atts.length) return '';
+        return `<div class="gc-ann-attachments">${atts.map(a => `
+            <a class="gc-ann-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}" onclick="event.stopPropagation()">
+                ${icon('document', inl)}<span>${esc(a.original_name)}</span>
+            </a>`).join('')}</div>`;
+    }
+
     function classworkRow(item) {
         const d = item.data;
         const posted = formatPosted(d.created_at || d.updated_at);
@@ -828,6 +449,7 @@ export async function render(container, params) {
                             <div class="gc-ann-content">
                                 <div class="gc-ann-title">${esc(title)}</div>
                                 ${preview ? `<p class="gc-ann-preview">${esc(preview)}</p>` : ''}
+                                ${renderAnnAttachments(d.attachments)}
                             </div>
                         </div>
                     </div>
@@ -1064,6 +686,7 @@ export async function render(container, params) {
                         </div>
                     </div>
                     <div class="gc-ann-full-body">${esc(d.content || '')}</div>
+                    ${renderAnnAttachments(d.attachments)}
                     <section class="gc-focus-card gc-focus-card--comments">
                         <h3 class="gc-focus-card-title">${icon('messages', inl)} Class comments</h3>
                         ${commentSection('work')}
@@ -1620,53 +1243,6 @@ export async function render(container, params) {
             });
         });
 
-        container.querySelector('#sc-cal-prev')?.addEventListener('click', () => {
-            state.calMonth -= 1;
-            if (state.calMonth < 0) { state.calMonth = 11; state.calYear -= 1; }
-            renderPage();
-        });
-        container.querySelector('#sc-cal-next')?.addEventListener('click', () => {
-            state.calMonth += 1;
-            if (state.calMonth > 11) { state.calMonth = 0; state.calYear += 1; }
-            renderPage();
-        });
-        container.querySelector('#sc-cal-today')?.addEventListener('click', () => {
-            const t = new Date();
-            state.calYear = t.getFullYear();
-            state.calMonth = t.getMonth();
-            state.calSelectedDay = dateKey(t);
-            renderPage();
-        });
-        container.querySelectorAll('[data-cal-day]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const k = btn.dataset.calDay;
-                state.calSelectedDay = state.calSelectedDay === k ? null : k;
-                renderPage();
-            });
-        });
-        container.querySelector('[data-cal-clear]')?.addEventListener('click', () => {
-            state.calSelectedDay = null;
-            renderPage();
-        });
-        container.querySelectorAll('[data-td-filter]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                state.calFilter = btn.dataset.tdFilter;
-                renderPage();
-            });
-        });
-        container.querySelectorAll('[data-cal-open]').forEach(el => {
-            el.addEventListener('click', () => {
-                const type = el.dataset.calOpen;
-                const id = el.dataset.calId;
-                state.tab = 'classwork';
-                if (type === 'announcement') {
-                    const ann = announcements.find(a => String(a.announcement_id||a.id) === String(id));
-                    if (ann) { state.selectedWork = { type:'announcement', id, data:ann }; renderPage(); }
-                } else {
-                    openWork(type, id);
-                }
-            });
-        });
         bindQuizReviewTriggers(container);
     }
 
@@ -1768,8 +1344,7 @@ function studentClassworkCss() {
 .sc-hero-clock {
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding:10px 24px; border-radius:16px;
-    background:rgba(0,0,0,0.20);
-    backdrop-filter:blur(6px);
+    background:#111; border:1px solid #111;
     min-width:210px; text-align:center;
 }
 .sc-clock-time {
@@ -1787,7 +1362,7 @@ function studentClassworkCss() {
 }
 .sc-chip--archived {
     display:inline-flex; align-items:center; gap:4px;
-    background:rgba(0,0,0,.35); color:#fff; font-size:11px; font-weight:600;
+    background:#111; color:#fff; font-size:11px; font-weight:600;
     padding:3px 9px; border-radius:10px; letter-spacing:.3px;
 }
 .sc-archived-notice {
@@ -1803,106 +1378,16 @@ function studentClassworkCss() {
 .sc-student-class .gc-ann-content { padding: 0 2px; }
 .sc-student-class .gc-ann-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 6px; line-height: 1.3; }
 .sc-student-class .gc-ann-preview { font-size: 13.5px; color: #374151; line-height: 1.6; margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; }
+.gc-ann-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.gc-ann-attach-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border: 1px solid #E5E7EB; border-radius: 20px;
+    background: #F9FAFB; color: #374151; font-size: 12.5px; font-weight: 600;
+    text-decoration: none; max-width: 220px;
+}
+.gc-ann-attach-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-ann-attach-chip:hover { background: #E8F5EC; border-color: #A7D4B5; color: #00461B; }
 `;
 }
 
-function studentCalendarCss() {
-    return `
-/* ── Mini calendar grid ──────────────────────── */
-.tdc-wrap{border:1px solid #E8EAED;border-radius:14px;overflow:hidden;background:#fff}
-.tdc-nav{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid #F0F0F0}
-.tdc-month{font-size:14px;font-weight:700;color:#202124;flex:1;text-align:center}
-.tdc-nav-btn{width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:20px;color:#5F6368;border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
-.tdc-nav-btn:hover{background:#F1F3F4;color:#202124}
-.tdc-today-btn{padding:4px 10px;border:1px solid #DADCE0;border-radius:6px;background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151}
-.tdc-today-btn:hover{border-color:#00461B;color:#00461B}
-.tdc-weekdays{display:grid;grid-template-columns:repeat(7,1fr);padding:6px 8px 0}
-.tdc-weekdays span{text-align:center;font-size:10px;font-weight:700;color:#9CA3AF;padding:3px 0;text-transform:uppercase}
-.tdc-cells{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 10px;gap:2px}
-.tdc-cell{min-height:44px;padding:3px 2px;border:none;border-radius:8px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit;transition:background .12s}
-.tdc-cell--empty{cursor:default}
-.tdc-cell:hover:not(.tdc-cell--empty){background:#F1F3F4}
-.tdc-cell.tdc-has:hover{background:#F8FDF9}
-.tdc-cell.tdc-sel{background:#E8F5EC}
-.tdc-num{font-size:12px;font-weight:600;color:#374151;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all .12s}
-.tdc-cell.tdc-today .tdc-num{background:#00461B;color:#fff}
-.tdc-cell.tdc-sel .tdc-num{background:#00461B;color:#fff}
-.tdc-dots{display:flex;gap:2px;justify-content:center;min-height:6px}
-.tdc-dot{width:4px;height:4px;border-radius:50%;display:block}
-.tdc-dot--lesson{background:#00461B}
-.tdc-dot--announcement{background:#1A73E8}
-.tdc-dot--quiz{background:#9334E6}
-/* Day-selected header */
-.td-day-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 8px;border-bottom:1px solid #F0F0F0;margin-bottom:8px}
-.td-day-hdr-label{font-size:13px;font-weight:700;color:#202124;flex:1}
-.td-clear-day{border:none;background:none;font-size:12px;font-weight:600;color:#00461B;cursor:pointer;font-family:inherit;padding:0}
-.td-tasks--flat{border-left:2px solid #86EFAC}
-.td-empty-day{font-size:13px;color:#9CA3AF;font-style:italic;padding:12px 0}
-.td-overdue-banner{padding:2px 0 4px}
-/* ── Todo-list Calendar ──────────────────────── */
-.td-wrap{display:flex;flex-direction:column;gap:16px;padding:4px 0 20px}
-.td-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:4px}
-.td-head-title{font-size:17px;font-weight:800;color:#202124;margin-bottom:2px}
-.td-head-sub{font-size:12px;color:#6B7280}
-.td-overdue-pill{display:inline-flex;align-items:center;background:#FCE8E6;color:#C5221F;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;flex-shrink:0}
-/* Filter tabs */
-.td-filters{display:flex;gap:6px;flex-wrap:wrap}
-.td-filter{padding:6px 14px;border-radius:20px;border:1.5px solid #E8EAED;background:#FAFAFA;font-size:12px;font-weight:600;color:#5F6368;cursor:pointer;font-family:inherit;transition:all .12s}
-.td-filter:hover{border-color:#00461B;color:#00461B;background:#F8FDF9}
-.td-filter--active{background:#00461B;color:#fff;border-color:#00461B}
-/* Sections */
-.td-sections{display:flex;flex-direction:column;gap:0}
-.td-section{margin-bottom:10px}
-.td-section-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 4px}
-.td-section-dot{width:8px;height:8px;border-radius:50%;background:#D1D5DB;flex-shrink:0}
-.td-section-dot--overdue{background:#EF4444}
-.td-section-dot--today{background:#00461B}
-.td-section-dot--past{background:#D1D5DB}
-.td-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#6B7280}
-.td-section-date{font-size:11px;color:#9CA3AF}
-.td-section-count{margin-left:auto;font-size:11px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 7px;border-radius:10px}
-.td-section--overdue .td-section-label{color:#C5221F}
-.td-section--today .td-section-label{color:#00461B}
-.td-section--past .td-section-label{color:#9CA3AF}
-/* Task list track */
-.td-tasks{display:flex;flex-direction:column;gap:4px;padding-left:8px;border-left:2px solid #F0F0F0;margin-left:3px}
-.td-section--overdue .td-tasks{border-left-color:#FCA5A5}
-.td-section--today .td-tasks{border-left-color:#86EFAC}
-/* Task row */
-.td-task{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #F0F0F0;transition:background .12s,border-color .12s}
-.td-task--click{cursor:pointer}
-.td-task--click:hover{background:#F8FDF9;border-color:#86EFAC}
-.td-task--done{background:#FCFFFE}
-.td-task--done .td-task-title{color:#9CA3AF;text-decoration:line-through}
-.td-task--overdue{border-left:3px solid #EF4444}
-.td-task--attempted{border-left:3px solid #F59E0B}
-/* Check circle */
-.td-check{width:20px;height:20px;border-radius:50%;border:2px solid #D1D5DB;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
-.td-check--done{background:#00461B;border-color:#00461B;color:#fff}
-.td-check--attempted{background:#F59E0B;border-color:#F59E0B;color:#fff}
-.td-check--overdue{border-color:#EF4444}
-.td-task--click:hover .td-check--pending{border-color:#00461B}
-/* Type icon */
-.td-task-icon{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.td-task-icon--lesson{background:#E8F5EC;color:#00461B}
-.td-task-icon--announcement{background:#E8F0FE;color:#1A73E8}
-.td-task-icon--quiz-due,.td-task-icon--quiz-opens,.td-task-icon--quiz{background:#F3E8FD;color:#9334E6}
-/* Body */
-.td-task-body{flex:1;min-width:0}
-.td-task-title{font-size:13px;font-weight:600;color:#202124;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.td-task-meta{font-size:11px;color:#6B7280;margin-top:1px}
-/* Right side */
-.td-task-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
-.td-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap}
-.td-badge--done{background:#CEEAD6;color:#137333}
-.td-badge--attempted{background:#FEF3C7;color:#B45309}
-.td-badge--overdue{background:#FCE8E6;color:#C5221F;text-transform:uppercase}
-.td-badge--due{background:#E8F0FE;color:#1967D2}
-.td-badge--opens{background:#FEF7E0;color:#B06000}
-.td-chevron{color:#C4C6CA;font-size:18px;font-weight:300;line-height:1}
-/* Empty state */
-.td-empty{text-align:center;padding:48px 20px;display:flex;flex-direction:column;align-items:center;gap:12px}
-.td-empty-msg{font-size:13px;color:#9CA3AF;margin:0}
-`;
-}
 

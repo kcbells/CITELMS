@@ -150,6 +150,7 @@ function handleInstructorDashboard() {
                 MAX(so.subject_offered_id)
             ) AS subject_offered_id,
             s.subject_id, s.subject_code, s.subject_name, s.units,
+            MAX(so.grading_type) AS grading_type,
             GROUP_CONCAT(DISTINCT sec.section_name ORDER BY sec.section_name SEPARATOR ', ') AS section_name,
             GROUP_CONCAT(DISTINCT ss2.schedule     ORDER BY sec.section_name SEPARATOR ', ') AS schedule,
             GROUP_CONCAT(DISTINCT ss2.room         ORDER BY sec.section_name SEPARATOR ', ') AS room,

@@ -206,7 +206,6 @@ export async function render(container) {
                     <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
                 </div>
                 <div>
-                    <h2>Department Reports</h2>
                     <p>${esc(dept.department_name || 'Department')} — Performance Overview</p>
                 </div>
             </div>
@@ -215,12 +214,12 @@ export async function render(container) {
 
         <!-- Department Overview Stats -->
         <div class="dr-stats">
-            ${statCard('#1B4D3E', '#E8F5E9', '#1B4D3E', stats.instructors, 'Instructors', icon('instructor', { size: 18 }))}
-            ${statCard('#2563EB', '#DBEAFE', '#1E40AF', stats.students, 'Enrolled Students', icon('users', { size: 18 }))}
-            ${statCard('#7C3AED', '#EDE9FE', '#5B21B6', stats.subjects, 'Subjects', icon('book', { size: 18 }))}
-            ${statCard('#0D9488', '#CCFBF1', '#0D9488', stats.offerings, 'Active Offerings', icon('calendar', { size: 18 }))}
-            ${statCard('#B45309', '#FEF3C7', '#92400E', stats.total_quizzes, 'Total Quizzes', icon('quiz', { size: 18 }))}
-            ${statCard('#059669', '#D1FAE5', '#065F46', stats.published_lessons + ' / ' + stats.total_lessons, 'Lessons (Pub)', icon('lessons', { size: 18 }))}
+            ${statCard('#1B4D3E', '#F3F4F6', '#111', stats.instructors, 'Instructors', icon('instructor', { size: 18 }))}
+            ${statCard('#2563EB', '#F3F4F6', '#111', stats.students, 'Enrolled Students', icon('users', { size: 18 }))}
+            ${statCard('#7C3AED', '#F3F4F6', '#111', stats.subjects, 'Subjects', icon('book', { size: 18 }))}
+            ${statCard('#0D9488', '#F3F4F6', '#111', stats.offerings, 'Active Offerings', icon('calendar', { size: 18 }))}
+            ${statCard('#B45309', '#F3F4F6', '#111', stats.total_quizzes, 'Total Quizzes', icon('quiz', { size: 18 }))}
+            ${statCard('#059669', '#F3F4F6', '#111', stats.published_lessons + ' / ' + stats.total_lessons, 'Lessons (Pub)', icon('lessons', { size: 18 }))}
         </div>
 
         <div class="dr-grid">

@@ -63,7 +63,7 @@ async function loadPage(container, quizId) {
             .q-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; overflow:hidden; border-left:4px solid transparent; transition:border-color .15s; }
             .q-card:hover { border-left-color:#00461B; }
             .q-card-header { display:flex; align-items:flex-start; padding:16px 20px; gap:12px; }
-            .q-number { width:32px; height:32px; border-radius:50%; background:#E8F5E9; color:#1B4D3E; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; margin-top:2px; }
+            .q-number { width:32px; height:32px; border-radius:50%; background:#F3F4F6; color:#111; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; margin-top:2px; }
             .q-body { flex:1; min-width:0; }
             .q-text { font-size:14px; font-weight:600; color:#262626; line-height:1.45; margin-bottom:4px; }
             .q-info { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap:wrap; }
@@ -90,9 +90,10 @@ async function loadPage(container, quizId) {
             .gf-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:2000; padding:16px; backdrop-filter:blur(2px); }
             .gf-modal { background:#f0f4f9; border-radius:14px; width:100%; max-width:700px; max-height:94vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.22); animation:gfIn .2s ease; }
             @keyframes gfIn { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
-            .gf-modal-hdr { padding:16px 22px; background:#00461B; color:#fff; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
-            .gf-modal-hdr h3 { font-size:16px; font-weight:700; margin:0; }
-            .gf-modal-close { background:rgba(255,255,255,.15); border:none; color:#fff; width:30px; height:30px; border-radius:7px; font-size:20px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center; }
+            .gf-modal-hdr { padding:16px 22px; background:#fff; border-bottom:1px solid #E5E7EB; color:#111; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+            .gf-modal-hdr h3 { font-size:16px; font-weight:700; margin:0; color:#111; }
+            .gf-modal-close { background:none; border:none; color:#374151; width:30px; height:30px; border-radius:7px; font-size:20px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center; }
+            .gf-modal-close:hover { background:#F3F4F6; }
             .gf-modal-body { overflow-y:auto; flex:1; padding:16px; display:flex; flex-direction:column; gap:12px; }
             .gf-modal-ft { padding:12px 20px; border-top:1px solid #dde3ea; background:#fff; display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-shrink:0; }
 

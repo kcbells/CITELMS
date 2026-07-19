@@ -26,19 +26,19 @@ async function renderList(container, filterSubject = '') {
 
     container.innerHTML = `
         <style>
-            .qz-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .qz-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .qz-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .qz-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
             .qz-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
-            .qz-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .qz-banner-sub { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
+            .qz-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
+            .qz-banner-sub { font-size:14px; color:#6B7280; margin:0; }
             .qz-banner-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-            .qz-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.25); border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
-            .qz-back-btn:hover { background:rgba(255,255,255,.25); }
-            .btn-primary { background:#fff; color:#1B4D3E; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
-            .btn-primary:hover { background:#f0fdf4; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
-            .btn-ai { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); padding:9px 18px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
-            .btn-ai:hover { background:rgba(255,255,255,.25); }
+            .qz-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .qz-back-btn:hover { background:#d9efe0; }
+            .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
+            .btn-primary:hover { background:#00351a; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
+            .btn-ai { background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; padding:9px 18px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
+            .btn-ai:hover { background:#d9efe0; }
 
             .qz-filter-bar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
             .qz-filter-bar select { padding:9px 14px; border:1px solid #e8ecef; border-radius:10px; font-size:13px; min-width:240px; background:#fff; color:#374151; cursor:pointer; outline:none; transition:border-color .15s; box-shadow:0 1px 2px rgba(0,0,0,.04); }

@@ -12,14 +12,14 @@ export async function render(container) {
 
     container.innerHTML = `
         <style>
-            .st-banner { background:#00461B; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
+            .st-banner { background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px 32px; margin-bottom:24px; }
             .st-banner::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07); pointer-events:none; }
             .st-banner::after { content:''; position:absolute; bottom:-60px; left:60px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.05); pointer-events:none; }
-            .st-banner-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
-            .st-banner-title { font-size:26px; font-weight:800; color:#fff; margin:0 0 4px; }
-            .st-banner-sub { font-size:14px; color:rgba(255,255,255,.75); margin:0; }
-            .st-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.25); border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
-            .st-back-btn:hover { background:rgba(255,255,255,.25); }
+            .st-banner-inner { display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
+            .st-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
+            .st-banner-sub { font-size:14px; color:#6B7280; margin:0; }
+            .st-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .st-back-btn:hover { background:#d9efe0; }
 
             .st-filter-bar { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
             .st-filter-bar input, .st-filter-bar select { padding:9px 14px; border:1px solid #e8ecef; border-radius:10px; font-size:13px; background:#fff; color:#374151; outline:none; transition:border-color .15s; box-shadow:0 1px 2px rgba(0,0,0,.04); }
@@ -57,10 +57,6 @@ export async function render(container) {
 
         <div class="st-banner">
             <div class="st-banner-inner">
-                <div>
-                    <h2 class="st-banner-title">Students</h2>
-                    <p class="st-banner-sub">View enrolled students across your assigned classes</p>
-                </div>
                 <a href="#instructor/my-classes" class="st-back-btn">
                     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                     My Classes

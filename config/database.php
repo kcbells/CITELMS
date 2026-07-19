@@ -264,11 +264,7 @@ function pdo() {
     return Database::getInstance()->getConnection();
 }
 
-// ── Rate limiting ─────────────────────────────────────────────
-// Applied to every API request automatically.  Non-API includes
-// (CLI scripts, cron jobs) skip this block.
-if (!defined('SKIP_RATE_LIMIT') &&
-    strpos($_SERVER['SCRIPT_NAME'] ?? '', '/api/') !== false) {
-    require_once __DIR__ . '/../api/helpers/RateLimiter.php';
-    RateLimiter::check();
-}
+// ── Rate limiting — disabled ────────────────────────────────────
+// Was applied to every API request automatically and caused "Too many
+// requests" errors during normal use. Turned off; RateLimiter.php is left
+// in place in case rate limiting is wanted again later.

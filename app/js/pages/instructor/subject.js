@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Instructor Subject Hub — Classwork, People, Calendar
  */
 import { Api, BASE_URL } from '../../api.js';
 import { Auth } from '../../auth.js';
-import { subjectColor, subjectThemeVars } from '../../utils/subject-colors.js';
+import { subjectColor, subjectThemeVars, programPatternSvg } from '../../utils/subject-colors.js';
 import { openFloatingChat } from '../../components/floating-messenger.js';
 import { openOnlineClass, preloadOnlineClass } from '../../components/online-class-player.js';
 import { getFullName, getLoginId, buildClassRoomSlug } from '../../utils/user-display.js';
@@ -29,7 +29,7 @@ export async function render(container, params) {
     const subjectId = params?.subject_id || hashParams.get('subject_id');
     const urlSectionId = params?.section_id || hashParams.get('section_id');
     const urlTab = params?.tab || hashParams.get('tab') || 'classwork';
-    const validTabs = ['classwork', 'people', 'calendar', 'gradebook'];
+    const validTabs = ['classwork', 'people', 'gradebook'];
 
     if (!subjectId) {
         container.innerHTML = emptyMsg('No class selected.', '#instructor/my-classes', 'Back to My Classes');
@@ -145,7 +145,6 @@ export async function render(container, params) {
     const viewSummary = viewSummaryRes.success ? viewSummaryRes.data : { counts: {}, enrolled_count: students.length };
     const enrolledCount = viewSummary.enrolled_count || students.length;
 
-    const now = new Date();
     const state = {
         tab: validTabs.includes(urlTab) ? urlTab : 'classwork',
         selectedWork: null,
@@ -158,10 +157,6 @@ export async function render(container, params) {
         quizScores: [],
         quizQuestionStats: [],
         expandedViewers: {},
-        calFilter: 'all',
-        calYear: now.getFullYear(),
-        calMonth: now.getMonth(),
-        calSelectedDay: null,
     };
     let clockInterval = null;
 
@@ -253,7 +248,6 @@ export async function render(container, params) {
         if (state.selectedWork) return renderWorkDetail();
         if (state.tab === 'classwork') return renderClasswork();
         if (state.tab === 'people') return renderPeople();
-        if (state.tab === 'calendar') return renderCalendar();
         if (state.tab === 'gradebook') return '<div id="sc-gradebook-host"></div>';
         return '';
     }
@@ -315,12 +309,15 @@ export async function render(container, params) {
 
         container.innerHTML = `
             <div class="sc-page sc-instructor-class" style="${themeVars}">
-                <a href="#instructor/my-classes${effectiveSectionId ? `?subject_id=${subjectId}` : ''}" class="sc-back">
-                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    ${effectiveSectionId ? 'Back to Sections' : 'My Classes'}
-                </a>
+                <div class="sc-crumb">
+                    <a href="#instructor/my-classes">My Classes</a>
+                    ${effectiveSectionId ? `<span class="sc-crumb-sep">&rsaquo;</span><a href="#instructor/my-classes?subject_id=${subjectId}">${esc(subject.subject_name || '')}</a>` : ''}
+                    <span class="sc-crumb-sep">&rsaquo;</span>
+                    <span class="sc-crumb-current">${effectiveSectionId ? (subject.section_name ? esc(subject.section_name) : 'Section') : esc(subject.subject_name || '')}</span>
+                </div>
 
                 <header class="sc-hero" style="background:${color}">
+                    ${programPatternSvg(subjectFromApi?.program_code || subject.program_code, subject.subject_id, { width: 900, height: 180, opacity: 0.13 })}
                     <div class="sc-hero-main">
                         <span class="sc-hero-code">${esc(subject.subject_code || '')}</span>
                         <h1 class="sc-hero-title">${esc(subject.subject_name || 'Subject')}</h1>
@@ -343,7 +340,6 @@ export async function render(container, params) {
                             <nav class="sc-tabs" id="sc-tabs" role="tablist">
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork" aria-selected="${state.tab === 'classwork'}">Classwork</button>
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people" aria-selected="${state.tab === 'people'}">People</button>
-                                <button type="button" role="tab" class="sc-tab ${state.tab === 'calendar' ? 'active' : ''}" data-tab="calendar" aria-selected="${state.tab === 'calendar'}">Calendar</button>
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" aria-selected="${state.tab === 'gradebook'}">Gradebook</button>
                             </nav>
                             <div id="sc-body" class="sc-body"></div>
@@ -888,6 +884,14 @@ export async function render(container, params) {
             </div>`;
     }
 
+    function renderAnnAttachments(atts) {
+        if (!atts || !atts.length) return '';
+        return `<div class="gc-ann-attachments">${atts.map(a => `
+            <a class="gc-ann-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}" onclick="event.stopPropagation()">
+                ${icon('document', inl)}<span>${esc(a.original_name)}</span>
+            </a>`).join('')}</div>`;
+    }
+
     function classworkRow(item) {
         const d = item.data;
         const posted = formatPosted(d.created_at || d.updated_at);
@@ -914,6 +918,7 @@ export async function render(container, params) {
                             <div class="gc-ann-content">
                                 <div class="gc-ann-title">${esc(title)}</div>
                                 ${preview ? `<p class="gc-ann-preview">${esc(preview)}</p>` : ''}
+                                ${renderAnnAttachments(d.attachments)}
                                 ${sectionLabel ? `<div class="gc-ann-section">${esc(sectionLabel)}</div>` : ''}
                             </div>
                         </div>
@@ -1013,6 +1018,7 @@ export async function render(container, params) {
                         </div>
                     </div>
                     <div class="gc-ann-full-body">${esc(d.content || '')}</div>
+                    ${renderAnnAttachments(d.attachments)}
                     <section class="gc-focus-card gc-focus-card--comments">
                         <h3 class="gc-focus-card-title">${icon('messages', inl)} Class comments</h3>
                         ${commentSection()}
@@ -1161,258 +1167,6 @@ export async function render(container, params) {
                 </section>
             </div>
         `;
-    }
-
-    function parseCalDate(str) {
-        if (!str) return null;
-        const d = new Date(String(str).includes('T') ? str : `${str}T12:00:00`);
-        return Number.isNaN(d.getTime()) ? null : d;
-    }
-
-    function dateKey(d) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-
-    function buildCalendarEvents() {
-        const events = [];
-
-        lessons.forEach(l => {
-            const d = parseCalDate(l.created_at || l.updated_at);
-            if (!d) return;
-            events.push({
-                kind: 'lesson',
-                date: d,
-                key: dateKey(d),
-                id: l.lessons_id,
-                title: l.lesson_title || l.title || 'Lesson',
-                sub: 'Lesson posted',
-                icon: 'document',
-                data: l,
-            });
-        });
-
-        announcements.forEach(a => {
-            const d = parseCalDate(a.created_at);
-            if (!d) return;
-            events.push({
-                kind: 'announcement',
-                date: d,
-                key: dateKey(d),
-                id: a.announcement_id,
-                title: a.title || 'Announcement',
-                sub: 'Announcement',
-                icon: 'announce',
-                data: a,
-            });
-        });
-
-        quizzes.forEach(q => {
-            const title = q.quiz_title || 'Quiz';
-            if (q.due_date) {
-                const d = parseCalDate(q.due_date);
-                if (d) {
-                    events.push({
-                        kind: 'quiz-due',
-                        date: d,
-                        key: dateKey(d),
-                        id: q.quiz_id,
-                        title,
-                        sub: `Quiz due · ${q.total_points != null ? q.total_points + ' pts' : 'Graded'}`,
-                        icon: 'quiz',
-                        data: q,
-                    });
-                }
-            }
-            if (q.availability_start) {
-                const d = parseCalDate(q.availability_start);
-                if (d) {
-                    events.push({
-                        kind: 'quiz-opens',
-                        date: d,
-                        key: dateKey(d),
-                        id: q.quiz_id,
-                        title,
-                        sub: 'Quiz opens',
-                        icon: 'clock',
-                        data: q,
-                    });
-                }
-            }
-            const posted = parseCalDate(q.created_at);
-            if (posted && !q.due_date) {
-                events.push({
-                    kind: 'quiz',
-                    date: posted,
-                    key: dateKey(posted),
-                    id: q.quiz_id,
-                    title,
-                    sub: 'Quiz posted',
-                    icon: 'quiz',
-                    data: q,
-                });
-            }
-        });
-
-        return events.sort((a, b) => b.date - a.date);
-    }
-
-    function formatCalDay(d) {
-        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-    }
-
-    function formatCalTime(d) {
-        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
-
-    function renderCalendar() {
-        const allEvents = buildCalendarEvents();
-        const filter = state.calFilter || 'all';
-        const sel = state.calSelectedDay || null;
-        const year = state.calYear;
-        const month = state.calMonth;
-
-        const allByDay = {};
-        allEvents.forEach(ev => {
-            if (!allByDay[ev.key]) allByDay[ev.key] = [];
-            allByDay[ev.key].push(ev);
-        });
-
-        const events = filter === 'lesson'      ? allEvents.filter(e => e.kind === 'lesson')
-                     : filter === 'quiz'         ? allEvents.filter(e => e.kind.startsWith('quiz') || e.kind === 'quiz')
-                     : filter === 'announcement' ? allEvents.filter(e => e.kind === 'announcement')
-                     : allEvents;
-
-        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-        const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(todayStart.getDate()+1);
-        const dayAfter = new Date(todayStart); dayAfter.setDate(todayStart.getDate()+2);
-        const weekEnd = new Date(todayStart); weekEnd.setDate(todayStart.getDate()+7);
-        const todayKey = dateKey(new Date());
-
-        // ── Mini calendar grid ──────────────────────────────────────────
-        const monthLabel = new Date(year, month, 1)
-            .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const firstDow = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        let cells = '';
-        for (let i = 0; i < firstDow; i++) cells += '<div class="tdc-cell tdc-cell--empty"></div>';
-        for (let d = 1; d <= daysInMonth; d++) {
-            const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const dayEvs = allByDay[key] || [];
-            const kinds = [...new Set(dayEvs.map(e => e.kind.startsWith('quiz') ? 'quiz' : e.kind))];
-            const isToday = key === todayKey;
-            const isSel = key === sel;
-            cells += `
-            <button type="button" class="tdc-cell${isToday?' tdc-today':''}${isSel?' tdc-sel':''}${dayEvs.length?' tdc-has':''}"
-                data-cal-day="${key}">
-                <span class="tdc-num">${d}</span>
-                <span class="tdc-dots">${kinds.map(k=>`<i class="tdc-dot tdc-dot--${k}"></i>`).join('')}</span>
-            </button>`;
-        }
-
-        const miniGrid = `
-        <div class="tdc-wrap">
-            <div class="tdc-nav">
-                <button type="button" class="tdc-nav-btn" id="sc-cal-prev">‹</button>
-                <span class="tdc-month">${esc(monthLabel)}</span>
-                <button type="button" class="tdc-nav-btn" id="sc-cal-next">›</button>
-                <button type="button" class="tdc-today-btn" id="sc-cal-today">Today</button>
-            </div>
-            <div class="tdc-weekdays">${['S','M','T','W','T','F','S'].map(w=>`<span>${w}</span>`).join('')}</div>
-            <div class="tdc-cells">${cells}</div>
-        </div>`;
-
-        // ── Task row renderer ────────────────────────────────────────────
-        function taskRow(ev) {
-            const calOpen = ev.kind==='announcement'?'announcement':(ev.kind.startsWith('quiz')?'quiz':'lesson');
-            const dueSoon = ev.kind==='quiz-due' && ev.date<new Date(Date.now()+7*86400000);
-            let badge = '';
-            if (ev.kind==='quiz-due') badge=`<span class="td-badge ${dueSoon?'td-badge--due':'td-badge--opens'}">Due</span>`;
-            else if (ev.kind==='quiz-opens') badge=`<span class="td-badge td-badge--opens">Opens</span>`;
-
-            const timeStr = ev.date.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-            const typeLabel = ev.kind==='lesson'?'Lesson':ev.kind==='announcement'?'Announcement'
-                :ev.kind==='quiz-due'?'Quiz — Due':ev.kind==='quiz-opens'?'Quiz — Opens':'Quiz';
-
-            return `
-            <article class="td-task td-task--click" data-cal-open="${calOpen}" data-cal-id="${ev.id}">
-                <div class="td-task-icon td-task-icon--${ev.kind}">${icon(ev.icon,{size:15})}</div>
-                <div class="td-task-body">
-                    <div class="td-task-title">${esc(ev.title)}</div>
-                    <div class="td-task-meta">${esc(typeLabel)} · ${esc(timeStr)}</div>
-                </div>
-                <div class="td-task-right">${badge}<span class="td-chevron">›</span></div>
-            </article>`;
-        }
-
-        function section(label, items, opts={}) {
-            if (!items.length) return '';
-            return `
-            <div class="td-section${opts.variant?' td-section--'+opts.variant:''}">
-                <div class="td-section-hdr">
-                    <span class="td-section-dot${opts.variant?' td-section-dot--'+opts.variant:''}"></span>
-                    <span class="td-section-label">${label}</span>
-                    ${opts.dateStr?`<span class="td-section-date">${esc(opts.dateStr)}</span>`:''}
-                    <span class="td-section-count">${items.length}</span>
-                </div>
-                <div class="td-tasks">${items.map(taskRow).join('')}</div>
-            </div>`;
-        }
-
-        // ── List section ─────────────────────────────────────────────────
-        let listHtml = '';
-        if (sel) {
-            const selDate = new Date(sel + 'T12:00:00');
-            const selLabel = selDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-            const selEvs = events.filter(e => e.key === sel).sort((a,b) => a.date - b.date);
-            listHtml = `
-            <div class="td-day-hdr">
-                <div class="td-day-hdr-label">${esc(selLabel)}</div>
-                <span class="td-section-count">${selEvs.length}</span>
-                <button type="button" class="td-clear-day" data-cal-clear>Show all</button>
-            </div>
-            <div class="td-tasks td-tasks--flat">
-                ${selEvs.length
-                    ? selEvs.map(taskRow).join('')
-                    : '<p class="td-empty-day">Nothing scheduled on this day.</p>'}
-            </div>`;
-        } else {
-            const todayEvs=[], tomorrowEvs=[], thisWeek=[], upcoming=[], past=[];
-            events.forEach(ev => {
-                const d = ev.date;
-                if (d>=todayStart && d<tomorrowStart) todayEvs.push(ev);
-                else if (d>=tomorrowStart && d<dayAfter) tomorrowEvs.push(ev);
-                else if (d>=dayAfter && d<weekEnd) thisWeek.push(ev);
-                else if (d>=weekEnd) upcoming.push(ev);
-                else past.push(ev);
-            });
-            const asc=(a,b)=>a.date-b.date, desc=(a,b)=>b.date-a.date;
-            todayEvs.sort(asc); tomorrowEvs.sort(asc); thisWeek.sort(asc); upcoming.sort(asc); past.sort(desc);
-            const todayLabel = todayStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-            const tomorrowLabel = tomorrowStart.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-            listHtml = `
-            ${section('Today', todayEvs, {variant:'today', dateStr:todayLabel})}
-            ${section('Tomorrow', tomorrowEvs, {dateStr:tomorrowLabel})}
-            ${section('This Week', thisWeek)}
-            ${section('Upcoming', upcoming)}
-            ${section('Past', past, {variant:'past'})}
-            ${!events.length?`<div class="td-empty">
-                <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="#D1D5DB" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <p class="td-empty-msg">No lessons, quizzes, or announcements posted yet.</p>
-            </div>`:''}`;
-        }
-
-        return `
-        <div class="td-wrap">
-            ${miniGrid}
-            <div class="td-filters">
-                <button class="td-filter${filter==='all'?' td-filter--active':''}" data-td-filter="all">All</button>
-                <button class="td-filter${filter==='lesson'?' td-filter--active':''}" data-td-filter="lesson">Lessons</button>
-                <button class="td-filter${filter==='quiz'?' td-filter--active':''}" data-td-filter="quiz">Quizzes</button>
-                <button class="td-filter${filter==='announcement'?' td-filter--active':''}" data-td-filter="announcement">Announcements</button>
-            </div>
-            <div class="td-sections">${listHtml}</div>
-        </div>`;
     }
 
     function commentSection() {
@@ -1722,10 +1476,11 @@ export async function render(container, params) {
             <style>
                 .gp-panel { background:#fff;width:720px;max-width:100vw;height:100%;display:flex;flex-direction:column;box-shadow:-4px 0 40px rgba(0,0,0,.18);animation:gpSlide .22s ease-out; }
                 @keyframes gpSlide { from { transform:translateX(60px);opacity:0; } to { transform:translateX(0);opacity:1; } }
-                .gp-hdr { background:#00461B;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0; }
-                .gp-hdr h3 { margin:0;font-size:17px;font-weight:700; }
-                .gp-hdr p { margin:4px 0 0;font-size:12px;opacity:.8; }
-                .gp-close { background:rgba(255,255,255,.15);border:none;color:#fff;width:30px;height:30px;border-radius:7px;font-size:20px;cursor:pointer;line-height:1; }
+                .gp-hdr { background:#fff;border-bottom:1px solid #E5E7EB;color:#111;padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0; }
+                .gp-hdr h3 { margin:0;font-size:17px;font-weight:700;color:#111; }
+                .gp-hdr p { margin:4px 0 0;font-size:12px;color:#6B7280; }
+                .gp-close { background:none;border:none;color:#374151;width:30px;height:30px;border-radius:7px;font-size:20px;cursor:pointer;line-height:1; }
+                .gp-close:hover { background:#F3F4F6; }
                 .gp-toolbar { display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa;flex-shrink:0;flex-wrap:wrap; }
                 .gp-score-pill { background:#E8F5E9;color:#1B4D3E;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap; }
                 .gp-ai-btn { display:flex;align-items:center;gap:6px;padding:7px 14px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer; }
@@ -2279,8 +2034,15 @@ export async function render(container, params) {
             classesData: [apiSubject],
             backTarget: 'subject',
             onSuccess: (quizId) => {
-                render(container, { subject_id: subjectId, section_id: effectiveSectionId });
-                if (quizId) window.location.hash = `#instructor/quiz-questions?quiz_id=${quizId}`;
+                // Navigate straight to the question editor — do NOT also kick off
+                // an async render(container, ...) here. That re-render lands after
+                // the hash change and overwrites #page-content back to this
+                // classroom view, so the question editor flashes and disappears.
+                if (quizId) {
+                    window.location.hash = `#instructor/quiz-questions?quiz_id=${quizId}`;
+                } else {
+                    render(container, { subject_id: subjectId, section_id: effectiveSectionId });
+                }
             },
         });
     }
@@ -2414,53 +2176,6 @@ export async function render(container, params) {
 
         bindCommentEvents();
 
-        container.querySelector('#sc-cal-prev')?.addEventListener('click', () => {
-            state.calMonth -= 1;
-            if (state.calMonth < 0) { state.calMonth = 11; state.calYear -= 1; }
-            refreshBody();
-        });
-        container.querySelector('#sc-cal-next')?.addEventListener('click', () => {
-            state.calMonth += 1;
-            if (state.calMonth > 11) { state.calMonth = 0; state.calYear += 1; }
-            refreshBody();
-        });
-        container.querySelector('#sc-cal-today')?.addEventListener('click', () => {
-            const t = new Date();
-            state.calYear = t.getFullYear();
-            state.calMonth = t.getMonth();
-            state.calSelectedDay = dateKey(t);
-            refreshBody();
-        });
-        container.querySelectorAll('[data-cal-day]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const k = btn.dataset.calDay;
-                state.calSelectedDay = state.calSelectedDay === k ? null : k;
-                refreshBody();
-            });
-        });
-        container.querySelector('[data-cal-clear]')?.addEventListener('click', () => {
-            state.calSelectedDay = null;
-            refreshBody();
-        });
-        container.querySelectorAll('[data-td-filter]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                state.calFilter = btn.dataset.tdFilter;
-                refreshBody();
-            });
-        });
-        container.querySelectorAll('[data-cal-open]').forEach(el => {
-            el.addEventListener('click', () => {
-                const type = el.dataset.calOpen;
-                const id = el.dataset.calId;
-                state.tab = 'classwork';
-                if (type === 'announcement') {
-                    openAnnouncement(id);
-                } else {
-                    openWork(type, id);
-                }
-            });
-        });
-
         container.querySelectorAll('[data-person-id]').forEach(el => {
             el.addEventListener('click', () => {
                 const student = students.find(s => String(s.users_id) === String(el.dataset.personId));
@@ -2499,7 +2214,6 @@ export async function render(container, params) {
                 state.privateComments = [];
                 state.workMaterials = [];
                 state.studentSubmissions = [];
-                if (nextTab === 'calendar') { state.calFilter = 'all'; state.calSelectedDay = null; }
                 refreshBody();
                 return;
             }
@@ -2631,6 +2345,17 @@ function instructorExtraCss() {
             background: var(--subj-soft, #E8F5EC); display: inline-block;
             padding: 2px 8px; border-radius: 6px; margin-top: 4px;
         }
+        .gc-ann-attachments {
+            display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0;
+        }
+        .gc-ann-attach-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border: 1px solid #E5E7EB; border-radius: 20px;
+            background: #F9FAFB; color: #374151; font-size: 12.5px; font-weight: 600;
+            text-decoration: none; max-width: 220px;
+        }
+        .gc-ann-attach-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .gc-ann-attach-chip:hover { background: #E8F5EC; border-color: #A7D4B5; color: #00461B; }
         /* ── Inline submissions footer on classwork cards ─────────── */
         .gc-post-card__subs {
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -2650,8 +2375,7 @@ function instructorExtraCss() {
         .sc-hero-clock {
             display:flex; flex-direction:column; align-items:center; justify-content:center;
             padding:10px 24px; border-radius:16px;
-            background:rgba(0,0,0,0.20);
-            backdrop-filter:blur(6px);
+            background:#111; border:1px solid #111;
             min-width:210px; text-align:center;
         }
         .sc-clock-time {
@@ -2718,7 +2442,7 @@ function instructorExtraCss() {
         .sc-class-code-card--empty { padding:20px 16px; }
         .sc-class-code-icon {
             width:52px; height:52px; margin:0 auto 12px; border-radius:50%;
-            background:#E8F5EC; color:#00461B;
+            background:#F3F4F6; color:#111;
             display:flex; align-items:center; justify-content:center;
         }
         .sc-class-code-title {
@@ -2819,75 +2543,6 @@ function instructorExtraCss() {
         .gc-work-attach:hover { border-color:#00461B; background:#F8FDF9; }
         .gc-work-attach-name { font-size:13px; font-weight:500; }
         .gc-tile-ext { font-size:10px; color:#5F6368; margin-top:2px; }
-
-        /* ── Mini calendar grid (instructor) ── */
-        .tdc-wrap{border:1px solid #E8EAED;border-radius:14px;overflow:hidden;background:#fff}
-        .tdc-nav{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid #F0F0F0}
-        .tdc-month{font-size:14px;font-weight:700;color:#202124;flex:1;text-align:center}
-        .tdc-nav-btn{width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:20px;color:#5F6368;border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
-        .tdc-nav-btn:hover{background:#F1F3F4;color:#202124}
-        .tdc-today-btn{padding:4px 10px;border:1px solid #DADCE0;border-radius:6px;background:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151}
-        .tdc-today-btn:hover{border-color:#00461B;color:#00461B}
-        .tdc-weekdays{display:grid;grid-template-columns:repeat(7,1fr);padding:6px 8px 0}
-        .tdc-weekdays span{text-align:center;font-size:10px;font-weight:700;color:#9CA3AF;padding:3px 0;text-transform:uppercase}
-        .tdc-cells{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 10px;gap:2px}
-        .tdc-cell{min-height:44px;padding:3px 2px;border:none;border-radius:8px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit;transition:background .12s}
-        .tdc-cell--empty{cursor:default}
-        .tdc-cell:hover:not(.tdc-cell--empty){background:#F1F3F4}
-        .tdc-cell.tdc-has:hover{background:#F8FDF9}
-        .tdc-cell.tdc-sel{background:#E8F5EC}
-        .tdc-num{font-size:12px;font-weight:600;color:#374151;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all .12s}
-        .tdc-cell.tdc-today .tdc-num{background:#00461B;color:#fff}
-        .tdc-cell.tdc-sel .tdc-num{background:#00461B;color:#fff}
-        .tdc-dots{display:flex;gap:2px;justify-content:center;min-height:6px}
-        .tdc-dot{width:4px;height:4px;border-radius:50%;display:block}
-        .tdc-dot--lesson{background:#00461B}
-        .tdc-dot--announcement{background:#1A73E8}
-        .tdc-dot--quiz{background:#9334E6}
-        .td-day-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 8px;border-bottom:1px solid #F0F0F0;margin-bottom:8px}
-        .td-day-hdr-label{font-size:13px;font-weight:700;color:#202124;flex:1}
-        .td-clear-day{border:none;background:none;font-size:12px;font-weight:600;color:#00461B;cursor:pointer;font-family:inherit;padding:0}
-        .td-tasks--flat{border-left:2px solid #86EFAC}
-        .td-empty-day{font-size:13px;color:#9CA3AF;font-style:italic;padding:12px 0}
-        /* ── Shared Todo Calendar (instructor) ── */
-        .td-wrap{display:flex;flex-direction:column;gap:16px;padding:4px 0 20px}
-        .td-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:4px}
-        .td-head-title{font-size:17px;font-weight:800;color:#202124;margin-bottom:2px}
-        .td-head-sub{font-size:12px;color:#6B7280}
-        .td-filters{display:flex;gap:6px;flex-wrap:wrap}
-        .td-filter{padding:6px 14px;border-radius:20px;border:1.5px solid #E8EAED;background:#FAFAFA;font-size:12px;font-weight:600;color:#5F6368;cursor:pointer;font-family:inherit;transition:all .12s}
-        .td-filter:hover{border-color:#00461B;color:#00461B;background:#F8FDF9}
-        .td-filter--active{background:#00461B;color:#fff;border-color:#00461B}
-        .td-sections{display:flex;flex-direction:column;gap:0}
-        .td-section{margin-bottom:10px}
-        .td-section-hdr{display:flex;align-items:center;gap:8px;padding:6px 0 4px}
-        .td-section-dot{width:8px;height:8px;border-radius:50%;background:#D1D5DB;flex-shrink:0}
-        .td-section-dot--today{background:#00461B}
-        .td-section-dot--past{background:#D1D5DB}
-        .td-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#6B7280}
-        .td-section-date{font-size:11px;color:#9CA3AF}
-        .td-section-count{margin-left:auto;font-size:11px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 7px;border-radius:10px}
-        .td-section--today .td-section-label{color:#00461B}
-        .td-section--past .td-section-label{color:#9CA3AF}
-        .td-tasks{display:flex;flex-direction:column;gap:4px;padding-left:8px;border-left:2px solid #F0F0F0;margin-left:3px}
-        .td-section--today .td-tasks{border-left-color:#86EFAC}
-        .td-task{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid #F0F0F0;transition:background .12s,border-color .12s}
-        .td-task--click{cursor:pointer}
-        .td-task--click:hover{background:#F8FDF9;border-color:#86EFAC}
-        .td-task-icon{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-        .td-task-icon--lesson{background:#E8F5EC;color:#00461B}
-        .td-task-icon--announcement{background:#E8F0FE;color:#1A73E8}
-        .td-task-icon--quiz-due,.td-task-icon--quiz-opens,.td-task-icon--quiz{background:#F3E8FD;color:#9334E6}
-        .td-task-body{flex:1;min-width:0}
-        .td-task-title{font-size:13px;font-weight:600;color:#202124;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .td-task-meta{font-size:11px;color:#6B7280;margin-top:1px}
-        .td-task-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
-        .td-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap}
-        .td-badge--due{background:#E8F0FE;color:#1967D2}
-        .td-badge--opens{background:#FEF7E0;color:#B06000}
-        .td-chevron{color:#C4C6CA;font-size:18px;font-weight:300;line-height:1}
-        .td-empty{text-align:center;padding:48px 20px;display:flex;flex-direction:column;align-items:center;gap:12px}
-        .td-empty-msg{font-size:13px;color:#9CA3AF;margin:0}
 
         @media (max-width:900px) {
             .sc-cw-layout { grid-template-columns:1fr; }

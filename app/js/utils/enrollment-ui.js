@@ -34,9 +34,9 @@ export function enrollmentFormStyles(compact = false) {
             background: #fafafa; min-height: 220px;
         }
         .enr-btn-primary {
-            width: 100%; background: #00461B;
-            color: #fff; border: none; padding: 12px 20px; border-radius: 10px;
-            font-weight: 600; font-size: 15px; cursor: pointer; transition: all .2s;
+            display: block; margin: 0 auto; background: #00461B;
+            color: #fff; border: none; padding: 9px 22px; border-radius: 20px;
+            font-weight: 600; font-size: 13px; cursor: pointer; transition: all .2s;
         }
         .enr-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,70,27,.3); }
         .enr-btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }

@@ -12,40 +12,18 @@ const inl = { size: 14, className: 'ui-icon-inline' };
 
 export function messagePageStyles() {
     return `
-        .msg-page { width:100%; min-height:calc(100vh - 120px); background:#fff; }
-        .msg-hero {
-            display:flex; align-items:flex-start; justify-content:space-between;
-            gap:16px; flex-wrap:wrap;
-            padding:24px 28px; margin-bottom:20px;
-            background:${G};
-            border-radius:16px; color:#fff;
-            box-shadow:0 2px 10px rgba(0,70,27,.1);
-        }
-        .msg-hero-label {
-            font-size:11px; font-weight:700; text-transform:uppercase;
-            letter-spacing:1.2px; opacity:.75; margin:0 0 6px;
-        }
-        .msg-hero-title { font-size:26px; font-weight:800; margin:0 0 6px; letter-spacing:-.4px; }
-        .msg-hero-sub { font-size:14px; opacity:.9; margin:0; max-width:480px; line-height:1.5; }
-        .msg-hero-stat {
-            display:flex; align-items:center; gap:8px;
-            padding:10px 16px; background:rgba(255,255,255,.12);
-            border:1px solid rgba(255,255,255,.2); border-radius:12px;
-            font-size:13px; font-weight:600;
-        }
-        .msg-hero-stat svg { opacity:.9; }
+        .msg-page { background:#fff; margin:-24px -32px; width:calc(100% + 64px); }
 
         .msg-layout {
-            display:flex; height:calc(100vh - 260px); min-height:520px;
-            border:1px solid ${BORDER}; border-radius:16px; overflow:hidden;
+            display:flex; height:calc(100vh - 70px); min-height:520px;
+            border-top:1px solid ${BORDER}; overflow:hidden;
             background:#fff;
-            box-shadow:0 4px 24px rgba(0,70,27,.08);
         }
 
         .msg-sidebar {
             width:320px; min-width:280px;
             display:flex; flex-direction:column;
-            background:#FAFAFA; border-right:1px solid ${BORDER};
+            background:#fff; border-right:1px solid ${BORDER};
         }
         .msg-sidebar-header { padding:18px 16px 12px; }
         .msg-sidebar-header h2 {
@@ -327,10 +305,7 @@ export function messagePageStyles() {
         .msg-mobile-back svg { width: 20px; height: 20px; }
 
         @media (max-width: 768px) {
-            .msg-hero { padding: 20px; }
-            .msg-hero-title { font-size: 22px; }
-            .msg-hero-stat { display: none; }
-
+            .msg-page { margin:-16px; width:calc(100% + 32px); }
             .msg-layout {
                 flex-direction: column;
                 height: calc(100dvh - 160px);
@@ -356,18 +331,6 @@ export function messagePageStyles() {
             .msg-mobile-back { display: flex; }
         }
     `;
-}
-
-export function messagePageHeader(subtitle) {
-    return `
-        <header class="msg-hero">
-            <div>
-                <p class="msg-hero-label">Communication</p>
-                <h1 class="msg-hero-title">Messages</h1>
-                <p class="msg-hero-sub">${subtitle}</p>
-            </div>
-            <div class="msg-hero-stat">${icon('messages', inl)} Private chats</div>
-        </header>`;
 }
 
 export function messageSidebarShell(newMessageLabel) {

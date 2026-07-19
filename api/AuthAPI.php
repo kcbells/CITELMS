@@ -47,7 +47,19 @@ switch ($action) {
     case 'register':
         handleRegister();
         break;
-    
+
+    case 'signup-campuses':
+        handleSignupCampuses();
+        break;
+
+    case 'register-request':
+        handleRegisterRequest();
+        break;
+
+    case 'register-verify':
+        handleRegisterVerify();
+        break;
+
     case 'logout':
         handleLogout();
         break;
@@ -148,9 +160,9 @@ function handleRegister() {
     $password    = $input['password'] ?? '';
     $confirmPw   = $input['confirm_password'] ?? '';
 
-    if ($studentId === '' || $fullName === '' || $email === '' || $programCode === '') {
+    if ($fullName === '' || $email === '' || $programCode === '') {
         incrementLoginAttempts();
-        jsonResponse(false, 'Student ID, full name, email, and course are required.');
+        jsonResponse(false, 'Full name, email, and course are required.');
     }
 
     $pwError = Auth::validatePasswordStrength($password);
@@ -164,19 +176,17 @@ function handleRegister() {
         jsonResponse(false, 'Passwords do not match.');
     }
 
-    if (!UserIdHelper::isValidStudentId($studentId)) {
+    // Auto-generate student ID if not provided
+    if ($studentId === '') {
+        $studentId = generateAutoStudentId();
+    } elseif (!UserIdHelper::isValidStudentId($studentId)) {
         incrementLoginAttempts();
-        jsonResponse(false, 'Student ID must contain numbers only (no letters). Example: 02-2324-08200');
+        jsonResponse(false, 'Student ID must contain numbers only (no letters). Example: 2024-00001');
     }
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         incrementLoginAttempts();
         jsonResponse(false, 'Please enter a valid email address.');
-    }
-
-    if (!str_ends_with(strtolower($email), '@phinmaed.com')) {
-        incrementLoginAttempts();
-        jsonResponse(false, 'Please use your PHINMAed email address (@phinmaed.com).');
     }
 
     [$firstName, $lastName] = splitFullName($fullName);
@@ -246,6 +256,291 @@ function handleRegister() {
         error_log('register: ' . $e->getMessage());
         incrementLoginAttempts();
         jsonResponse(false, 'Registration failed. Please try again.', null, 500);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// SIGNUP CAMPUSES — public list for registration form
+// ─────────────────────────────────────────────────────────────
+function handleSignupCampuses() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        jsonResponse(false, 'Method not allowed', null, 405);
+    }
+    try {
+        $rows = db()->fetchAll(
+            "SELECT campus_id, campus_name, campus_code FROM campus WHERE status = 'active' ORDER BY campus_id ASC"
+        );
+        jsonResponse(true, 'Campuses loaded', ['campuses' => $rows ?: []]);
+    } catch (Exception $e) {
+        jsonResponse(true, 'Campuses loaded', ['campuses' => [
+            ['campus_id' => 1, 'campus_name' => 'Main Campus (Carmen)', 'campus_code' => 'MAIN'],
+            ['campus_id' => 2, 'campus_name' => 'Iligan Campus', 'campus_code' => 'ILIGAN'],
+            ['campus_id' => 3, 'campus_name' => 'Puerto Campus', 'campus_code' => 'PUERTO'],
+        ]]);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS for OTP-based registration
+// ─────────────────────────────────────────────────────────────
+function ensureRegOtpTable(): void {
+    static $ready = false;
+    if ($ready) return;
+    $ready = true;
+    pdo()->exec(
+        "CREATE TABLE IF NOT EXISTS registration_otp (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            token VARCHAR(64) NOT NULL UNIQUE,
+            otp_hash VARCHAR(255) NOT NULL,
+            reg_data JSON NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_reg_otp_token (token),
+            INDEX idx_reg_otp_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
+function generateAutoStudentId(): string {
+    $year = date('Y');
+    $row = db()->fetchOne(
+        "SELECT student_id FROM users WHERE student_id LIKE ? ORDER BY users_id DESC LIMIT 1",
+        [$year . '-%']
+    );
+    if ($row) {
+        $parts = explode('-', $row['student_id']);
+        $seq = (int)end($parts) + 1;
+    } else {
+        $seq = 1;
+    }
+    // Also check pending registrations to avoid collision within the 2-min window
+    $pendingRow = db()->fetchOne(
+        "SELECT JSON_UNQUOTE(JSON_EXTRACT(reg_data,'$.student_id')) AS sid
+         FROM registration_otp WHERE expires_at > NOW() ORDER BY id DESC LIMIT 1"
+    );
+    if ($pendingRow && $pendingRow['sid'] && strpos($pendingRow['sid'], $year . '-') === 0) {
+        $parts2 = explode('-', $pendingRow['sid']);
+        $pendingSeq = (int)end($parts2) + 1;
+        $seq = max($seq, $pendingSeq);
+    }
+    return $year . '-' . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+}
+
+function maskedEmail(string $email): string {
+    [$local, $domain] = explode('@', $email, 2);
+    $visible = min(3, strlen($local));
+    return substr($local, 0, $visible) . str_repeat('*', max(0, strlen($local) - $visible)) . '@' . $domain;
+}
+
+// ─────────────────────────────────────────────────────────────
+// REGISTER REQUEST — validate + send OTP (step 1 of 2)
+// ─────────────────────────────────────────────────────────────
+function handleRegisterRequest() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method not allowed', null, 405);
+    }
+    if (!checkLoginRateLimit()) {
+        jsonResponse(false, 'Too many attempts. Please wait a few minutes and try again.', null, 429);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+
+    // Honeypot
+    if (!empty($input['website'] ?? '')) {
+        usleep(random_int(400000, 800000));
+        jsonResponse(false, 'Registration failed. Please try again.');
+    }
+
+    $firstName   = trim($input['first_name'] ?? '');
+    $middleName  = trim($input['middle_name'] ?? '');
+    $lastName    = trim($input['last_name'] ?? '');
+    $suffix      = trim($input['suffix'] ?? '');
+    $email       = trim($input['email'] ?? '');
+    $studentId   = trim($input['student_id'] ?? '');
+    $noId        = !empty($input['no_student_id']);
+    $campusId    = (int)($input['campus_id'] ?? 0);
+    $programCode = trim($input['program_code'] ?? '');
+    $major       = trim($input['major'] ?? '');
+    $password    = $input['password'] ?? '';
+    $confirmPw   = $input['confirm_password'] ?? '';
+
+    if ($firstName === '' || $lastName === '' || $email === '' || $programCode === '') {
+        jsonResponse(false, 'First name, last name, email, and program are required.');
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(false, 'Please enter a valid email address.');
+    }
+
+    $pwError = Auth::validatePasswordStrength($password);
+    if ($pwError) {
+        jsonResponse(false, $pwError);
+    }
+    if ($password !== $confirmPw) {
+        jsonResponse(false, 'Passwords do not match.');
+    }
+
+    // Student ID handling
+    if ($noId || $studentId === '') {
+        $studentId = generateAutoStudentId();
+    } elseif (!UserIdHelper::isValidStudentId($studentId)) {
+        jsonResponse(false, 'Student ID must contain numbers and dashes only. Example: 2024-00001');
+    }
+
+    // Check for duplicates early
+    if (db()->fetchOne("SELECT users_id FROM users WHERE student_id = ? LIMIT 1", [$studentId])) {
+        jsonResponse(false, 'This Student ID is already registered.');
+    }
+    if (db()->fetchOne("SELECT users_id FROM users WHERE email = ? LIMIT 1", [$email])) {
+        jsonResponse(false, 'This email address is already registered.');
+    }
+
+    try {
+        ensureSignupCatalogInDb();
+        ensureUserMajorColumn();
+        $resolved = resolveSignupProgram($programCode, $major ?: null);
+    } catch (InvalidArgumentException $e) {
+        jsonResponse(false, $e->getMessage());
+    } catch (Exception $e) {
+        error_log('register-request catalog: ' . $e->getMessage());
+        jsonResponse(false, 'Could not resolve program. Please try again.');
+    }
+
+    $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
+    $regData = [
+        'first_name'    => $firstName,
+        'middle_name'   => $middleName,
+        'last_name'     => $lastName,
+        'suffix'        => $suffix,
+        'email'         => $email,
+        'student_id'    => $studentId,
+        'auto_id'       => ($noId || trim($input['student_id'] ?? '') === ''),
+        'campus_id'     => $campusId ?: null,
+        'program_id'    => $resolved['program_id'],
+        'department_id' => $resolved['department_id'],
+        'major'         => $resolved['major'],
+        'password_hash' => $hashedPassword,
+    ];
+
+    // Generate OTP — 2 minute expiry
+    $otp       = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $otpHash   = password_hash($otp, PASSWORD_DEFAULT);
+    $token     = bin2hex(random_bytes(32));
+    $expiresAt = date('Y-m-d H:i:s', time() + 120);
+
+    try {
+        ensureRegOtpTable();
+        // Delete expired rows
+        pdo()->exec("DELETE FROM registration_otp WHERE expires_at < NOW()");
+        pdo()->prepare(
+            "INSERT INTO registration_otp (token, otp_hash, reg_data, expires_at) VALUES (?, ?, ?, ?)"
+        )->execute([$token, $otpHash, json_encode($regData), $expiresAt]);
+    } catch (Exception $e) {
+        error_log('register-request db: ' . $e->getMessage());
+        jsonResponse(false, 'Registration failed. Please try again.', null, 500);
+    }
+
+    // Send OTP email
+    require_once __DIR__ . '/helpers/EmailHelper.php';
+    $sent = EmailHelper::sendRegistrationOtp($email, $firstName, $otp, $studentId, $regData['auto_id']);
+
+    jsonResponse(true, 'Verification code sent.', [
+        'token'        => $token,
+        'masked_email' => maskedEmail($email),
+        'expires_at'   => $expiresAt,
+        'expires_in'   => 120,
+        'email_sent'   => $sent,
+    ]);
+}
+
+// ─────────────────────────────────────────────────────────────
+// REGISTER VERIFY — verify OTP + create account (step 2 of 2)
+// ─────────────────────────────────────────────────────────────
+function handleRegisterVerify() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method not allowed', null, 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    $token = trim($input['token'] ?? '');
+    $otp   = trim($input['otp'] ?? '');
+
+    if ($token === '' || !preg_match('/^\d{6}$/', $otp)) {
+        jsonResponse(false, 'Invalid verification code.');
+    }
+
+    try {
+        ensureRegOtpTable();
+        $row = db()->fetchOne(
+            "SELECT * FROM registration_otp WHERE token = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1",
+            [$token]
+        );
+    } catch (Exception $e) {
+        jsonResponse(false, 'Verification failed. Please try again.', null, 500);
+    }
+
+    if (!$row) {
+        jsonResponse(false, 'Verification code expired or already used. Please start registration again.');
+    }
+
+    if (!password_verify($otp, $row['otp_hash'])) {
+        jsonResponse(false, 'Incorrect verification code. Please try again.');
+    }
+
+    $data = json_decode($row['reg_data'], true);
+
+    // Final duplicate check (race-condition guard)
+    if (db()->fetchOne("SELECT users_id FROM users WHERE student_id = ? LIMIT 1", [$data['student_id']])) {
+        jsonResponse(false, 'This Student ID was just registered. Please start over with a different ID.');
+    }
+    if (db()->fetchOne("SELECT users_id FROM users WHERE email = ? LIMIT 1", [$data['email']])) {
+        jsonResponse(false, 'This email address is already registered.');
+    }
+
+    try {
+        pdo()->prepare(
+            "INSERT INTO users (
+                first_name, last_name, email, password, role, status,
+                department_id, program_id, major, student_id, campus_id, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, 'student', 'active', ?, ?, ?, ?, ?, NOW(), NOW())"
+        )->execute([
+            $data['first_name'],
+            $data['last_name'],
+            $data['email'],
+            $data['password_hash'],
+            $data['department_id'],
+            $data['program_id'],
+            $data['major'],
+            $data['student_id'],
+            $data['campus_id'],
+        ]);
+
+        $userId = (int)pdo()->lastInsertId();
+
+        // Mark OTP as used
+        pdo()->prepare("UPDATE registration_otp SET used_at = NOW() WHERE id = ?")
+             ->execute([$row['id']]);
+
+        logActivity($userId, 'register', sprintf(
+            'Student self-registration via OTP — student_id: %s, auto_id: %s',
+            $data['student_id'],
+            $data['auto_id'] ? 'yes' : 'no'
+        ));
+
+        jsonResponse(true, 'Account created successfully!', [
+            'user' => [
+                'id'         => $userId,
+                'student_id' => $data['student_id'],
+                'name'       => trim($data['first_name'] . ' ' . $data['last_name']),
+                'email'      => $data['email'],
+                'auto_id'    => $data['auto_id'],
+            ],
+        ]);
+    } catch (Exception $e) {
+        error_log('register-verify: ' . $e->getMessage());
+        jsonResponse(false, 'Account creation failed. Please try again.', null, 500);
     }
 }
 

@@ -46,7 +46,7 @@ export async function render(container) {
     container.innerHTML = `
         <style>
             /* ── Page header ── */
-            .fa-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+            .fa-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .fa-header h2 { font-size:22px; font-weight:800; color:#111827; margin:0; }
             .fa-sections-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 18px; border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; border:1.5px solid #1B4D3E; color:#1B4D3E; background:#fff; transition:all .15s; white-space:nowrap; }
             .fa-sections-btn:hover { background:#E8F5E9; }
@@ -174,7 +174,6 @@ export async function render(container) {
 
         <!-- Header -->
         <div class="fa-header">
-            <h2>Faculty Assignments</h2>
             <button class="fa-sections-btn" id="fa-sec-btn">${L.manageSections}</button>
         </div>
 

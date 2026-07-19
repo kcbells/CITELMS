@@ -30,7 +30,7 @@ async function renderList(container) {
     container.innerHTML = `
         <style>
             /* ── Page Header ── */
-            .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+            .page-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
             .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:7px; }
@@ -162,7 +162,6 @@ async function renderList(container) {
         ${deptFilter ? `<a href="#admin/departments" style="display:inline-flex;align-items:center;gap:6px;color:#00461B;font-size:14px;font-weight:500;text-decoration:none;margin-bottom:16px;">← Back to Departments</a>` : ''}
 
         <div class="page-header">
-            <h2>Programs <span class="count-badge" id="prog-count">${allPrograms.length}</span></h2>
             <button class="btn-primary" id="btn-add">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add Program

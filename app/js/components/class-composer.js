@@ -106,8 +106,8 @@ function injectStyles() {
         width:36px; height:36px; border-radius:10px;
         display:flex; align-items:center; justify-content:center; flex-shrink:0;
     }
-    .cm-head-icon--ann { background:#E8F5EC; color:#00461B; }
-    .cm-head-icon--les { background:#FEF3E2; color:#B45309; }
+    .cm-head-icon--ann { background:#F3F4F6; color:#111; }
+    .cm-head-icon--les { background:#F3F4F6; color:#111; }
     .cm-head-title { font-size:16px; font-weight:700; color:#202124; margin:0; }
     .cm-head-sub   { font-size:12px; color:#5F6368; margin:2px 0 0; }
     .cm-head-close {
@@ -376,6 +376,16 @@ async function uploadLessonMaterials(lessonId, files, links) {
     }
 }
 
+async function uploadAnnouncementMaterials(announcementId, files) {
+    for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('announcement_id', announcementId);
+        const res = await Api.postForm('/AnnouncementsAPI.php?action=upload-material', fd);
+        if (!res.success) throw new Error(res.message || `Failed to upload ${file.name}`);
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Announcement Modal
 ═══════════════════════════════════════════════════════════════ */
@@ -537,16 +547,8 @@ export function openAnnouncementModal({ subjectId, sectionId = null, sections = 
 
             if (pendingFiles.length) {
                 btn.textContent = 'Uploading…';
-                const lessonRes = await Api.post('/LessonsAPI.php?action=create', {
-                    subject_id: parseInt(subjectId, 10),
-                    lesson_title: `Attachments: ${title || 'Announcement'}`,
-                    lesson_description: '', lesson_content: '',
-                    status: 'published', all_sections, section_ids,
-                });
-                if (lessonRes.success) {
-                    const lid = lessonRes.data?.lessons_id || lessonRes.data?.id;
-                    if (lid) await uploadLessonMaterials(lid, pendingFiles, []);
-                }
+                const annId = res.data?.announcement_id;
+                if (annId) await uploadAnnouncementMaterials(annId, pendingFiles);
             }
 
             bd.remove();
@@ -774,7 +776,7 @@ export function openCreateActivityModal({ subjectId, sectionId = null, sections 
     bd.innerHTML = `
         <div class="cm-modal" id="cm-act-modal">
             <div class="cm-head">
-                <div class="cm-head-icon" style="background:#EEF2FF;color:#4338CA;">${icon('document', inl)}</div>
+                <div class="cm-head-icon" style="background:#F3F4F6;color:#111;">${icon('document', inl)}</div>
                 <div>
                     <p class="cm-head-title">Create Activity</p>
                     <p class="cm-head-sub">Post an assignment or task for students to complete and submit</p>

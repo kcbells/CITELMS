@@ -47,8 +47,6 @@ function renderView(container, offerings, semesters, semFilter = '') {
             @media(max-width:768px) { .stats-row { grid-template-columns:1fr 1fr; } }
         </style>
 
-        <div class="page-header"><h2>Subject Offerings <span class="count">${offerings.length}</span></h2></div>
-
         <div class="stats-row">
             <div class="stat-card"><div class="num">${offerings.length}</div><div class="label">Total Offerings</div></div>
             <div class="stat-card"><div class="num">${offerings.filter(o => o.status==='open').length}</div><div class="label">Active</div></div>

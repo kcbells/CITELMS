@@ -420,9 +420,9 @@ export async function render(container) {
         row.querySelector('.ad-dept-main').addEventListener('click', () => row.classList.toggle('open'));
     });
 
-    container.style.background = '#F9FAFB';
+    container.style.background = '#fff';
     const pageContent = container.closest('.page-content');
-    if (pageContent) pageContent.style.background = '#F9FAFB';
+    if (pageContent) pageContent.style.background = '#fff';
 }
 
 function esc(str) {

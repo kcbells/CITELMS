@@ -18,14 +18,18 @@ if (!Auth::check()) {
     exit;
 }
 
-$allowedRoles = ['instructor', 'dean', 'admin', 'program_head'];
+$action = $_GET['action'] ?? '';
+
+// Students may only hit their own read-only summary action; everything else
+// (bulk class rosters, editing) stays instructor/dean/admin/program_head only.
+$allowedRoles = $action === 'student-summary'
+    ? ['student', 'instructor', 'dean', 'admin', 'program_head']
+    : ['instructor', 'dean', 'admin', 'program_head'];
 if (!in_array(Auth::role(), $allowedRoles)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Access denied']);
     exit;
 }
-
-$action = $_GET['action'] ?? '';
 
 // Migration guard: auto-create all three grade tables if they don't exist yet.
 // Wrapped in try/catch so a DB hiccup never breaks the JSON response.
@@ -84,6 +88,7 @@ try {
 }
 
 switch ($action) {
+    case 'student-summary': handleStudentSummary(); break;
     case 'module-grades':   handleModuleGrades();   break;
     case 'project-grades':  handleProjectGrades();  break;
     case 'save-field':      handleSaveField();      break;
@@ -108,6 +113,66 @@ switch ($action) {
  *     grades: { "<student_id>": { "<module_number>": { soc1, soc2, lets_practice, … } } }
  *   }
  */
+/**
+ * GET ?action=student-summary&subject_offered_id=X
+ * Student-facing, read-only. Returns the CALLER's own module + project
+ * grades for one offering — never another student's, never a bulk roster.
+ */
+function handleStudentSummary(): void
+{
+    $offeredId = (int)($_GET['subject_offered_id'] ?? 0);
+    $studentId = Auth::id();
+    if (!$offeredId) {
+        echo json_encode(['success' => false, 'message' => 'subject_offered_id required']);
+        return;
+    }
+
+    $enrolled = db()->fetchOne(
+        "SELECT 1 FROM student_subject WHERE user_student_id = ? AND subject_offered_id = ? AND status = 'enrolled'",
+        [$studentId, $offeredId]
+    );
+    if (Auth::role() === 'student' && !$enrolled) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Not enrolled in this offering']);
+        return;
+    }
+
+    $moduleRows = db()->fetchAll(
+        "SELECT module_number, soc1, soc2, lets_practice, lets_practice_optional, reflection, wrap_up_quiz
+         FROM global_module_grades WHERE subject_offered_id = ? AND student_id = ?",
+        [$offeredId, $studentId]
+    );
+    $modules = [];
+    foreach ($moduleRows as $r) {
+        $modules[(int)$r['module_number']] = [
+            'soc1'                   => $r['soc1'],
+            'soc2'                   => $r['soc2'],
+            'lets_practice'          => $r['lets_practice'] !== null ? (int)$r['lets_practice'] : null,
+            'lets_practice_optional' => $r['lets_practice_optional'] !== null ? (int)$r['lets_practice_optional'] : null,
+            'reflection'             => $r['reflection'] !== null ? (int)$r['reflection'] : null,
+            'wrap_up_quiz'           => $r['wrap_up_quiz'] !== null ? (float)$r['wrap_up_quiz'] : null,
+        ];
+    }
+
+    $projectRows = db()->fetchAll(
+        "SELECT period, checkin1, checkin2, checkin3, checkin4, final_output
+         FROM global_project_grades WHERE subject_offered_id = ? AND student_id = ?",
+        [$offeredId, $studentId]
+    );
+    $project = [];
+    foreach ($projectRows as $r) {
+        $project[$r['period']] = [
+            'checkin1'     => $r['checkin1']     !== null ? (float)$r['checkin1']     : null,
+            'checkin2'     => $r['checkin2']     !== null ? (float)$r['checkin2']     : null,
+            'checkin3'     => $r['checkin3']     !== null ? (float)$r['checkin3']     : null,
+            'checkin4'     => $r['checkin4']     !== null ? (float)$r['checkin4']     : null,
+            'final_output' => $r['final_output'] !== null ? (float)$r['final_output'] : null,
+        ];
+    }
+
+    echo json_encode(['success' => true, 'data' => ['modules' => $modules, 'project' => $project]]);
+}
+
 function handleModuleGrades(): void
 {
     $offeredId = (int)($_GET['subject_offered_id'] ?? 0);
