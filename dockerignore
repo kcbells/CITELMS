@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.example
+
+# Don't bake real uploaded student files or DB backups into the image
+uploads/*
+!uploads/.htaccess
+database/backups
+database/archive
+tools/recovery
+
+# Docs / misc
+*.md
+database_structure.txt
