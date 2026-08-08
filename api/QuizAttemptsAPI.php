@@ -70,6 +70,7 @@ $_attemptPerms = [
     'ai-grade-quiz'    => 'quizzes.grade',
     'quiz-question-stats' => 'grades.view',
     'finalize-grading' => 'quizzes.grade',
+    'flagged-attempts' => 'grades.view',
 ];
 if (isset($_attemptPerms[$action]) && !Auth::can($_attemptPerms[$action])) {
     http_response_code(403);
@@ -125,6 +126,10 @@ switch ($action) {
     case 'finalize-grading':
         header('Content-Type: application/json');
         finalizeGrading();
+        break;
+    case 'flagged-attempts':
+        header('Content-Type: application/json');
+        getFlaggedAttempts();
         break;
     case 'ai-grade-attempt':
         header('Content-Type: application/json');
@@ -621,6 +626,47 @@ function getPendingGrading() {
 }
 
 /**
+ * Quiz integrity report — every completed attempt with at least one recorded
+ * violation (currently: tab-switching during a proctored quiz), across every
+ * subject this instructor teaches. Gives the instructor one place to review
+ * flagged attempts instead of stumbling on them per-quiz.
+ */
+function getFlaggedAttempts() {
+    Auth::requireRole('instructor');
+    $userId = Auth::id();
+    $subjectId = $_GET['subject_id'] ?? '';
+
+    $where = '';
+    $params = [$userId];
+    if ($subjectId) {
+        $where = 'AND q.subject_id = ?';
+        $params[] = $subjectId;
+    }
+
+    $attempts = db()->fetchAll(
+        "SELECT sqa.attempt_id, sqa.quiz_id, sqa.earned_points, sqa.total_points, sqa.percentage,
+                sqa.completed_at, COALESCE(sqa.tab_switch_count, 0) AS tab_switch_count,
+                COALESCE(NULLIF(TRIM(q.quiz_title),''), '(Untitled Quiz)') AS quiz_title,
+                COALESCE(NULLIF(TRIM(s.subject_code),''), '—') AS subject_code,
+                s.subject_name,
+                u.users_id AS student_users_id, u.first_name, u.last_name, u.student_id
+         FROM student_quiz_attempts sqa
+         JOIN quiz q ON sqa.quiz_id = q.quiz_id
+         JOIN subject s ON q.subject_id = s.subject_id
+         JOIN users u ON sqa.user_student_id = u.users_id
+         WHERE q.subject_id IN (
+             SELECT DISTINCT so.subject_id FROM subject_offered so
+             WHERE so.user_teacher_id = ?
+         ) $where
+         AND sqa.status = 'completed'
+         AND COALESCE(sqa.tab_switch_count, 0) > 0
+         ORDER BY sqa.tab_switch_count DESC, sqa.completed_at DESC",
+        $params
+    );
+    echo json_encode(['success' => true, 'data' => $attempts ?: []]);
+}
+
+/**
  * Get full attempt details with all answers for grading
  */
 function getAttemptAnswers() {
@@ -834,7 +880,7 @@ function aiGradeAnswerById() {
 
     // Fetch the answer row + question details + ownership check
     $row = db()->fetchOne(
-        "SELECT a.student_quiz_answer_id, a.answer_text, a.max_points, a.grading_status,
+        "SELECT a.student_quiz_answer_id, a.answer_text, q.points as max_points, a.grading_status,
                 q.question_text, q.question_type, qz.user_teacher_id,
                 (SELECT option_text FROM question_option
                  WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
@@ -923,7 +969,7 @@ function aiGradeQuizPending() {
 
     try {
         $rows = db()->fetchAll(
-            "SELECT a.student_quiz_answer_id, a.attempt_id, a.answer_text, a.max_points,
+            "SELECT a.student_quiz_answer_id, a.attempt_id, a.answer_text, q.points as max_points,
                     q.question_text, q.question_type,
                     (SELECT option_text FROM question_option
                      WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
@@ -1018,7 +1064,7 @@ function aiGradeAttemptPending() {
 
     try {
         $rows = db()->fetchAll(
-            "SELECT a.student_quiz_answer_id, a.answer_text, a.max_points,
+            "SELECT a.student_quiz_answer_id, a.answer_text, q.points as max_points,
                     q.question_text, q.question_type,
                     (SELECT option_text FROM question_option
                      WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
@@ -1088,8 +1134,8 @@ function getQuizQuestionStats() {
         $stats = db()->fetchAll(
             "SELECT q.questions_id, q.question_text, q.question_type, q.points as max_points,
                     COUNT(a.student_quiz_answer_id) as responses,
-                    SUM(CASE WHEN COALESCE(a.points_earned, 0) >= COALESCE(a.max_points, q.points) THEN 1 ELSE 0 END) as correct_count,
-                    SUM(CASE WHEN COALESCE(a.points_earned, 0) < COALESCE(a.max_points, q.points) THEN 1 ELSE 0 END) as miss_count,
+                    SUM(CASE WHEN COALESCE(a.points_earned, 0) >= q.points THEN 1 ELSE 0 END) as correct_count,
+                    SUM(CASE WHEN COALESCE(a.points_earned, 0) < q.points THEN 1 ELSE 0 END) as miss_count,
                     ROUND(AVG(COALESCE(a.points_earned, 0)), 2) as avg_earned
              FROM quiz_questions qq
              JOIN questions q ON qq.questions_id = q.questions_id
@@ -1152,7 +1198,10 @@ function recalculateAttemptScore(int $attemptId): void {
 function aiGradeAnswer($questionText, $expectedAnswer, $studentAnswer, $maxPoints, $questionType) {
     $fallback = ['score' => 0, 'feedback' => '', 'status' => 'pending'];
 
-    $keySetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
+    $envKey = getenv('GROQ_API_KEY') ?: '';
+    $keySetting = $envKey !== ''
+        ? ['setting_value' => $envKey]
+        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
     if (!$keySetting || empty($keySetting['setting_value'])) return $fallback;
     $apiKey = $keySetting['setting_value'];
 

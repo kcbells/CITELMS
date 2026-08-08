@@ -5,7 +5,7 @@
 import { Api }  from '../../api.js';
 import { Auth } from '../../auth.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
-import { resolveMaterialUrl } from '../../utils/material-files.js';
+import { renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss } from '../../utils/material-files.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -98,6 +98,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
             .an-empty-icon { font-size:40px; margin-bottom:14px; }
             .an-empty h3 { font-size:16px; font-weight:700; color:#374151; margin:0 0 6px; }
             .an-empty p  { font-size:13px; margin:0; }
+            ${materialAttachmentCss()}
         </style>
 
         <!-- Banner -->
@@ -146,6 +147,8 @@ function renderPage(container, allAnn, subjects, filterSubject) {
     container.querySelector('#an-filter').addEventListener('change', e => {
         renderPage(container, allAnn, subjects, e.target.value);
     });
+
+    bindMaterialAttachments(container);
 }
 
 function buildCard(a, i) {
@@ -195,10 +198,7 @@ function buildCard(a, i) {
 
 function renderAttachments(atts) {
     if (!atts || !atts.length) return '';
-    return `<div class="an-attachments">${atts.map(a => `
-        <a class="an-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}">
-            ${icon('document', inl)}<span>${esc(a.original_name)}</span>
-        </a>`).join('')}</div>`;
+    return `<div class="gc-material-list">${atts.map(renderMaterialAttachment).join('')}</div>`;
 }
 
 function isNew(a) {

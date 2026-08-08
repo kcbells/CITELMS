@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 header('Content-Type: application/json');
 
@@ -327,7 +328,7 @@ function addComment() {
         ? (int)$input['lessons_id'] : null;
     $quizId    = isset($input['quiz_id']) && $input['quiz_id'] !== ''
         ? (int)$input['quiz_id'] : null;
-    $content   = trim($input['content'] ?? '');
+    $content   = Sanitize::text($input['content'] ?? '');
     $isPrivate = !empty($input['is_private']);
     $parentId  = (int)($input['parent_comment_id'] ?? 0);
     $userId    = Auth::id();
@@ -925,7 +926,9 @@ function contentExistsForSubject($subjectId, $contentType, $contentId) {
     }
     if ($contentType === 'announcement') {
         return (bool)db()->fetchOne(
-            "SELECT announcement_id FROM announcement WHERE announcement_id = ? AND subject_id = ?",
+            "SELECT a.announcement_id FROM announcement a
+             JOIN subject_offered so ON so.subject_offered_id = a.subject_offered_id
+             WHERE a.announcement_id = ? AND so.subject_id = ?",
             [$contentId, $subjectId]
         );
     }

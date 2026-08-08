@@ -1034,7 +1034,7 @@ async function parseXlsxToSubjects(file, onProgress) {
 
     if (isChed) {
         if (onProgress) onProgress('Reading CHED curriculum format...');
-        return parseChedExcelRows(rows);
+        return { subjects: parseChedExcelRows(rows), isChed: true };
     }
 
     // Flat template format (Subject Code | Subject Name | Lec | Lab | Units | Year | Sem | Prereq)
@@ -1058,7 +1058,7 @@ async function parseXlsxToSubjects(file, onProgress) {
         const prereq = (cols[7] || '').replace(/^none$/i, '').trim();
         subjects.push({ code, name, lec, lab, units, year, sem, prereq });
     }
-    return subjects;
+    return { subjects, isChed: false };
 }
 
 // Parse the standard CHED two-column curriculum Excel layout:
@@ -1066,7 +1066,9 @@ async function parseXlsxToSubjects(file, onProgress) {
 function parseChedExcelRows(rows) {
     const subjects  = [];
     const YEAR_MAP  = { first:1, second:2, third:3, fourth:4, '1st':1, '2nd':2, '3rd':3, '4th':4 };
-    const CODE_RE   = /^[A-Z]{2,7}\s+\d{1,4}[A-Z]?$/;
+    // Tolerant of "CRIM 101", "CRIM101", "CRIM-101" — real-world sheets rarely
+    // use a consistent separator (or any separator at all) between the prefix and number.
+    const CODE_RE   = /^[A-Z]{2,10}[\s-]*\d{1,4}[A-Z]?$/;
     const SKIP_CELL = /^(course\s*code|subject\s*code|course\s*title|subject\s*title|lec|lab|total|units|pre.?req|semester|year|hrs|hours|summer|first|second|third|fourth)$/i;
 
     let curYear    = null;
@@ -1223,6 +1225,7 @@ async function openImportModal(container, opts = {}) {
         try {
             const ext = file.name.split('.').pop().toLowerCase();
             let subjects = [];
+            let isChed = false;
 
             if (ext === 'pdf') {
                 await loadPdfJs();
@@ -1236,7 +1239,7 @@ async function openImportModal(container, opts = {}) {
                 subjects = parseCsvToSubjects(text);
             } else if (ext === 'xlsx' || ext === 'xls') {
                 setProgress('Loading Excel parser...');
-                subjects = await parseXlsxToSubjects(file, setProgress);
+                ({ subjects, isChed } = await parseXlsxToSubjects(file, setProgress));
             } else {
                 throw new Error('Unsupported file type. Please upload a CSV, Excel (.xlsx), or PDF file.');
             }
@@ -1245,10 +1248,15 @@ async function openImportModal(container, opts = {}) {
 
             if (!subjects.length) {
                 dropEl.style.display = '';
-                showMsg(msgEl, ext === 'pdf'
-                    ? 'No subjects detected. The PDF may use an unusual layout — try the CSV/Excel template instead.'
-                    : 'No subjects found. Make sure the file uses the template column order (Subject Code, Subject Name, Lec, Lab, Units, Year, Semester, Pre-req).',
-                    'err');
+                let hint;
+                if (ext === 'pdf') {
+                    hint = 'No subjects detected. The PDF may use an unusual layout — try the CSV/Excel template instead.';
+                } else if (isChed) {
+                    hint = 'No subjects found. Detected the CHED two-column layout, but no rows under "Course Code / Course Title" matched a code like "CRIM 101". Check that the code and title columns are filled in on the same row.';
+                } else {
+                    hint = 'No subjects found. Make sure the file uses the template column order (Subject Code, Subject Name, Lec, Lab, Units, Year, Semester, Pre-req).';
+                }
+                showMsg(msgEl, hint, 'err');
                 return;
             }
 

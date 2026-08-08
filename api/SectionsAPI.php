@@ -155,11 +155,11 @@ function handleList() {
 // ─── Generate unique enrollment code ──────────────────────────────────────
 
 function generateEnrollmentCode() {
-    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    // Letters + digits, excluding easily-confused characters (I, O, 0, 1)
+    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     do {
         $code = '';
-        for ($i = 0; $i < 3; $i++) $code .= $chars[random_int(0, strlen($chars) - 1)];
-        $code .= '-' . str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        for ($i = 0; $i < 8; $i++) $code .= $chars[random_int(0, strlen($chars) - 1)];
         $exists = db()->fetchOne("SELECT section_id FROM section WHERE enrollment_code = ?", [$code]);
     } while ($exists);
     return $code;
@@ -234,6 +234,12 @@ function handleUpdate() {
     $id          = (int)($data['section_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Section ID required']); return; }
 
+    if (!sectionRow_userCanManage($id)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You do not have access to this section']);
+        return;
+    }
+
     $name        = trim($data['section_name'] ?? '');
     $maxStudents = max(1, (int)($data['max_students'] ?? 40));
     $status      = in_array($data['status'] ?? '', ['active','inactive']) ? $data['status'] : 'active';
@@ -258,6 +264,12 @@ function handleDelete() {
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
     $id = (int)($data['section_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Section ID required']); return; }
+
+    if (!sectionRow_userCanManage($id)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You do not have access to this section']);
+        return;
+    }
 
     try {
         $pdo = pdo();
@@ -1551,6 +1563,22 @@ function handleUnenroll() {
 
     if (!$studentSubjectId) { echo json_encode(['success' => false, 'message' => 'student_subject_id required']); return; }
 
+    $enrollment = db()->fetchOne(
+        "SELECT ss.student_subject_id, ss.section_id, so.subject_offered_id, so.user_teacher_id, s.program_id
+         FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         JOIN subject s ON s.subject_id = so.subject_id
+         WHERE ss.student_subject_id = ?",
+        [$studentSubjectId]
+    );
+    if (!$enrollment) { echo json_encode(['success' => false, 'message' => 'Enrollment not found']); return; }
+
+    if (!sectionOffered_userCanManage($enrollment)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You do not have access to this student\'s enrollment']);
+        return;
+    }
+
     try {
         pdo()->prepare("DELETE FROM student_subject WHERE student_subject_id = ?")->execute([$studentSubjectId]);
         echo json_encode(['success' => true, 'message' => 'Student unenrolled']);
@@ -1558,4 +1586,53 @@ function handleUnenroll() {
         error_log('Unenroll: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to unenroll']);
     }
+}
+
+// Ownership check for section-level update/delete: admin always allowed; dean must own
+// the section's program; instructor must teach at least one subject currently offered
+// in this section.
+function sectionRow_userCanManage($sectionId) {
+    $role = Auth::role();
+    if ($role === 'admin') return true;
+
+    $section = db()->fetchOne("SELECT program_id FROM section WHERE section_id = ?", [$sectionId]);
+    if (!$section) return false;
+
+    if ($role === 'dean') {
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deanProg = (int)($deanUser['program_id'] ?? 0);
+        return $deanProg && $deanProg === (int)($section['program_id'] ?? 0);
+    }
+
+    if ($role === 'instructor') {
+        $taught = db()->fetchOne(
+            "SELECT ss.section_subject_id FROM section_subject ss
+             JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+             WHERE ss.section_id = ? AND so.user_teacher_id = ? LIMIT 1",
+            [$sectionId, Auth::id()]
+        );
+        return (bool)$taught;
+    }
+
+    return false;
+}
+
+// Ownership check reused by handleUnenroll:
+// admin always allowed; instructor must own the offering (subject_offered.user_teacher_id);
+// dean must own the program (matches the single-program convention used elsewhere in this file).
+function sectionOffered_userCanManage(array $row) {
+    $role = Auth::role();
+    if ($role === 'admin') return true;
+
+    if ($role === 'instructor') {
+        return (int)($row['user_teacher_id'] ?? 0) === (int)Auth::id();
+    }
+
+    if ($role === 'dean') {
+        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deanProg = (int)($deanUser['program_id'] ?? 0);
+        return $deanProg && $deanProg === (int)($row['program_id'] ?? 0);
+    }
+
+    return false;
 }

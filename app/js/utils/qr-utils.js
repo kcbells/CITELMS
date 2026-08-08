@@ -26,7 +26,7 @@ export function normalizeSubjectCode(raw) {
 
 export function parseJoinParamsFromScan(raw) {
     const text = String(raw || '').trim();
-    if (!text) return { subject_code: '', section_id: 0 };
+    if (!text) return { subject_code: '', section_id: 0, enrollment_code: '' };
 
     try {
         let url;
@@ -34,6 +34,7 @@ export function parseJoinParamsFromScan(raw) {
             url = new URL(text);
         } else if (
             text.includes('subject_code=')
+            || text.includes('enrollment_code=')
             || text.includes('section_id=')
             || text.startsWith('#')
             || text.startsWith('?')
@@ -48,11 +49,16 @@ export function parseJoinParamsFromScan(raw) {
             const fromQuery = {
                 subject_code: url.searchParams.get('subject_code') || '',
                 section_id: parseInt(url.searchParams.get('section_id') || '0', 10) || 0,
+                enrollment_code: url.searchParams.get('enrollment_code') || '',
             };
+            if (fromQuery.enrollment_code) {
+                return { subject_code: '', section_id: 0, enrollment_code: fromQuery.enrollment_code.toUpperCase() };
+            }
             if (fromQuery.subject_code) {
                 return {
                     subject_code: normalizeSubjectCode(fromQuery.subject_code),
                     section_id: fromQuery.section_id,
+                    enrollment_code: '',
                 };
             }
 
@@ -60,11 +66,16 @@ export function parseJoinParamsFromScan(raw) {
             const query = hash.includes('?') ? hash.split('?')[1] : '';
             if (query) {
                 const params = new URLSearchParams(query);
+                const enrollmentCode = params.get('enrollment_code') || '';
+                if (enrollmentCode) {
+                    return { subject_code: '', section_id: 0, enrollment_code: enrollmentCode.toUpperCase() };
+                }
                 const subjectCode = params.get('subject_code') || '';
                 if (subjectCode) {
                     return {
                         subject_code: normalizeSubjectCode(subjectCode),
                         section_id: parseInt(params.get('section_id') || '0', 10) || 0,
+                        enrollment_code: '',
                     };
                 }
             }
@@ -73,18 +84,30 @@ export function parseJoinParamsFromScan(raw) {
         /* fall through */
     }
 
-    // Plain subject code text (e.g. IT101)
-    if (/^[A-Z0-9-]{2,20}$/i.test(text) && !/^[A-Z0-9]{3}-[A-Z0-9]{4}$/.test(text)) {
-        return { subject_code: normalizeSubjectCode(text), section_id: 0 };
+    // Plain text: a unique class/enrollment code (new 8-char format, or legacy XXX-9999
+    // format from sections created before the format change) — otherwise a subject code
+    const plain = text.toUpperCase().replace(/\s+/g, '');
+    const ENROLLMENT_CODE_RE = /^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/;
+    if (ENROLLMENT_CODE_RE.test(plain)) {
+        return { subject_code: '', section_id: 0, enrollment_code: plain };
+    }
+    if (/^[A-Z0-9-]{2,20}$/i.test(text)) {
+        return { subject_code: normalizeSubjectCode(text), section_id: 0, enrollment_code: '' };
     }
 
-    return { subject_code: '', section_id: 0 };
+    return { subject_code: '', section_id: 0, enrollment_code: '' };
 }
 
 export function buildStudentJoinUrl(subjectCode, sectionId = 0) {
     const code = normalizeSubjectCode(subjectCode);
     const params = new URLSearchParams({ subject_code: code });
     if (sectionId) params.set('section_id', String(sectionId));
+    return `${window.location.origin}${BASE_URL}/index.html?${params.toString()}`;
+}
+
+export function buildStudentJoinUrlByEnrollmentCode(enrollmentCode) {
+    const code = String(enrollmentCode || '').toUpperCase().replace(/\s+/g, '');
+    const params = new URLSearchParams({ enrollment_code: code });
     return `${window.location.origin}${BASE_URL}/index.html?${params.toString()}`;
 }
 
@@ -141,7 +164,7 @@ export async function startQrScanner(elementId, onJoin) {
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (decoded) => {
             const params = parseJoinParamsFromScan(decoded);
-            if (params.subject_code) onJoin?.(params);
+            if (params.subject_code || params.enrollment_code) onJoin?.(params);
         },
         () => {}
     );

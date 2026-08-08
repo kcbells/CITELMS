@@ -48,8 +48,8 @@ function handleInstructorReport() {
                 COUNT(DISTINCT q.quiz_id)           as quiz_count,
                 COUNT(DISTINCT l.lessons_id)        as lesson_count,
                 AVG(CASE WHEN sqa.status = 'completed' THEN sqa.percentage END) as avg_score,
-                COUNT(CASE WHEN sqa.status = 'completed' AND sqa.percentage >= so.passing_rate THEN 1 END) as passed_count,
-                COUNT(CASE WHEN sqa.status = 'completed' AND sqa.percentage < so.passing_rate  THEN 1 END) as failed_count
+                COUNT(CASE WHEN sqa.status = 'completed' AND sqa.passed = 1 THEN 1 END) as passed_count,
+                COUNT(CASE WHEN sqa.status = 'completed' AND sqa.passed = 0 THEN 1 END) as failed_count
          FROM subject_offered so
          JOIN subject s ON so.subject_id = s.subject_id
          LEFT JOIN student_subject ss   ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'enrolled'

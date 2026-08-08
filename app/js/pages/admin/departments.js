@@ -58,15 +58,30 @@ function renderShell(container) {
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .btn-secondary:hover { background:#e8e8e8; }
 
-            /* Table */
-            .table-wrap  { background:#fff; }
-            .data-table  { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
-            .data-table tbody tr:nth-child(even) { background:#f9fafb; }
-            .data-table tbody tr:hover { background:#f0fdf4; }
-            .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
+            /* ===== Clean table ===== */
+            .table-wrap {
+                background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden;
+            }
+            .data-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
+            .data-table th {
+                background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
+                text-transform:uppercase; letter-spacing:0.05em; padding:13px 20px;
+                border-bottom:1px solid #e5e7eb; text-align:left;
+            }
+            .data-table tbody tr { border-bottom:1px solid #f0f0f0; transition:background .12s; }
+            .data-table tbody tr:last-child { border-bottom:none; }
+            .data-table tbody tr:hover { background:#fafbfc; }
+            .data-table td { padding:14px 20px; vertical-align:middle; color:#374151; }
 
-            .dept-name { font-weight:600; color:#1f2937; }
+            .dept-cell { display:flex; align-items:center; gap:12px; }
+            .dept-icon {
+                width:38px; height:38px; border-radius:9px; background:#f3f4f6; color:#1f2937;
+                display:flex; align-items:center; justify-content:center; flex-shrink:0;
+                font-size:12px; font-weight:800; letter-spacing:.02em;
+            }
+            .dept-name { font-weight:700; color:#1f2937; font-size:13.5px; }
+            .dept-code { font-size:11px; color:#9ca3af; font-weight:600; letter-spacing:.04em; text-transform:uppercase; margin-top:1px; }
+
             .program-badge { background:#DBEAFE; color:#1E40AF; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; }
             .dean-cell { display:flex; align-items:center; gap:9px; }
             .dean-avatar { width:30px; height:30px; border-radius:50%; background:#00461B; color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -75,9 +90,18 @@ function renderShell(container) {
             .dean-add-btn { font-size:12px; color:#00461B; font-weight:600; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:3px 10px; cursor:pointer; white-space:nowrap; }
             .dean-add-btn:hover { background:#dcfce7; }
 
-            /* Actions dropdown */
-            .actions-cell { text-align:right; position:relative; }
-            .btn-actions  { background:none; border:1px solid #e0e0e0; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:18px; display:inline-flex; align-items:center; justify-content:center; }
+            .status-pill { font-size:11.5px; font-weight:700; padding:4px 12px; border-radius:20px; display:inline-block; }
+            .status-pill.active   { background:#dcfce7; color:#15803d; }
+            .status-pill.inactive { background:#f3f4f6; color:#6b7280; }
+
+            /* Actions */
+            .actions-cell { text-align:right; position:relative; white-space:nowrap; }
+            .btn-edit-tbl {
+                background:#fff; color:#374151; border:1.5px solid #e5e7eb; padding:7px 16px;
+                border-radius:8px; font-weight:600; font-size:12.5px; cursor:pointer; transition:all .15s;
+            }
+            .btn-edit-tbl:hover { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .btn-actions  { background:none; border:1px solid #e0e0e0; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:18px; display:inline-flex; align-items:center; justify-content:center; margin-left:8px; vertical-align:middle; }
             .btn-actions:hover { background:#f5f5f5; }
             .actions-dropdown { display:none; position:fixed; background:#fff; border:1px solid #e8e8e8; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.15); min-width:170px; z-index:9999; overflow:hidden; }
             .actions-dropdown.show { display:block; }
@@ -92,13 +116,13 @@ function renderShell(container) {
             .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:10000; padding:16px; animation:bdFadeIn .15s; }
             .modal { background:#fff; border-radius:16px; width:100%; max-width:500px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 32px 80px rgba(0,0,0,.28); animation:modalSlide .22s cubic-bezier(.4,0,.2,1); overflow:hidden; }
             /* header */
-            .modal-hd { background:#1B4D2E; border-radius:16px 16px 0 0; padding:20px 24px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:3px solid #C8941A; }
-            .modal-hd-icon { width:44px; height:44px; border-radius:10px; background:rgba(255,255,255,.15); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
+            .modal-hd { background:#fff; border-radius:16px 16px 0 0; padding:20px 24px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:1px solid #e5e7eb; }
+            .modal-hd-icon { width:44px; height:44px; border-radius:10px; background:#f0fdf4; display:flex; align-items:center; justify-content:center; color:#00461B; flex-shrink:0; }
             .modal-hd-text { flex:1; }
-            .modal-hd-text h3 { margin:0 0 2px; font-size:17px; font-weight:800; color:#fff; }
-            .modal-hd-text p  { margin:0; font-size:12px; color:rgba(255,255,255,.7); }
-            .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
-            .modal-close:hover { background:rgba(200,148,26,.4); }
+            .modal-hd-text h3 { margin:0 0 2px; font-size:17px; font-weight:800; color:#1f2937; }
+            .modal-hd-text p  { margin:0; font-size:12px; color:#6b7280; }
+            .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:#f3f4f6; color:#6b7280; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
+            .modal-close:hover { background:#e5e7eb; color:#1f2937; }
             /* body */
             .modal-bd { padding:22px 24px; overflow-y:auto; flex:1; }
             .modal-bd::-webkit-scrollbar { width:4px; }
@@ -211,13 +235,6 @@ async function renderDepts(container) {
            </div>`
         : '';
 
-    const activeCampusName = activeCampusId
-        ? (campuses.find(c => c.campus_id == activeCampusId)?.campus_name || '')
-        : '';
-    const deanHeader = activeCampusId
-        ? `Dean <span style="font-size:10.5px;font-weight:500;color:#9ca3af;text-transform:none;letter-spacing:0;">(${esc(activeCampusName)})</span>`
-        : 'Dean';
-
     slot.innerHTML = `
         ${campusPills}
         <div class="dp-header">
@@ -225,23 +242,22 @@ async function renderDepts(container) {
             <button class="btn-primary" id="btn-add-dept">+ Add Department</button>
         </div>
 
-        <div class="table-wrap">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Department</th>
-                        <th>${deanHeader}</th>
-                        <th>Programs</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${depts.length === 0
-                        ? '<tr><td colspan="4"><div class="empty-state">No departments found</div></td></tr>'
-                        : depts.map(d => {
-                            const initials = d.dean_name
-                                ? d.dean_name.trim().split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
-                                : '';
+        ${depts.length === 0
+            ? '<div class="empty-state">No departments found</div>'
+            : `<div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>Dean</th>
+                            <th>Programs</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${depts.map(d => {
+                            const initials = deptInitials(d.department_code || d.department_name);
                             const addDeanPayload = JSON.stringify({
                                 department_id: d.department_id,
                                 department_name: d.department_name,
@@ -255,14 +271,7 @@ async function renderDepts(container) {
                                 current_dean: d.dean_name
                             });
                             const deanCell = d.dean_name
-                                ? `<div class="dean-cell">
-                                       <div class="dean-avatar">${initials}</div>
-                                       <div>
-                                           <div class="dean-name-text">${esc(d.dean_name)}</div>
-                                           <div class="dean-email-text">${esc(d.dean_email || '')}</div>
-                                       </div>
-                                       <button class="dean-add-btn" data-add-dean='${changeDeanPayload}' style="margin-left:10px;">Change</button>
-                                   </div>`
+                                ? `<div class="dean-name-text">${esc(d.dean_name)}</div><div class="dean-email-text">${esc(d.dean_email || '')}</div>`
                                 : `<button class="dean-add-btn" data-add-dean='${addDeanPayload}'>+ Add Dean</button>`;
 
                             const dropdownAddDean = d.dean_name
@@ -270,23 +279,31 @@ async function renderDepts(container) {
                                 : `<a href="#" data-add-dean='${addDeanPayload}'><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg> Add Dean</a><div class="divider"></div>`;
 
                             return `<tr>
-                                <td><div class="dept-name">${esc(d.department_name)}</div></td>
+                                <td>
+                                    <div class="dept-cell">
+                                        <div class="dept-icon">${esc(initials)}</div>
+                                        <div>
+                                            <div class="dept-name">${esc(d.department_name)}</div>
+                                            <div class="dept-code">${esc(d.department_code || '')}</div>
+                                        </div>
+                                    </div>
+                                </td>
                                 <td>${deanCell}</td>
                                 <td><a class="program-badge" href="#admin/programs?department_id=${d.department_id}">${d.program_count} program${d.program_count != 1 ? 's' : ''}</a></td>
+                                <td><span class="status-pill active">Active</span></td>
                                 <td class="actions-cell">
+                                    <button class="btn-edit-tbl" data-edit='${JSON.stringify({id:d.department_id,department_name:d.department_name})}'>Edit</button>
                                     <button class="btn-actions" data-id="${d.department_id}">⋮</button>
                                     <div class="actions-dropdown" data-dropdown="${d.department_id}">
                                         ${dropdownAddDean}
-                                        <a href="#" data-edit='${JSON.stringify({id:d.department_id,department_name:d.department_name})}'>Edit</a>
-                                        <div class="divider"></div>
                                         <a href="#" class="danger" data-delete="${d.department_id}" data-name="${esc(d.department_name)}">Deactivate</a>
                                     </div>
                                 </td>
                             </tr>`;
                         }).join('')}
-                </tbody>
-            </table>
-        </div>
+                    </tbody>
+                </table>
+            </div>`}
     `;
 
     // Campus pills
@@ -646,64 +663,54 @@ async function renderCampuses(container) {
             <button class="btn-primary" id="btn-add-campus">+ Add Campus</button>
         </div>
 
-        <div class="table-wrap">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Campus</th>
-                        <th>Address</th>
-                        <th>Contact</th>
-                        <th>Email</th>
-                        <th>Departments</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${campList.length === 0
-                        ? '<tr><td colspan="6"><div class="empty-state">No campuses found</div></td></tr>'
-                        : campList.map(c => {
+        ${campList.length === 0
+            ? '<div class="empty-state">No campuses found</div>'
+            : `<div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Campus</th>
+                            <th>Address</th>
+                            <th>Contact</th>
+                            <th>Email</th>
+                            <th>Departments</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${campList.map(c => {
                             const phones = (c.contact_number || '').split('|').map(p => p.trim()).filter(Boolean);
                             const contactHtml = phones.length
                                 ? phones.map(p => `<div style="font-size:12.5px;color:#525252;">${esc(p)}</div>`).join('')
                                 : '<span style="color:#9ca3af;">—</span>';
+                            const isActive = c.status !== 'inactive';
                             return `<tr>
                                 <td>
-                                    <div class="dept-name">${esc(c.campus_name)}</div>
-                                    <div style="font-size:11.5px;color:#9ca3af;margin-top:2px;font-family:monospace;">${esc(c.campus_code)}</div>
+                                    <div class="dept-cell">
+                                        <div class="dept-icon">${esc(deptInitials(c.campus_code || c.campus_name))}</div>
+                                        <div>
+                                            <div class="dept-name">${esc(c.campus_name)}</div>
+                                            <div class="dept-code">${esc(c.campus_code || '')}</div>
+                                        </div>
+                                    </div>
                                 </td>
                                 <td style="font-size:12.5px;color:#525252;max-width:220px;">${esc(c.address || '—')}</td>
                                 <td>${contactHtml}</td>
                                 <td style="font-size:12.5px;color:#525252;">${esc(c.email || '—')}</td>
-                                <td><span class="program-badge">${c.department_count} dept${c.department_count!=1?'s':''}</span></td>
+                                <td><span class="program-badge">${c.department_count} dept${c.department_count!=1?'s':''} · ${c.user_count ?? 0} users</span></td>
+                                <td><span class="status-pill ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</span></td>
                                 <td class="actions-cell">
-                                    <button class="btn-actions" data-cid="${c.campus_id}">⋮</button>
-                                    <div class="actions-dropdown" data-cdropdown="${c.campus_id}">
-                                        <a href="#" data-edit-campus='${JSON.stringify({campus_id:c.campus_id,campus_name:c.campus_name,campus_code:c.campus_code,address:c.address||'',contact_number:c.contact_number||'',email:c.email||'',status:c.status})}'>Edit</a>
-                                    </div>
+                                    <button class="btn-edit-tbl" data-edit-campus='${JSON.stringify({campus_id:c.campus_id,campus_name:c.campus_name,campus_code:c.campus_code,address:c.address||'',contact_number:c.contact_number||'',email:c.email||'',status:c.status})}'>Edit</button>
                                 </td>
                             </tr>`;
                         }).join('')}
-                </tbody>
-            </table>
-        </div>
+                    </tbody>
+                </table>
+            </div>`}
     `;
 
     slot.querySelector('#btn-add-campus').addEventListener('click', () => openCampusModal(container, null));
-
-    slot.querySelectorAll('.btn-actions[data-cid]').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            const dd   = slot.querySelector(`[data-cdropdown="${btn.dataset.cid}"]`);
-            const open = dd.classList.contains('show');
-            slot.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-            if (!open) {
-                const r = btn.getBoundingClientRect();
-                dd.style.top   = (r.bottom + 4) + 'px';
-                dd.style.right = (window.innerWidth - r.right) + 'px';
-                dd.classList.add('show');
-            }
-        });
-    });
 
     slot.querySelectorAll('[data-edit-campus]').forEach(a => {
         a.addEventListener('click', e => {
@@ -823,4 +830,8 @@ function esc(str) {
     const d = document.createElement('div');
     d.textContent = str || '';
     return d.innerHTML;
+}
+
+function deptInitials(str) {
+    return (str || '?').trim().slice(0, 2).toUpperCase();
 }

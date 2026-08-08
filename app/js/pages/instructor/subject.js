@@ -19,7 +19,7 @@ import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
 import { mountClassComposer } from '../../components/class-composer.js';
 import { mountInstructorGradebook } from './gradebook.js';
-import { buildStudentJoinUrl, renderQrInto } from '../../utils/qr-utils.js';
+import { buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
 import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
@@ -158,7 +158,6 @@ export async function render(container, params) {
         quizQuestionStats: [],
         expandedViewers: {},
     };
-    let clockInterval = null;
 
     function getViewCount(contentType, contentId) {
         const bucket = viewSummary.counts?.[contentType] || {};
@@ -328,10 +327,6 @@ export async function render(container, params) {
                             <span class="sc-chip">${icon('user', inl)} Instructor</span>
                         </div>
                     </div>
-                    <div class="sc-hero-clock" id="sc-hero-clock">
-                        <div class="sc-clock-time" id="sc-clock-time">--:--:--</div>
-                        <div class="sc-clock-date" id="sc-clock-date">---</div>
-                    </div>
                 </header>
 
                 <div class="sc-layout ${state.selectedWork ? 'sc-layout--work-focus' : ''}" id="sc-layout">
@@ -353,19 +348,6 @@ export async function render(container, params) {
 
         bindShellEvents();
         refreshBody();
-
-        if (clockInterval) clearInterval(clockInterval);
-        function tickClock() {
-            const timeEl = container.querySelector('#sc-clock-time');
-            const dateEl = container.querySelector('#sc-clock-date');
-            if (!timeEl) { clearInterval(clockInterval); clockInterval = null; return; }
-            const d = new Date();
-            timeEl.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()]
-                .map(n => String(n).padStart(2, '0')).join(':');
-            dateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-        }
-        tickClock();
-        clockInterval = setInterval(tickClock, 1000);
     }
 
     function refreshRail() {
@@ -654,22 +636,25 @@ export async function render(container, params) {
     }
 
     function renderClassCodeAside() {
-        const code = subject.subject_code || '';
         const sectionLabel = activeSection?.section_name || subject.section_name || '';
         const qrSectionId = effectiveSectionId || activeSection?.section_id || 0;
+        const resolvedSection = qrSectionId
+            ? availableSections.find(s => String(s.section_id) === String(qrSectionId))
+            : null;
+        const code = resolvedSection?.enrollment_code || activeSection?.enrollment_code || '';
 
         if (!code || !qrSectionId) {
         return `
-                <aside class="sc-cw-aside" aria-label="Subject code">
+                <aside class="sc-cw-aside" aria-label="Class code">
                     <div class="sc-class-code-card sc-class-code-card--empty">
                         <div class="sc-class-code-icon">${icon('school', { size: 28 })}</div>
-                        <h3 class="sc-class-code-title">Subject code</h3>
+                        <h3 class="sc-class-code-title">Class code</h3>
                         <p class="sc-class-code-hint">Create a section in <strong>My Classes</strong> to generate a QR code students can scan to join.</p>
                 </div>
                 </aside>`;
         }
 
-        const joinUrl = buildStudentJoinUrl(code, qrSectionId);
+        const joinUrl = buildStudentJoinUrlByEnrollmentCode(code);
         const sectionPicker = availableSections.length > 1
             ? `<label class="sc-class-code-pick-label" for="sc-section-pick">Section</label>
                <select class="sc-class-code-section-pick" id="sc-section-pick" aria-label="Choose section for QR code">
@@ -681,11 +666,11 @@ export async function render(container, params) {
             : (sectionLabel ? `<p class="sc-class-code-section">${esc(sectionLabel)}</p>` : '');
 
         return `
-            <aside class="sc-cw-aside" aria-label="Subject code">
+            <aside class="sc-cw-aside" aria-label="Class code">
                 <div class="sc-class-code-card">
-                    <h3 class="sc-class-code-title">Subject code</h3>
+                    <h3 class="sc-class-code-title">Class code</h3>
                     ${sectionPicker}
-                    <p class="sc-class-code-hint">Students scan QR or enter this subject code to join</p>
+                    <p class="sc-class-code-hint">Students scan QR or enter this code to join this specific section</p>
                     <div class="sc-class-qr-wrap" id="sc-class-qr" data-qr-url="${esc(joinUrl)}"></div>
                     <button type="button" class="sc-class-code-value" data-copy-code="${esc(code)}" title="Click to copy">${esc(code)}</button>
                     <button type="button" class="sc-class-code-copy" data-copy-code="${esc(code)}">
@@ -886,10 +871,7 @@ export async function render(container, params) {
 
     function renderAnnAttachments(atts) {
         if (!atts || !atts.length) return '';
-        return `<div class="gc-ann-attachments">${atts.map(a => `
-            <a class="gc-ann-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}" onclick="event.stopPropagation()">
-                ${icon('document', inl)}<span>${esc(a.original_name)}</span>
-            </a>`).join('')}</div>`;
+        return `<div class="gc-material-list" onclick="event.stopPropagation()">${atts.map(renderMaterialAttachment).join('')}</div>`;
     }
 
     function classworkRow(item) {
@@ -2063,7 +2045,7 @@ export async function render(container, params) {
                             btn.innerHTML = `${icon('copy', { size: 14, className: 'ui-icon-inline' })} Copy code`;
                         }, 1500);
                     }
-                }).catch(() => notify.info('Subject code: ' + code));
+                }).catch(() => notify.info('Class code: ' + code));
             });
         });
 
@@ -2372,25 +2354,6 @@ function instructorExtraCss() {
         .gc-subs-btn:hover { background: #00461B; color: #fff; }
         .gc-subs-btn:disabled { opacity: .55; cursor: not-allowed; }
         /* ─────────────────────────────────────────────────────────── */
-        .sc-hero-clock {
-            display:flex; flex-direction:column; align-items:center; justify-content:center;
-            padding:10px 24px; border-radius:16px;
-            background:#111; border:1px solid #111;
-            min-width:210px; text-align:center;
-        }
-        .sc-clock-time {
-            font-family:'Courier New', Courier, monospace;
-            font-size:38px; font-weight:800;
-            color:#fff; letter-spacing:4px; line-height:1;
-            font-variant-numeric:tabular-nums;
-            text-shadow:0 2px 10px rgba(0,0,0,0.35);
-        }
-        .sc-clock-date {
-            font-size:10.5px; font-weight:600;
-            color:rgba(255,255,255,0.88);
-            letter-spacing:1.5px; text-transform:uppercase;
-            margin-top:6px; line-height:1;
-        }
         .sc-instructor-class .sc-main { position:relative; z-index:2; min-width:0; }
         .sc-instructor-class .sc-panel { position:relative; z-index:2; }
         .sc-instructor-class .sc-tabs {

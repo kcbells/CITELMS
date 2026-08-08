@@ -27,14 +27,19 @@ export async function render(container) {
 }
 
 async function renderList(container, filters = {}) {
+    const page = filters.page || 1;
     const params = new URLSearchParams();
     if (filters.search) params.set('search', filters.search);
     if (filters.role) params.set('role', filters.role);
     if (filters.status) params.set('status', filters.status);
+    params.set('page', page);
+    params.set('per_page', 20);
 
     const result = await Api.get('/UsersAPI.php?action=list&' + params.toString());
     const users = result.success ? result.data.users : [];
     const total = result.success ? result.data.total : 0;
+    const totalPages = result.success ? (result.data.total_pages || 1) : 1;
+    const currentPage = result.success ? (result.data.page || 1) : 1;
 
     container.innerHTML = `
         <style>
@@ -49,11 +54,24 @@ async function renderList(container, filters = {}) {
             .filters input { min-width:240px; }
             .filters .clear-btn { color:#00461B; font-size:13px; cursor:pointer; text-decoration:underline; }
 
-            .users-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .users-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
-            .users-table tbody tr:nth-child(even) { background:#f9fafb; }
-            .users-table tbody tr:hover { background:#f0fdf4; }
-            .users-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
+            .users-pagination { display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:12px; }
+            .up-info { font-size:13px; color:#6b7280; }
+            .up-controls { display:flex; gap:8px; }
+            .up-btn { background:#fff; border:1.5px solid #e5e7eb; color:#374151; padding:8px 16px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; transition:all .15s; }
+            .up-btn:hover:not(:disabled) { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .up-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+            .table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; }
+            .users-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
+            .users-table th {
+                background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
+                text-transform:uppercase; letter-spacing:0.05em; padding:13px 20px;
+                border-bottom:1px solid #e5e7eb; text-align:left;
+            }
+            .users-table tbody tr { border-bottom:1px solid #f0f0f0; transition:background .12s; }
+            .users-table tbody tr:last-child { border-bottom:none; }
+            .users-table tbody tr:hover { background:#fafbfc; }
+            .users-table td { padding:14px 20px; vertical-align:middle; color:#374151; }
 
             .user-cell { display:flex; align-items:center; gap:12px; }
             .user-av { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
@@ -116,6 +134,8 @@ async function renderList(container, filters = {}) {
         </style>
 
         <div class="users-header">
+            <button class="btn-secondary" id="btn-export-csv">${icon('download',{size:14,className:'ui-icon-inline'})} Export CSV</button>
+            <button class="btn-secondary" id="btn-export-pdf">${icon('download',{size:14,className:'ui-icon-inline'})} Export PDF</button>
             <button class="btn-primary" id="btn-add-user">+ Add User</button>
         </div>
 
@@ -138,6 +158,7 @@ async function renderList(container, filters = {}) {
             ${(filters.search || filters.role || filters.status) ? '<span class="clear-btn" id="clear-filters">Clear filters</span>' : ''}
         </div>
 
+        <div class="table-wrap">
         <table class="users-table">
             <thead>
                 <tr>
@@ -182,10 +203,24 @@ async function renderList(container, filters = {}) {
                   }).join('')}
             </tbody>
         </table>
+        </div>
+
+        ${totalPages > 1 ? `
+        <div class="users-pagination">
+            <span class="up-info">Page ${currentPage} of ${totalPages} &middot; ${total} user${total !== 1 ? 's' : ''}</span>
+            <div class="up-controls">
+                <button class="up-btn" id="up-prev" ${currentPage <= 1 ? 'disabled' : ''}>&larr; Prev</button>
+                <button class="up-btn" id="up-next" ${currentPage >= totalPages ? 'disabled' : ''}>Next &rarr;</button>
+            </div>
+        </div>` : ''}
     `;
 
     // Event: Add user
     container.querySelector('#btn-add-user').addEventListener('click', () => openModal(container));
+
+    // Event: Export CSV / PDF (exports every filtered row, not just the current page)
+    container.querySelector('#btn-export-csv').addEventListener('click', () => exportUsers('csv', filters));
+    container.querySelector('#btn-export-pdf').addEventListener('click', () => exportUsers('pdf', filters));
 
     // Event: Filters
     let debounce;
@@ -193,19 +228,34 @@ async function renderList(container, filters = {}) {
         clearTimeout(debounce);
         debounce = setTimeout(() => {
             filters.search = e.target.value;
+            filters.page = 1;
             renderList(container, filters);
         }, 400);
     });
     container.querySelector('#filter-role').addEventListener('change', (e) => {
         filters.role = e.target.value;
+        filters.page = 1;
         renderList(container, filters);
     });
     container.querySelector('#filter-status').addEventListener('change', (e) => {
         filters.status = e.target.value;
+        filters.page = 1;
         renderList(container, filters);
     });
     const clearBtn = container.querySelector('#clear-filters');
     if (clearBtn) clearBtn.addEventListener('click', () => renderList(container, {}));
+
+    // Event: Pagination
+    const prevBtn = container.querySelector('#up-prev');
+    const nextBtn = container.querySelector('#up-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => {
+        filters.page = currentPage - 1;
+        renderList(container, filters);
+    });
+    if (nextBtn) nextBtn.addEventListener('click', () => {
+        filters.page = currentPage + 1;
+        renderList(container, filters);
+    });
 
     // Event: Actions dropdowns
     container.querySelectorAll('.btn-actions').forEach(btn => {
@@ -649,4 +699,103 @@ function esc(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
     return div.innerHTML;
+}
+
+// ── Export (CSV / PDF) ──────────────────────────────────────────────────────
+// Fetches every row matching the current filters (not just the current page)
+// and exports it as a downloadable CSV or a print-ready PDF.
+
+async function fetchAllFilteredUsers(filters) {
+    const params = new URLSearchParams();
+    if (filters.search) params.set('search', filters.search);
+    if (filters.role) params.set('role', filters.role);
+    if (filters.status) params.set('status', filters.status);
+    params.set('export', '1');
+
+    const res = await Api.get('/UsersAPI.php?action=list&' + params.toString());
+    return res.success ? res.data.users : [];
+}
+
+function userRowLabel(u) {
+    return {
+        name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
+        id: u.employee_id || u.student_id || '—',
+        role: u.role === 'program_head' ? 'Program Head' : (u.role || '').charAt(0).toUpperCase() + (u.role || '').slice(1),
+        deptProg: u.department_name || u.program_code || '—',
+        date: u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
+    };
+}
+
+async function exportUsers(format, filters) {
+    const users = await fetchAllFilteredUsers(filters);
+    if (!users.length) { notify.error('No users to export.'); return; }
+
+    if (format === 'csv') {
+        const headers = ['Name', 'Email', 'ID', 'Role', 'Department/Program', 'Status', 'Created'];
+        const rows = users.map(u => {
+            const r = userRowLabel(u);
+            return [r.name, u.email || '', r.id, r.role, r.deptProg, u.status || '', r.date];
+        });
+        const csv = [headers, ...rows]
+            .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+            .join('\r\n');
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `users_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+    }
+
+    // PDF: open a print-formatted view and trigger the browser's print dialog
+    // (Save as PDF), so the exported file is a clean, structured document.
+    const rowsHtml = users.map(u => {
+        const r = userRowLabel(u);
+        return `<tr>
+            <td>${esc(r.name)}</td>
+            <td>${esc(u.email || '')}</td>
+            <td>${esc(r.id)}</td>
+            <td>${esc(r.role)}</td>
+            <td>${esc(r.deptProg)}</td>
+            <td>${esc(u.status || '')}</td>
+            <td>${esc(r.date)}</td>
+        </tr>`;
+    }).join('');
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { notify.error('Please allow pop-ups to export as PDF.'); return; }
+    win.document.write(`
+        <!doctype html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Users Export — ${new Date().toLocaleDateString()}</title>
+            <style>
+                body { font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #1f2937; }
+                h1 { font-size: 18px; margin: 0 0 4px; }
+                p.meta { font-size: 12px; color: #6b7280; margin: 0 0 20px; }
+                table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+                th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+                tr:nth-child(even) { background: #fafbfc; }
+                @media print { body { margin: 12mm; } }
+            </style>
+        </head>
+        <body>
+            <h1>COC LMS — User Accounts</h1>
+            <p class="meta">Generated ${new Date().toLocaleString()} &middot; ${users.length} record${users.length !== 1 ? 's' : ''}</p>
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>Email</th><th>ID</th><th>Role</th><th>Department/Program</th><th>Status</th><th>Created</th></tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 250);
 }

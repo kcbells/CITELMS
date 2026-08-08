@@ -57,7 +57,7 @@ switch ($action) {
             break;
         }
         $role = $_GET['role'] ?? '';
-        if (!in_array($role, ['admin', 'dean', 'instructor', 'student'])) {
+        if (!in_array($role, ['admin', 'dean', 'program_head', 'instructor', 'student'])) {
             echo json_encode(['success' => false, 'message' => 'Invalid role']);
             break;
         }
@@ -94,7 +94,7 @@ switch ($action) {
                  JOIN permissions p ON p.id = rp.permission_id'
             )->fetchAll(PDO::FETCH_ASSOC);
 
-            $matrix = ['admin' => [], 'dean' => [], 'instructor' => [], 'student' => []];
+            $matrix = ['admin' => [], 'dean' => [], 'program_head' => [], 'instructor' => [], 'student' => []];
             foreach ($granted as $g) {
                 $matrix[$g['role']][] = $g['name'];
             }
@@ -128,7 +128,7 @@ switch ($action) {
         $role = $body['role'] ?? '';
         $permissionIds = $body['permission_ids'] ?? [];
 
-        if (!in_array($role, ['admin', 'dean', 'instructor', 'student'])) {
+        if (!in_array($role, ['admin', 'dean', 'program_head', 'instructor', 'student'])) {
             echo json_encode(['success' => false, 'message' => 'Invalid role']);
             break;
         }

@@ -116,6 +116,9 @@ const menus = {
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: 'grades.view' },
         ]},
         { items: [
+            { icon: 'chart', text: 'Quiz Integrity', page: 'quiz-integrity', permission: 'grades.view' },
+        ]},
+        { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },
         ]},
     ],

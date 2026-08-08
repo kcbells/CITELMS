@@ -7,6 +7,7 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 header('Content-Type: application/json');
 
@@ -17,6 +18,15 @@ if (!Auth::check()) {
 }
 
 $action = $_GET['action'] ?? '';
+
+// Only instructors (who own their announcements) and admins may create/edit/delete
+// announcements or their materials — students/other roles are read-only here.
+$announcementWriteActions = ['create', 'update', 'delete', 'upload-material', 'add-link'];
+if (in_array($action, $announcementWriteActions, true) && !in_array(Auth::role(), ['instructor', 'admin'], true)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
 
 function ensureAnnouncementSectionTable() {
     static $done = false;
@@ -67,12 +77,17 @@ function ensureAnnouncementMaterialsTable() {
                 original_name VARCHAR(255) NOT NULL,
                 file_path VARCHAR(500) NOT NULL,
                 file_type VARCHAR(50) DEFAULT NULL,
+                material_type VARCHAR(20) NOT NULL DEFAULT 'file',
                 file_size INT DEFAULT NULL,
                 uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (material_id),
                 KEY idx_ann_materials (announcement_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $hasCol = db()->fetchOne("SHOW COLUMNS FROM announcement_materials LIKE 'material_type'");
+        if (!$hasCol) {
+            pdo()->exec("ALTER TABLE announcement_materials ADD COLUMN material_type VARCHAR(20) NOT NULL DEFAULT 'file' AFTER file_type");
+        }
     } catch (Exception $e) {
         error_log('announcement_materials table: ' . $e->getMessage());
     }
@@ -84,13 +99,14 @@ function enrichAnnouncementsWithMaterials(array &$rows) {
     $ids = array_column($rows, 'announcement_id');
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $materials = db()->fetchAll(
-        "SELECT material_id, announcement_id, original_name, file_path, file_type, file_size
+        "SELECT material_id, announcement_id, original_name, file_path, file_type, material_type, file_size
          FROM announcement_materials WHERE announcement_id IN ($placeholders)
          ORDER BY uploaded_at ASC",
         $ids
     );
     $byAnn = [];
     foreach ($materials as $m) {
+        $m['source'] = 'announcement';
         $byAnn[$m['announcement_id']][] = $m;
     }
     foreach ($rows as &$row) {
@@ -161,6 +177,8 @@ switch ($action) {
     case 'student-list':      getStudentAnnouncements();    break;
     case 'new-announcements': getNewAnnouncements();        break;
     case 'upload-material':   uploadAnnouncementMaterial(); break;
+    case 'add-link':          addAnnouncementLinkMaterial(); break;
+    case 'serve-material':    serveAnnouncementMaterial();  break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -205,8 +223,8 @@ function getInstructorAnnouncements() {
 function createAnnouncement() {
     $input = json_decode(file_get_contents('php://input'), true);
     $userId = Auth::id();
-    $title = trim($input['title'] ?? '');
-    $content = trim($input['content'] ?? '');
+    $title = Sanitize::text($input['title'] ?? '');
+    $content = Sanitize::text($input['content'] ?? '');
     $status = $input['status'] ?? 'published';
     $subjectId = $input['subject_id'] ?? null;
     $studentIds = array_values(array_filter(array_map('intval', $input['student_ids'] ?? [])));
@@ -270,8 +288,8 @@ function updateAnnouncement() {
     $input = json_decode(file_get_contents('php://input'), true);
     $userId = Auth::id();
     $annId = (int)($input['announcement_id'] ?? 0);
-    $title = trim($input['title'] ?? '');
-    $content = trim($input['content'] ?? '');
+    $title = Sanitize::text($input['title'] ?? '');
+    $content = Sanitize::text($input['content'] ?? '');
     $status = $input['status'] ?? 'published';
     $subjectId = $input['subject_id'] ?? null;
     $allSections = !empty($input['all_sections']);
@@ -583,4 +601,131 @@ function uploadAnnouncementMaterial() {
         error_log('Upload announcement material: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to save material record']);
     }
+}
+
+/**
+ * Attach a link (URL) to an announcement as a proper clickable material row.
+ */
+function addAnnouncementLinkMaterial() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'message' => 'POST required']);
+        return;
+    }
+
+    $data  = json_decode(file_get_contents('php://input'), true) ?: [];
+    $annId = (int)($data['announcement_id'] ?? 0);
+    $url   = trim($data['url'] ?? '');
+    $title = Sanitize::text($data['title'] ?? '');
+
+    if (!$annId || !$url) {
+        echo json_encode(['success' => false, 'message' => 'Announcement ID and URL are required']);
+        return;
+    }
+    if (!preg_match('~^https?://~i', $url)) {
+        echo json_encode(['success' => false, 'message' => 'URL must start with http:// or https://']);
+        return;
+    }
+
+    $owner = db()->fetchOne(
+        "SELECT announcement_id FROM announcement WHERE announcement_id = ? AND user_id = ?",
+        [$annId, Auth::id()]
+    );
+    if (!$owner) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        return;
+    }
+
+    if (!$title) {
+        if (preg_match('/youtube\.com|youtu\.be/i', $url)) {
+            $title = 'YouTube Video';
+        } elseif (preg_match('/vimeo\.com/i', $url)) {
+            $title = 'Vimeo Video';
+        } else {
+            $title = 'External Link';
+        }
+    }
+
+    ensureAnnouncementMaterialsTable();
+
+    try {
+        pdo()->prepare(
+            "INSERT INTO announcement_materials (announcement_id, file_name, original_name, file_path, file_type, material_type, file_size, uploaded_at)
+             VALUES (?, 'link', ?, ?, 'link', 'link', 0, NOW())"
+        )->execute([$annId, $title, $url]);
+
+        echo json_encode(['success' => true, 'message' => 'Link added', 'data' => ['material_id' => pdo()->lastInsertId()]]);
+    } catch (Exception $e) {
+        error_log('Add announcement link material: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to add link']);
+    }
+}
+
+/**
+ * True if the current user may view/download an announcement's attachments:
+ * either the announcement's author, or (for students) enrolled in its subject
+ * — mirrors the visibility rule used by getStudentAnnouncements().
+ */
+function verifyAnnouncementMaterialAccess($announcementId, $userId, $role) {
+    $ann = db()->fetchOne(
+        "SELECT announcement_id, user_id, subject_offered_id FROM announcement WHERE announcement_id = ?",
+        [$announcementId]
+    );
+    if (!$ann) return false;
+    if ((int)$ann['user_id'] === (int)$userId) return true;
+    if ($role !== 'student') return true;
+    if (!$ann['subject_offered_id']) return true;
+
+    $enrolled = db()->fetchOne(
+        "SELECT 1 FROM student_subject WHERE user_student_id = ? AND subject_offered_id = ? AND status = 'enrolled'",
+        [$userId, $ann['subject_offered_id']]
+    );
+    return (bool)$enrolled;
+}
+
+function serveAnnouncementMaterial() {
+    ensureAnnouncementMaterialsTable();
+    $materialId = (int)($_GET['material_id'] ?? $_GET['id'] ?? 0);
+    if (!$materialId) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Material ID required']);
+        return;
+    }
+
+    $material = db()->fetchOne("SELECT * FROM announcement_materials WHERE material_id = ?", [$materialId]);
+    if (!$material) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'Material not found']);
+        return;
+    }
+
+    if (!verifyAnnouncementMaterialAccess((int)$material['announcement_id'], Auth::id(), Auth::role())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Forbidden']);
+        return;
+    }
+
+    if ($material['material_type'] === 'link') {
+        header('Location: ' . $material['file_path']);
+        exit;
+    }
+
+    $uploadsRoot = realpath(__DIR__ . '/../uploads');
+    $filePath = realpath(__DIR__ . '/../' . $material['file_path']);
+    if (!$filePath || !$uploadsRoot || strpos($filePath, $uploadsRoot) !== 0 || !is_file($filePath)) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'File not found']);
+        return;
+    }
+
+    $download = isset($_GET['download']) && $_GET['download'] !== '0';
+    $filename = $material['original_name'] ?: $material['file_name'] ?: basename($filePath);
+    $mime = mime_content_type($filePath) ?: 'application/octet-stream';
+    $safeName = preg_replace('/[^\w.\-() ]+/u', '_', $filename);
+
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . filesize($filePath));
+    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $safeName . '"');
+    header('Cache-Control: private, max-age=3600');
+    readfile($filePath);
+    exit;
 }

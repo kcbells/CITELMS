@@ -33,7 +33,10 @@ switch ($action) {
 }
 
 function assistantStatus() {
-    $keySetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
+    $envKey = getenv('GROQ_API_KEY') ?: '';
+    $keySetting = $envKey !== ''
+        ? ['setting_value' => $envKey]
+        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
     $hasKey = !empty($keySetting['setting_value']);
     echo json_encode([
         'success' => true,
@@ -81,7 +84,10 @@ function chat() {
         return;
     }
 
-    $keySetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
+    $envKey = getenv('GROQ_API_KEY') ?: '';
+    $keySetting = $envKey !== ''
+        ? ['setting_value' => $envKey]
+        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
     $apiKey = trim($keySetting['setting_value'] ?? '');
     if ($apiKey === '') {
         echo json_encode([

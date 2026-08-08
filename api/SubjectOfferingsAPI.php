@@ -39,18 +39,52 @@ if (!$isDeanSO && isset($_soPerms[$action]) && !Auth::can($_soPerms[$action])) {
     exit;
 }
 
-/** Returns the dean's {campus_id, program_id, department_id} (cached per request) */
+/** Returns the dean's {campus_id, campus_ids, program_id, department_id} (cached per request) */
 function deanScope(): array {
     static $s = null;
     if ($s === null) {
         $row = db()->fetchOne("SELECT campus_id, program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
+
+        $multiRows = db()->fetchAll("SELECT campus_id FROM dean_campus_scope WHERE dean_id = ?", [Auth::id()]);
+        $campusIds = array_map('intval', array_column($multiRows, 'campus_id'));
+        $primaryId = (int)($row['campus_id'] ?? 0);
+        if (empty($campusIds) && $primaryId) $campusIds = [$primaryId];
+
         $s = [
-            'campus_id'     => (int)($row['campus_id']     ?? 0),
+            'campus_id'     => $primaryId,
+            'campus_ids'    => $campusIds,
             'program_id'    => (int)($row['program_id']    ?? 0),
             'department_id' => (int)($row['department_id'] ?? 0),
         ];
     }
     return $s;
+}
+
+/**
+ * All program_ids the dean manages — a department can oversee several programs
+ * (e.g. College of Education: BEEd, BSEdEng, BECEd, BSEdFil, BSEdMath), so this
+ * must NOT be narrowed to the dean's own single users.program_id column, or
+ * every program besides their "primary" one silently disappears from views
+ * like Faculty Assignments even though Curriculum management already lets
+ * them manage all of them (see CurriculumAPI.php's deanCanAccessProgram()).
+ */
+function deanProgramIds(): array {
+    static $ids = null;
+    if ($ids === null) {
+        $scope = deanScope();
+        $ids = [];
+        if ($scope['department_id']) {
+            $rows = db()->fetchAll(
+                "SELECT program_id FROM department_program WHERE department_id = ?",
+                [$scope['department_id']]
+            );
+            $ids = array_map(fn($r) => (int)$r['program_id'], $rows);
+        }
+        if (!$ids && $scope['program_id']) {
+            $ids = [$scope['program_id']];
+        }
+    }
+    return $ids;
 }
 function deanCampusId(): int { return deanScope()['campus_id']; }
 
@@ -105,12 +139,13 @@ function handleList() {
         $whereConditions[] = 's.program_id = ?';
         $whereParams[]     = $programId;
     }
-    // Dean: scope to their program (program_id implies campus via department)
+    // Dean: scope to all programs their department manages (not just their single
+    // primary program_id) — see deanProgramIds() doc comment.
     if (Auth::role() === 'dean') {
-        $scope = deanScope();
-        if ($scope['program_id']) {
-            $whereConditions[] = 's.program_id = ?';
-            $whereParams[]     = $scope['program_id'];
+        $progIds = deanProgramIds();
+        if ($progIds) {
+            $whereConditions[] = 's.program_id IN (' . implode(',', array_fill(0, count($progIds), '?')) . ')';
+            $whereParams       = array_merge($whereParams, $progIds);
         }
     }
     // Status filter (open/closed/cancelled) — filter on the joined offering
@@ -203,10 +238,10 @@ function handleListMulti() {
         $whereParams[]     = $programId;
     }
     if (Auth::role() === 'dean') {
-        $scope = deanScope();
-        if ($scope['program_id']) {
-            $whereConditions[] = 's.program_id = ?';
-            $whereParams[]     = $scope['program_id'];
+        $progIds = deanProgramIds();
+        if ($progIds) {
+            $whereConditions[] = 's.program_id IN (' . implode(',', array_fill(0, count($progIds), '?')) . ')';
+            $whereParams       = array_merge($whereParams, $progIds);
         }
     }
     $where = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
@@ -524,13 +559,14 @@ function handleInstructorSubjects() {
         $semId = $act ? (int)$act['semester_id'] : 0;
     }
 
-    // Scope to dean's program (and campus for instructor verification)
-    $scope = deanScope();
-    $progId = $scope['program_id'];
-    if (!$progId) {
+    // Scope to every program the dean's department manages — a department can
+    // oversee multiple programs, so this must not collapse to just one.
+    $progIds = deanProgramIds();
+    if (!$progIds) {
         echo json_encode(['success' => true, 'data' => [], 'semester_id' => $semId]);
         return;
     }
+    $progIdList = implode(',', $progIds);
 
     $instrParam = $instrId ?: 0;
     // Aggregate: one row per subject.
@@ -559,7 +595,7 @@ function handleInstructorSubjects() {
          LEFT JOIN users ou
                ON ou.users_id = so.user_teacher_id
               AND so.user_teacher_id != $instrParam
-         WHERE s.program_id = $progId AND s.status = 'active'
+         WHERE s.program_id IN ($progIdList) AND s.status = 'active'
          GROUP BY s.subject_id, s.subject_code, s.subject_name, s.units,
                   s.year_level, s.semester,
                   p.program_id, p.program_code, p.program_name
@@ -611,22 +647,28 @@ function handleDeanAssign() {
     $deptId   = $scope['department_id'];
     $isSelf   = ($instrId === Auth::id() && Auth::role() === 'dean');
 
+    if (!$isSelf && empty($scope['campus_ids'])) {
+        echo json_encode(['success' => false, 'message' => 'Your account is not assigned to a campus.']);
+        return;
+    }
+
     if (!$isSelf) {
+        $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
         if ($deptId) {
             $instrCheck = db()->fetchOne(
                 "SELECT u.users_id FROM users u
-                 WHERE u.users_id = ? AND u.campus_id = ?
+                 WHERE u.users_id = ? AND u.campus_id IN ($campusPlaceholders)
                    AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
                        SELECT 1 FROM department_program dp WHERE dp.program_id = u.program_id AND dp.department_id = ?
                    )))
                    AND u.role = 'instructor' AND u.status = 'active'",
-                [$instrId, $scope['campus_id'], $deptId, $deptId]
+                array_merge([$instrId], $scope['campus_ids'], [$deptId, $deptId])
             );
         } else {
             $instrCheck = db()->fetchOne(
                 "SELECT u.users_id FROM users u
-                 WHERE u.users_id = ? AND u.campus_id = ? AND u.role = 'instructor' AND u.status = 'active'",
-                [$instrId, $scope['campus_id']]
+                 WHERE u.users_id = ? AND u.campus_id IN ($campusPlaceholders) AND u.role = 'instructor' AND u.status = 'active'",
+                array_merge([$instrId], $scope['campus_ids'])
             );
         }
         if (!$instrCheck) {
@@ -700,13 +742,14 @@ function handleSubjectInstructors() {
     }
 
     $scope = deanScope();
-    if (!$scope['campus_id']) {
+    if (empty($scope['campus_ids'])) {
         echo json_encode(['success' => true, 'data' => []]);
         return;
     }
 
     $deptId = $scope['department_id'];
-    $qParams = [$subjectId, $scope['campus_id']];
+    $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
+    $qParams = array_merge([$subjectId], $scope['campus_ids']);
     $deptCond = '';
     if ($deptId) {
         $deptCond = "AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
@@ -732,7 +775,7 @@ function handleSubjectInstructors() {
          LEFT JOIN subject_offered so
                ON so.subject_id = ? AND so.user_teacher_id = u.users_id
               AND so.status NOT IN ('cancelled','archived')
-         WHERE u.campus_id = ? $deptCond
+         WHERE u.campus_id IN ($campusPlaceholders) $deptCond
            AND u.role IN ('instructor', 'program_head', 'dean')
            AND (u.role != 'dean' OR u.users_id = ?)
            AND u.status = 'active'
@@ -810,11 +853,17 @@ function handleSetProgramHeadScope() {
     }
 
     $scope = deanScope();
+    if (empty($scope['campus_ids'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: not a program head in your department']);
+        return;
+    }
+    $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
     $target = db()->fetchOne(
         "SELECT users_id FROM users
-         WHERE users_id = ? AND role = 'program_head' AND campus_id = ?
+         WHERE users_id = ? AND role = 'program_head' AND campus_id IN ($campusPlaceholders)
            AND (department_id = ? OR program_id = ?) LIMIT 1",
-        [$userId, $scope['campus_id'], $scope['department_id'], $scope['program_id']]
+        array_merge([$userId], $scope['campus_ids'], [$scope['department_id'], $scope['program_id']])
     );
     if (!$target) {
         http_response_code(403);
@@ -944,6 +993,21 @@ function handleSubjectAssign() {
 }
 
 function handleInstructors() {
+    $where  = ["u.role = 'instructor'", "u.status = 'active'"];
+    $params = [];
+
+    // Dean: scope to their own campus/campuses — this endpoint bypasses the RBAC
+    // permission check for deans (see $isDeanSO above), so it must self-scope.
+    if (Auth::role() === 'dean') {
+        $scope = deanScope();
+        if (empty($scope['campus_ids'])) {
+            echo json_encode(['success' => true, 'data' => []]);
+            return;
+        }
+        $where[] = 'u.campus_id IN (' . implode(',', array_fill(0, count($scope['campus_ids']), '?')) . ')';
+        $params  = array_merge($params, $scope['campus_ids']);
+    }
+
     $instructors = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.last_name, u.email, u.employee_id,
                 u.department_id, u.program_id,
@@ -952,8 +1016,9 @@ function handleInstructors() {
          FROM users u
          LEFT JOIN department d ON u.department_id = d.department_id
          LEFT JOIN program    p ON u.program_id    = p.program_id
-         WHERE u.role = 'instructor' AND u.status = 'active'
-         ORDER BY u.last_name, u.first_name"
+         WHERE " . implode(' AND ', $where) . "
+         ORDER BY u.last_name, u.first_name",
+        $params
     );
     echo json_encode(['success' => true, 'data' => $instructors]);
 }
@@ -972,15 +1037,13 @@ function handleSubjects() {
 }
 
 function handleDepartments() {
-    // Dean: return only the department of their program
+    // Dean: return only their own department (which may manage several programs)
     if (Auth::role() === 'dean') {
         $scope = deanScope();
-        $depts = $scope['program_id'] ? db()->fetchAll(
-            "SELECT d.department_id, d.department_name, d.department_code
-             FROM department d
-             JOIN program p ON p.department_id = d.department_id
-             WHERE p.program_id = ? AND d.status = 'active'",
-            [$scope['program_id']]
+        $depts = $scope['department_id'] ? db()->fetchAll(
+            "SELECT department_id, department_name, department_code
+             FROM department WHERE department_id = ? AND status = 'active'",
+            [$scope['department_id']]
         ) : [];
     } else {
         $depts = db()->fetchAll(

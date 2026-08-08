@@ -438,6 +438,9 @@ function listSubjects() {
     $search = $_GET['search']        ?? '';
     $progId = (int)($_GET['program_id']    ?? 0);
     $semId  = (int)($_GET['semester_id']   ?? 0);
+    $isExport = !empty($_GET['export']);
+    $page     = max(1, (int)($_GET['page'] ?? 1));
+    $perPage  = min(200, max(1, (int)($_GET['per_page'] ?? 25)));
 
     // Dean is always scoped to their own program — ignore any external filter
     $deanProgId = Auth::role() === 'dean' ? deanDeptId() : 0; // deanDeptId() returns program_id
@@ -478,6 +481,15 @@ function listSubjects() {
     }
     $where = 'WHERE ' . implode(' AND ', $conditions);
 
+    $total = (int)(db()->fetchOne(
+        "SELECT COUNT(*) AS c FROM subject s JOIN program p ON p.program_id = s.program_id $where",
+        $params
+    )['c'] ?? 0);
+    $totalPages = max(1, (int)ceil($total / $perPage));
+    $page       = min($page, $totalPages);
+    $offset     = ($page - 1) * $perPage;
+    $limitSQL   = $isExport ? '' : "LIMIT $perPage OFFSET $offset";
+
     // Only filter by semester_id if the column actually exists on subject_offered
     $soHasSemId = (db()->fetchOne(
         "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
@@ -517,11 +529,12 @@ function listSubjects() {
              JOIN program p  ON p.program_id  = s.program_id
              LEFT JOIN department d ON d.department_id = p.department_id
              $where
-             ORDER BY d.department_name, p.program_code, s.year_level, s.semester, s.subject_code"
+             ORDER BY d.department_name, p.program_code, s.year_level, s.semester, s.subject_code
+             $limitSQL"
         );
         $subjects->execute($params);
         $subjects = $subjects->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(['success' => true, 'data' => $subjects]);
+        echo json_encode(['success' => true, 'data' => $subjects, 'total' => $total, 'page' => $page, 'per_page' => $perPage, 'total_pages' => $totalPages]);
     } catch (Exception $e) {
         error_log('[SubjectsAPI.php] ' . $e->getMessage()); echo json_encode(['success' => false, 'message' => 'An internal error occurred.']);
     }

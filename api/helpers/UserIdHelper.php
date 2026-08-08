@@ -43,30 +43,18 @@ class UserIdHelper {
             );
         }
 
-        if (self::hasLetters($userId)) {
-            if (!self::isValidStaffId($userId)) {
-                return null;
-            }
-            // Try staff/admin/dean/program head first
-            $user = db()->fetchOne(
-                "SELECT * FROM users
-                 WHERE employee_id = ?
-                   AND role IN ('instructor', 'admin', 'dean', 'program_head')
-                 LIMIT 1",
-                [$userId]
-            );
-            if ($user) return $user;
-            // Fall back to student lookup — some student IDs contain letters (e.g. "02-2324-bj")
-            return db()->fetchOne(
-                "SELECT * FROM users WHERE student_id = ? AND role = 'student' LIMIT 1",
-                [$userId]
-            );
-        }
+        // Try staff/admin/dean/program head first — employee IDs aren't guaranteed to
+        // contain letters (e.g. "02-2424"), so check this regardless of ID format.
+        $user = db()->fetchOne(
+            "SELECT * FROM users
+             WHERE employee_id = ?
+               AND role IN ('instructor', 'admin', 'dean', 'program_head')
+             LIMIT 1",
+            [$userId]
+        );
+        if ($user) return $user;
 
-        if (!self::isValidStudentId($userId)) {
-            return null;
-        }
-
+        // Fall back to student lookup — some student IDs contain letters (e.g. "02-2324-bj")
         return db()->fetchOne(
             "SELECT * FROM users WHERE student_id = ? AND role = 'student' LIMIT 1",
             [$userId]
@@ -90,9 +78,9 @@ class UserIdHelper {
             }
             return 'No account found for this ID. Please check your Student ID or Employee ID.';
         }
-        if (!self::isValidStudentId($userId)) {
+        if (!self::isValidStudentId($userId) && !self::isValidStaffId($userId)) {
             return 'Invalid ID format.';
         }
-        return 'No student account found for this Student ID.';
+        return 'No account found for this ID. Please check your Student ID or Employee ID.';
     }
 }

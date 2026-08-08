@@ -54,7 +54,24 @@
         .navbar { position: sticky; top: 0; z-index: 900; background: #fff; box-shadow: 0 2px 20px rgba(0,0,0,.09); border-bottom: 2px solid var(--gold); }
         .nav-inner { max-width: 1240px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; height: 76px; gap: 24px; }
         .nav-brand { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-        .nav-brand img { width: 52px; height: 52px; object-fit: contain; }
+        .nav-brand-logo { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+        .nav-brand-logo::before {
+            content: ''; position: absolute; inset: -6px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(200,148,26,.35) 0%, transparent 72%);
+            animation: logoGlow 3.2s ease-in-out infinite; z-index: 0;
+        }
+        .nav-brand img {
+            position: relative; z-index: 1;
+            width: 52px; height: 52px; object-fit: contain;
+            animation: logoIntro .8s cubic-bezier(.34,1.56,.64,1) both;
+            transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+        }
+        .nav-brand:hover img { transform: rotate(-8deg) scale(1.08); }
+        @keyframes logoIntro { from { opacity:0; transform: scale(.4) rotate(-25deg); } to { opacity:1; transform: scale(1) rotate(0); } }
+        @keyframes logoGlow { 0%,100% { opacity:.5; transform: scale(.92); } 50% { opacity:1; transform: scale(1.12); } }
+        @media (prefers-reduced-motion: reduce) {
+            .nav-brand img, .nav-brand-logo::before { animation: none; }
+        }
         .nav-brand-text { line-height: 1.2; }
         .nav-brand-name { font-size: 17px; font-weight: 800; color: var(--green); display: block; letter-spacing: -.2px; }
         .nav-brand-sub  { font-size: 10px; color: var(--gold); display: block; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
@@ -83,11 +100,17 @@
         }
         .hero-bg {
             position: absolute; inset: 0;
-            background: url('assets/images/campus-building.jpg') center/cover no-repeat;
+            background: #fff;
+        }
+        .hero-bg::before {
+            content: ''; position: absolute; inset: 0;
+            background-image: radial-gradient(rgba(27,77,46,.06) 1px, transparent 1px);
+            background-size: 28px 28px;
+            mask-image: radial-gradient(ellipse at center, #000 0%, transparent 75%);
         }
         .hero-overlay {
             position: absolute; inset: 0;
-            background: linear-gradient(to bottom, rgba(0,0,0,.55) 0%, rgba(0,0,0,.42) 55%, rgba(0,0,0,.68) 100%);
+            background: none;
         }
         .hero-inner {
             position: relative; z-index: 1;
@@ -106,15 +129,41 @@
             margin-bottom: 28px;
             animation: fadeDown .7s ease both; animation-delay: .1s;
         }
+        .hero-logo-wrap {
+            position: relative; width: 108px; height: 108px; margin: 0 auto 30px;
+            animation: heroLogoIntro .9s cubic-bezier(.34,1.56,.64,1) both; animation-delay: .05s;
+        }
+        .hero-logo-ring {
+            position: absolute; inset: -14px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(200,148,26,.4) 0%, transparent 70%);
+            animation: heroLogoGlow 3s ease-in-out infinite;
+        }
+        .hero-logo-ring::after {
+            content: ''; position: absolute; inset: 0; border-radius: 50%;
+            border: 1.5px solid rgba(200,148,26,.5);
+            animation: heroRingExpand 3s ease-out infinite;
+        }
+        .hero-logo-wrap img {
+            position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain;
+            filter: drop-shadow(0 8px 24px rgba(0,0,0,.4));
+            animation: heroLogoFloat 4.5s ease-in-out infinite;
+        }
+        @keyframes heroLogoIntro { from { opacity:0; transform: scale(.5) rotate(-20deg); } to { opacity:1; transform: scale(1) rotate(0); } }
+        @keyframes heroLogoFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        @keyframes heroLogoGlow { 0%,100% { opacity:.55; transform: scale(.9); } 50% { opacity:1; transform: scale(1.15); } }
+        @keyframes heroRingExpand { 0% { transform: scale(.85); opacity:.8; } 100% { transform: scale(1.35); opacity:0; } }
+        @media (prefers-reduced-motion: reduce) {
+            .hero-logo-wrap, .hero-logo-wrap img, .hero-logo-ring, .hero-logo-ring::after { animation: none; }
+        }
         .hero h1 {
             font-size: clamp(32px, 5vw, 64px); font-weight: 900;
             line-height: 1.08; letter-spacing: -1.5px; margin-bottom: 22px;
             animation: fadeDown .7s ease both; animation-delay: .25s;
         }
-        .hero h1 .white { color: #fff; display: block; }
-        .hero h1 .gold  { color: var(--gold); display: block; }
+        .hero h1 .white { color: var(--gray-900); display: block; }
+        .hero h1 .gold  { color: var(--gold-dark); display: block; }
         .hero-desc {
-            font-size: 17px; color: rgba(255,255,255,.85);
+            font-size: 17px; color: var(--gray-600);
             line-height: 1.75; margin-bottom: 44px; max-width: 600px; margin-left: auto; margin-right: auto;
             animation: fadeDown .7s ease both; animation-delay: .4s;
         }
@@ -139,7 +188,7 @@
         .btn-ghost-white:hover { border-color: #fff; background: rgba(255,255,255,.1); }
         .hero-scroll {
             position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
-            z-index: 2; text-align: center; color: rgba(255,255,255,.55);
+            z-index: 2; text-align: center; color: var(--gray-400);
             font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
             animation: fadeDown 1s ease both; animation-delay: .8s;
         }
@@ -176,17 +225,17 @@
         .gold-divider { width: 56px; height: 3px; background: var(--gold); border-radius: 2px; margin: 18px auto 0; }
 
         /* ── MOBILE APP PREVIEW ──────────────────────── */
-        .mobile-preview { background: var(--green-dark); overflow: hidden; }
+        .mobile-preview { background: linear-gradient(180deg, #fbfaf5 0%, var(--cream) 100%); overflow: hidden; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200); }
         .mobile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
-        .mp-text .sec-kicker { color: var(--gold-light); }
-        .mp-text .sec-title { color: #fff; }
-        .mp-text .sec-title em { color: var(--gold-light); }
-        .mp-text .sec-desc { color: rgba(255,255,255,.72); }
+        .mp-text .sec-kicker { color: var(--gold-dark); }
+        .mp-text .sec-title { color: var(--gray-900); }
+        .mp-text .sec-title em { color: var(--green); }
+        .mp-text .sec-desc { color: var(--gray-600); }
         .mp-points { margin-top: 28px; display: flex; flex-direction: column; gap: 16px; }
         .mp-point { display: flex; gap: 14px; align-items: flex-start; }
-        .mp-point-icon { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,.1); color: var(--gold-light); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .mp-point strong { display: block; font-size: 14px; color: #fff; margin-bottom: 2px; }
-        .mp-point span { font-size: 13px; color: rgba(255,255,255,.6); }
+        .mp-point-icon { width: 36px; height: 36px; border-radius: 9px; background: #fff; border: 1.5px solid var(--gray-200); color: var(--green); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,.04); }
+        .mp-point strong { display: block; font-size: 14px; color: var(--gray-900); margin-bottom: 2px; }
+        .mp-point span { font-size: 13px; color: var(--gray-500); }
         .mp-visual { display: flex; align-items: center; justify-content: center; }
         .phone-mockup {
             width: 240px; background: #111; border-radius: 34px; padding: 12px 10px;
@@ -210,25 +259,27 @@
 
         /* â”€â”€ ABOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .about { background: #fff; }
-        .about-stats { display:grid; grid-template-columns:repeat(4,1fr); background:var(--green); border-radius:14px; overflow:hidden; margin-bottom:64px; }
-        .as-item { padding:28px 24px; text-align:center; border-right:1px solid rgba(255,255,255,.12); }
+        .about-stats { display:grid; grid-template-columns:repeat(4,1fr); background:#fff; border:1.5px solid var(--gray-200); border-radius:14px; overflow:hidden; margin-bottom:64px; box-shadow:var(--shadow); }
+        .as-item { padding:28px 24px; text-align:center; border-right:1px solid var(--gray-100); position:relative; }
+        .as-item::before { content:''; position:absolute; top:0; left:50%; transform:translateX(-50%); width:32px; height:3px; background:var(--gold); border-radius:0 0 3px 3px; }
         .as-item:last-child { border-right:none; }
-        .as-num  { font-size:38px; font-weight:900; color:var(--gold-light); display:block; line-height:1; }
-        .as-label{ font-size:10.5px; font-weight:700; color:rgba(255,255,255,.65); text-transform:uppercase; letter-spacing:.8px; margin-top:7px; display:block; }
+        .as-num  { font-size:38px; font-weight:900; color:var(--green); display:block; line-height:1; }
+        .as-label{ font-size:10.5px; font-weight:700; color:var(--gray-500); text-transform:uppercase; letter-spacing:.8px; margin-top:7px; display:block; }
         .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
         .about-visual { position:relative; }
         .about-main-photo { border-radius:14px; overflow:hidden; height:380px; position:relative; box-shadow:var(--shadow-lg); }
         .about-main-photo img { width:100%; height:100%; object-fit:cover; }
-        .about-main-photo-cap { position:absolute; bottom:0; left:0; right:0; background:#0f2e1a; padding:18px 22px; border-top:3px solid var(--gold); }
+        .about-main-photo-cap { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(to top, rgba(6,20,10,.92) 0%, rgba(6,20,10,.55) 60%, transparent 100%); padding:36px 22px 18px; }
         .about-main-photo-cap span { color:#fff; font-size:13px; font-weight:700; display:block; }
         .about-main-photo-cap small { color:var(--gold-light); font-size:11px; }
         .about-sub-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
         .about-sub-photo { border-radius:10px; overflow:hidden; height:150px; }
         .about-sub-photo img { width:100%; height:100%; object-fit:cover; }
-        .about-sub-stat { border-radius:10px; background:var(--green); display:flex; flex-direction:column; align-items:center; justify-content:center; height:150px; border:2px solid transparent; transition:border-color .2s; }
-        .about-sub-stat:hover { border-color:var(--gold); }
-        .about-sub-stat strong { font-size:32px; font-weight:900; color:var(--gold-light); display:block; line-height:1; }
-        .about-sub-stat span { font-size:10.5px; color:rgba(255,255,255,.72); font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-top:6px; }
+        .about-sub-stat { border-radius:10px; background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; height:150px; border:1.5px solid var(--gray-200); box-shadow:var(--shadow); transition:border-color .2s, transform .2s; position:relative; overflow:hidden; }
+        .about-sub-stat::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background:var(--gold); }
+        .about-sub-stat:hover { border-color:var(--gold); transform:translateY(-3px); }
+        .about-sub-stat strong { font-size:34px; font-weight:900; color:var(--green); display:block; line-height:1; }
+        .about-sub-stat span { font-size:10.5px; color:var(--gray-500); font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-top:6px; }
         .about-points { margin-top:28px; display:flex; flex-direction:column; }
         .about-point { display:flex; gap:16px; padding:16px 0; border-bottom:1px solid var(--gray-100); align-items:flex-start; }
         .about-point:last-child { border-bottom:none; }
@@ -307,27 +358,40 @@
         .prog-carousel-wrap { position:relative; margin-top:52px; }
         .prog-carousel { display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; padding:8px 4px 24px; scrollbar-width:none; -ms-overflow-style:none; }
         .prog-carousel::-webkit-scrollbar { display:none; }
-        .col-card { flex:0 0 340px; height:480px; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; flex-direction:column; background:var(--green-dark); border:1.5px solid rgba(255,255,255,.08); box-shadow:0 8px 32px rgba(0,0,0,.18); transition:transform .22s,box-shadow .22s; cursor:default; }
+        .col-card { flex:0 0 340px; height:480px; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; flex-direction:column; background:#fff; border:1.5px solid var(--gray-200); box-shadow:0 6px 24px rgba(0,0,0,.06); transition:transform .22s,box-shadow .22s; cursor:default; position:relative; }
+        .col-card:hover { transform:translateY(-4px); box-shadow:0 16px 40px rgba(0,0,0,.1); }
+        .col-card::before { content:''; position:absolute; top:0; left:0; right:0; height:5px; z-index:2; }
+        .col-card:has(.cc-green)::before  { background:var(--green); }
+        .col-card:has(.cc-maroon)::before { background:#C23A63; }
+        .col-card:has(.cc-blue)::before   { background:#2E6FEF; }
+        .col-card:has(.cc-red)::before    { background:#E5503C; }
+        .col-card:has(.cc-gold)::before   { background:var(--gold); }
+        .col-card:has(.cc-purple)::before { background:#7C4FE0; }
         /* College watermark letter colors */
-        .cc-abbr-bg.cc-green  { color:rgba(77,209,122,.18); }
-        .cc-abbr-bg.cc-maroon { color:rgba(232,117,138,.22); }
-        .cc-abbr-bg.cc-blue   { color:rgba(106,173,255,.2); }
-        .cc-abbr-bg.cc-red    { color:rgba(255,124,110,.2); }
-        .cc-abbr-bg.cc-gold   { color:rgba(245,200,66,.2); }
-        .cc-abbr-bg.cc-purple { color:rgba(196,157,255,.2); }
-        .cc-badge.cc-purple { color:#c49dff; border-color:#c49dff; background:rgba(196,157,255,.12); }
+        .cc-abbr-bg.cc-green  { color:rgba(27,77,46,.05); }
+        .cc-abbr-bg.cc-maroon { color:rgba(194,58,99,.06); }
+        .cc-abbr-bg.cc-blue   { color:rgba(46,111,239,.06); }
+        .cc-abbr-bg.cc-red    { color:rgba(229,80,60,.06); }
+        .cc-abbr-bg.cc-gold   { color:rgba(200,148,26,.08); }
+        .cc-abbr-bg.cc-purple { color:rgba(124,79,224,.06); }
+        .cc-badge.cc-green  { color:var(--green);  border-color:var(--green);  background:rgba(27,77,46,.08); }
+        .cc-badge.cc-maroon { color:#C23A63; border-color:#C23A63; background:rgba(194,58,99,.08); }
+        .cc-badge.cc-blue   { color:#2E6FEF; border-color:#2E6FEF; background:rgba(46,111,239,.08); }
+        .cc-badge.cc-red    { color:#E5503C; border-color:#E5503C; background:rgba(229,80,60,.08); }
+        .cc-badge.cc-gold   { color:var(--gold-dark); border-color:var(--gold); background:rgba(200,148,26,.1); }
+        .cc-badge.cc-purple { color:#7C4FE0; border-color:#7C4FE0; background:rgba(124,79,224,.08); }
         .cc-top { padding:28px 24px 20px; position:relative; flex-shrink:0; }
-        .cc-abbr-bg { position:absolute; bottom:-20px; right:-8px; font-size:120px; font-weight:900; line-height:1; color:rgba(255,255,255,.07); pointer-events:none; letter-spacing:-4px; }
-        .cc-badge { display:inline-block; background:rgba(255,255,255,.1); border:1.5px solid rgba(255,255,255,.25); color:rgba(255,255,255,.7); font-size:10.5px; font-weight:800; letter-spacing:1px; padding:4px 12px; border-radius:4px; margin-bottom:9px; text-transform:uppercase; }
-        .cc-name { font-size:14.5px; font-weight:800; color:#fff; line-height:1.3; }
-        .cc-divider { height:1px; background:rgba(255,255,255,.15); margin:0 24px; flex-shrink:0; }
+        .cc-abbr-bg { position:absolute; bottom:-20px; right:-8px; font-size:120px; font-weight:900; line-height:1; pointer-events:none; letter-spacing:-4px; }
+        .cc-badge { display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:1px; padding:4px 12px; border-radius:4px; margin-bottom:9px; text-transform:uppercase; border:1.5px solid; }
+        .cc-name { font-size:14.5px; font-weight:800; color:var(--gray-900); line-height:1.3; }
+        .cc-divider { height:1px; background:var(--gray-100); margin:0 24px; flex-shrink:0; }
         .cc-programs { flex:1; padding:16px 24px 20px; overflow-y:auto; scrollbar-width:none; }
         .cc-programs::-webkit-scrollbar { display:none; }
         .cc-programs ul { list-style:none; }
-        .cc-programs ul li { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.1); font-size:13px; color:rgba(255,255,255,.88); line-height:1.45; }
+        .cc-programs ul li { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid var(--gray-100); font-size:13px; color:var(--gray-700); line-height:1.45; }
         .cc-programs ul li:last-child { border-bottom:none; }
-        .cc-programs ul li::before { content:''; width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.6); flex-shrink:0; margin-top:5px; }
-        .cc-elective { font-size:11px; color:rgba(255,255,255,.45); display:block; margin-top:2px; font-style:italic; }
+        .cc-programs ul li::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--gold); flex-shrink:0; margin-top:5px; }
+        .cc-elective { font-size:11px; color:var(--gray-400); display:block; margin-top:2px; font-style:italic; }
         /* Controls */
         .prog-controls { display:flex; align-items:center; justify-content:center; gap:18px; margin-top:4px; }
         .prog-arrow { width:46px; height:46px; border-radius:50%; background:#fff; border:1.5px solid var(--gray-200); color:var(--green); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s,border-color .15s,transform .15s; box-shadow:0 2px 8px rgba(0,0,0,.06); }
@@ -336,7 +400,20 @@
         .prog-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); cursor:pointer; transition:background .2s,width .25s; border:none; padding:0; }
         .prog-dot.active { background:var(--gold); width:26px; border-radius:4px; }
 
-        /* â”€â”€ FOOTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ── FAQ ──────────────────────────────────────── */
+        .faq { background: #fff; }
+        .faq-wrap { max-width: 780px; margin: 48px auto 0; display: flex; flex-direction: column; gap: 12px; }
+        .faq-item { border: 1.5px solid var(--gray-200); border-radius: 12px; overflow: hidden; transition: border-color .2s, box-shadow .2s; }
+        .faq-item.open { border-color: var(--gold); box-shadow: 0 6px 20px rgba(200,148,26,.1); }
+        .faq-q { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; background: #fff; border: none; text-align: left; font-family: inherit; font-size: 14.5px; font-weight: 700; color: var(--gray-900); cursor: pointer; transition: background .15s; }
+        .faq-q:hover { background: #fafbfc; }
+        .faq-item.open .faq-q { color: var(--green); }
+        .faq-q-icon { width: 28px; height: 28px; border-radius: 50%; background: var(--gray-100); color: var(--gray-500); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .25s, background .2s, color .2s; }
+        .faq-item.open .faq-q-icon { background: var(--gold); color: #fff; transform: rotate(45deg); }
+        .faq-a { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
+        .faq-a-inner { padding: 0 22px 20px; font-size: 13.5px; color: var(--gray-600); line-height: 1.75; }
+
+        /* ── FOOTER ──────────────────────────────────── */
         footer { background: #061409; color:rgba(255,255,255,.65); padding:64px 32px 28px; }
         .footer-inner { max-width:1240px; margin:0 auto; }
         .footer-grid { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:48px; margin-bottom:44px; }
@@ -499,7 +576,7 @@
 <nav class="navbar" id="navbar">
     <div class="nav-inner">
         <a href="#" class="nav-brand">
-            <img src="assets/images/app-icon.png" alt="COC Seal">
+            <div class="nav-brand-logo"><img src="assets/images/app-icon.png" alt="COC Seal"></div>
             <div class="nav-brand-text">
                 <span class="nav-brand-name">Cagayan de Oro College</span>
                 <span class="nav-brand-sub">PHINMA Education Network</span>
@@ -508,6 +585,7 @@
         <ul class="nav-links">
             <li><a href="#about">About</a></li>
             <li><a href="#programs">Programs</a></li>
+            <li><a href="#faq">FAQs</a></li>
         </ul>
         <div class="nav-actions">
             <button class="btn-nav-reg" onclick="openReg()">Register Here</button>
@@ -525,6 +603,7 @@
 <div class="mobile-nav" id="mobile-nav">
     <a href="#about"    onclick="closeNav()">About</a>
     <a href="#programs" onclick="closeNav()">Programs</a>
+    <a href="#faq"      onclick="closeNav()">FAQs</a>
     <div class="mobile-nav-btns">
         <button class="btn-nav-reg" onclick="closeNav();openReg()">Register Here</button>
                 <button class="btn-nav-login" onclick="closeNav();openSignIn()">Sign In</button>
@@ -537,6 +616,10 @@
     <div class="hero-overlay"></div>
     <div class="hero-inner">
         <div class="hero-content">
+            <div class="hero-logo-wrap">
+                <div class="hero-logo-ring"></div>
+                <img src="assets/images/app-icon.png" alt="PHINMA COC Seal">
+            </div>
             <h1>
                 <span class="white">Learning</span>
                 <span class="gold">Management System</span>
@@ -560,11 +643,24 @@
 <section class="section about" id="about">
     <div class="sec-inner">
 
-
-
-
-
-
+        <div class="about-stats" data-anim="up">
+            <div class="as-item">
+                <span class="as-num" data-count-to="77">0</span>
+                <span class="as-label">Years of Excellence</span>
+            </div>
+            <div class="as-item">
+                <span class="as-num" data-count-to="3">0</span>
+                <span class="as-label">Campuses</span>
+            </div>
+            <div class="as-item">
+                <span class="as-num" data-count-to="6">0</span>
+                <span class="as-label">Colleges</span>
+            </div>
+            <div class="as-item">
+                <span class="as-num" data-count-to="1948" data-no-plus="1">0</span>
+                <span class="as-label">Founded</span>
+            </div>
+        </div>
 
         <div class="about-grid">
             <div class="about-visual" data-anim="left">
@@ -580,7 +676,7 @@
                         <img src="https://i0.wp.com/metrocdodev.com/wp-content/uploads/2023/08/7rj48fjk58.jpg" alt="COC Iligan" crossorigin="anonymous">
                     </div>
                     <div class="about-sub-stat">
-                        <strong>77</strong>
+                        <strong class="as-num" data-count-to="77">0</strong>
                         <span>Years of Excellence</span>
                     </div>
                 </div>
@@ -800,6 +896,61 @@
     </div>
 </section>
 
+<!-- FAQ -->
+<section class="section faq" id="faq">
+    <div class="sec-inner">
+        <div class="center-block" data-anim="up">
+            <div class="sec-kicker"><span class="sec-kicker-line"></span> Got Questions? <span class="sec-kicker-line"></span></div>
+            <h2 class="sec-title">Frequently Asked <em>Questions</em></h2>
+            <div class="gold-divider"></div>
+        </div>
+
+        <div class="faq-wrap" data-anim="up">
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    What is Phinmaed Learning?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Phinmaed Learning is the official Learning Management System of PHINMA Cagayan de Oro College. It connects students, instructors, deans, and administrators across all campuses in one platform for lessons, quizzes, grades, and communication.</div></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    Who can create an account?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Students can self-register using the "Register Here" button above. Instructor, program head, dean, and admin accounts are created for you by the school's administration — you don't need to (and can't) sign up for those roles yourself.</div></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    I forgot my password. What do I do?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Click "Sign In," then use the "Forgot password?" link. You'll receive a one-time code by email to verify your identity and set a new password.</div></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    Can I use the system on my phone?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Yes. The system works on any device — phone, tablet, or desktop — through your browser, and can also be installed like an app for quick access, with limited offline support.</div></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    Which campuses use this system?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Phinmaed Learning is used across PHINMA Cagayan de Oro College's Carmen, Iligan, and Puerto campuses.</div></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" onclick="toggleFaq(this)">
+                    Is my data safe on this platform?
+                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                </button>
+                <div class="faq-a"><div class="faq-a-inner">Yes. Passwords are securely encrypted, access is role-based (you only see what's relevant to your account), and your personal data is only used for managing your academic account — see our Privacy Policy for details.</div></div>
+            </div>
+        </div>
+    </div>
+</section>
 
 <!-- FOOTER -->
 <footer>
@@ -818,9 +969,8 @@
             <div class="footer-col">
                 <h4>Navigation</h4>
                 <a href="#about">About</a>
-                <a href="#campuses">Campuses</a>
-                <a href="#features">Features</a>
                 <a href="#programs">Programs</a>
+                <a href="#faq">FAQs</a>
             </div>
             <div class="footer-col">
                 <h4>Campuses</h4>
@@ -1212,6 +1362,44 @@
         entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); animObs.unobserve(e.target); } });
     }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
     document.querySelectorAll('[data-anim]').forEach(el => animObs.observe(el));
+
+    // Animated counting numbers (stats)
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function animateCount(el) {
+        const target = parseInt(el.dataset.countTo, 10) || 0;
+        const suffix = el.dataset.noPlus ? '' : '+';
+        if (prefersReducedMotion) { el.textContent = target.toLocaleString() + suffix; return; }
+        const duration = 1400;
+        const start = performance.now();
+        function tick(now) {
+            const progress = Math.min((now - start) / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3); // ease-out-cubic
+            el.textContent = Math.round(eased * target).toLocaleString() + (progress >= 1 ? suffix : '');
+            if (progress < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+    }
+    const countObs = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) { animateCount(e.target); countObs.unobserve(e.target); } });
+    }, { threshold: 0.4 });
+    document.querySelectorAll('[data-count-to]').forEach(el => countObs.observe(el));
+
+    // FAQ accordion — one open at a time
+    function toggleFaq(btn) {
+        const item = btn.closest('.faq-item');
+        const answer = item.querySelector('.faq-a');
+        const wasOpen = item.classList.contains('open');
+
+        document.querySelectorAll('.faq-item.open').forEach(other => {
+            other.classList.remove('open');
+            other.querySelector('.faq-a').style.maxHeight = null;
+        });
+
+        if (!wasOpen) {
+            item.classList.add('open');
+            answer.style.maxHeight = answer.scrollHeight + 'px';
+        }
+    }
 
     // ── Registration modal (3-step) ─────────────────────────────
     let regStep = 1;

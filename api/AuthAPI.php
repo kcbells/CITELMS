@@ -23,6 +23,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/jwt.php';
 require_once __DIR__ . '/helpers/SignupCatalogHelper.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 require_once __DIR__ . '/helpers/UserIdHelper.php';
 require_once __DIR__ . '/helpers/PasswordOtpHelper.php';
 require_once __DIR__ . '/../config/email.php';
@@ -153,7 +154,7 @@ function handleRegister() {
     }
 
     $studentId   = trim($input['student_id'] ?? $input['user_id'] ?? '');
-    $fullName    = trim($input['full_name'] ?? '');
+    $fullName    = Sanitize::text($input['full_name'] ?? '');
     $email       = trim($input['email'] ?? '');
     $programCode = trim($input['program_code'] ?? '');
     $major       = trim($input['major'] ?? '');
@@ -248,7 +249,7 @@ function handleRegister() {
                 'program'      => $resolved['program_name'],
                 'major'        => $resolved['major'],
             ],
-        ]);
+        ], 201);
     } catch (InvalidArgumentException $e) {
         incrementLoginAttempts();
         jsonResponse(false, $e->getMessage());
@@ -352,10 +353,10 @@ function handleRegisterRequest() {
         jsonResponse(false, 'Registration failed. Please try again.');
     }
 
-    $firstName   = trim($input['first_name'] ?? '');
-    $middleName  = trim($input['middle_name'] ?? '');
-    $lastName    = trim($input['last_name'] ?? '');
-    $suffix      = trim($input['suffix'] ?? '');
+    $firstName   = Sanitize::text($input['first_name'] ?? '');
+    $middleName  = Sanitize::text($input['middle_name'] ?? '');
+    $lastName    = Sanitize::text($input['last_name'] ?? '');
+    $suffix      = Sanitize::text($input['suffix'] ?? '');
     $email       = trim($input['email'] ?? '');
     $studentId   = trim($input['student_id'] ?? '');
     $noId        = !empty($input['no_student_id']);
@@ -537,7 +538,7 @@ function handleRegisterVerify() {
                 'email'      => $data['email'],
                 'auto_id'    => $data['auto_id'],
             ],
-        ]);
+        ], 201);
     } catch (Exception $e) {
         error_log('register-verify: ' . $e->getMessage());
         jsonResponse(false, 'Account creation failed. Please try again.', null, 500);
@@ -866,8 +867,8 @@ function handleUpdateProfile() {
     }
 
     $input = json_decode(file_get_contents('php://input'), true);
-    $firstName = trim($input['first_name'] ?? '');
-    $lastName = trim($input['last_name'] ?? '');
+    $firstName = Sanitize::text($input['first_name'] ?? '');
+    $lastName = Sanitize::text($input['last_name'] ?? '');
     $email = trim($input['email'] ?? '');
     $userId = Auth::id();
 

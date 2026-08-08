@@ -30,6 +30,36 @@ function rows($sql, $params = []) {
     return db()->fetchAll($sql, $params) ?: [];
 }
 
+/**
+ * Dean's program_ids and campus_ids — a department can host multiple programs,
+ * each potentially with its own dean, so scoping search by raw department_id
+ * alone leaks other deans' programs. Mirrors SubjectOfferingsAPI's deanProgramIds().
+ */
+function deanProgramIds(): array {
+    static $ids = null;
+    if ($ids === null) {
+        $u = db()->fetchOne("SELECT program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $ids = [];
+        if (!empty($u['department_id'])) {
+            $rows = db()->fetchAll("SELECT program_id FROM department_program WHERE department_id = ?", [$u['department_id']]);
+            $ids  = array_map(fn($r) => (int)$r['program_id'], $rows);
+        }
+        if (!$ids && !empty($u['program_id'])) $ids = [(int)$u['program_id']];
+    }
+    return $ids;
+}
+
+function deanCampusIds(): array {
+    static $ids = null;
+    if ($ids === null) {
+        $u = db()->fetchOne("SELECT campus_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $multi = db()->fetchAll("SELECT campus_id FROM dean_campus_scope WHERE dean_id = ?", [Auth::id()]);
+        $ids   = array_map('intval', array_column($multi, 'campus_id'));
+        if (!$ids && !empty($u['campus_id'])) $ids = [(int)$u['campus_id']];
+    }
+    return $ids;
+}
+
 /* ─── ADMIN ──────────────────────────────────────────────── */
 if ($role === 'admin') {
 
@@ -127,21 +157,20 @@ if ($role === 'admin') {
 
 /* ─── DEAN ───────────────────────────────────────────────── */
 elseif ($role === 'dean') {
-    $deptId = Auth::user()['department_id'] ?? null;
-    if (!$deptId) {
-        $u = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deptId = $u['department_id'] ?? null;
-    }
+    $progIds   = deanProgramIds();
+    $campusIds = deanCampusIds();
+    $progPh    = $progIds   ? implode(',', array_fill(0, count($progIds), '?'))   : 'NULL';
+    $campusPh  = $campusIds ? implode(',', array_fill(0, count($campusIds), '?')) : 'NULL';
 
-    // Instructors in dept
-    $instr = rows(
+    // Instructors in the dean's programs, on the dean's campus(es)
+    $instr = $progIds && $campusIds ? rows(
         "SELECT first_name, last_name, email, employee_id
          FROM users
-         WHERE role = 'instructor' AND department_id = ?
+         WHERE role = 'instructor' AND program_id IN ($progPh) AND campus_id IN ($campusPh)
            AND (CONCAT(first_name,' ',last_name) LIKE ? OR email LIKE ?) AND status = 'active'
          ORDER BY first_name LIMIT 6",
-        [$deptId, $like, $like]
-    );
+        array_merge($progIds, $campusIds, [$like, $like])
+    ) : [];
     if ($instr) $results[] = [
         'category' => 'Instructors', 'icon' => 'instructor',
         'items' => array_map(fn($u) => [
@@ -152,16 +181,14 @@ elseif ($role === 'dean') {
         ], $instr)
     ];
 
-    // Subjects in dept
-    $subjs = rows(
+    // Subjects in the dean's programs
+    $subjs = $progIds ? rows(
         "SELECT s.subject_code, s.subject_name
          FROM subject s
-         JOIN program p ON s.program_id = p.program_id
-         JOIN department_program dp ON p.program_id = dp.program_id
-         WHERE dp.department_id = ? AND (s.subject_name LIKE ? OR s.subject_code LIKE ?) AND s.status='active'
+         WHERE s.program_id IN ($progPh) AND (s.subject_name LIKE ? OR s.subject_code LIKE ?) AND s.status='active'
          ORDER BY s.subject_code LIMIT 6",
-        [$deptId, $like, $like]
-    );
+        array_merge($progIds, [$like, $like])
+    ) : [];
     if ($subjs) $results[] = [
         'category' => 'Subjects', 'icon' => 'book',
         'items' => array_map(fn($s) => [
@@ -172,19 +199,17 @@ elseif ($role === 'dean') {
         ], $subjs)
     ];
 
-    // Sections in dept
-    $sects = rows(
+    // Sections in the dean's programs
+    $sects = $progIds ? rows(
         "SELECT DISTINCT sec.section_name
          FROM section sec
          JOIN section_subject ss ON ss.section_id = sec.section_id
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON so.subject_id = s.subject_id
-         JOIN program p ON s.program_id = p.program_id
-         JOIN department_program dp ON p.program_id = dp.program_id
-         WHERE dp.department_id = ? AND sec.section_name LIKE ? AND sec.status='active'
+         WHERE s.program_id IN ($progPh) AND sec.section_name LIKE ? AND sec.status='active'
          ORDER BY sec.section_name LIMIT 5",
-        [$deptId, $like]
-    );
+        array_merge($progIds, [$like])
+    ) : [];
     if ($sects) $results[] = [
         'category' => 'Sections', 'icon' => 'school',
         'items' => array_map(fn($s) => [

@@ -47,41 +47,22 @@ class EmailHelper {
     }
 
     public static function sendRegistrationOtp($toEmail, $firstName, $otp, $studentId, $autoId = false) {
-        $name    = htmlspecialchars(trim($firstName) ?: 'Student', ENT_QUOTES, 'UTF-8');
-        $code    = htmlspecialchars($otp, ENT_QUOTES, 'UTF-8');
-        $sid     = htmlspecialchars($studentId, ENT_QUOTES, 'UTF-8');
-        $logo    = self::logoCidSrc();
-        $school  = htmlspecialchars(defined('SCHOOL_NAME') ? SCHOOL_NAME : 'PHINMA Cagayan de Oro College', ENT_QUOTES, 'UTF-8');
-        $idNote  = $autoId
-            ? "<p style=\"margin:0 0 10px;font-size:13px;color:#374151;\">Your assigned Student ID is: <strong style=\"color:#1B4D2E\">{$sid}</strong> — save this, you will need it to log in.</p>"
+        $sid    = htmlspecialchars($studentId, ENT_QUOTES, 'UTF-8');
+        $idNote = $autoId
+            ? "<p style=\"margin:18px 0 0;font-size:13px;color:#4b5563;text-align:center;\">Your assigned Student ID: <strong style=\"color:#111827\">{$sid}</strong> — save this, you will need it to log in.</p>"
             : '';
-        $subject = 'Your Phinmaed Learning Registration Verification Code';
-        $html = <<<HTML
-<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
-<table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);">
-  <tr><td style="background:#1B4D2E;padding:28px 32px;text-align:center;border-bottom:3px solid #C8941A;">
-    <img src="{$logo}" alt="{$school}" width="52" height="52" style="display:inline-block;vertical-align:middle;margin-right:14px;">
-    <span style="font-size:20px;font-weight:800;color:#fff;vertical-align:middle;">Phinmaed Learning</span>
-  </td></tr>
-  <tr><td style="padding:32px;">
-    <p style="margin:0 0 18px;font-size:15px;color:#111827;">Hello <strong>{$name}</strong>,</p>
-    <p style="margin:0 0 18px;font-size:14px;color:#374151;line-height:1.6;">Thank you for registering on <strong>Phinmaed Learning</strong>. Use the verification code below to complete your account setup. This code expires in <strong>2 minutes</strong>.</p>
-    {$idNote}
-    <div style="background:#f0fdf4;border:2px solid #C8941A;border-radius:10px;padding:22px;text-align:center;margin:20px 0;">
-      <div style="font-size:36px;font-weight:900;color:#1B4D2E;letter-spacing:10px;font-family:'Courier New',monospace;">{$code}</div>
-      <div style="font-size:12px;color:#6b7280;margin-top:8px;">Expires in 2 minutes</div>
-    </div>
-    <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">If you did not attempt to register on Phinmaed Learning, please ignore this email.</p>
-  </td></tr>
-  <tr><td style="background:#f9fafb;padding:16px 32px;text-align:center;border-top:1px solid #e5e7eb;">
-    <p style="margin:0;font-size:11px;color:#9ca3af;">&copy; {$school} &mdash; Phinmaed Learning</p>
-  </td></tr>
-</table></td></tr></table></body></html>
-HTML;
-        $text = "Hello {$name},\n\nYour Phinmaed Learning registration verification code is: {$otp}\n\n"
+        $subject = 'Verification code to complete your Phinmaed Learning registration';
+        $html = self::simpleOtpTemplate(
+            $firstName,
+            "Here's the verification code to complete your registration",
+            'To finish creating your account, enter this verification code when prompted:',
+            $otp,
+            '2 minutes',
+            $idNote
+        );
+        $text = "Hello " . trim($firstName ?: 'Student') . ",\n\nYour Phinmaed Learning registration verification code is: {$otp}\n\n"
               . ($autoId ? "Your Student ID: {$studentId}\n\n" : '')
-              . "This code expires in 2 minutes.\n\nIf you did not register, ignore this email.";
+              . "This code expires in 2 minutes.\n\nIf you did not attempt to register, please ignore this email.";
 
         return self::send($toEmail, $subject, $html, $text, ['priority' => true, 'require_delivery' => true]);
     }
@@ -89,11 +70,124 @@ HTML;
     public static function sendPasswordOtp($toEmail, $firstName, $otp) {
         $ttl = max(30, (int)(defined('PASSWORD_OTP_TTL') ? PASSWORD_OTP_TTL : 60));
         $mins = $ttl >= 60 ? '1 minute' : $ttl . ' seconds';
-        $subject = 'Your COC-LMS password verification code';
-        $html = self::passwordOtpTemplate($firstName, $otp, $mins);
-        $text = "Hello {$firstName},\n\nYour COC-LMS password verification code is: {$otp}\n\nThis code expires in {$mins}.\n\nIf you did not request this, ignore this email.";
+        $subject = 'Verification code to reset your COC-LMS password';
+        $html = self::simpleOtpTemplate(
+            $firstName,
+            "Here's the verification code to reset your password",
+            'To reset your password, enter this verification code when prompted:',
+            $otp,
+            $mins
+        );
+        $text = "Hello " . trim($firstName ?: 'User') . ",\n\nYour COC-LMS password verification code is: {$otp}\n\nThis code expires in {$mins}.\n\nIf you did not request this, ignore this email.";
 
         return self::send($toEmail, $subject, $html, $text, ['priority' => true, 'require_delivery' => true]);
+    }
+
+    /**
+     * Plain, minimal OTP email — modeled on the simple "here's your code" style
+     * used by PayPal/major services: white background, no colored boxes, just a
+     * small logo, a bold headline, and a large bold code.
+     */
+    private static function simpleOtpTemplate($firstName, $headline, $instruction, $otp, $validFor, $extraHtml = '') {
+        $name  = htmlspecialchars(trim($firstName) ?: 'there', ENT_QUOTES, 'UTF-8');
+        $title = htmlspecialchars($headline, ENT_QUOTES, 'UTF-8');
+        $inst  = htmlspecialchars($instruction, ENT_QUOTES, 'UTF-8');
+        $code  = htmlspecialchars($otp, ENT_QUOTES, 'UTF-8');
+        $valid = htmlspecialchars($validFor, ENT_QUOTES, 'UTF-8');
+        $logo  = self::logoCidSrc();
+        $school = htmlspecialchars(defined('SCHOOL_NAME') ? SCHOOL_NAME : 'PHINMA Cagayan de Oro College', ENT_QUOTES, 'UTF-8');
+        $year  = date('Y');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{$title}</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;">
+    <tr>
+      <td align="center" style="padding:24px 16px 40px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;">
+
+          <tr>
+            <td align="right" style="padding:0 0 24px;">
+              <span style="font-size:12px;color:#9ca3af;">Hello, {$name}</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 0 20px;">
+              <img src="{$logo}" alt="{$school}" width="40" height="40" style="display:inline-block;">
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 24px 24px;">
+              <div style="font-size:24px;font-weight:800;color:#111827;line-height:1.35;">{$title}</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 12px 8px;">
+              <p style="margin:0;font-size:13px;color:#374151;">{$inst}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:8px 0 4px;">
+              <div style="font-size:26px;font-weight:800;color:#111827;letter-spacing:4px;">{$code}</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 0 20px;">
+              <span style="font-size:11px;color:#9ca3af;">Expires in {$valid}</span>
+            </td>
+          </tr>
+
+          {$extraHtml}
+
+          <tr>
+            <td align="center" style="padding:20px 0 8px;">
+              <img src="{$logo}" alt="" width="24" height="24" style="display:inline-block;opacity:0.6;">
+            </td>
+          </tr>
+
+          <tr>
+            <td style="border-top:1px solid #e5e7eb;padding:20px 0 0;"></td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:16px 12px 4px;">
+              <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.7;">
+                {$school} is committed to keeping your account secure.<br>
+                If you did not request this code, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:8px 12px 4px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;">Please don't reply to this email. This is an automated message.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:16px 12px 0;">
+              <p style="margin:0;font-size:11px;color:#c1c5cb;">&copy; {$year} {$school}. All rights reserved.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+HTML;
     }
 
     public static function notificationTemplate($firstName, $headline, $bodyHtml, $ctaUrl = null) {
@@ -141,73 +235,6 @@ HTML;
         </tr>
       </table>
     </td></tr>
-  </table>
-</body>
-</html>
-HTML;
-    }
-
-    public static function passwordOtpTemplate($firstName, $otp, $validFor = '1 minute') {
-        $name = htmlspecialchars(trim($firstName) ?: 'User', ENT_QUOTES, 'UTF-8');
-        $code = htmlspecialchars($otp, ENT_QUOTES, 'UTF-8');
-        $valid = htmlspecialchars($validFor, ENT_QUOTES, 'UTF-8');
-        $logo = self::logoCidSrc();
-        $school = htmlspecialchars(SCHOOL_NAME, ENT_QUOTES, 'UTF-8');
-        $app = htmlspecialchars(APP_FULL_NAME, ENT_QUOTES, 'UTF-8');
-        $year = date('Y');
-
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Password Verification</title>
-</head>
-<body style="margin:0;padding:0;background:#f4f6f5;font-family:'Segoe UI',Arial,sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f5;padding:32px 16px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,70,27,0.10);">
-          <tr>
-            <td style="background:linear-gradient(135deg,#00461B 0%,#1B4D3E 100%);padding:28px 32px;text-align:center;">
-              <img src="{$logo}" alt="PHINMA Cagayan de Oro College" width="72" height="72" style="display:block;margin:0 auto 14px;border-radius:12px;background:#fff;padding:6px;">
-              <div style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.3px;">PHINMA COC-LMS</div>
-              <div style="color:rgba(255,255,255,0.85);font-size:12px;margin-top:6px;">{$school}</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px 32px 8px;">
-              <p style="margin:0 0 12px;font-size:15px;color:#374151;">Hello <strong>{$name}</strong>,</p>
-              <p style="margin:0 0 20px;font-size:14px;line-height:1.65;color:#4b5563;">
-                You requested to change your password on the <strong>{$app}</strong>.
-                Use the verification code below to confirm your new password. This code is valid for <strong>{$valid}</strong>.
-              </p>
-              <div style="text-align:center;margin:28px 0;">
-                <div style="display:inline-block;background:#E8F5E9;border:2px dashed #1B4D3E;border-radius:12px;padding:18px 36px;">
-                  <div style="font-size:11px;font-weight:700;color:#1B4D3E;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Verification Code</div>
-                  <div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#00461B;font-family:Consolas,monospace;">{$code}</div>
-                </div>
-              </div>
-              <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#6b7280;">
-                Enter this code on the password change screen to complete the update.
-              </p>
-              <p style="margin:0;font-size:13px;line-height:1.6;color:#9ca3af;">
-                If you did not request a password change, you can safely ignore this email. Your password will remain unchanged.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px 32px 28px;border-top:1px solid #f0f0f0;">
-              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.5;">
-                &copy; {$year} {$school} &mdash; Learning Management System<br>
-                This is an automated message. Please do not reply.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
   </table>
 </body>
 </html>

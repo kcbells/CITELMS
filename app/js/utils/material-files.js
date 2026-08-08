@@ -6,6 +6,13 @@ import { BASE_URL } from '../api.js';
 const API_URL = BASE_URL + '/api';
 const OFFICE_OXIDE_URL = 'https://cdn.jsdelivr.net/npm/office-oxide-wasm@0.1.2/web/office_oxide.js';
 const SILURUS_PPTX_URL = 'https://cdn.jsdelivr.net/npm/@silurus/ooxml@0.32.1/dist/pptx.mjs';
+const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs';
+
+/** Office Online's embed viewer needs a publicly reachable URL — it can't fetch from localhost/private dev hosts. */
+function isLocalHost() {
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.local');
+}
 
 function escAttr(str) {
     return String(str ?? '')
@@ -39,10 +46,28 @@ export function resolveMaterialUrl(filePath, baseUrl = BASE_URL) {
     return encodedPath ? `${encodedBase}/${encodedPath}` : encodedBase;
 }
 
+/**
+ * Materials can come from lessons (LessonsAPI) or announcements (AnnouncementsAPI) —
+ * each table has its own material_id sequence, so composite ids ("a12" for
+ * announcement material 12) route to the right serving endpoint.
+ */
+function parseMaterialId(materialId) {
+    const s = String(materialId ?? '');
+    if (s.startsWith('a')) return { source: 'announcement', id: s.slice(1) };
+    return { source: 'lesson', id: s };
+}
+
+export function compositeMaterialId(materialId, source) {
+    if (!materialId) return '';
+    return source === 'announcement' ? `a${materialId}` : String(materialId);
+}
+
 /** Authenticated API URL for streaming a material */
 export function materialServeUrl(materialId, { download = false } = {}) {
+    const { source, id } = parseMaterialId(materialId);
+    const apiFile = source === 'announcement' ? 'AnnouncementsAPI.php' : 'LessonsAPI.php';
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('jwt_token') : null;
-    let url = `${API_URL}/LessonsAPI.php?action=serve-material&material_id=${encodeURIComponent(materialId)}`;
+    let url = `${API_URL}/${apiFile}?action=serve-material&material_id=${encodeURIComponent(id)}`;
     if (download) url += '&download=1';
     if (token) url += `&token=${encodeURIComponent(token)}`;
     return url;
@@ -125,7 +150,7 @@ function fileTypeMeta(m) {
 export function renderMaterialAttachment(m) {
     const name = m.original_name || m.file_name || 'Material';
     const isLink = isMaterialLink(m);
-    const matId = m.material_id || '';
+    const matId = compositeMaterialId(m.material_id, m.source);
     const staticUrl = isLink ? (m.file_path || '#') : resolveMaterialUrl(m.file_path);
     const viewUrl = isLink ? staticUrl : (matId ? materialServeUrl(matId) : staticUrl);
 
@@ -386,6 +411,75 @@ async function renderOfficeWasmHtml(blob, wasmFormat) {
     }
 }
 
+let sheetJsPromise = null;
+async function loadSheetJs() {
+    if (!sheetJsPromise) {
+        sheetJsPromise = import(SHEETJS_URL);
+    }
+    return sheetJsPromise;
+}
+
+/** A, B, ..., Z, AA, AB, ... — spreadsheet-style column letters */
+function xlsxColLetter(n) {
+    let s = '';
+    n += 1;
+    while (n > 0) {
+        const rem = (n - 1) % 26;
+        s = String.fromCharCode(65 + rem) + s;
+        n = Math.floor((n - 1) / 26);
+    }
+    return s;
+}
+
+/** Builds a real spreadsheet grid — column-letter header row + row-number gutter — like Excel/Sheets. */
+function xlsxSheetToGridHtml(sheet, XLSX) {
+    const ref = sheet['!ref'];
+    if (!ref) return '<p class="gc-mat-empty">This sheet is empty.</p>';
+
+    const range = XLSX.utils.decode_range(ref);
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+    const colCount = range.e.c - range.s.c + 1;
+
+    let html = '<table class="gc-mat-xlsx-grid"><thead><tr><th class="gc-mat-xlsx-corner"></th>';
+    for (let c = 0; c < colCount; c++) {
+        html += `<th class="gc-mat-xlsx-colhead">${xlsxColLetter(range.s.c + c)}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    for (let r = 0; r < rows.length; r++) {
+        const row = rows[r] || [];
+        html += `<tr><th class="gc-mat-xlsx-rowhead">${range.s.r + r + 1}</th>`;
+        for (let c = 0; c < colCount; c++) {
+            html += `<td>${escHtml(String(row[c] ?? ''))}</td>`;
+        }
+        html += '</tr>';
+    }
+    html += '</tbody></table>';
+    return html;
+}
+
+/** Render an .xlsx/.xls workbook as a real spreadsheet grid (rows & columns), one per sheet. */
+async function renderXlsxHtml(blob) {
+    const XLSX = await loadSheetJs();
+    const buffer = await blob.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetNames = workbook.SheetNames || [];
+    if (!sheetNames.length) {
+        throw new Error('No sheets found in this workbook.');
+    }
+
+    const sections = sheetNames.map((sheetName) => {
+        const sheet = workbook.Sheets[sheetName];
+        const tableHtml = xlsxSheetToGridHtml(sheet, XLSX);
+        const heading = sheetNames.length > 1
+            ? `<h3 class="gc-mat-xlsx-sheet-name">${escHtml(sheetName)}</h3>`
+            : '';
+        return `<div class="gc-mat-xlsx-sheet">${heading}<div class="gc-mat-xlsx-table-wrap">${tableHtml}</div></div>`;
+    });
+
+    return `<div class="gc-mat-office-html gc-mat-xlsx-view">${sections.join('')}</div>`;
+}
+
 function officeOnlineEmbedHtml(materialId, name) {
     const src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteMaterialServeUrl(materialId))}`;
     return `<iframe class="gc-mat-viewer-frame" src="${escAttr(src)}" title="${escAttr(name)}"></iframe>`;
@@ -418,20 +512,34 @@ async function buildPreviewBody(kind, { name, materialId, blob, blobUrl }) {
             const text = await blob.text();
             return `<div class="gc-mat-viewer-body gc-mat-viewer-body--text"><pre class="gc-mat-text-pre">${escHtml(text)}</pre></div>`;
         }
+        case 'xlsx':
+        case 'xls': {
+            try {
+                return await renderXlsxHtml(blob);
+            } catch (xlsxErr) {
+                console.warn('XLSX table preview failed:', xlsxErr);
+                // Office Online's viewer fetches the file from Microsoft's servers — it can't
+                // reach a localhost/private dev URL, so don't bother trying and just fall back.
+                if (materialId && !isLocalHost()) {
+                    return officeOnlineEmbedHtml(materialId, name);
+                }
+                return downloadFallbackHtml(name, materialId, 'Preview is not available for this file in a local development environment.');
+            }
+        }
         case 'docx':
         case 'doc':
-        case 'xlsx':
-        case 'xls':
         case 'ppt': {
             const wasmFormat = OFFICE_WASM_FORMAT[kind];
             try {
                 return await renderOfficeWasmHtml(blob, wasmFormat);
             } catch (wasmErr) {
-                console.warn('Office WASM preview failed, trying Office Online:', wasmErr);
-                if (materialId) {
+                console.warn('Office WASM preview failed:', wasmErr);
+                // Office Online's viewer fetches the file from Microsoft's servers — it can't
+                // reach a localhost/private dev URL, so don't bother trying and just fall back.
+                if (materialId && !isLocalHost()) {
                     return officeOnlineEmbedHtml(materialId, name);
                 }
-                throw wasmErr;
+                return downloadFallbackHtml(name, materialId, 'Preview is not available for this file in a local development environment.');
             }
         }
         case 'pptx':
@@ -575,15 +683,17 @@ export async function openMaterialViewer({ url, name, materialId = null }) {
                 return;
             } catch (pptxErr) {
                 console.warn('PPTX slide render failed:', pptxErr);
-                try {
-                    overlay.querySelector('.gc-mat-viewer-body-wrap').innerHTML =
-                        officeOnlineEmbedHtml(matId, name);
-                    bindViewerChrome(overlay, name, matId, url);
-                    return;
-                } catch (_) { /* fall through */ }
+                if (!isLocalHost()) {
+                    try {
+                        overlay.querySelector('.gc-mat-viewer-body-wrap').innerHTML =
+                            officeOnlineEmbedHtml(matId, name);
+                        bindViewerChrome(overlay, name, matId, url);
+                        return;
+                    } catch (_) { /* fall through */ }
+                }
             }
         }
-        if (matId && OFFICE_WASM_FORMAT[kind]) {
+        if (matId && OFFICE_WASM_FORMAT[kind] && !isLocalHost()) {
             try {
                 overlay.querySelector('.gc-mat-viewer-body-wrap').innerHTML =
                     officeOnlineEmbedHtml(matId, name);
@@ -691,23 +801,23 @@ export function materialAttachmentCss() {
 }
 .gc-mat-viewer-toolbar {
     display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-    padding:10px 16px; background:#00461B; color:#fff; flex-shrink:0;
+    padding:10px 16px; background:#fff; color:#111; flex-shrink:0; border-bottom:1px solid #E5E7EB;
 }
 .gc-mat-viewer-title { font-size:14px; font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
 .gc-mat-viewer-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; flex-shrink:0; }
 .gc-mat-toolbar-btn {
     display:inline-flex; align-items:center; padding:6px 14px; border-radius:6px;
-    border:1px solid rgba(255,255,255,.35); background:transparent; color:#fff;
+    border:1px solid #111; background:#fff; color:#111;
     font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; font-family:inherit;
 }
-.gc-mat-toolbar-btn:hover { background:rgba(255,255,255,.15); color:#fff; }
-.gc-mat-toolbar-btn--solid { background:#fff; color:#00461B; border-color:#fff; }
-.gc-mat-toolbar-btn--solid:hover { background:#F8FDF9; color:#00461B; }
+.gc-mat-toolbar-btn:hover { background:#F3F4F6; color:#111; }
+.gc-mat-toolbar-btn--solid { background:#00461B; color:#fff; border-color:#00461B; }
+.gc-mat-toolbar-btn--solid:hover { background:#006428; color:#fff; }
 .gc-mat-viewer-close {
-    background:none; border:none; color:#fff; font-size:26px; cursor:pointer;
+    background:none; border:none; color:#111; font-size:26px; cursor:pointer;
     line-height:1; padding:0 4px; margin-left:4px;
 }
-.gc-mat-viewer-close:hover { opacity:.85; }
+.gc-mat-viewer-close:hover { opacity:.65; }
 .gc-mat-viewer-body-wrap {
     flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;
 }
@@ -750,6 +860,24 @@ export function materialAttachmentCss() {
 .gc-mat-office-html p { margin:0 0 .75em; }
 .gc-mat-office-html ul, .gc-mat-office-html ol { margin:0 0 .75em 1.4em; }
 .gc-mat-plain { white-space:pre-wrap; word-break:break-word; font-family:Consolas, Monaco, monospace; font-size:13px; }
+.gc-mat-xlsx-view { padding:20px 24px 32px; }
+.gc-mat-xlsx-sheet { margin-bottom:28px; }
+.gc-mat-xlsx-sheet:last-child { margin-bottom:0; }
+.gc-mat-xlsx-sheet-name { margin:0 0 10px; font-size:15px; font-weight:700; color:#00461B; }
+.gc-mat-xlsx-table-wrap { overflow:auto; border:1px solid #dadce0; border-radius:6px; max-height:60vh; }
+.gc-mat-xlsx-grid { margin:0 !important; font-size:12.5px; border-collapse:separate; border-spacing:0; }
+.gc-mat-xlsx-grid td, .gc-mat-xlsx-grid th { border-right:1px solid #dadce0; border-bottom:1px solid #dadce0; padding:5px 10px; white-space:nowrap; text-align:left; }
+.gc-mat-xlsx-grid td { background:#fff; }
+.gc-mat-xlsx-grid thead th.gc-mat-xlsx-colhead,
+.gc-mat-xlsx-grid thead th.gc-mat-xlsx-corner {
+    position:sticky; top:0; z-index:2; background:#f1f3f4; font-weight:700; text-align:center;
+    color:#5f6368;
+}
+.gc-mat-xlsx-grid tbody th.gc-mat-xlsx-rowhead {
+    position:sticky; left:0; z-index:1; background:#f1f3f4; font-weight:700; text-align:center;
+    color:#5f6368;
+}
+.gc-mat-xlsx-grid thead th.gc-mat-xlsx-corner { position:sticky; left:0; z-index:3; }
 .gc-mat-empty { color:#5f6368; font-style:italic; }
 .gc-mat-viewer-fallback {
     flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center;

@@ -102,15 +102,15 @@ function entryHtml() {
         </div>
         <div id="enr-mode-type">
             <div class="enr-form-group">
-                <label class="enr-form-label">Subject Code</label>
-                <input type="text" class="enr-code-input" id="enr-code" placeholder="IT 202" maxlength="20" autocomplete="off">
-                <div class="enr-code-hint">Enter the subject code from your instructor (e.g. IT 202)</div>
+                <label class="enr-form-label">Subject or Class Code</label>
+                <input type="text" class="enr-code-input" id="enr-code" placeholder="IT 202 or WXN2G98S" maxlength="20" autocomplete="off">
+                <div class="enr-code-hint">Enter the subject code from your instructor, or a specific class code (e.g. IT 202 or WXN2G98S)</div>
             </div>
             <button type="button" class="enr-btn-primary" id="enr-check">Find Class</button>
         </div>
         <div id="enr-mode-scan" hidden>
             <div class="enr-qr-wrap" id="enr-qr-reader"></div>
-            <div class="enr-code-hint" style="margin:10px 0 0">Point your camera at the subject QR code</div>
+            <div class="enr-code-hint" style="margin:10px 0 0">Point your camera at the class QR code</div>
             <button type="button" class="enr-btn-secondary" id="enr-scan-stop">Enter code instead</button>
         </div>
     `;
@@ -126,8 +126,18 @@ function bindCodeInput(root) {
     return input;
 }
 
-function joinPayload(subjectCode, sectionId = 0) {
-    const payload = { subject_code: normalizeSubjectCode(subjectCode) };
+// New sections get an 8-char code (e.g. WXN2G98S); sections created before that format
+// change still have the older XXX-9999 code — both are valid unique class codes.
+const ENROLLMENT_CODE_RE = /^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/;
+
+function joinPayload(code, sectionId = 0) {
+    // A bare class code with no section context is a unique per-section code;
+    // anything else (or a code paired with a known section) is a shared subject code.
+    const clean = String(code || '').toUpperCase().replace(/\s+/g, '');
+    if (!sectionId && ENROLLMENT_CODE_RE.test(clean)) {
+        return { enrollment_code: clean };
+    }
+    const payload = { subject_code: normalizeSubjectCode(code) };
     if (sectionId) payload.section_id = sectionId;
     return payload;
 }
@@ -161,7 +171,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         if (mode === 'scan') {
             try {
                 await startQrScanner('enr-qr-reader', (params) => {
-                    applyJoinAndCheck(params.subject_code, params.section_id);
+                    applyJoinAndCheck(params.enrollment_code || params.subject_code, params.section_id);
                 });
             } catch (_) {
                 const alert = bodyEl.querySelector('#enr-alert');
@@ -217,7 +227,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         if (!subjectCode || subjectCode.length < 2) {
             const alert = bodyEl.querySelector('#enr-alert');
             if (alert) {
-                alert.innerHTML = '<div class="enr-alert enr-alert-error">Enter a valid subject code (e.g. IT101)</div>';
+                alert.innerHTML = '<div class="enr-alert enr-alert-error">Enter a valid subject or class code</div>';
             }
             return;
         }

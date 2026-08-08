@@ -13,6 +13,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 header('Content-Type: application/json');
 
@@ -152,7 +153,7 @@ function handleCreateGroup() {
     $me    = Auth::id();
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
 
-    $name      = trim($input['name'] ?? '');
+    $name      = Sanitize::text($input['name'] ?? '');
     $memberIds = array_filter(array_map('intval', $input['member_ids'] ?? []));
 
     if (!$name) { echo json_encode(['success' => false, 'message' => 'Group name required']); return; }
@@ -185,7 +186,7 @@ function handleSendGroupMessage() {
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
 
     $groupId = (int)($input['group_id'] ?? 0);
-    $content = trim($input['content'] ?? '');
+    $content = Sanitize::text($input['content'] ?? '');
 
     if (!$groupId || !$content) { echo json_encode(['success' => false, 'message' => 'group_id and content required']); return; }
 

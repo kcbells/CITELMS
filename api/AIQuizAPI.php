@@ -14,8 +14,10 @@ require_once __DIR__ . '/helpers/StudentListParser.php';
 header('Content-Type: application/json');
 ini_set('display_errors', '0');
 
-// Require instructor role
-if (!Auth::check() || Auth::role() !== 'instructor') {
+// Require instructor role — deans who self-assign as the teacher of record for a
+// subject (see SubjectOfferingsAPI.php's dean-assign self path) reuse this same
+// instructor UI, so they must be allowed through too, not just literal 'instructor'.
+if (!Auth::check() || !in_array(Auth::role(), ['instructor', 'dean'], true)) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
@@ -130,7 +132,10 @@ function generateQuestions($input) {
 
     // Read API key from system_settings
     $apiKey = '';
-    $keySetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
+    $envKey = getenv('GROQ_API_KEY') ?: '';
+    $keySetting = $envKey !== ''
+        ? ['setting_value' => $envKey]
+        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
     if ($keySetting && !empty($keySetting['setting_value'])) {
         $apiKey = $keySetting['setting_value'];
     }

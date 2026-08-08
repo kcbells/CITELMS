@@ -111,12 +111,21 @@ class NotificationEmailHelper {
         ]);
     }
 
-    /** Send queued classroom emails right after publish. */
+    /**
+     * Send queued classroom emails right after publish.
+     * Notification delivery is best-effort — a transient SMTP/API failure here
+     * must never bubble up and break the lesson/announcement/quiz create response.
+     */
     public static function dispatchAfterPublish() {
-        if (MAIL_DIGEST_MODE) {
-            return EmailDigestHelper::processDigests(true);
+        try {
+            if (MAIL_DIGEST_MODE) {
+                return EmailDigestHelper::processDigests(true);
+            }
+            return EmailQueueHelper::processQueue(min((int)MAIL_BATCH_SIZE, 50));
+        } catch (Throwable $e) {
+            error_log('dispatchAfterPublish failed: ' . $e->getMessage());
+            return false;
         }
-        return EmailQueueHelper::processQueue(min((int)MAIL_BATCH_SIZE, 50));
     }
 
     public static function sendDueReminder(

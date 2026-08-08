@@ -42,15 +42,36 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 
+/** Dean's campus_ids (multi-campus via dean_campus_scope), or [] if not a dean. */
+function deanCampusIdsForDept(): array {
+    if (Auth::role() !== 'dean') return [];
+    static $ids = null;
+    if ($ids === null) {
+        $u = db()->fetchOne("SELECT campus_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $multi = db()->fetchAll("SELECT campus_id FROM dean_campus_scope WHERE dean_id = ?", [Auth::id()]);
+        $ids   = array_map('intval', array_column($multi, 'campus_id'));
+        if (!$ids && !empty($u['campus_id'])) $ids = [(int)$u['campus_id']];
+    }
+    return $ids;
+}
+
 function handleList() {
     $campusId = (int)($_GET['campus_id'] ?? 0);
 
-    $params = [];
+    // Dean: always scoped to their own campus(es), ignoring any foreign campus_id request
+    $deanCampusIds = deanCampusIdsForDept();
+    $filterCampusIds = $deanCampusIds ?: ($campusId ? [$campusId] : []);
+
     $deanCampusFilter = '';
-    if ($campusId) {
-        $deanCampusFilter = 'AND campus_id = ?';
-        $params[] = $campusId;
+    $whereCampusClause = '';
+    if ($filterCampusIds) {
+        $ph = implode(',', array_fill(0, count($filterCampusIds), '?'));
+        $deanCampusFilter  = "AND campus_id IN ($ph)";
+        $whereCampusClause = "AND d.campus_id IN ($ph)";
     }
+
+    // Params appear twice: once for the correlated subquery's filter, once for the outer WHERE
+    $params = array_merge($filterCampusIds, $filterCampusIds);
 
     $depts = db()->fetchAll(
         "SELECT d.*,
@@ -71,7 +92,7 @@ function handleList() {
                $deanCampusFilter
              ORDER BY created_at DESC LIMIT 1
          )
-         WHERE d.status = 'active'
+         WHERE d.status = 'active' $whereCampusClause
          ORDER BY d.department_name",
         $params
     );
@@ -84,6 +105,14 @@ function handleGet() {
 
     $dept = db()->fetchOne("SELECT * FROM department WHERE department_id = ?", [$id]);
     if (!$dept) { echo json_encode(['success' => false, 'message' => 'Department not found']); return; }
+
+    $deanCampusIds = deanCampusIdsForDept();
+    if ($deanCampusIds && !in_array((int)$dept['campus_id'], $deanCampusIds, true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: department is not on your campus']);
+        return;
+    }
+
     echo json_encode(['success' => true, 'data' => $dept]);
 }
 

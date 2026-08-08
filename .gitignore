@@ -5,8 +5,8 @@
 /config/email.local.php
 /config/database.local.php
 
-# Ignore database dumps
-/database/*.sql
+# Ignore database dumps (including subfolders like backups/ and archive/)
+/database/**/*.sql
 
 # Ignore logs & cache
 *.log

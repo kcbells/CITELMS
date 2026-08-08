@@ -183,6 +183,7 @@ export async function render(container, params) {
                 if (host) mountStudentGrades(host, { subjectId });
             }
         }
+        bindMaterialAttachments(container);
 
         if (clockInterval) clearInterval(clockInterval);
         function tickClock() {
@@ -420,10 +421,7 @@ export async function render(container, params) {
 
     function renderAnnAttachments(atts) {
         if (!atts || !atts.length) return '';
-        return `<div class="gc-ann-attachments">${atts.map(a => `
-            <a class="gc-ann-attach-chip" href="${resolveMaterialUrl(a.file_path)}" target="_blank" rel="noopener" download="${esc(a.original_name)}" onclick="event.stopPropagation()">
-                ${icon('document', inl)}<span>${esc(a.original_name)}</span>
-            </a>`).join('')}</div>`;
+        return `<div class="gc-material-list" onclick="event.stopPropagation()">${atts.map(renderMaterialAttachment).join('')}</div>`;
     }
 
     function classworkRow(item) {
@@ -1173,7 +1171,6 @@ export async function render(container, params) {
         });
         bindCommentEvents();
         bindPrivateRail();
-        bindMaterialAttachments(container);
     }
 
     function bindEvents() {

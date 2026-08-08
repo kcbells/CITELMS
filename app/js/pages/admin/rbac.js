@@ -9,12 +9,13 @@ import { icon } from '../../utils/icons.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
-const ROLES = ['admin', 'dean', 'instructor', 'student'];
+const ROLES = ['admin', 'dean', 'program_head', 'instructor', 'student'];
 const ROLE_META = {
-    admin:      { label: 'Administrator', color: '#7c3aed', bg: '#f5f3ff', icon: 'shield' },
-    dean:       { label: 'Dean',          color: '#0891b2', bg: '#f0f9ff', icon: 'graduation' },
-    instructor: { label: 'Instructor',    color: '#059669', bg: '#f0fdf4', icon: 'instructor' },
-    student:    { label: 'Student',       color: '#d97706', bg: '#fffbeb', icon: 'user' },
+    admin:        { label: 'Administrator', color: '#7c3aed', bg: '#f5f3ff', icon: 'shield' },
+    dean:         { label: 'Dean',          color: '#0891b2', bg: '#f0f9ff', icon: 'graduation' },
+    program_head: { label: 'Program Head',  color: '#be185d', bg: '#fdf2f8', icon: 'graduation' },
+    instructor:   { label: 'Instructor',    color: '#059669', bg: '#f0fdf4', icon: 'instructor' },
+    student:      { label: 'Student',       color: '#d97706', bg: '#fffbeb', icon: 'user' },
 };
 const MODULE_ICONS = {
     users:'users', departments:'building', programs:'graduation', subjects:'book',

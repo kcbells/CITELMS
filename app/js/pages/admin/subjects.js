@@ -22,14 +22,18 @@ export async function render(container) {
     renderList(container);
 }
 
-async function renderList(container, search = '', deptId = '', progId = '', semId = '') {
+async function renderList(container, search = '', deptId = '', progId = '', semId = '', page = 1) {
     let params = search ? '&search=' + encodeURIComponent(search) : '';
     if (deptId) params += '&department_id=' + deptId;
     if (progId) params += '&program_id='    + progId;
     if (semId)  params += '&semester_id='   + semId;
+    params += '&page=' + page + '&per_page=25';
     const result   = await Api.get('/SubjectsAPI.php?action=list' + params);
     const subjects = result.success ? result.data : [];
     const dbError  = !result.success && result.error ? result.error : null;
+    const totalPages  = result.success ? (result.total_pages || 1) : 1;
+    const currentPage = result.success ? (result.page || 1) : 1;
+    const totalCount  = result.success ? (result.total ?? subjects.length) : 0;
 
     container.innerHTML = `
         <style>
@@ -93,9 +97,18 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
             .off-sec-pill { background:#EFF6FF; color:#1D4ED8; padding:2px 7px; border-radius:20px; font-size:10px; font-weight:600; margin-left:4px; }
             .off-sec-none { background:#FEF3C7; color:#B45309; }
             @media(max-width:768px) { .form-grid { grid-template-columns:1fr; } .filters { flex-direction:column; } }
+
+            .subj-pagination { display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:12px; }
+            .sp-info { font-size:13px; color:#6b7280; }
+            .sp-controls { display:flex; gap:8px; }
+            .sp-btn { background:#fff; border:1.5px solid #e5e7eb; color:#374151; padding:8px 16px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; transition:all .15s; }
+            .sp-btn:hover:not(:disabled) { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .sp-btn:disabled { opacity:.4; cursor:not-allowed; }
         </style>
 
         <div class="page-header">
+            <button class="btn-secondary" id="btn-export-csv">Export CSV</button>
+            <button class="btn-secondary" id="btn-export-pdf">Export PDF</button>
             <button class="btn-primary" id="btn-add">+ Add Subject</button>
         </div>
 
@@ -164,10 +177,21 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
                   }).join('')}
             </tbody>
         </table>
+
+        ${totalPages > 1 ? `
+        <div class="subj-pagination">
+            <span class="sp-info">Page ${currentPage} of ${totalPages} &middot; ${totalCount} subject${totalCount !== 1 ? 's' : ''}</span>
+            <div class="sp-controls">
+                <button class="sp-btn" id="sp-prev" ${currentPage <= 1 ? 'disabled' : ''}>&larr; Prev</button>
+                <button class="sp-btn" id="sp-next" ${currentPage >= totalPages ? 'disabled' : ''}>Next &rarr;</button>
+            </div>
+        </div>` : ''}
     `;
 
     // Events
     container.querySelector('#btn-add').addEventListener('click', () => openModal(container));
+    container.querySelector('#btn-export-csv').addEventListener('click', () => exportSubjects('csv', search, deptId, progId, semId));
+    container.querySelector('#btn-export-pdf').addEventListener('click', () => exportSubjects('pdf', search, deptId, progId, semId));
 
     const getFilters = () => ({
         s:   container.querySelector('#filter-search').value,
@@ -180,23 +204,29 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
     container.querySelector('#filter-search').addEventListener('input', () => {
         clearTimeout(debounce);
         const { s, d, p, sem } = getFilters();
-        debounce = setTimeout(() => renderList(container, s, d, p, sem), 400);
+        debounce = setTimeout(() => renderList(container, s, d, p, sem, 1), 400);
     });
     // Department change → reset program filter
     container.querySelector('#filter-dept').addEventListener('change', () => {
         const { s, d, sem } = getFilters();
-        renderList(container, s, d, '', sem);
+        renderList(container, s, d, '', sem, 1);
     });
     container.querySelector('#filter-prog').addEventListener('change', () => {
         const { s, d, p, sem } = getFilters();
-        renderList(container, s, d, p, sem);
+        renderList(container, s, d, p, sem, 1);
     });
     container.querySelector('#filter-sem').addEventListener('change', () => {
         const { s, d, p, sem } = getFilters();
-        renderList(container, s, d, p, sem);
+        renderList(container, s, d, p, sem, 1);
     });
     const clearBtn = container.querySelector('#clear-search');
     if (clearBtn) clearBtn.addEventListener('click', () => renderList(container, '', '', '', ''));
+
+    // Pagination
+    const prevBtn = container.querySelector('#sp-prev');
+    const nextBtn = container.querySelector('#sp-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => renderList(container, search, deptId, progId, semId, currentPage - 1));
+    if (nextBtn) nextBtn.addEventListener('click', () => renderList(container, search, deptId, progId, semId, currentPage + 1));
 
     container.querySelectorAll('.btn-actions').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -331,4 +361,84 @@ function esc(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
     return div.innerHTML;
+}
+
+// ── Export (CSV / PDF) ──────────────────────────────────────────────────────
+// Fetches every row matching the current filters (not just the current page).
+
+async function fetchAllFilteredSubjects(search, deptId, progId, semId) {
+    let params = search ? '&search=' + encodeURIComponent(search) : '';
+    if (deptId) params += '&department_id=' + deptId;
+    if (progId) params += '&program_id='    + progId;
+    if (semId)  params += '&semester_id='   + semId;
+    params += '&export=1';
+    const res = await Api.get('/SubjectsAPI.php?action=list' + params);
+    return res.success ? res.data : [];
+}
+
+async function exportSubjects(format, search, deptId, progId, semId) {
+    const subjects = await fetchAllFilteredSubjects(search, deptId, progId, semId);
+    if (!subjects.length) { notify.error('No subjects to export.'); return; }
+
+    const yr  = s => s.year_level ? s.year_level + 'Y' : '—';
+    const sem = s => s.semester == 1 ? '1st' : s.semester == 2 ? '2nd' : s.semester == 3 ? 'Sum' : '—';
+
+    if (format === 'csv') {
+        const headers = ['Code', 'Subject Name', 'Program', 'Year', 'Semester', 'Units', 'Status'];
+        const rows = subjects.map(s => [s.subject_code, s.subject_name, s.program_code || 'General', yr(s), sem(s), s.units, s.status]);
+        const csv = [headers, ...rows]
+            .map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+            .join('\r\n');
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `subjects_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+    }
+
+    const rowsHtml = subjects.map(s => `<tr>
+        <td>${esc(s.subject_code)}</td>
+        <td>${esc(s.subject_name)}</td>
+        <td>${esc(s.program_code || 'General')}</td>
+        <td>${yr(s)}</td>
+        <td>${sem(s)}</td>
+        <td>${esc(String(s.units))}</td>
+        <td>${esc(s.status)}</td>
+    </tr>`).join('');
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { notify.error('Please allow pop-ups to export as PDF.'); return; }
+    win.document.write(`
+        <!doctype html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Subjects Export — ${new Date().toLocaleDateString()}</title>
+            <style>
+                body { font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #1f2937; }
+                h1 { font-size: 18px; margin: 0 0 4px; }
+                p.meta { font-size: 12px; color: #6b7280; margin: 0 0 20px; }
+                table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+                th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+                tr:nth-child(even) { background: #fafbfc; }
+                @media print { body { margin: 12mm; } }
+            </style>
+        </head>
+        <body>
+            <h1>COC LMS — Subjects</h1>
+            <p class="meta">Generated ${new Date().toLocaleString()} &middot; ${subjects.length} record${subjects.length !== 1 ? 's' : ''}</p>
+            <table>
+                <thead><tr><th>Code</th><th>Subject Name</th><th>Program</th><th>Year</th><th>Semester</th><th>Units</th><th>Status</th></tr></thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 250);
 }

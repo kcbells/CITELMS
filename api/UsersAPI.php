@@ -7,6 +7,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -15,6 +16,18 @@ if (!Auth::check()) {
 }
 
 $action = $_GET['action'] ?? '';
+
+function logActivity($userId, $activityType, $description) {
+    try {
+        db()->execute(
+            "INSERT INTO activity_logs (users_id, activity_type, activity_description, created_at)
+             VALUES (?, ?, ?, NOW())",
+            [$userId, $activityType, $description]
+        );
+    } catch (Exception $e) {
+        error_log('Activity log error: ' . $e->getMessage());
+    }
+}
 
 // Dean can list/view/create instructors in their campus
 $isDean = Auth::role() === 'dean';
@@ -143,6 +156,8 @@ function handleList() {
     $deptId     = $_GET['department_id'] ?? '';
     $programId  = $_GET['program_id']    ?? '';
     $campusId   = $_GET['campus_id']     ?? '';
+    $page       = max(1, (int)($_GET['page'] ?? 1));
+    $perPage    = min(100, max(1, (int)($_GET['per_page'] ?? 20)));
 
     $where  = [];
     $params = [];
@@ -194,6 +209,20 @@ function handleList() {
     $whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
     ensureNameColumns();
+
+    $total = (int)(db()->fetchOne(
+        "SELECT COUNT(*) as c FROM users u $whereSQL",
+        $params
+    )['c'] ?? 0);
+
+    $totalPages = max(1, (int)ceil($total / $perPage));
+    $page       = min($page, $totalPages);
+    $offset     = ($page - 1) * $perPage;
+
+    // export=1: return every matching row (still respecting filters), skip pagination
+    $isExport = !empty($_GET['export']);
+    $limitSQL = $isExport ? '' : "LIMIT $perPage OFFSET $offset";
+
     $users = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.middle_name, u.last_name, u.suffix, u.email, u.role, u.status,
                 u.employee_id, u.student_id, u.department_id, u.program_id,
@@ -205,11 +234,18 @@ function handleList() {
          LEFT JOIN program     p ON u.program_id    = p.program_id
          LEFT JOIN campus      c ON u.campus_id     = c.campus_id
          $whereSQL
-         ORDER BY u.created_at DESC",
+         ORDER BY u.created_at DESC
+         $limitSQL",
         $params
     );
 
-    echo json_encode(['success' => true, 'data' => ['users' => $users, 'total' => count($users)]]);
+    echo json_encode(['success' => true, 'data' => [
+        'users'       => $users,
+        'total'       => $total,
+        'page'        => $page,
+        'per_page'    => $perPage,
+        'total_pages' => $totalPages,
+    ]]);
 }
 
 function handleGet() {
@@ -236,10 +272,10 @@ function handleCreate() {
     ensureNameColumns();
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
 
-    $firstName  = trim($data['first_name']  ?? '');
-    $middleName = trim($data['middle_name'] ?? '') ?: null;
-    $lastName     = trim($data['last_name']         ?? '');
-    $suffix       = trim($data['suffix']            ?? '') ?: null;
+    $firstName  = Sanitize::text($data['first_name']  ?? '');
+    $middleName = Sanitize::text($data['middle_name'] ?? '') ?: null;
+    $lastName     = Sanitize::text($data['last_name']         ?? '');
+    $suffix       = Sanitize::text($data['suffix']            ?? '') ?: null;
     $email        = trim($data['email']             ?? '');
     $password     = $data['password']               ?? '';
     $departmentId = ($data['department_id'] ?? null) ?: null;
@@ -358,6 +394,7 @@ function handleCreate() {
 
         $roleLabels = ['dean' => 'Dean', 'program_head' => 'Program Head', 'admin' => 'Admin', 'student' => 'Student'];
         $msg = ($roleLabels[$role] ?? 'Instructor') . ' account created successfully.';
+        http_response_code(201);
         echo json_encode(['success' => true, 'message' => $msg, 'data' => ['id' => $newId]]);
     } catch (Exception $e) {
         error_log('Create user error: ' . $e->getMessage());
@@ -390,10 +427,10 @@ function handleUpdate() {
     }
 
     ensureNameColumns();
-    $firstName  = trim($data['first_name']  ?? '');
-    $middleName = trim($data['middle_name'] ?? '') ?: null;
-    $lastName   = trim($data['last_name']   ?? '');
-    $suffix     = trim($data['suffix']      ?? '') ?: null;
+    $firstName  = Sanitize::text($data['first_name']  ?? '');
+    $middleName = Sanitize::text($data['middle_name'] ?? '') ?: null;
+    $lastName   = Sanitize::text($data['last_name']   ?? '');
+    $suffix     = Sanitize::text($data['suffix']      ?? '') ?: null;
     $email      = trim($data['email']       ?? '');
     $password     = $data['password']               ?? '';
     $departmentId = ($data['department_id'] ?? null) ?: null;
@@ -547,8 +584,12 @@ function handleSetPassword() {
             "UPDATE users SET password = ?, updated_at = NOW() WHERE users_id = ?",
             [password_hash($password, PASSWORD_DEFAULT), $id]
         );
-        logActivity(Auth::id(), 'admin_password_reset', "Password changed for user #$id by admin/dean");
         echo json_encode(['success' => true, 'message' => 'Password updated successfully.']);
+        try {
+            logActivity(Auth::id(), 'admin_password_reset', "Password changed for user #$id by admin/dean");
+        } catch (Throwable $logErr) {
+            error_log('set-password activity log: ' . $logErr->getMessage());
+        }
     } catch (Exception $e) {
         error_log('set-password: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to update password']);

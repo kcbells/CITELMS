@@ -50,6 +50,19 @@ if (!defined('BREVO_API_KEY')) {
     define('BREVO_API_KEY', getenv('BREVO_API_KEY') ?: '');
 }
 
+if (!defined('GOOGLE_CLIENT_ID')) {
+    define('GOOGLE_CLIENT_ID', getenv('GOOGLE_CLIENT_ID') ?: '');
+}
+if (!defined('GOOGLE_CLIENT_SECRET')) {
+    define('GOOGLE_CLIENT_SECRET', getenv('GOOGLE_CLIENT_SECRET') ?: '');
+}
+if (!defined('GOOGLE_REFRESH_TOKEN')) {
+    define('GOOGLE_REFRESH_TOKEN', getenv('GOOGLE_REFRESH_TOKEN') ?: '');
+}
+if (!defined('GOOGLE_SENDER_EMAIL')) {
+    define('GOOGLE_SENDER_EMAIL', getenv('GOOGLE_SENDER_EMAIL') ?: '');
+}
+
 if (!defined('MAIL_CRON_TOKEN')) {
     define('MAIL_CRON_TOKEN', getenv('MAIL_CRON_TOKEN') ?: 'change-me-in-production');
 }

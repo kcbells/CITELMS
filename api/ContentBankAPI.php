@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 header('Content-Type: application/json');
 
@@ -137,7 +138,7 @@ function addComment() {
     $userId   = Auth::id();
     $postType = trim($input['post_type'] ?? '');
     $postId   = (int)($input['post_id'] ?? 0);
-    $content  = trim($input['content'] ?? '');
+    $content  = Sanitize::text($input['content'] ?? '');
     $parentId = (int)($input['parent_comment_id'] ?? 0) ?: null;
 
     if (!in_array($postType, ['material', 'question', 'quiz'], true) || !$postId || !$content) {

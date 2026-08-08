@@ -376,13 +376,21 @@ async function uploadLessonMaterials(lessonId, files, links) {
     }
 }
 
-async function uploadAnnouncementMaterials(announcementId, files) {
+async function uploadAnnouncementMaterials(announcementId, files, links = []) {
     for (const file of files) {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('announcement_id', announcementId);
         const res = await Api.postForm('/AnnouncementsAPI.php?action=upload-material', fd);
         if (!res.success) throw new Error(res.message || `Failed to upload ${file.name}`);
+    }
+    for (const link of links) {
+        const res = await Api.post('/AnnouncementsAPI.php?action=add-link', {
+            announcement_id: announcementId,
+            url: link.url,
+            title: link.title || '',
+        });
+        if (!res.success) throw new Error(res.message || 'Failed to add link');
     }
 }
 
@@ -528,16 +536,10 @@ export function openAnnouncementModal({ subjectId, sectionId = null, sections = 
         alertEl.style.display = 'none';
 
         try {
-            let content = msg;
-            if (pendingLinks.length) {
-                const linksBlock = pendingLinks.map(l => `${l.title}: ${l.url}`).join('\n');
-                content = content ? `${content}\n\n${linksBlock}` : linksBlock;
-            }
-
             const res = await Api.post('/AnnouncementsAPI.php?action=create', {
                 subject_id: parseInt(subjectId, 10),
                 title: title || msg.slice(0, 80) || 'Announcement',
-                content: content || title,
+                content: msg || title,
                 status: 'published',
                 all_sections,
                 section_ids,
@@ -545,10 +547,10 @@ export function openAnnouncementModal({ subjectId, sectionId = null, sections = 
             });
             if (!res.success) throw new Error(res.message || 'Failed to post announcement');
 
-            if (pendingFiles.length) {
+            if (pendingFiles.length || pendingLinks.length) {
                 btn.textContent = 'Uploading…';
                 const annId = res.data?.announcement_id;
-                if (annId) await uploadAnnouncementMaterials(annId, pendingFiles);
+                if (annId) await uploadAnnouncementMaterials(annId, pendingFiles, pendingLinks);
             }
 
             bd.remove();

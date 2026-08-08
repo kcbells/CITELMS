@@ -7,7 +7,7 @@ import { icon, iconLg } from '../../utils/icons.js';
 import { openAnnouncementModal } from '../../components/announcement-modal.js';
 import { openLessonModal } from '../../components/lesson-modal.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
-import { buildStudentJoinUrl, renderQrInto } from '../../utils/qr-utils.js';
+import { buildStudentJoinUrl, buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G = '#00461B';
 const G2 = '#006428';
@@ -170,7 +170,7 @@ function renderSubjectSections(container, subject) {
             e.preventDefault();
             e.stopPropagation();
             navigator.clipboard.writeText(el.dataset.copy);
-            showMcPopup('Subject code copied — share it with students so they can join.', { title: 'Copied', type: 'success' });
+            showMcPopup('Class code copied — share it with students so they can join.', { title: 'Copied', type: 'success' });
         });
     });
 
@@ -191,6 +191,7 @@ function renderSubjectSections(container, subject) {
                 sectionId: parseInt(btn.dataset.manage, 10),
                 sectionName: btn.dataset.sname,
                 subjectCode: btn.dataset.subjectCode || subject.subject_code || '',
+                enrollmentCode: btn.dataset.enrollmentCode || '',
                 subjectOfferedId: parseInt(btn.dataset.offered, 10) || subject.subject_offered_id,
             });
         });
@@ -247,7 +248,8 @@ function subjectCard(s) {
 function sectionCard(subject, sec) {
     const pct = sec.max_students > 0 ? Math.round((Number(sec.student_count) / Number(sec.max_students)) * 100) : 0;
     const openUrl = `#instructor/subject?subject_id=${subject.subject_id}&section_id=${sec.section_id}`;
-    const joinUrl = buildStudentJoinUrl(subject.subject_code, sec.section_id);
+    const classCode = sec.enrollment_code || '';
+    const joinUrl = buildStudentJoinUrlByEnrollmentCode(classCode);
 
     return `
         <article class="mc-sec-card">
@@ -255,13 +257,13 @@ function sectionCard(subject, sec) {
                 <div>
                     <h3 class="mc-sec-name">${esc(sec.section_name)}</h3>
                     <div class="mc-class-code-box">
-                        <span class="mc-class-code-label">Subject code</span>
-                        <button type="button" class="mc-enroll-code" data-copy="${esc(subject.subject_code)}" title="Copy subject code for students">
-                            ${esc(subject.subject_code)}
+                        <span class="mc-class-code-label">Class code</span>
+                        <button type="button" class="mc-enroll-code" data-copy="${esc(classCode)}" title="Copy class code for students">
+                            ${esc(classCode)}
                             <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                         </button>
                         <div class="mc-qr-box" data-qr-url="${esc(joinUrl)}" id="mc-qr-${sec.section_id}"></div>
-                        <span class="mc-class-code-hint">Students scan QR or enter <strong>${esc(subject.subject_code)}</strong> to join section <strong>${esc(sec.section_name)}</strong></span>
+                        <span class="mc-class-code-hint">Students scan QR or enter <strong>${esc(classCode)}</strong> to join <strong>${esc(sec.section_name)}</strong></span>
                     </div>
                 </div>
                 <span class="mc-sec-badge">${esc(sec.status || 'active')}</span>
@@ -274,7 +276,7 @@ function sectionCard(subject, sec) {
             <div class="mc-sec-bar"><div class="mc-sec-fill" style="width:${pct}%"></div></div>
             <div class="mc-sec-actions">
                 <a href="${openUrl}" class="mc-btn-primary mc-btn-sm">Open Class</a>
-                <button type="button" class="mc-btn-ghost mc-btn-sm" data-manage="${sec.section_id}" data-sname="${esc(sec.section_name)}" data-subject-code="${esc(subject.subject_code)}" data-offered="${sec.subject_offered_id || subject.subject_offered_id || ''}">Add Student</button>
+                <button type="button" class="mc-btn-ghost mc-btn-sm" data-manage="${sec.section_id}" data-sname="${esc(sec.section_name)}" data-subject-code="${esc(subject.subject_code)}" data-enrollment-code="${esc(classCode)}" data-offered="${sec.subject_offered_id || subject.subject_offered_id || ''}">Add Student</button>
                 <button type="button" class="mc-btn-ghost mc-btn-sm mc-btn-danger" data-remove-sec="${sec.section_subject_id}">Remove</button>
             </div>
         </article>
@@ -382,9 +384,9 @@ function openCreateSectionModal(container, subject) {
 }
 
 async function openManageStudentsModal(container, subject, sectionInfo) {
-    const { sectionId, sectionName, subjectCode, subjectOfferedId } = sectionInfo;
-    const code = subjectCode || subject.subject_code || '';
-    const joinUrl = buildStudentJoinUrl(code, sectionId);
+    const { sectionId, sectionName, subjectCode, enrollmentCode, subjectOfferedId } = sectionInfo;
+    const code = enrollmentCode || subjectCode || subject.subject_code || '';
+    const joinUrl = enrollmentCode ? buildStudentJoinUrlByEnrollmentCode(enrollmentCode) : buildStudentJoinUrl(code, sectionId);
     const res = await Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId);
     const rows = res.success ? res.data : [];
     const offeredId = String(subjectOfferedId || subject.subject_offered_id || '');
@@ -417,7 +419,7 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
             <div class="mc-modal-body">
                 <div class="mc-import-code-banner">
                     <div>
-                        <span class="mc-class-code-label">Subject code for students</span>
+                        <span class="mc-class-code-label">Class code for students</span>
                         <button type="button" class="mc-enroll-code lg" data-copy="${esc(code)}">${esc(code)}</button>
                         <div class="mc-qr-box" data-qr-url="${esc(joinUrl)}" id="mc-modal-qr"></div>
                     </div>
@@ -431,7 +433,7 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
 
                 <div id="mc-stu-panel-enrolled">
                     ${students.length === 0
-                        ? '<p class="mc-empty-text">No students yet. Share the subject code or import a list below.</p>'
+                        ? '<p class="mc-empty-text">No students yet. Share the class code or import a list below.</p>'
                         : students.map(st => `
                             <div class="mc-student-row">
                                 <div>
@@ -482,7 +484,7 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
     overlay.querySelectorAll('[data-copy]').forEach(el => {
         el.addEventListener('click', () => {
             navigator.clipboard.writeText(el.dataset.copy);
-            showMcPopup('Subject code copied to clipboard.', { title: 'Copied', type: 'success' });
+            showMcPopup('Class code copied to clipboard.', { title: 'Copied', type: 'success' });
         });
     });
 

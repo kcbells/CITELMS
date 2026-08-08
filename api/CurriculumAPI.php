@@ -243,9 +243,9 @@ function handleAdd() {
             )->execute([$yearLevel, $existing['curriculum_id']]);
         } else {
             $pdo->prepare(
-                "INSERT INTO curriculum (program_id, course_id, year_level, status)
-                 VALUES (?, ?, ?, 'active')"
-            )->execute([$programId, $subjectId, $yearLevel]);
+                "INSERT INTO curriculum (program_id, course_id, course_code, year_level, status)
+                 VALUES (?, ?, ?, ?, 'active')"
+            )->execute([$programId, $subjectId, $subj['subject_code'], $yearLevel]);
         }
 
         $pdo->prepare("UPDATE subject SET program_id = ?, year_level = ?, updated_at = NOW() WHERE subject_id = ?")
@@ -315,12 +315,12 @@ function handleCreateSubject() {
 
         $vidCol = $versionId ? ', version_id' : '';
         $vidVal = $versionId ? ', ?' : '';
-        $params = [$programId, $subjectId, $yearLevel, $semester];
+        $params = [$programId, $subjectId, $code, $yearLevel, $semester];
         if ($versionId) $params[] = $versionId;
 
         $pdo->prepare(
-            "INSERT INTO curriculum (program_id, course_id, year_level, semester_id{$vidCol}, status)
-             VALUES (?, ?, ?, ?{$vidVal}, 'active')"
+            "INSERT INTO curriculum (program_id, course_id, course_code, year_level, sem_num{$vidCol}, status)
+             VALUES (?, ?, ?, ?, ?{$vidVal}, 'active')"
         )->execute($params);
 
         echo json_encode(['success' => true, 'message' => 'Subject created', 'subject_id' => $subjectId]);
@@ -747,10 +747,10 @@ function handleImportPdfCurriculum() {
             } else {
                 $vidCol = $versionId ? ', version_id' : '';
                 $vidVal = $versionId ? ', ?' : '';
-                $params = [$programId, $subjectId, $yearLevel, $semester];
+                $params = [$programId, $subjectId, $code, $yearLevel, $semester];
                 if ($versionId) $params[] = $versionId;
                 $pdo->prepare(
-                    "INSERT INTO curriculum (program_id, course_id, year_level, sem_num{$vidCol}, status) VALUES (?, ?, ?, ?{$vidVal}, 'active')"
+                    "INSERT INTO curriculum (program_id, course_id, course_code, year_level, sem_num{$vidCol}, status) VALUES (?, ?, ?, ?, ?{$vidVal}, 'active')"
                 )->execute($params);
             }
         } catch (Exception $e) {

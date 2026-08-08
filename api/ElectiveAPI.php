@@ -41,20 +41,48 @@ function deanInfo(): array {
     ) ?: ['program_id' => 0, 'department_id' => 0, 'campus_id' => 0];
 }
 
-function resolveProgram(): int {
-    global $isDean;
-    if ($isDean) return (int)(deanInfo()['program_id'] ?? 0);
-    return (int)($_GET['program_id'] ?? $_POST['program_id'] ?? 0);
+/**
+ * All program_ids the dean manages — a department can oversee several programs,
+ * so a dean must be able to work with any of them here, not just their single
+ * primary users.program_id (see SubjectOfferingsAPI.php's deanProgramIds()).
+ */
+function deanProgramIds(): array {
+    static $ids = null;
+    if ($ids === null) {
+        $info = deanInfo();
+        $ids  = [];
+        if (!empty($info['department_id'])) {
+            $rows = db()->fetchAll(
+                "SELECT program_id FROM department_program WHERE department_id = ?",
+                [$info['department_id']]
+            );
+            $ids = array_map(fn($r) => (int)$r['program_id'], $rows);
+        }
+        if (!$ids && !empty($info['program_id'])) {
+            $ids = [(int)$info['program_id']];
+        }
+    }
+    return $ids;
 }
 
-// ── Ownership check: does this track belong to the dean's program? ──────────
+// Accepts the program_id the caller asked for (e.g. the program the dean has
+// selected in the curriculum UI), but for deans it must be one of the programs
+// their department actually manages.
+function resolveProgram(): int {
+    global $isDean;
+    $requested = (int)($_GET['program_id'] ?? $_POST['program_id'] ?? 0);
+    if (!$isDean) return $requested;
+    if ($requested && in_array($requested, deanProgramIds(), true)) return $requested;
+    return (int)(deanInfo()['program_id'] ?? 0);
+}
+
+// ── Ownership check: does this track belong to a program the dean manages? ──
 
 function canAccessTrack(int $trackId): bool {
     global $isDean;
     if (!$isDean) return true;
-    $info = deanInfo();
-    $row  = db()->fetchOne("SELECT program_id FROM elective_track WHERE track_id=?", [$trackId]);
-    return $row && (int)$row['program_id'] === (int)$info['program_id'];
+    $row = db()->fetchOne("SELECT program_id FROM elective_track WHERE track_id=?", [$trackId]);
+    return $row && in_array((int)$row['program_id'], deanProgramIds(), true);
 }
 
 // ── List tracks + subjects for a program ──────────────────────────────────
@@ -91,13 +119,17 @@ function handleAddTrack() {
     $name = trim($data['track_name'] ?? '');
     if (!$name) { echo json_encode(['success' => false, 'message' => 'track_name required']); return; }
 
+    $programId    = (int)($data['program_id']    ?? 0);
+    $departmentId = (int)($data['department_id'] ?? 0);
+
     if ($isDean) {
-        $info = deanInfo();
-        $programId    = (int)$info['program_id'];
-        $departmentId = (int)$info['department_id'];
-    } else {
-        $programId    = (int)($data['program_id']    ?? 0);
-        $departmentId = (int)($data['department_id'] ?? 0);
+        // Must be one of the programs the dean's department actually manages.
+        if (!$programId || !in_array($programId, deanProgramIds(), true)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: not a program in your department']);
+            return;
+        }
+        $departmentId = (int)(deanInfo()['department_id'] ?? $departmentId);
     }
 
     if (!$programId || !$departmentId) {

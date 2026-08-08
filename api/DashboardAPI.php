@@ -19,6 +19,53 @@ if (!Auth::check()) {
     exit;
 }
 
+/**
+ * Dean's full scope: campus_ids (multi-campus via dean_campus_scope) and program_ids
+ * (every program the dean's department manages — a department can have several).
+ * Mirrors SubjectOfferingsAPI.php's deanScope()/deanProgramIds().
+ */
+function deanFullScope(): array {
+    static $s = null;
+    if ($s !== null) return $s;
+
+    $row = db()->fetchOne("SELECT campus_id, program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
+    $campusId = (int)($row['campus_id'] ?? 0);
+    $progId   = (int)($row['program_id'] ?? 0);
+    $deptId   = (int)($row['department_id'] ?? 0);
+
+    $multiRows = db()->fetchAll("SELECT campus_id FROM dean_campus_scope WHERE dean_id = ?", [Auth::id()]);
+    $campusIds = array_map('intval', array_column($multiRows, 'campus_id'));
+    if (empty($campusIds) && $campusId) $campusIds = [$campusId];
+
+    // If dean has no program_id but has department_id, pick the first active program in that department
+    if (!$progId && $deptId) {
+        $firstProg = db()->fetchOne(
+            "SELECT p.program_id FROM program p
+             JOIN department_program dp ON dp.program_id = p.program_id
+             WHERE dp.department_id = ? AND p.status = 'active'
+             LIMIT 1",
+            [$deptId]
+        );
+        if ($firstProg) $progId = (int)$firstProg['program_id'];
+    }
+
+    $progIds = [];
+    if ($deptId) {
+        $progRows = db()->fetchAll("SELECT program_id FROM department_program WHERE department_id = ?", [$deptId]);
+        $progIds  = array_map(fn($r) => (int)$r['program_id'], $progRows);
+    }
+    if (!$progIds && $progId) $progIds = [$progId];
+
+    $s = [
+        'campus_id'     => $campusId,
+        'campus_ids'    => $campusIds,
+        'program_id'    => $progId,
+        'program_ids'   => $progIds,
+        'department_id' => $deptId,
+    ];
+    return $s;
+}
+
 $action = $_GET['action'] ?? 'admin';
 
 switch ($action) {
@@ -442,10 +489,10 @@ function handleStudentDashboard() {
 }
 
 function handleDeanDashboard() {
-    $u        = db()->fetchOne("SELECT campus_id, program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
-    $campusId = (int)($u['campus_id']    ?? 0);
-    $progId   = (int)($u['program_id']   ?? 0);
-    $deptId   = (int)($u['department_id'] ?? 0);
+    $scope     = deanFullScope();
+    $campusIds = $scope['campus_ids'];
+    $progIds   = $scope['program_ids'];
+    $deptId    = $scope['department_id'];
 
     // Resolve department: prefer explicit department_id, fall back to program's department
     $department = null;
@@ -455,34 +502,43 @@ function handleDeanDashboard() {
              FROM department d WHERE d.department_id = ?",
             [$deptId]
         );
-    } elseif ($progId) {
+    } elseif ($scope['program_id']) {
         $department = db()->fetchOne(
             "SELECT d.department_id, d.department_name, d.department_code
              FROM department d
              JOIN department_program dp ON dp.department_id = d.department_id
              WHERE dp.program_id = ? LIMIT 1",
-            [$progId]
+            [$scope['program_id']]
         );
-    }
-
-    // If dean has no program_id but has department_id, pick the first active program in that department
-    if (!$progId && $deptId) {
-        $firstProg = db()->fetchOne(
-            "SELECT p.program_id FROM program p
-             JOIN department_program dp ON dp.program_id = p.program_id
-             WHERE dp.department_id = ? AND p.status = 'active'
-             LIMIT 1",
-            [$deptId]
-        );
-        if ($firstProg) $progId = (int)$firstProg['program_id'];
     }
 
     $program = $department; // keep alias for response key
 
-    // Counts filtered by program
+    if (empty($progIds) || empty($campusIds)) {
+        echo json_encode([
+            'success' => true,
+            'data' => [
+                'department' => $department,
+                'stats' => [
+                    'instructors' => 0, 'students' => 0, 'subjects' => 0, 'sections' => 0,
+                    'offerings' => 0, 'total_quizzes' => 0, 'total_attempts' => 0, 'avg_score' => 0,
+                    'passed' => 0, 'failed' => 0, 'total_lessons' => 0, 'published_lessons' => 0,
+                ],
+                'faculty' => [], 'programs' => [], 'subject_stats' => [],
+                'enrollment_by_year' => [], 'subject_enrollment' => [],
+                'at_risk_students' => [], 'non_engaging' => [], 'program_performance' => [],
+            ]
+        ]);
+        return;
+    }
+
+    $progPh    = implode(',', array_fill(0, count($progIds), '?'));
+    $campusPh  = implode(',', array_fill(0, count($campusIds), '?'));
+
+    // Counts filtered by all of the dean's programs
     $instructors = db()->fetchOne(
-        "SELECT COUNT(*) as c FROM users WHERE role = 'instructor' AND campus_id = ? AND program_id = ? AND status = 'active'",
-        [$campusId, $progId]
+        "SELECT COUNT(*) as c FROM users WHERE role = 'instructor' AND campus_id IN ($campusPh) AND program_id IN ($progPh) AND status = 'active'",
+        array_merge($campusIds, $progIds)
     )['c'] ?? 0;
 
     $students = db()->fetchOne(
@@ -490,29 +546,29 @@ function handleDeanDashboard() {
          FROM student_subject ss
          JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
          JOIN subject s ON so.subject_id = s.subject_id
-         WHERE s.program_id = ? AND ss.status = 'enrolled'",
-        [$progId]
+         WHERE s.program_id IN ($progPh) AND ss.status = 'enrolled'",
+        $progIds
     )['c'] ?? 0;
 
     $subjects = db()->fetchOne(
-        "SELECT COUNT(*) as c FROM subject WHERE program_id = ? AND status = 'active'",
-        [$progId]
+        "SELECT COUNT(*) as c FROM subject WHERE program_id IN ($progPh) AND status = 'active'",
+        $progIds
     )['c'] ?? 0;
 
     $sections = db()->fetchOne(
         "SELECT COUNT(DISTINCT sec.section_id) as c FROM section sec
-         WHERE sec.program_id = ? AND sec.status = 'active'",
-        [$progId]
+         WHERE sec.program_id IN ($progPh) AND sec.status = 'active'",
+        $progIds
     )['c'] ?? 0;
 
     $offerings = db()->fetchOne(
         "SELECT COUNT(*) as c FROM subject_offered so
          JOIN subject s ON so.subject_id = s.subject_id
-         WHERE s.program_id = ? AND so.status = 'open'",
-        [$progId]
+         WHERE s.program_id IN ($progPh) AND so.status = 'open'",
+        $progIds
     )['c'] ?? 0;
 
-    // Faculty workload (instructors in this program on this campus)
+    // Faculty workload (instructors across all of the dean's programs/campuses)
     $faculty = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.last_name, u.employee_id,
             (SELECT COUNT(DISTINCT so2.subject_offered_id) FROM subject_offered so2 WHERE so2.user_teacher_id = u.users_id AND so2.status = 'open') as subject_count,
@@ -521,21 +577,21 @@ function handleDeanDashboard() {
             (SELECT COUNT(*) FROM quiz q WHERE q.user_teacher_id = u.users_id) as quiz_count,
             (SELECT COUNT(*) FROM lessons l WHERE l.user_teacher_id = u.users_id) as lesson_count
          FROM users u
-         WHERE u.role = 'instructor' AND u.campus_id = ? AND u.program_id = ? AND u.status = 'active'
+         WHERE u.role = 'instructor' AND u.campus_id IN ($campusPh) AND u.program_id IN ($progPh) AND u.status = 'active'
          ORDER BY subject_count DESC",
-        [$campusId, $progId]
+        array_merge($campusIds, $progIds)
     );
 
-    // Programs list (just the dean's own program)
-    $programs = $progId ? db()->fetchAll(
+    // Programs list (every program the dean's department manages)
+    $programs = db()->fetchAll(
         "SELECT p.program_id, p.program_code, p.program_name,
             (SELECT COUNT(*) FROM users u2 WHERE u2.program_id = p.program_id AND u2.role = 'student' AND u2.status = 'active') as student_count,
             (SELECT COUNT(*) FROM subject s2 WHERE s2.program_id = p.program_id AND s2.status = 'active') as subject_count
-         FROM program p WHERE p.program_id = ? AND p.status = 'active'",
-        [$progId]
-    ) : [];
+         FROM program p WHERE p.program_id IN ($progPh) AND p.status = 'active'",
+        $progIds
+    );
 
-    // Quiz performance for this program
+    // Quiz performance across the dean's programs
     $quizStats = db()->fetchOne(
         "SELECT
             COUNT(DISTINCT q.quiz_id) as total_quizzes,
@@ -546,8 +602,8 @@ function handleDeanDashboard() {
          FROM quiz q
          JOIN subject s ON q.subject_id = s.subject_id
          LEFT JOIN student_quiz_attempts sqa ON q.quiz_id = sqa.quiz_id
-         WHERE s.program_id = ?",
-        [$progId]
+         WHERE s.program_id IN ($progPh)",
+        $progIds
     );
 
     // Subject performance
@@ -562,10 +618,10 @@ function handleDeanDashboard() {
          JOIN program p ON p.program_id = s.program_id
          LEFT JOIN quiz q ON q.subject_id = s.subject_id
          LEFT JOIN student_quiz_attempts sqa ON q.quiz_id = sqa.quiz_id
-         WHERE s.program_id = ? AND s.status = 'active'
+         WHERE s.program_id IN ($progPh) AND s.status = 'active'
          GROUP BY s.subject_id, p.program_id
          ORDER BY attempts DESC",
-        [$progId]
+        $progIds
     );
 
     // Lesson stats
@@ -574,18 +630,18 @@ function handleDeanDashboard() {
             SUM(CASE WHEN l.status = 'published' THEN 1 ELSE 0 END) as published
          FROM lessons l
          JOIN subject s ON l.subject_id = s.subject_id
-         WHERE s.program_id = ?",
-        [$progId]
+         WHERE s.program_id IN ($progPh)",
+        $progIds
     );
 
     // Enrollment by year level
     $enrollmentByYear = db()->fetchAll(
         "SELECT u.year_level, COUNT(*) as count
          FROM users u
-         WHERE u.program_id = ? AND u.role = 'student' AND u.status = 'active' AND u.year_level IS NOT NULL
+         WHERE u.program_id IN ($progPh) AND u.role = 'student' AND u.status = 'active' AND u.year_level IS NOT NULL
          GROUP BY u.year_level
          ORDER BY u.year_level",
-        [$progId]
+        $progIds
     );
 
     // Enrollment per subject
@@ -596,11 +652,11 @@ function handleDeanDashboard() {
          JOIN program p ON p.program_id = s.program_id
          LEFT JOIN subject_offered so ON so.subject_id = s.subject_id AND so.status = 'open'
          LEFT JOIN student_subject ss ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'enrolled'
-         WHERE s.program_id = ? AND s.status = 'active'
+         WHERE s.program_id IN ($progPh) AND s.status = 'active'
          GROUP BY s.subject_id
          ORDER BY enrolled_count DESC, s.subject_code
          LIMIT 12",
-        [$progId]
+        $progIds
     );
 
     // At-risk students
@@ -616,12 +672,12 @@ function handleDeanDashboard() {
          JOIN program p ON p.program_id = s.program_id
          LEFT JOIN quiz q ON q.subject_id = s.subject_id
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
-         WHERE s.program_id = ? AND u.role = 'student' AND u.status = 'active'
+         WHERE s.program_id IN ($progPh) AND u.role = 'student' AND u.status = 'active'
          GROUP BY u.users_id, p.program_id
          HAVING COUNT(DISTINCT sqa.attempt_id) > 0 AND AVG(sqa.percentage) < 60
          ORDER BY AVG(sqa.percentage) ASC
          LIMIT 10",
-        [$progId]
+        $progIds
     );
 
     // Non-engaging students
@@ -634,22 +690,22 @@ function handleDeanDashboard() {
          JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
          JOIN subject s ON so.subject_id = s.subject_id
          JOIN program p ON p.program_id = s.program_id
-         WHERE s.program_id = ? AND u.role = 'student' AND u.status = 'active'
+         WHERE s.program_id IN ($progPh) AND u.role = 'student' AND u.status = 'active'
            AND NOT EXISTS (
                SELECT 1 FROM student_quiz_attempts sqa2
                JOIN quiz q2 ON sqa2.quiz_id = q2.quiz_id
                JOIN subject s2 ON q2.subject_id = s2.subject_id
                WHERE sqa2.user_student_id = u.users_id
-                 AND s2.program_id = ?
+                 AND s2.program_id IN ($progPh)
                  AND sqa2.status = 'completed'
            )
          GROUP BY u.users_id, p.program_id
          ORDER BY enrolled_subjects DESC
          LIMIT 10",
-        [$progId, $progId]
+        array_merge($progIds, $progIds)
     );
 
-    // Per-program quiz performance (just this program)
+    // Per-program quiz performance (across the dean's programs)
     $programPerformance = db()->fetchAll(
         "SELECT p.program_code, p.program_name,
             COUNT(DISTINCT sqa.attempt_id) as attempts,
@@ -660,9 +716,9 @@ function handleDeanDashboard() {
          LEFT JOIN subject s2 ON s2.program_id = p.program_id
          LEFT JOIN quiz q2 ON q2.subject_id = s2.subject_id
          LEFT JOIN student_quiz_attempts sqa ON q2.quiz_id = sqa.quiz_id
-         WHERE p.program_id = ? AND p.status = 'active'
+         WHERE p.program_id IN ($progPh) AND p.status = 'active'
          GROUP BY p.program_id",
-        [$progId]
+        $progIds
     );
 
     echo json_encode([

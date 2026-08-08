@@ -185,9 +185,6 @@ export async function render(container) {
                     </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Administration</div>
-                    <div class="set-nav-item" data-section="campuses">
-                        <span class="nav-icon">${icon('building')}</span> Campuses
-                    </div>
                     <div class="set-nav-item" data-section="users">
                         <span class="nav-icon">${icon('users')}</span> Users
                     </div>
@@ -319,23 +316,6 @@ export async function render(container) {
                         </div>
                     </div>
 
-                    <!-- ── Campuses ── -->
-                    <div class="set-panel" data-panel="campuses">
-                        <div class="set-card">
-                            <div class="set-card-head">
-                                <div class="set-card-head-icon">${icon('building', { size: 22 })}</div>
-                                <div class="set-card-title">
-                                    <h3>Campuses</h3>
-                                    <p>Manage PHINMA COC campus locations</p>
-                                </div>
-                                <button class="btn-primary" id="btn-add-campus" style="margin-left:auto;">${icon('plus', inl)} Add Campus</button>
-                            </div>
-                            <div class="set-card-body" id="campus-body">
-                                <div class="sov-loading">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- ── Users ── -->
                     <div class="set-panel" data-panel="users">
                         <div id="set-users-mount"></div>
@@ -351,7 +331,7 @@ export async function render(container) {
     `;
 
     // ── Nav switching ──
-    const _loaded = { users: false, rbac: false, overview: false, campuses: false, health: false };
+    const _loaded = { users: false, rbac: false, overview: false, health: false };
 
     container.querySelectorAll('.set-nav-item').forEach(item => {
         item.addEventListener('click', async () => {
@@ -370,9 +350,6 @@ export async function render(container) {
             if (sec === 'health' && !_loaded.health) {
                 _loaded.health = true;
                 loadSystemHealth();
-            }
-            if (sec === 'campuses') {
-                loadCampuses();
             }
             if (sec === 'users' && !_loaded.users) {
                 _loaded.users = true;
@@ -424,154 +401,6 @@ export async function render(container) {
         const ok = await notify.confirm('Archive semesters older than 2 years?', { confirmText: 'Archive' });
         if (ok) showToast('Semesters archived successfully.', 'success');
     });
-
-    // ── Campuses ─────────────────────────────────────────────────────────────
-
-    async function loadCampuses() {
-        const body    = container.querySelector('#campus-body');
-        const addBtn  = container.querySelector('#btn-add-campus');
-        body.innerHTML = '<div class="sov-loading">Loading...</div>';
-
-        const res = await Api.get('/CampusAPI.php?action=list');
-        const campuses = res.success ? res.data : [];
-
-        const statusBadge = (s) => s === 'active'
-            ? `<span style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;">Active</span>`
-            : `<span style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;">Inactive</span>`;
-
-        body.innerHTML = `
-            <style>
-                .camp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-                .camp-card { border:1px solid #111; border-radius:14px; overflow:hidden; }
-                .camp-card-top { background:#fff; border-bottom:1px solid #111; padding:18px 20px; display:flex; align-items:center; gap:14px; }
-                .camp-initial { width:44px; height:44px; border-radius:12px; background:#F3F4F6; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; color:#111; flex-shrink:0; }
-                .camp-card-name { font-size:15px; font-weight:700; color:#111; }
-                .camp-card-code { font-size:11px; color:#6B7280; margin-top:2px; font-weight:600; letter-spacing:.5px; }
-                .camp-card-body { padding:14px 18px; background:#fff; }
-                .camp-row { display:flex; gap:8px; align-items:flex-start; font-size:12.5px; color:#525252; padding:4px 0; }
-                .camp-row-lbl { color:#9ca3af; font-weight:600; min-width:56px; flex-shrink:0; }
-                .camp-card-foot { padding:10px 18px; border-top:1px solid #f0f0f0; background:#fafafa; display:flex; align-items:center; justify-content:space-between; }
-                .camp-edit-btn { background:none; border:1px solid #e0e0e0; border-radius:7px; padding:5px 13px; font-size:12.5px; font-weight:600; color:#525252; cursor:pointer; }
-                .camp-edit-btn:hover { background:#f5f5f5; }
-            </style>
-            <div class="camp-grid">
-                ${campuses.length === 0
-                    ? '<p style="color:#9ca3af;font-size:13px;">No campuses found.</p>'
-                    : campuses.map(c => `
-                    <div class="camp-card">
-                        <div class="camp-card-top">
-                            <div class="camp-initial">${escSy(c.campus_code?.slice(0,2) || c.campus_name[0])}</div>
-                            <div>
-                                <div class="camp-card-name">${escSy(c.campus_name)}</div>
-                                <div class="camp-card-code">${escSy(c.campus_code)}</div>
-                            </div>
-                        </div>
-                        <div class="camp-card-body">
-                            <div class="camp-row"><span class="camp-row-lbl">Address</span><span>${escSy(c.address || '—')}</span></div>
-                            ${(c.contact_number || '').split('|').map(p => p.trim()).filter(Boolean).map((p, i) =>
-                                `<div class="camp-row"><span class="camp-row-lbl">${i === 0 ? 'Mobile' : 'Landline'}</span><span>${escSy(p)}</span></div>`
-                            ).join('') || `<div class="camp-row"><span class="camp-row-lbl">Phone</span><span>—</span></div>`}
-                            <div class="camp-row"><span class="camp-row-lbl">Email</span><span>${escSy(c.email || '—')}</span></div>
-                            <div class="camp-row"><span class="camp-row-lbl">Depts</span><span>${c.department_count} department${c.department_count != 1 ? 's' : ''} · ${c.user_count} user${c.user_count != 1 ? 's' : ''}</span></div>
-                        </div>
-                        <div class="camp-card-foot">
-                            ${statusBadge(c.status)}
-                            <button class="camp-edit-btn" data-campus='${JSON.stringify({campus_id:c.campus_id,campus_name:c.campus_name,campus_code:c.campus_code,address:c.address||'',contact_number:c.contact_number||'',email:c.email||'',status:c.status})}'>Edit</button>
-                        </div>
-                    </div>`).join('')}
-            </div>
-        `;
-
-        body.querySelectorAll('[data-campus]').forEach(btn => {
-            btn.addEventListener('click', () => openCampusModal(JSON.parse(btn.dataset.campus)));
-        });
-
-        addBtn.onclick = () => openCampusModal(null);
-    }
-
-    function openCampusModal(campus) {
-        const isEdit = !!campus;
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
-        overlay.innerHTML = `
-            <div style="background:#fff;border-radius:16px;width:90%;max-width:500px;overflow:hidden;">
-                <div style="padding:20px 24px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;">
-                    <h3 style="margin:0;font-size:17px;font-weight:700;color:#111827;">${isEdit ? 'Edit Campus' : 'Add Campus'}</h3>
-                    <button id="camp-modal-close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#9ca3af;line-height:1;">&times;</button>
-                </div>
-                <div style="padding:24px;">
-                    <div id="camp-modal-alert"></div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-                        <div style="grid-column:1/-1;">
-                            <label class="fg" style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Campus Name *</label>
-                            <input class="f-input" id="cm-name" value="${escSy(campus?.campus_name || '')}" placeholder="e.g., PHINMA COC Carmen">
-                        </div>
-                        <div>
-                            <label style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Campus Code *</label>
-                            <input class="f-input" id="cm-code" value="${escSy(campus?.campus_code || '')}" placeholder="e.g., COC-CDO">
-                        </div>
-                        <div>
-                            <label style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Status</label>
-                            <select class="f-select" id="cm-status">
-                                <option value="active" ${campus?.status === 'active' || !campus ? 'selected' : ''}>Active</option>
-                                <option value="inactive" ${campus?.status === 'inactive' ? 'selected' : ''}>Inactive</option>
-                            </select>
-                        </div>
-                        <div style="grid-column:1/-1;">
-                            <label style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Address</label>
-                            <input class="f-input" id="cm-address" value="${escSy(campus?.address || '')}" placeholder="Street, City">
-                        </div>
-                        <div>
-                            <label style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Phone</label>
-                            <input class="f-input" id="cm-phone" value="${escSy(campus?.contact_number || '')}" placeholder="+63...">
-                        </div>
-                        <div>
-                            <label style="display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Email</label>
-                            <input class="f-input" id="cm-email" value="${escSy(campus?.email || '')}" placeholder="info@...">
-                        </div>
-                    </div>
-                </div>
-                <div style="padding:14px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:10px;">
-                    <button id="camp-modal-cancel" style="background:#f5f5f5;color:#404040;border:1px solid #e0e0e0;padding:9px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13.5px;">Cancel</button>
-                    <button id="camp-modal-save" style="background:#00461B;color:#fff;border:none;padding:9px 22px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13.5px;">${isEdit ? 'Update' : 'Create'} Campus</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
-        overlay.querySelector('#camp-modal-close').onclick  = () => overlay.remove();
-        overlay.querySelector('#camp-modal-cancel').onclick = () => overlay.remove();
-        overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-
-        overlay.querySelector('#camp-modal-save').addEventListener('click', async () => {
-            const alertEl = overlay.querySelector('#camp-modal-alert');
-            const payload = {
-                campus_name:    overlay.querySelector('#cm-name').value.trim(),
-                campus_code:    overlay.querySelector('#cm-code').value.trim(),
-                address:        overlay.querySelector('#cm-address').value.trim(),
-                contact_number: overlay.querySelector('#cm-phone').value.trim(),
-                email:          overlay.querySelector('#cm-email').value.trim(),
-                status:         overlay.querySelector('#cm-status').value,
-            };
-            if (isEdit) payload.campus_id = campus.campus_id;
-
-            if (!payload.campus_name || !payload.campus_code) {
-                alertEl.innerHTML = `<div style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;">Campus name and code are required.</div>`;
-                return;
-            }
-
-            const action = isEdit ? 'update' : 'create';
-            const res = await Api.post(`/CampusAPI.php?action=${action}`, payload);
-            if (res.success) {
-                overlay.remove();
-                loadCampuses();
-                showToast(res.message, 'success');
-            } else {
-                alertEl.innerHTML = `<div style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;">${escSy(res.message)}</div>`;
-            }
-        });
-    }
 
     // ── System Overview ──────────────────────────────────────────────────────
 

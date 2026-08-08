@@ -163,7 +163,7 @@ function previewCode() {
 
     // Legacy: enrollment_code still supported
     $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
-    if ($legacy !== '' && preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $legacy)) {
+    if ($legacy !== '' && preg_match('/^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/', $legacy)) {
         previewByEnrollmentCode($userId, $legacy);
         return;
     }
@@ -293,7 +293,7 @@ function enrollByCode() {
     }
 
     $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
-    if ($legacy !== '' && preg_match('/^[A-Z0-9]{3}-[A-Z0-9]{4}$/', $legacy)) {
+    if ($legacy !== '' && preg_match('/^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/', $legacy)) {
         enrollByLegacyCode($userId, $legacy);
         return;
     }

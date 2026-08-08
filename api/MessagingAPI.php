@@ -13,6 +13,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? ($_GET['action'] ?? 'threads') : 'threads');
 
@@ -197,7 +198,7 @@ function handleSend() {
     $input = parseSendInput();
 
     $receiverId = (int)($input['receiver_id'] ?? 0);
-    $content    = trim($input['content'] ?? '');
+    $content    = Sanitize::text($input['content'] ?? '');
     $file       = $input['file'] ?? null;
 
     $attachmentPath = null;

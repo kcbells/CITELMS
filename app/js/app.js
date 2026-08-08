@@ -68,6 +68,7 @@ const PAGE_PERMISSIONS = {
     // 'instructor/quizzes' removed — quizzes are now managed inside each subject's Classwork tab
     'instructor/gradebook':      'grades.view',
     'instructor/global-gradebook': 'grades.view',
+    'instructor/quiz-integrity': 'grades.view',
     'instructor/reports':        'reports.view',
     'instructor/analytics':      'analytics.view',
     // Student
