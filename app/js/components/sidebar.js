@@ -59,6 +59,7 @@ const menus = {
         ]},
         { items: [
             { icon: 'book', text: 'My Subjects', subjects: true, key: 'my-subjects', permission: null },
+            { icon: 'bank', text: 'Content Bank', page: 'content-bank', permission: null },
         ]},
         { items: [
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
@@ -97,7 +98,7 @@ const menus = {
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
         ]},
         { items: [
-            { icon: 'users', text: 'Sections', page: 'sections', permission: null },
+            { icon: 'users', text: 'Oversee Sections', page: 'sections', permission: null },
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: null },

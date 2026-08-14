@@ -490,6 +490,8 @@ export function classroomCss(accent) {
             background:#fff; color:#374151; border:1px solid ${BORDER};
         }
         .sc-rail-btn.outline:hover { background:#F9FAFB; }
+        .sc-rail-btn.danger { background:#FEF2F2; color:#B91C1C; border:1px solid #FCA5A5; }
+        .sc-rail-btn.danger:hover { background:#FEE2E2; }
         .sc-rail-foot { font-size:10px; color:#9CA3AF; margin:10px 0 0; text-align:center; }
         .sc-rail-work .sc-rail-title {
             display:flex; align-items:center; gap:8px;

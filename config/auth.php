@@ -43,7 +43,11 @@ require_once __DIR__ . '/constants.php';
  * Handles all authentication-related functions
  */
 class Auth {
-    
+
+    // Request-local cache for the current user's permission slugs — see
+    // permissions() below for why this replaced session-level caching.
+    private static $permissionsCache = null;
+
     /**
      * Check if user is logged in
      * 
@@ -278,10 +282,10 @@ class Auth {
                  WHERE rp.role = ?'
             );
             $stmt->execute([$role]);
-            $_SESSION['permissions'] = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            self::$permissionsCache = $stmt->fetchAll(PDO::FETCH_COLUMN);
         } catch (Exception $e) {
             // Table may not exist yet — fall back to empty set
-            $_SESSION['permissions'] = [];
+            self::$permissionsCache = [];
         }
     }
 
@@ -299,13 +303,23 @@ class Auth {
     /**
      * Get all permission slugs for the current user.
      *
+     * Cached per-REQUEST (static property), not per-SESSION. Session-level
+     * caching was the bug: an admin granting/revoking a permission in RBAC
+     * only ever touched their own session, so any other logged-in user of
+     * that role kept running on a stale, frozen permission list until they
+     * manually logged out and back in — "I granted the permission but the
+     * feature still doesn't work." Reloading fresh from the DB every
+     * request (cheap: one indexed query) fixes that with no user action
+     * needed, while the static var still avoids querying twice if
+     * permissions() is called more than once within the same request.
+     *
      * @return array
      */
     public static function permissions() {
-        if (!isset($_SESSION['permissions'])) {
+        if (self::$permissionsCache === null) {
             self::loadPermissions(self::role());
         }
-        return $_SESSION['permissions'] ?? [];
+        return self::$permissionsCache ?? [];
     }
 
     /**

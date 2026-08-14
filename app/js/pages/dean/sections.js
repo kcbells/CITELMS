@@ -1,103 +1,30 @@
 /**
- * Dean Sections Page
- * View-only sections with enrollment codes
+ * Sections Page — placeholder (shared by Dean and Program Head via alias)
  */
-import { Api } from '../../api.js';
-
 export async function render(container) {
-    const res = await Api.get('/SectionsAPI.php?action=list');
-    const sections = res.success ? res.data : [];
-
     container.innerHTML = `
         <style>
-            .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
-            .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .filters { display:flex; gap:12px; margin-bottom:20px; }
-            .filters input { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:240px; }
-
-            .sections-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:16px; }
-            .section-card { background:#fff; border:1px solid #e8e8e8; border-radius:14px; overflow:hidden; transition:border-color .2s; }
-            .section-card:hover { border-color:#1B4D3E; }
-            .section-top { padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
-            .enrollment-code { background:#1B4D3E; color:#fff; padding:5px 12px; border-radius:8px; font-family:monospace; font-size:13px; font-weight:700; letter-spacing:1px; cursor:pointer; }
-            .enrollment-code:hover { background:#006428; }
-            .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-            .badge-active { background:#E8F5E9; color:#1B4D3E; }
-            .badge-inactive { background:#FEE2E2; color:#b91c1c; }
-
-            .section-body { padding:0 20px 16px; }
-            .section-name { font-size:16px; font-weight:700; color:#262626; margin-bottom:2px; }
-            .section-subject { font-size:13px; color:#737373; margin-bottom:12px; }
-            .section-subject .code { background:#E8F5E9; color:#1B4D3E; padding:2px 6px; border-radius:4px; font-family:monospace; font-size:11px; margin-right:4px; }
-            .section-details { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
-            .detail-item { font-size:12px; color:#737373; }
-            .detail-item strong { color:#404040; display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; }
-            .enrollment-bar { background:#f0f0f0; height:6px; border-radius:3px; overflow:hidden; margin-bottom:4px; }
-            .enrollment-fill { height:100%; border-radius:3px; background:#00461B; }
-            .enrollment-text { font-size:11px; color:#737373; }
-
-            .copied-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1B4D3E; color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:9999; }
-            .empty-state-sm { text-align:center; padding:40px; color:#737373; }
-            @media(max-width:768px) { .sections-grid { grid-template-columns:1fr; } }
+            .rp-soon {
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                text-align: center; padding: 100px 20px; min-height: 400px;
+            }
+            .rp-soon-icon {
+                width: 72px; height: 72px; border-radius: 20px;
+                background: #E8F5E9; color: #1B4D3E;
+                display: flex; align-items: center; justify-content: center;
+                margin-bottom: 20px;
+            }
+            .rp-soon h2 { margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #1f2937; }
+            .rp-soon p { margin: 0; font-size: 14px; color: #6b7280; max-width: 360px; }
         </style>
-
-        <div class="filters"><input type="text" id="search" placeholder="Search section, subject, or instructor..."></div>
-
-        <div class="sections-grid" id="grid">
-            ${renderCards(sections)}
+        <div class="rp-soon">
+            <div class="rp-soon-icon">
+                <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+                </svg>
+            </div>
+            <h2>Coming Soon</h2>
+            <p>Oversee Sections is being reworked. Check back later.</p>
         </div>
     `;
-
-    container.querySelector('#search').addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase();
-        const filtered = sections.filter(s =>
-            (s.section_name + ' ' + s.subject_code + ' ' + s.subject_name + ' ' + (s.instructor_name||'')).toLowerCase().includes(q)
-        );
-        container.querySelector('#grid').innerHTML = renderCards(filtered);
-        bindCopy(container);
-    });
-
-    bindCopy(container);
 }
-
-function bindCopy(container) {
-    container.querySelectorAll('[data-copy]').forEach(el => {
-        el.addEventListener('click', () => {
-            navigator.clipboard.writeText(el.dataset.copy);
-            const t = document.createElement('div');
-            t.className = 'copied-toast';
-            t.textContent = 'Code copied!';
-            document.body.appendChild(t);
-            setTimeout(() => t.remove(), 2000);
-        });
-    });
-}
-
-function renderCards(list) {
-    if (!list.length) return '<div class="empty-state-sm">No sections found</div>';
-    return list.map(s => {
-        const pct = s.max_students > 0 ? Math.round((s.student_count / s.max_students) * 100) : 0;
-        return `
-        <div class="section-card">
-            <div class="section-top">
-                <span class="enrollment-code" data-copy="${esc(s.enrollment_code)}" title="Click to copy">${esc(s.enrollment_code)}</span>
-                <span class="badge badge-${s.status}">${s.status}</span>
-            </div>
-            <div class="section-body">
-                <div class="section-name">${esc(s.section_name)}</div>
-                <div class="section-subject"><span class="code">${esc(s.subject_code)}</span>${esc(s.subject_name)}</div>
-                <div class="section-details">
-                    <div class="detail-item"><strong>Schedule</strong>${esc(s.schedule||'TBA')}</div>
-                    <div class="detail-item"><strong>Room</strong>${esc(s.room||'TBA')}</div>
-                    <div class="detail-item"><strong>Instructor</strong>${esc(s.instructor_name||'Unassigned')}</div>
-                    <div class="detail-item"><strong>Semester</strong>${esc(s.semester_name||'—')}</div>
-                </div>
-                <div class="enrollment-bar"><div class="enrollment-fill" style="width:${pct}%"></div></div>
-                <div class="enrollment-text">${s.student_count} / ${s.max_students} students (${pct}%)</div>
-            </div>
-        </div>`;
-    }).join('');
-}
-
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }

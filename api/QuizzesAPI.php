@@ -18,6 +18,7 @@ require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
 require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
 require_once __DIR__ . '/helpers/QuizProctorHelper.php';
+require_once __DIR__ . '/helpers/ScopeHelper.php';
 
 header('Content-Type: application/json');
 ini_set('display_errors', '0');
@@ -481,13 +482,29 @@ function createQuiz() {
     }
 
     $userId = Auth::id();
-    $teaches = db()->fetchOne(
-        "SELECT 1 FROM subject_offered WHERE subject_id = ? AND user_teacher_id = ? AND status = 'open' LIMIT 1",
-        [$subjectId, $userId]
-    );
-    if (!$teaches) {
-        echo json_encode(['success' => false, 'message' => 'You do not teach this subject']);
-        return;
+    $role   = Auth::role();
+
+    if (in_array($role, ['dean', 'program_head'], true)) {
+        // Dean/program head oversee the subject itself, not one specific
+        // teacher's offering of it — same reasoning as Sections/Announcements.
+        $subject = db()->fetchOne("SELECT program_id FROM subject WHERE subject_id = ?", [$subjectId]);
+        $progId  = (int)($subject['program_id'] ?? 0);
+        $allowed = $role === 'dean'
+            ? in_array($progId, deanProgramIds(), true)
+            : ($progId && $progId === (int)(programHeadScope()['program_id'] ?? 0));
+        if (!$progId || !$allowed) {
+            echo json_encode(['success' => false, 'message' => 'This subject is not in your program']);
+            return;
+        }
+    } else {
+        $teaches = db()->fetchOne(
+            "SELECT 1 FROM subject_offered WHERE subject_id = ? AND user_teacher_id = ? AND status = 'open' LIMIT 1",
+            [$subjectId, $userId]
+        );
+        if (!$teaches) {
+            echo json_encode(['success' => false, 'message' => 'You do not teach this subject']);
+            return;
+        }
     }
 
     try {

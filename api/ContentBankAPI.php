@@ -16,7 +16,7 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole('instructor');
+Auth::requireRole(['instructor', 'program_head', 'dean']);
 
 $action = $_GET['action'] ?? '';
 

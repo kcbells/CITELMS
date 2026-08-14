@@ -19,13 +19,40 @@ if (!Auth::check()) {
 
 $action = $_GET['action'] ?? '';
 
-// Only instructors (who own their announcements) and admins may create/edit/delete
-// announcements or their materials — students/other roles are read-only here.
+// Instructors (who own their announcements), program heads and deans co-managing
+// a subject, and admins may create/edit/delete announcements or their materials —
+// students/other roles are read-only here.
 $announcementWriteActions = ['create', 'update', 'delete', 'upload-material', 'add-link'];
-if (in_array($action, $announcementWriteActions, true) && !in_array(Auth::role(), ['instructor', 'admin'], true)) {
+if (in_array($action, $announcementWriteActions, true) && !in_array(Auth::role(), ['instructor', 'admin', 'program_head', 'dean'], true)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Permission denied']);
     exit;
+}
+
+// Resolves which subject_offered row an announcement should attach to.
+// Instructors must be the assigned teacher of that offering. Program heads
+// and deans have oversight authority over the whole subject regardless of
+// which instructor is assigned to it, so they resolve to any open offering
+// for that subject — otherwise this silently returned nothing for them and
+// the announcement got created/updated with no subject/section attached.
+function resolveAnnouncementOffering($subjectId, $userId, $role) {
+    if (!$subjectId) return null;
+    if (in_array($role, ['program_head', 'dean'], true)) {
+        $offering = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered
+             WHERE subject_id = ? AND status = 'open'
+             ORDER BY subject_offered_id DESC LIMIT 1",
+            [$subjectId]
+        );
+    } else {
+        $offering = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered
+             WHERE subject_id = ? AND user_teacher_id = ? AND status = 'open'
+             ORDER BY subject_offered_id DESC LIMIT 1",
+            [$subjectId, $userId]
+        );
+    }
+    return $offering ? $offering['subject_offered_id'] : null;
 }
 
 function ensureAnnouncementSectionTable() {
@@ -238,19 +265,7 @@ function createAnnouncement() {
     }
 
     try {
-        $subjectOfferedId = null;
-        if ($subjectId) {
-            $offering = db()->fetchOne(
-                "SELECT so.subject_offered_id
-                 FROM subject_offered so
-                 WHERE so.subject_id = ? AND so.user_teacher_id = ? AND so.status = 'open'
-                 ORDER BY so.subject_offered_id DESC LIMIT 1",
-                [$subjectId, $userId]
-            );
-            if ($offering) {
-                $subjectOfferedId = $offering['subject_offered_id'];
-            }
-        }
+        $subjectOfferedId = resolveAnnouncementOffering($subjectId, $userId, Auth::role());
 
         $pdo = pdo();
         $stmt = $pdo->prepare(
@@ -305,18 +320,7 @@ function updateAnnouncement() {
             "SELECT status FROM announcement WHERE announcement_id = ? AND user_id = ?",
             [$annId, $userId]
         );
-        $subjectOfferedId = null;
-        if ($subjectId) {
-            $offering = db()->fetchOne(
-                "SELECT so.subject_offered_id FROM subject_offered so
-                 WHERE so.subject_id = ? AND so.user_teacher_id = ? AND so.status = 'open'
-                 ORDER BY so.subject_offered_id DESC LIMIT 1",
-                [$subjectId, $userId]
-            );
-            if ($offering) {
-                $subjectOfferedId = $offering['subject_offered_id'];
-            }
-        }
+        $subjectOfferedId = resolveAnnouncementOffering($subjectId, $userId, Auth::role());
 
         $stmt = pdo()->prepare(
             "UPDATE announcement SET title = ?, content = ?, status = ?,
@@ -377,7 +381,25 @@ function getStudentAnnouncements() {
     $userId = Auth::id();
     $subjectId = $_GET['subject_id'] ?? '';
 
+    // The query below references announcement_section and announcement_student
+    // for targeting checks — but those tables are only ever CREATEd lazily, on
+    // the write path (attachAnnouncementSections/attachAnnouncementStudents),
+    // never here on the read path. If no announcement had used per-section or
+    // per-student targeting yet, this table simply didn't exist, the query
+    // below threw, and the catch block silently returned "Database error" —
+    // which is exactly why announcements never showed up on the student side
+    // at all, for every student, regardless of targeting.
+    ensureAnnouncementSectionTable();
+    ensureAnnouncementStudentTable();
+
     try {
+        // A subject can have several open subject_offered rows at once (one per
+        // teacher/section). A regular instructor's announcement is correctly
+        // scoped to just their own offering (their own class). But a dean or
+        // program_head posting "All students" to a subject means the WHOLE
+        // subject, not whichever one offering the code happened to attach it
+        // to — so for those two roles, match by subject_id (any offering the
+        // student is enrolled in for that subject), not the exact offering.
         $sql = "SELECT a.*, s.subject_id, s.subject_code, s.subject_name,
                     u.first_name as author_first, u.last_name as author_last
                 FROM announcement a
@@ -387,9 +409,20 @@ function getStudentAnnouncements() {
                 WHERE a.status = 'published'
                 AND (a.subject_offered_id IS NULL
                      OR (
-                         a.subject_offered_id IN (
-                             SELECT ss.subject_offered_id FROM student_subject ss
-                             WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                         (
+                             (u.role IN ('dean', 'program_head')
+                              AND EXISTS (
+                                  SELECT 1 FROM student_subject ssw
+                                  JOIN subject_offered sow ON sow.subject_offered_id = ssw.subject_offered_id
+                                  WHERE ssw.user_student_id = ? AND ssw.status = 'enrolled'
+                                    AND sow.subject_id = so.subject_id
+                              ))
+                             OR
+                             (u.role NOT IN ('dean', 'program_head')
+                              AND a.subject_offered_id IN (
+                                  SELECT ss.subject_offered_id FROM student_subject ss
+                                  WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+                              ))
                          )
                          AND (
                              (
@@ -411,7 +444,7 @@ function getStudentAnnouncements() {
                              )
                          )
                      ))";
-        $params = [$userId, $userId, $userId];
+        $params = [$userId, $userId, $userId, $userId];
 
         if ($subjectId) {
             $sql .= " AND so.subject_id = ?";

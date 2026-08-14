@@ -582,7 +582,7 @@ function getQuizScores() {
  * Get attempts with pending essay grades for instructor
  */
 function getPendingGrading() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     $userId = Auth::id();
     $subjectId = $_GET['subject_id'] ?? '';
 
@@ -638,7 +638,7 @@ function getPendingGrading() {
  * flagged attempts instead of stumbling on them per-quiz.
  */
 function getFlaggedAttempts() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     $userId = Auth::id();
     $subjectId = $_GET['subject_id'] ?? '';
 
@@ -683,7 +683,7 @@ function getFlaggedAttempts() {
  * Get full attempt details with all answers for grading
  */
 function getAttemptAnswers() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     $attemptId = (int)($_GET['attempt_id'] ?? 0);
     if (!$attemptId) {
         echo json_encode(['success' => false, 'message' => 'Attempt ID required']);
@@ -743,7 +743,7 @@ function getAttemptAnswers() {
  * Grade a single answer (essay/short answer)
  */
 function gradeAnswer() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -817,7 +817,7 @@ function gradeAnswer() {
  * Finalize grading: recalculate attempt score after all essays graded
  */
 function finalizeGrading() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -878,7 +878,7 @@ function finalizeGrading() {
 // ── Trigger AI grading for a single answer (instructor-initiated) ────────────
 
 function aiGradeAnswerById() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -959,7 +959,7 @@ function aiGradeAnswerById() {
  * Run AI checker on all pending subjective answers for a quiz.
  */
 function aiGradeQuizPending() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -1053,7 +1053,7 @@ function aiGradeQuizPending() {
  * Sets grading_status to 'auto_graded' — instructor must still confirm each one.
  */
 function aiGradeAttemptPending() {
-    Auth::requireRole('instructor');
+    Auth::requireRole(['instructor', 'program_head', 'dean']);
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']); return;
     }

@@ -97,6 +97,34 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 
+// ─── Dean scope helper ──────────────────────────────────────────────────────
+// A dean's OWN users.program_id is only their "primary" program — a dean can
+// actually oversee several programs at once via the department_program
+// junction table (multi-program departments). Every dean-ownership check in
+// this file used to compare against that single program_id only, which
+// wrongly rejected a dean managing a subject under any of their OTHER
+// programs ("You do not have access to this student's enrollment" for a
+// dean who very much does). This mirrors the canonical multi-program pattern
+// already used in SubjectOfferingsAPI.php / SearchAPI.php / ElectiveAPI.php.
+function deanProgramIds(): array {
+    static $ids = null;
+    if ($ids === null) {
+        $row = db()->fetchOne("SELECT program_id, department_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $ids = [];
+        if (!empty($row['department_id'])) {
+            $rows = db()->fetchAll(
+                "SELECT program_id FROM department_program WHERE department_id = ?",
+                [$row['department_id']]
+            );
+            $ids = array_map(fn($r) => (int)$r['program_id'], $rows);
+        }
+        if (!$ids && !empty($row['program_id'])) {
+            $ids = [(int)$row['program_id']];
+        }
+    }
+    return $ids;
+}
+
 // ─── Program Head scope helper ─────────────────────────────────────────────
 // A program head is scoped to their OWN program, further narrowed to the
 // year level range the dean assigned them (users.year_level_from/to, set via
@@ -135,13 +163,13 @@ function handleList() {
     $params     = [];
     if ($semesterId) { $conditions[] = 'sec.semester_id = ?'; $params[] = $semesterId; }
     if ($programId)  { $conditions[] = 'sec.program_id = ?';  $params[] = $programId;  }
-    // Dean: scope to their own program only
+    // Dean: scope to every program they manage (can be more than one)
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $progId   = $deanUser['program_id'] ?? null;
-        if ($progId) {
-            $conditions[] = 'sec.program_id = ?';
-            $params[]     = $progId;
+        $progIds = deanProgramIds();
+        if ($progIds) {
+            $ph = implode(',', array_fill(0, count($progIds), '?'));
+            $conditions[] = "sec.program_id IN ($ph)";
+            array_push($params, ...$progIds);
         }
     }
     // Program Head: scope to their own program AND their assigned year range
@@ -228,20 +256,18 @@ function handleCreate() {
         return;
     }
 
-    // Dean: verify program is their own
+    // Dean: verify program is one of theirs (can manage more than one)
     if (Auth::role() === 'dean' && $programId) {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanProg = (int)($deanUser['program_id'] ?? 0);
-        if (!$deanProg || $deanProg !== $programId) {
+        if (!in_array($programId, deanProgramIds(), true)) {
             http_response_code(403);
             echo json_encode(['success' => false, 'message' => 'Access denied: program not in your scope']);
             return;
         }
     }
-    // Dean: if no program_id supplied, default to their own program
+    // Dean: if no program_id supplied, default to their primary program
     if (Auth::role() === 'dean' && !$programId) {
-        $deanUser  = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $programId = (int)($deanUser['program_id'] ?? 0);
+        $progIds   = deanProgramIds();
+        $programId = $progIds[0] ?? null;
     }
 
     // For instructors: auto-fill program_id from their profile if not provided
@@ -736,9 +762,8 @@ function handleSubjectSections() {
     }
 
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanProg = (int)($deanUser['program_id'] ?? 0);
-        if ($deanProg && (int)($subject['program_id'] ?? 0) !== $deanProg) {
+        $progIds = deanProgramIds();
+        if ($progIds && !in_array((int)($subject['program_id'] ?? 0), $progIds, true)) {
             echo json_encode(['success' => false, 'message' => 'Subject not in your program']);
             return;
         }
@@ -905,7 +930,7 @@ function handleCreateForSubject() {
             echo json_encode(['success' => false, 'message' => 'You can only create sections for your assigned subjects']);
             return;
         }
-    } elseif (!in_array($role, ['dean', 'admin'], true)) {
+    } elseif (!in_array($role, ['dean', 'admin', 'program_head'], true)) {
         echo json_encode(['success' => false, 'message' => 'Not authorized']);
         return;
     }
@@ -925,6 +950,17 @@ function handleCreateForSubject() {
         $active = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
         if ($active) {
             $semesterId = (int)$active['semester_id'];
+        }
+    }
+
+    // Program Head: this subject's program must be their own assigned program.
+    // (This path never sets a year_level on the section itself — it's tied to
+    // the subject's own offering — so only the program needs checking here.)
+    if ($role === 'program_head') {
+        $scope = programHeadScope();
+        if (!$scope['program_id'] || $scope['program_id'] !== $programId) {
+            echo json_encode(['success' => false, 'message' => 'Access denied: program not in your scope']);
+            return;
         }
     }
 
@@ -1331,13 +1367,17 @@ function handleSemesters() {
 
 function handlePrograms() {
     if (Auth::role() === 'dean') {
-        // Dean: return only their own program
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $progId   = (int)($deanUser['program_id'] ?? 0);
-        $programs = $progId ? db()->fetchAll(
-            "SELECT program_id, program_code, program_name FROM program WHERE program_id = ? AND status = 'active'",
-            [$progId]
-        ) : [];
+        // Dean: return every program they manage (can be more than one)
+        $progIds = deanProgramIds();
+        if ($progIds) {
+            $ph = implode(',', array_fill(0, count($progIds), '?'));
+            $programs = db()->fetchAll(
+                "SELECT program_id, program_code, program_name FROM program WHERE program_id IN ($ph) AND status = 'active' ORDER BY program_code",
+                $progIds
+            );
+        } else {
+            $programs = [];
+        }
     } elseif (Auth::role() === 'program_head') {
         // Program Head: same as dean — scoped to their own single program
         $scope    = programHeadScope();
@@ -1362,15 +1402,14 @@ function handlePrograms() {
 }
 
 function handleDepartments() {
-    // Dean: return only the department of their program
+    // Dean: return their own department directly
     if (Auth::role() === 'dean') {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $progId   = (int)($deanUser['program_id'] ?? 0);
-        $depts = $progId ? db()->fetchAll(
-            "SELECT d.department_id, d.department_name, d.department_code
-             FROM department d JOIN program p ON p.department_id = d.department_id
-             WHERE p.program_id = ? AND d.status = 'active'",
-            [$progId]
+        $deanUser = db()->fetchOne("SELECT department_id FROM users WHERE users_id = ?", [Auth::id()]);
+        $deptId   = (int)($deanUser['department_id'] ?? 0);
+        $depts = $deptId ? db()->fetchAll(
+            "SELECT department_id, department_name, department_code
+             FROM department WHERE department_id = ? AND status = 'active'",
+            [$deptId]
         ) : [];
     } else {
         $depts = db()->fetchAll(
@@ -1684,9 +1723,7 @@ function sectionRow_userCanManage($sectionId) {
     if (!$section) return false;
 
     if ($role === 'dean') {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanProg = (int)($deanUser['program_id'] ?? 0);
-        return $deanProg && $deanProg === (int)($section['program_id'] ?? 0);
+        return in_array((int)($section['program_id'] ?? 0), deanProgramIds(), true);
     }
 
     if ($role === 'program_head') {
@@ -1710,7 +1747,8 @@ function sectionRow_userCanManage($sectionId) {
 
 // Ownership check reused by handleUnenroll:
 // admin always allowed; instructor must own the offering (subject_offered.user_teacher_id);
-// dean must own the program (matches the single-program convention used elsewhere in this file).
+// dean must manage one of the programs this offering belongs to (a dean can
+// oversee several programs via department_program — see deanProgramIds()).
 function sectionOffered_userCanManage(array $row) {
     $role = Auth::role();
     if ($role === 'admin') return true;
@@ -1720,9 +1758,7 @@ function sectionOffered_userCanManage(array $row) {
     }
 
     if ($role === 'dean') {
-        $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
-        $deanProg = (int)($deanUser['program_id'] ?? 0);
-        return $deanProg && $deanProg === (int)($row['program_id'] ?? 0);
+        return in_array((int)($row['program_id'] ?? 0), deanProgramIds(), true);
     }
 
     if ($role === 'program_head') {

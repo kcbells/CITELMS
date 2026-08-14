@@ -1000,7 +1000,12 @@ export async function render(container, params) {
         const lessonId = state.selectedWork.id;
         await renderEmbedded(host, lessonId, {
             focus: true,
-            hideMaterials: false,
+            // The "Attached files" card above this embed (materialsBlock,
+            // built from state.workMaterials) already renders every
+            // attachment once. Leaving this false made the embedded lesson
+            // viewer render the exact same files again right below it —
+            // the duplicated image card you're seeing.
+            hideMaterials: true,
             hideActions: true,
             hideHeader: true,
             onSelectLesson: (lid) => openWork('lesson', lid),

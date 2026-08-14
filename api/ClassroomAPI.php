@@ -114,6 +114,39 @@ function requireClassAccess($subjectId, $userId) {
         return $row;
     }
 
+    // Dean / Program Head: they oversee the whole subject, not one teacher's
+    // specific offering of it (a subject can have several open offerings —
+    // one per teacher/section). Resolve to any open offering just so the page
+    // has something to key off of; is_overseer tells callers like
+    // getClassmates() to show everyone across every offering of the subject,
+    // not filter down to "students of one particular teacher."
+    if (in_array($role, ['dean', 'program_head'], true)) {
+        $row = db()->fetchOne(
+            "SELECT so.subject_offered_id, s.subject_id, s.subject_code, s.subject_name, s.units,
+                    (SELECT sec.section_id FROM section_subject ss
+                     JOIN section sec ON sec.section_id = ss.section_id
+                     WHERE ss.subject_offered_id = so.subject_offered_id AND ss.status = 'active'
+                     ORDER BY sec.section_name LIMIT 1) AS section_id,
+                    (SELECT GROUP_CONCAT(DISTINCT sec.section_name ORDER BY sec.section_name SEPARATOR ', ')
+                     FROM section_subject ss
+                     JOIN section sec ON sec.section_id = ss.section_id
+                     WHERE ss.subject_offered_id = so.subject_offered_id AND ss.status = 'active') AS section_name
+             FROM subject_offered so
+             JOIN subject s ON s.subject_id = so.subject_id
+             WHERE s.subject_id = ? AND so.status = 'open'
+             ORDER BY so.subject_offered_id DESC
+             LIMIT 1",
+            [$subjectId]
+        );
+        if (!$row) {
+            echo json_encode(['success' => false, 'message' => 'This subject has no open offering yet']);
+            exit;
+        }
+        $row['is_instructor'] = true;
+        $row['is_overseer']   = true;
+        return $row;
+    }
+
     $row = db()->fetchOne(
         "SELECT ss.student_subject_id, ss.section_id, ss.subject_offered_id,
                 s.subject_id, s.subject_code, s.subject_name, s.units,
@@ -214,20 +247,24 @@ function getClassmates() {
     try {
         $enrollment = requireClassAccess($subjectId, $userId);
         $isInstructor = !empty($enrollment['is_instructor']);
+        $isOverseer   = !empty($enrollment['is_overseer']);
 
         $sectionFilter = (int)($_GET['section_id'] ?? 0);
 
         if ($isInstructor) {
+            // Dean/program_head oversee the whole subject — every offering,
+            // every teacher's section. A real instructor only sees students
+            // in their own offering.
             $sql = "SELECT DISTINCT u.users_id, u.first_name, u.last_name, u.student_id, u.email,
                         CONCAT(u.first_name, ' ', u.last_name) AS full_name,
-                        sec.section_name, ss.section_id,
+                        sec.section_name, ss.section_id, ss.student_subject_id,
                         0 AS is_me
                  FROM subject_offered so
                  JOIN student_subject ss ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'enrolled'
                  JOIN users u ON u.users_id = ss.user_student_id AND u.role = 'student'
                  LEFT JOIN section sec ON sec.section_id = ss.section_id
-                 WHERE so.user_teacher_id = ? AND so.subject_id = ?";
-            $params = [$userId, $subjectId];
+                 WHERE so.subject_id = ?" . ($isOverseer ? "" : " AND so.user_teacher_id = ?");
+            $params = $isOverseer ? [$subjectId] : [$subjectId, $userId];
             if ($sectionFilter) {
                 $sql .= " AND ss.section_id = ?";
                 $params[] = $sectionFilter;

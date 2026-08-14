@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/xampp_nen/php/php.exe scratch_final_check.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_debug.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_fix_ann6.php)",
+      "Bash(rm -f scratch_fix_ann6.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_full_check.php)",
+      "Bash(rm -f scratch_full_check.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_ivan_check.php)",
+      "Bash(rm -f scratch_ivan_check.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_lesson_check.php)",
+      "Bash(awk 'NR<=318 && /^function/{name=$0; line=NR} END{print line\": \"name}' api/LessonsAPI.php)",
+      "Bash(/c/xampp_nen/php/php.exe -l api/LessonsAPI.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_lesson_materials.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_add_link.php)",
+      "Bash(rm -f scratch_add_link.php)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_find_email.php)",
+      "Bash(rm -f scratch_find_email.php)",
+      "Bash(/c/xampp_nen/php/php.exe -l api/helpers/ScopeHelper.php)",
+      "Bash(/c/xampp_nen/php/php.exe -l api/QuizzesAPI.php)"
+    ]
+  }
+}

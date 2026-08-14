@@ -114,6 +114,7 @@ const PAGE_ALIASES = {
     'dean/gradebook':               'instructor/gradebook',
     'dean/my-classes':              'instructor/my-classes',
     'dean/calendar':                'instructor/calendar',
+    'dean/content-bank':            'instructor/content-bank',
     // Admin messaging — reuse instructor messages page
     'admin/messages':               'instructor/messages',
     // Program Head — no dedicated pages; teaches like an instructor

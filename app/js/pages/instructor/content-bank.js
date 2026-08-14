@@ -836,8 +836,12 @@ function feedPostHtml(item, mode, index) {
             }</div>`;
         }
         stats = `<span>${icon('copy', { size: 12, className: 'ui-icon-inline' })} ${item.copy_count ?? 0} copies</span>`;
-        if (isOwn) {
-            actions = `<button type="button" class="fb-action danger" data-lesson-delete="${item.bank_id}">${L.remove}</button>`;
+        // Dean has moderation authority over the whole bank, not just their own
+        // posts — same reasoning as the backend's deleteLesson()/deleteQuestion().
+        const canModerate = isOwn || currentUser?.role === 'dean';
+        if (canModerate) {
+            const label = isOwn ? L.remove : 'Remove (moderator)';
+            actions = `<button type="button" class="fb-action danger" data-lesson-delete="${item.bank_id}">${label}</button>`;
         }
     } else if (type === 'quiz') {
         if (item.quiz_description) {
