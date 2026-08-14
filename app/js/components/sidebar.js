@@ -72,6 +72,9 @@ const menus = {
             ]},
         ]},
         { items: [
+            { icon: 'users', text: 'Sections', page: 'sections', permission: null },
+        ]},
+        { items: [
             { icon: 'user', text: 'Manage Faculty', page: 'instructors', permission: null },
         ]},
         { items: [
@@ -94,6 +97,9 @@ const menus = {
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
         ]},
         { items: [
+            { icon: 'users', text: 'Sections', page: 'sections', permission: null },
+        ]},
+        { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: null },
         ]},
         { items: [
@@ -114,9 +120,6 @@ const menus = {
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: 'grades.view' },
-        ]},
-        { items: [
-            { icon: 'chart', text: 'Quiz Integrity', page: 'quiz-integrity', permission: 'grades.view' },
         ]},
         { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },

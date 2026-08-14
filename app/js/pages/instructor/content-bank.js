@@ -75,6 +75,9 @@ export async function render(container) {
             .fb-feed { display:flex; flex-direction:column; gap:14px; }
             .fb-post { background:#fff; border:1px solid #E5E7EB; border-radius:12px; overflow:hidden; }
             .fb-post-head { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 0; }
+            .fb-post-head-own { cursor:pointer; border-radius:8px; margin:-4px -6px 0; padding:18px 22px 0; transition:background .15s; }
+            .fb-post-head-own:hover { background:#F0F2F5; }
+            .fb-post-head-own:hover .fb-post-name { text-decoration:underline; }
             .fb-avatar { width:40px; height:40px; border-radius:50%; background:#00461B; color:#fff; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
             .fb-avatar.sm { width:32px; height:32px; font-size:11px; }
             .fb-post-meta { flex:1; min-width:0; }
@@ -885,7 +888,7 @@ function feedPostHtml(item, mode, index) {
 
     return `
         <article class="fb-post" data-feed-idx="${index}" ${ref ? `data-post-type="${esc(ref.post_type)}" data-post-id="${ref.post_id}"` : ''}>
-            <div class="fb-post-head">
+            <div class="fb-post-head${isOwn ? ' fb-post-head-own' : ''}" ${isOwn ? 'data-goto-mine="1" title="View my posts"' : ''}>
                 <div class="fb-avatar">${esc(initials)}</div>
                 <div class="fb-post-meta">
                     <div class="fb-post-name">${esc(name)}</div>
@@ -910,6 +913,12 @@ function feedPostHtml(item, mode, index) {
 }
 
 function bindFeedEvents(wrap, items, mode) {
+    // Clicking your own name/avatar on a post jumps to the "My Posts" tab
+    wrap.querySelectorAll('[data-goto-mine]').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelector('.cb-tab[data-tab="mine"]')?.click();
+        });
+    });
     wrap.querySelectorAll('[data-feed-view]').forEach(el => {
         el.addEventListener('click', (e) => {
             if (e.target.closest('a, button')) return;

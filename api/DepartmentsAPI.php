@@ -57,6 +57,10 @@ function deanCampusIdsForDept(): array {
 
 function handleList() {
     $campusId = (int)($_GET['campus_id'] ?? 0);
+    // status: 'active' (default, preserves every existing caller that just
+    // wants active departments for a dropdown), 'inactive' (archived only),
+    // or 'all' (both — used by the admin Departments page's Archive view).
+    $status = $_GET['status'] ?? 'active';
 
     // Dean: always scoped to their own campus(es), ignoring any foreign campus_id request
     $deanCampusIds = deanCampusIdsForDept();
@@ -69,6 +73,7 @@ function handleList() {
         $deanCampusFilter  = "AND campus_id IN ($ph)";
         $whereCampusClause = "AND d.campus_id IN ($ph)";
     }
+    $statusClause = $status === 'all' ? '' : "AND d.status = " . ($status === 'inactive' ? "'inactive'" : "'active'");
 
     // Params appear twice: once for the correlated subquery's filter, once for the outer WHERE
     $params = array_merge($filterCampusIds, $filterCampusIds);
@@ -92,7 +97,7 @@ function handleList() {
                $deanCampusFilter
              ORDER BY created_at DESC LIMIT 1
          )
-         WHERE d.status = 'active' $whereCampusClause
+         WHERE 1=1 $statusClause $whereCampusClause
          ORDER BY d.department_name",
         $params
     );

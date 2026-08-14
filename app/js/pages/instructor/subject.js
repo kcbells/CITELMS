@@ -19,6 +19,7 @@ import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
 import { mountClassComposer } from '../../components/class-composer.js';
 import { mountInstructorGradebook } from './gradebook.js';
+import { mountQuizIntegrityTab } from './subject-integrity.js';
 import { buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
 import { notify } from '../../utils/notify.js';
 
@@ -29,7 +30,7 @@ export async function render(container, params) {
     const subjectId = params?.subject_id || hashParams.get('subject_id');
     const urlSectionId = params?.section_id || hashParams.get('section_id');
     const urlTab = params?.tab || hashParams.get('tab') || 'classwork';
-    const validTabs = ['classwork', 'people', 'gradebook'];
+    const validTabs = ['classwork', 'people', 'gradebook', 'integrity'];
 
     if (!subjectId) {
         container.innerHTML = emptyMsg('No class selected.', '#instructor/my-classes', 'Back to My Classes');
@@ -248,6 +249,7 @@ export async function render(container, params) {
         if (state.tab === 'classwork') return renderClasswork();
         if (state.tab === 'people') return renderPeople();
         if (state.tab === 'gradebook') return '<div id="sc-gradebook-host"></div>';
+        if (state.tab === 'integrity') return '<div id="sc-integrity-host"></div>';
         return '';
     }
 
@@ -276,6 +278,11 @@ export async function render(container, params) {
         if (state.tab === 'gradebook' && !state.selectedWork) {
             const host = container.querySelector('#sc-gradebook-host');
             if (host) mountInstructorGradebook(host, { subjectId });
+        }
+
+        if (state.tab === 'integrity' && !state.selectedWork) {
+            const host = container.querySelector('#sc-integrity-host');
+            if (host) mountQuizIntegrityTab(host, subjectId);
         }
 
         if (state.tab === 'classwork' && !state.selectedWork) {
@@ -336,6 +343,7 @@ export async function render(container, params) {
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork" aria-selected="${state.tab === 'classwork'}">Classwork</button>
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people" aria-selected="${state.tab === 'people'}">People</button>
                                 <button type="button" role="tab" class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" aria-selected="${state.tab === 'gradebook'}">Gradebook</button>
+                                <button type="button" role="tab" class="sc-tab ${state.tab === 'integrity' ? 'active' : ''}" data-tab="integrity" aria-selected="${state.tab === 'integrity'}">Integrity</button>
                             </nav>
                             <div id="sc-body" class="sc-body"></div>
                             </div>

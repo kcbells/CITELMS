@@ -66,7 +66,12 @@
       "WebFetch(domain:coc.phinma.edu.ph)",
       "WebFetch(domain:en.wikipedia.org)",
       "WebFetch(domain:grokipedia.com)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(/c/xampp_nen/php/php.exe scratch_grade_check.php)",
+      "Bash(\"/c/laragon/bin/mysql/mysql-8.4.3-winx64/bin/mysql.exe\" -u root cit_lms -e \"SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA='cit_lms' AND TABLE_COLLATION LIKE '%0900%';\")",
+      "Bash(\"/c/laragon/bin/mysql/mysql-8.4.3-winx64/bin/mysql.exe\" -u root cit_lms -e \"SELECT TABLE_NAME, COLUMN_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='cit_lms' AND COLLATION_NAME LIKE '%0900%';\")",
+      "Bash(\"/c/laragon/bin/mysql/mysql-8.4.3-winx64/bin/mysqldump.exe\" -u root --no-tablespaces cit_lms)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

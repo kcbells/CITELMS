@@ -101,19 +101,16 @@
         .hero-bg {
             position: absolute; inset: 0;
             background: #fff;
-        }
-        .hero-bg::before {
-            content: ''; position: absolute; inset: 0;
-            background-image: radial-gradient(rgba(27,77,46,.06) 1px, transparent 1px);
-            background-size: 28px 28px;
-            mask-image: radial-gradient(ellipse at center, #000 0%, transparent 75%);
+            background-image: url('assets/images/campus-building.jpg');
+            background-size: cover;
+            background-position: center;
         }
         .hero-overlay {
-            position: absolute; inset: 0;
-            background: none;
+            position: absolute; inset: 0; z-index: 1;
+            background: rgba(6,20,10,.58);
         }
         .hero-inner {
-            position: relative; z-index: 1;
+            position: relative; z-index: 2;
             max-width: 860px; width: 100%; margin: 0 auto; padding: 0 28px;
         }
         .hero-content {
@@ -160,10 +157,10 @@
             line-height: 1.08; letter-spacing: -1.5px; margin-bottom: 22px;
             animation: fadeDown .7s ease both; animation-delay: .25s;
         }
-        .hero h1 .white { color: var(--gray-900); display: block; }
-        .hero h1 .gold  { color: var(--gold-dark); display: block; }
+        .hero h1 .white { color: #fff; display: block; }
+        .hero h1 .gold  { color: var(--gold); display: block; }
         .hero-desc {
-            font-size: 17px; color: var(--gray-600);
+            font-size: 17px; color: rgba(255,255,255,.88);
             line-height: 1.75; margin-bottom: 44px; max-width: 600px; margin-left: auto; margin-right: auto;
             animation: fadeDown .7s ease both; animation-delay: .4s;
         }
@@ -358,15 +355,8 @@
         .prog-carousel-wrap { position:relative; margin-top:52px; }
         .prog-carousel { display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; padding:8px 4px 24px; scrollbar-width:none; -ms-overflow-style:none; }
         .prog-carousel::-webkit-scrollbar { display:none; }
-        .col-card { flex:0 0 340px; height:480px; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; flex-direction:column; background:#fff; border:1.5px solid var(--gray-200); box-shadow:0 6px 24px rgba(0,0,0,.06); transition:transform .22s,box-shadow .22s; cursor:default; position:relative; }
+        .col-card { flex:0 0 340px; height:480px; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; flex-direction:column; background:#fff; border:1.5px solid #000; box-shadow:0 6px 24px rgba(0,0,0,.06); transition:transform .22s,box-shadow .22s; cursor:default; position:relative; }
         .col-card:hover { transform:translateY(-4px); box-shadow:0 16px 40px rgba(0,0,0,.1); }
-        .col-card::before { content:''; position:absolute; top:0; left:0; right:0; height:5px; z-index:2; }
-        .col-card:has(.cc-green)::before  { background:var(--green); }
-        .col-card:has(.cc-maroon)::before { background:#C23A63; }
-        .col-card:has(.cc-blue)::before   { background:#2E6FEF; }
-        .col-card:has(.cc-red)::before    { background:#E5503C; }
-        .col-card:has(.cc-gold)::before   { background:var(--gold); }
-        .col-card:has(.cc-purple)::before { background:#7C4FE0; }
         /* College watermark letter colors */
         .cc-abbr-bg.cc-green  { color:rgba(27,77,46,.05); }
         .cc-abbr-bg.cc-maroon { color:rgba(194,58,99,.06); }
@@ -460,6 +450,13 @@
         .rrow.s1 { grid-template-columns:1fr; }
         .rrow.s3 { grid-template-columns:1fr 1fr 1fr; }
         .rf { display:flex; flex-direction:column; gap:5px; }
+        .rpw-wrap { position:relative; display:flex; }
+        .rpw-wrap .ri { padding-right:38px; }
+        .rpw-wrap .si-pw-toggle { right:8px; }
+        .ri.rpw-match-ok    { border-color:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.08); }
+        .ri.rpw-match-error { border-color:#dc2626; box-shadow:0 0 0 3px rgba(220,38,38,.08); }
+        #r-pw-match-hint.ok    { color:#16a34a; font-style:normal; font-weight:600; }
+        #r-pw-match-hint.error { color:#dc2626; font-style:normal; font-weight:600; }
         .rl { font-size:12px; font-weight:600; color:var(--gray-700); }
         .rl .req { color:#dc2626; margin-left:2px; }
         .ri,.rs,.rt { padding:9px 13px; border:1.5px solid var(--gray-300); border-radius:7px; font-size:13.5px; font-family:inherit; color:var(--gray-900); background:#fff; outline:none; width:100%; transition:border-color .15s,box-shadow .15s; }
@@ -481,7 +478,7 @@
         .modal-ft { padding:14px 28px 20px; flex-shrink:0; border-top:1px solid var(--gray-100); background:var(--gray-50); border-radius:0 0 16px 16px; display:flex; gap:10px; }
         .btn-cancel { padding:11px 22px; background:transparent; color:var(--gray-600); border:1.5px solid var(--gray-300); border-radius:6px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; transition:background .15s; }
         .btn-cancel:hover { background:var(--gray-100); }
-        .btn-submit { flex:1; padding:12px; background:var(--gold); color:var(--green-dark); border:none; border-radius:6px; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; transition:background .15s,transform .1s; }
+        .btn-submit { flex:1; padding:12px; background:var(--gold); color:#fff; border:none; border-radius:6px; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; transition:background .15s,transform .1s; }
         .btn-submit:hover { background:var(--gold-dark); transform:translateY(-1px); }
         .btn-submit:disabled { opacity:.6; cursor:not-allowed; transform:none; }
         /* Terms box */
@@ -517,7 +514,18 @@
         .si-forgot { font-size:13px; font-weight:600; color:var(--green); text-decoration:none; }
         .si-forgot:hover { text-decoration:underline; }
         .si-captcha-row { display:flex; gap:10px; align-items:center; }
-        .si-captcha-box { flex:1; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 16px; font-family:'Courier New',monospace; font-size:22px; font-weight:700; color:var(--green); letter-spacing:6px; text-align:center; user-select:none; }
+        .si-captcha-box { flex:1; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 16px;
+            display:flex; align-items:center; justify-content:center; gap:8px;
+            font-family:'Courier New',monospace; font-size:22px; font-weight:700; color:var(--green); letter-spacing:2px; user-select:none; }
+        .si-captcha-inline-input {
+            width:52px; min-width:0; text-align:center; font-family:'Courier New',monospace;
+            font-size:22px; font-weight:700; color:var(--green);
+            background:transparent; border:none; border-bottom:2.5px solid #d1d5db;
+            outline:none; padding:0 2px; transition:color .15s,border-color .15s;
+        }
+        .si-captcha-inline-input::placeholder { color:#c7ccc9; }
+        .si-captcha-inline-input.si-ok    { color:#15803d; border-color:#15803d; }
+        .si-captcha-inline-input.si-error { color:#b91c1c; border-color:#b91c1c; }
         .si-captcha-reload { width:42px; height:42px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; color:#6b7280; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s,color .15s; flex-shrink:0; }
         .si-captcha-reload:hover { border-color:var(--green); color:var(--green); }
         .si-btn { width:100%; padding:13px; background:var(--green); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; margin-top:4px; transition:background .15s; }
@@ -552,7 +560,8 @@
 
             .feat-layout { gap:28px; }
             .fi-card { padding:16px 18px; }
-            .footer-grid { grid-template-columns:1fr; gap:28px; }
+            .footer-grid { grid-template-columns:1fr 1fr; gap:28px 24px; }
+            .footer-grid > div:first-child { grid-column: 1 / -1; }
             .rrow { grid-template-columns:1fr; }
             .rrow.s3 { grid-template-columns:1fr; }
             .modal-body { padding:20px; }
@@ -974,9 +983,11 @@
             </div>
             <div class="footer-col">
                 <h4>Campuses</h4>
-                <a href="#campuses">Carmen Campus</a>
-                <a href="#campuses">Iligan Campus</a>
-                <a href="#campuses">Puerto Campus</a>
+                <div id="footer-campus-list">
+                    <a href="#campuses">Carmen Campus</a>
+                    <a href="#campuses">Iligan Campus</a>
+                    <a href="#campuses">Puerto Campus</a>
+                </div>
             </div>
             <div class="footer-col">
                 <h4>Support</h4>
@@ -1081,18 +1092,13 @@
                         <div class="rf">
                             <label class="rl" for="r-em">Email Address <span class="req">*</span></label>
                             <input class="ri" type="email" id="r-em" placeholder="your@email.com" required maxlength="120" autocomplete="email">
-                            <span class="rf-hint">Any email address — your verification code and Student ID will be sent here.</span>
+                            <span class="rf-hint">Any email address — your verification code will be sent here.</span>
                         </div>
                     </div>
                     <div class="rrow s1">
                         <div class="rf">
-                            <label class="rl" for="r-sid">Student ID</label>
-                            <input class="ri" type="text" id="r-sid" placeholder="e.g. 2024-00001 (numbers and dashes only)" maxlength="30" autocomplete="off">
-                            <div class="ragree" style="margin-top:8px;margin-bottom:0;">
-                                <input type="checkbox" id="r-no-id" onchange="toggleNoStudentId(this)">
-                                <label for="r-no-id" style="font-size:12.5px;color:var(--gray-700);font-weight:600;">I do not have a Student ID yet &mdash; assign one automatically</label>
-                            </div>
-                            <span class="rf-hint" id="r-sid-hint" style="display:none;color:#16a34a;">&#10003; A Student ID will be auto-generated and sent to your email.</span>
+                            <label class="rl" for="r-sid">Student ID <span class="req">*</span></label>
+                            <input class="ri" type="text" id="r-sid" placeholder="e.g. 2024-00001 (numbers and dashes only)" required maxlength="30" autocomplete="off">
                         </div>
                     </div>
                     <div class="rrow">
@@ -1119,8 +1125,25 @@
                     </div>
                     <div class="rdivider">Password</div>
                     <div class="rrow">
-                        <div class="rf"><label class="rl" for="r-pw">Password <span class="req">*</span></label><input class="ri" type="password" id="r-pw" placeholder="Min. 8 characters" required maxlength="128" autocomplete="new-password"></div>
-                        <div class="rf"><label class="rl" for="r-cpw">Confirm Password <span class="req">*</span></label><input class="ri" type="password" id="r-cpw" placeholder="Repeat your password" required maxlength="128" autocomplete="new-password"></div>
+                        <div class="rf">
+                            <label class="rl" for="r-pw">Password <span class="req">*</span></label>
+                            <div class="rpw-wrap">
+                                <input class="ri" type="password" id="r-pw" placeholder="Min. 8 characters" required maxlength="128" autocomplete="new-password" oninput="checkRegPwMatch()">
+                                <button type="button" class="si-pw-toggle" id="r-pw-toggle" aria-label="Show password" onclick="fpTogglePw('r-pw','r-pw-toggle')">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="rf">
+                            <label class="rl" for="r-cpw">Confirm Password <span class="req">*</span></label>
+                            <div class="rpw-wrap">
+                                <input class="ri" type="password" id="r-cpw" placeholder="Repeat your password" required maxlength="128" autocomplete="new-password" oninput="checkRegPwMatch()">
+                                <button type="button" class="si-pw-toggle" id="r-cpw-toggle" aria-label="Show confirm password" onclick="fpTogglePw('r-cpw','r-cpw-toggle')">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                            <span class="rf-hint" id="r-pw-match-hint"></span>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -1195,14 +1218,15 @@
                 <div class="si-group">
                     <label class="si-label">Captcha Verification</label>
                     <div class="si-captcha-row">
-                        <div class="si-captcha-box" id="si-captcha-display"></div>
+                        <div class="si-captcha-box">
+                            <span id="si-captcha-eq"></span>
+                            <input class="si-captcha-inline-input" type="text" id="si-captcha-ans"
+                                   autocomplete="off" inputmode="numeric" maxlength="3" required
+                                   oninput="checkSiCaptchaLive()" aria-label="Captcha answer">
+                        </div>
                         <button type="button" class="si-captcha-reload" onclick="siGenCaptcha()" aria-label="Refresh captcha">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                         </button>
-                    </div>
-                    <div class="si-wrap" style="margin-top:10px;">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                        <input class="si-input" type="text" id="si-captcha-ans" placeholder="Enter the answer" autocomplete="off" inputmode="numeric" maxlength="3" required>
                     </div>
                 </div>
 
@@ -1509,14 +1533,6 @@
         setTimeout(() => document.getElementById('r-fn').focus(), 80);
     }
 
-    function toggleNoStudentId(cb) {
-        const sidInput = document.getElementById('r-sid');
-        const hint = document.getElementById('r-sid-hint');
-        sidInput.disabled = cb.checked;
-        if (cb.checked) { sidInput.value = ''; hint.style.display = ''; }
-        else { hint.style.display = 'none'; }
-    }
-
     // Load campuses + catalog from API
     async function regLoadCatalog() {
         try {
@@ -1585,15 +1601,19 @@
         const btn = document.getElementById('reg-btn-next');
         btn.disabled = true; btn.textContent = 'Sending…'; clearMsg();
 
-        const noId = document.getElementById('r-no-id').checked;
+        const studentId = document.getElementById('r-sid').value.trim();
+        if (!studentId) {
+            btn.disabled = false; btn.textContent = 'Send Verification Code →';
+            showMsg('Student ID is required.', 'error');
+            return;
+        }
         const body = {
             first_name:       document.getElementById('r-fn').value.trim(),
             middle_name:      document.getElementById('r-mn').value.trim(),
             last_name:        document.getElementById('r-ln').value.trim(),
             suffix:           document.getElementById('r-sx').value.trim(),
             email:            document.getElementById('r-em').value.trim(),
-            student_id:       noId ? '' : document.getElementById('r-sid').value.trim(),
-            no_student_id:    noId,
+            student_id:       studentId,
             campus_id:        document.getElementById('r-ca').value,
             program_code:     document.getElementById('r-pg').value,
             major:            document.getElementById('r-mj').value || '',
@@ -1711,9 +1731,20 @@
         const a = Math.floor(1 + Math.random() * 12);
         const b = Math.floor(1 + Math.random() * 12);
         siCaptchaAnswer = a + b;
-        document.getElementById('si-captcha-display').textContent = a + '  +  ' + b + '  =  ?';
+        document.getElementById('si-captcha-eq').textContent = a + '  +  ' + b + '  =';
         const inp = document.getElementById('si-captcha-ans');
         if (inp) { inp.value = ''; inp.classList.remove('si-error','si-ok'); }
+    }
+    // Live red/green feedback as the answer is typed into the inline captcha input
+    function checkSiCaptchaLive() {
+        const inp = document.getElementById('si-captcha-ans');
+        if (!inp) return;
+        const raw = inp.value.trim();
+        if (raw === '') { inp.classList.remove('si-error','si-ok'); return; }
+        const val = parseInt(raw, 10);
+        const isCorrect = !isNaN(val) && val === siCaptchaAnswer;
+        inp.classList.toggle('si-ok', isCorrect);
+        inp.classList.toggle('si-error', !isCorrect);
     }
     // Generate captcha when sign in modal opens
     const _origOpenSignIn = window.openSignIn;
@@ -1942,6 +1973,25 @@
         }
     }
 
+    // Live match check between Register Here's Password and Confirm Password fields
+    function checkRegPwMatch() {
+        const pw   = document.getElementById('r-pw');
+        const cpw  = document.getElementById('r-cpw');
+        const hint = document.getElementById('r-pw-match-hint');
+        if (!pw || !cpw || !hint) return;
+
+        if (cpw.value === '') {
+            cpw.classList.remove('rpw-match-ok', 'rpw-match-error');
+            hint.textContent = ''; hint.className = 'rf-hint';
+            return;
+        }
+        const matches = pw.value === cpw.value;
+        cpw.classList.toggle('rpw-match-ok', matches);
+        cpw.classList.toggle('rpw-match-error', !matches);
+        hint.textContent = matches ? '✓ Passwords match' : '✗ Passwords do not match';
+        hint.className = 'rf-hint ' + (matches ? 'ok' : 'error');
+    }
+
     function fpTogglePw(inputId, btnId) {
         const inp = document.getElementById(inputId);
         const btn = document.getElementById(btnId);
@@ -2045,6 +2095,27 @@
             }
         }
     }
+
+    // Footer "Campuses" list — pulled live from the database, so a campus the
+    // admin adds/renames/deactivates in Admin → Departments shows up here
+    // automatically, no code change needed.
+    async function loadFooterCampuses() {
+        const wrap = document.getElementById('footer-campus-list');
+        if (!wrap) return;
+        try {
+            const res = await fetch('api/AuthAPI.php?action=signup-campuses', { credentials: 'include' })
+                .then(r => r.json());
+            const campuses = (res && res.data && res.data.campuses) || [];
+            if (!campuses.length) return; // keep the static fallback links already in the markup
+            wrap.innerHTML = campuses
+                .map(c => `<a href="#campuses">${(c.campus_name || '').replace(/</g, '&lt;')}</a>`)
+                .join('');
+        } catch (err) {
+            // Network hiccup — leave the static fallback links in place
+            console.error('loadFooterCampuses:', err);
+        }
+    }
+    loadFooterCampuses();
 </script>
 
 <!-- VISITOR ASSISTANT -->

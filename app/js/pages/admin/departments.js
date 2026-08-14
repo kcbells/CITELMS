@@ -8,6 +8,8 @@ import { validatePassword, attachStrengthMeter } from '../../utils/password-chan
 let campuses = [];
 let activeTab = 'departments';
 let activeCampusId = null;
+let activeDeptStatus = 'active';
+let activeCampusStatus = 'active';
 
 export async function render(container) {
     const campRes = await Api.get('/DepartmentsAPI.php?action=campuses');
@@ -93,6 +95,15 @@ function renderShell(container) {
             .status-pill { font-size:11.5px; font-weight:700; padding:4px 12px; border-radius:20px; display:inline-block; }
             .status-pill.active   { background:#dcfce7; color:#15803d; }
             .status-pill.inactive { background:#f3f4f6; color:#6b7280; }
+
+            .status-tabs { display:flex; gap:4px; margin-bottom:16px; }
+            .status-tab {
+                padding:7px 14px; border-radius:8px; font-size:13px; font-weight:600;
+                border:1px solid #e8e8e8; background:#f9fafb; color:#6b7280;
+                cursor:pointer; transition:all .15s; white-space:nowrap;
+            }
+            .status-tab:hover { border-color:#00461B; color:#00461B; }
+            .status-tab.active { background:#E8F5E9; border-color:#1B4D3E; color:#1B4D3E; }
 
             /* Actions */
             .actions-cell { text-align:right; position:relative; white-space:nowrap; }
@@ -220,9 +231,9 @@ async function renderDepts(container) {
     const slot = container.querySelector('#dp-slot');
     slot.innerHTML = '<div class="empty-state">Loading…</div>';
 
-    const url  = activeCampusId
+    const url = (activeCampusId
         ? `/DepartmentsAPI.php?action=list&campus_id=${activeCampusId}`
-        : '/DepartmentsAPI.php?action=list';
+        : '/DepartmentsAPI.php?action=list') + `&status=${activeDeptStatus}`;
     const res   = await Api.get(url);
     const depts = res.success ? res.data : [];
 
@@ -235,8 +246,16 @@ async function renderDepts(container) {
            </div>`
         : '';
 
+    const statusTabsHtml = `
+        <div class="status-tabs">
+            <button class="status-tab ${activeDeptStatus === 'active' ? 'active' : ''}" data-dept-status="active">Active</button>
+            <button class="status-tab ${activeDeptStatus === 'inactive' ? 'active' : ''}" data-dept-status="inactive">Archived</button>
+            <button class="status-tab ${activeDeptStatus === 'all' ? 'active' : ''}" data-dept-status="all">All</button>
+        </div>`;
+
     slot.innerHTML = `
         ${campusPills}
+        ${statusTabsHtml}
         <div class="dp-header">
             <div class="dp-title">Departments <span class="dp-count">${depts.length}</span></div>
             <button class="btn-primary" id="btn-add-dept">+ Add Department</button>
@@ -290,13 +309,15 @@ async function renderDepts(container) {
                                 </td>
                                 <td>${deanCell}</td>
                                 <td><a class="program-badge" href="#admin/programs?department_id=${d.department_id}">${d.program_count} program${d.program_count != 1 ? 's' : ''}</a></td>
-                                <td><span class="status-pill active">Active</span></td>
+                                <td><span class="status-pill ${d.status}">${d.status === 'active' ? 'Active' : 'Archived'}</span></td>
                                 <td class="actions-cell">
                                     <button class="btn-edit-tbl" data-edit='${JSON.stringify({id:d.department_id,department_name:d.department_name})}'>Edit</button>
                                     <button class="btn-actions" data-id="${d.department_id}">⋮</button>
                                     <div class="actions-dropdown" data-dropdown="${d.department_id}">
-                                        ${dropdownAddDean}
-                                        <a href="#" class="danger" data-delete="${d.department_id}" data-name="${esc(d.department_name)}">Deactivate</a>
+                                        ${d.status === 'active' ? dropdownAddDean : ''}
+                                        ${d.status === 'active'
+                                            ? `<a href="#" class="danger" data-delete="${d.department_id}" data-name="${esc(d.department_name)}">Archive</a>`
+                                            : `<a href="#" data-restore="${d.department_id}" data-name="${esc(d.department_name)}">Restore</a>`}
                                     </div>
                                 </td>
                             </tr>`;
@@ -310,6 +331,14 @@ async function renderDepts(container) {
     slot.querySelectorAll('.campus-pill').forEach(pill => {
         pill.addEventListener('click', () => {
             activeCampusId = pill.dataset.campusId ? parseInt(pill.dataset.campusId) : null;
+            renderDepts(container);
+        });
+    });
+
+    // Status tabs (Active / Archived / All)
+    slot.querySelectorAll('[data-dept-status]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            activeDeptStatus = tab.dataset.deptStatus;
             renderDepts(container);
         });
     });
@@ -343,8 +372,24 @@ async function renderDepts(container) {
     slot.querySelectorAll('[data-delete]').forEach(a => {
         a.addEventListener('click', async e => {
             e.preventDefault();
-            if (!await notify.confirm(`Deactivate "${a.dataset.name}"?`, { danger: true, confirmText: 'Deactivate' })) return;
+            if (!await notify.confirm(`Archive "${a.dataset.name}"?\n\nArchived departments are hidden from dropdowns and cannot receive new assignments.`, { danger: true, confirmText: 'Archive' })) return;
             const r = await Api.post('/DepartmentsAPI.php?action=delete', { department_id: parseInt(a.dataset.delete) });
+            if (r.success) renderDepts(container);
+            else notify.error(r.message);
+        });
+    });
+
+    slot.querySelectorAll('[data-restore]').forEach(a => {
+        a.addEventListener('click', async e => {
+            e.preventDefault();
+            if (!await notify.confirm(`Restore "${a.dataset.name}"?`, { confirmText: 'Restore' })) return;
+            const dept = depts.find(d => String(d.department_id) === a.dataset.restore);
+            const r = await Api.post('/DepartmentsAPI.php?action=update', {
+                department_id: parseInt(a.dataset.restore),
+                department_name: dept?.department_name,
+                campus_id: dept?.campus_id,
+                status: 'active',
+            });
             if (r.success) renderDepts(container);
             else notify.error(r.message);
         });
@@ -654,10 +699,23 @@ async function renderCampuses(container) {
     const slot = container.querySelector('#dp-slot');
     slot.innerHTML = '<div class="empty-state">Loading…</div>';
 
-    const res      = await Api.get('/CampusAPI.php?action=list');
-    const campList = res.success ? res.data : [];
+    const res       = await Api.get('/CampusAPI.php?action=list');
+    const allCamps  = res.success ? res.data : [];
+    const campList  = allCamps.filter(c => {
+        if (activeCampusStatus === 'all') return true;
+        const isActive = c.status !== 'inactive';
+        return activeCampusStatus === 'active' ? isActive : !isActive;
+    });
+
+    const statusTabsHtml = `
+        <div class="status-tabs">
+            <button class="status-tab ${activeCampusStatus === 'active' ? 'active' : ''}" data-camp-status="active">Active</button>
+            <button class="status-tab ${activeCampusStatus === 'inactive' ? 'active' : ''}" data-camp-status="inactive">Archived</button>
+            <button class="status-tab ${activeCampusStatus === 'all' ? 'active' : ''}" data-camp-status="all">All</button>
+        </div>`;
 
     slot.innerHTML = `
+        ${statusTabsHtml}
         <div class="dp-header">
             <div class="dp-title">Campuses <span class="dp-count">${campList.length}</span></div>
             <button class="btn-primary" id="btn-add-campus">+ Add Campus</button>
@@ -702,6 +760,9 @@ async function renderCampuses(container) {
                                 <td><span class="status-pill ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</span></td>
                                 <td class="actions-cell">
                                     <button class="btn-edit-tbl" data-edit-campus='${JSON.stringify({campus_id:c.campus_id,campus_name:c.campus_name,campus_code:c.campus_code,address:c.address||'',contact_number:c.contact_number||'',email:c.email||'',status:c.status})}'>Edit</button>
+                                    ${isActive
+                                        ? `<button class="btn-edit-tbl" data-archive-campus="${c.campus_id}" data-name="${esc(c.campus_name)}">Archive</button>`
+                                        : `<button class="btn-edit-tbl" data-restore-campus="${c.campus_id}" data-name="${esc(c.campus_name)}">Restore</button>`}
                                 </td>
                             </tr>`;
                         }).join('')}
@@ -710,12 +771,46 @@ async function renderCampuses(container) {
             </div>`}
     `;
 
+    slot.querySelectorAll('[data-camp-status]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            activeCampusStatus = tab.dataset.campStatus;
+            renderCampuses(container);
+        });
+    });
+
     slot.querySelector('#btn-add-campus').addEventListener('click', () => openCampusModal(container, null));
 
     slot.querySelectorAll('[data-edit-campus]').forEach(a => {
         a.addEventListener('click', e => {
             e.preventDefault();
             openCampusModal(container, JSON.parse(a.dataset.editCampus));
+        });
+    });
+
+    slot.querySelectorAll('[data-archive-campus]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!await notify.confirm(`Archive "${btn.dataset.name}"?\n\nArchived campuses are hidden from dropdowns and cannot receive new departments.`, { danger: true, confirmText: 'Archive' })) return;
+            const r = await Api.post('/CampusAPI.php?action=delete', { campus_id: parseInt(btn.dataset.archiveCampus) });
+            if (r.success) renderCampuses(container);
+            else notify.error(r.message);
+        });
+    });
+
+    slot.querySelectorAll('[data-restore-campus]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!await notify.confirm(`Restore "${btn.dataset.name}"?`, { confirmText: 'Restore' })) return;
+            const camp = allCamps.find(c => String(c.campus_id) === btn.dataset.restoreCampus);
+            const r = await Api.post('/CampusAPI.php?action=update', {
+                campus_id: parseInt(btn.dataset.restoreCampus),
+                campus_name: camp?.campus_name,
+                campus_code: camp?.campus_code,
+                address: camp?.address || '',
+                contact_number: camp?.contact_number || '',
+                email: camp?.email || '',
+                status: 'active',
+            });
+            if (r.success) renderCampuses(container);
+            else notify.error(r.message);
         });
     });
 }

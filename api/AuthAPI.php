@@ -359,15 +359,14 @@ function handleRegisterRequest() {
     $suffix      = Sanitize::text($input['suffix'] ?? '');
     $email       = trim($input['email'] ?? '');
     $studentId   = trim($input['student_id'] ?? '');
-    $noId        = !empty($input['no_student_id']);
     $campusId    = (int)($input['campus_id'] ?? 0);
     $programCode = trim($input['program_code'] ?? '');
     $major       = trim($input['major'] ?? '');
     $password    = $input['password'] ?? '';
     $confirmPw   = $input['confirm_password'] ?? '';
 
-    if ($firstName === '' || $lastName === '' || $email === '' || $programCode === '') {
-        jsonResponse(false, 'First name, last name, email, and program are required.');
+    if ($firstName === '' || $lastName === '' || $email === '' || $studentId === '' || $programCode === '') {
+        jsonResponse(false, 'First name, last name, email, Student ID, and program are required.');
     }
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -382,10 +381,8 @@ function handleRegisterRequest() {
         jsonResponse(false, 'Passwords do not match.');
     }
 
-    // Student ID handling
-    if ($noId || $studentId === '') {
-        $studentId = generateAutoStudentId();
-    } elseif (!UserIdHelper::isValidStudentId($studentId)) {
+    // Student ID handling — always provided by the applicant now, no auto-assignment
+    if (!UserIdHelper::isValidStudentId($studentId)) {
         jsonResponse(false, 'Student ID must contain numbers and dashes only. Example: 2024-00001');
     }
 
@@ -417,7 +414,6 @@ function handleRegisterRequest() {
         'suffix'        => $suffix,
         'email'         => $email,
         'student_id'    => $studentId,
-        'auto_id'       => ($noId || trim($input['student_id'] ?? '') === ''),
         'campus_id'     => $campusId ?: null,
         'program_id'    => $resolved['program_id'],
         'department_id' => $resolved['department_id'],
@@ -443,9 +439,9 @@ function handleRegisterRequest() {
         jsonResponse(false, 'Registration failed. Please try again.', null, 500);
     }
 
-    // Send OTP email
+    // Send OTP email — verification code only, no assigned Student ID note
     require_once __DIR__ . '/helpers/EmailHelper.php';
-    $sent = EmailHelper::sendRegistrationOtp($email, $firstName, $otp, $studentId, $regData['auto_id']);
+    $sent = EmailHelper::sendRegistrationOtp($email, $firstName, $otp, $studentId, false);
 
     jsonResponse(true, 'Verification code sent.', [
         'token'        => $token,
@@ -525,9 +521,8 @@ function handleRegisterVerify() {
              ->execute([$row['id']]);
 
         logActivity($userId, 'register', sprintf(
-            'Student self-registration via OTP — student_id: %s, auto_id: %s',
-            $data['student_id'],
-            $data['auto_id'] ? 'yes' : 'no'
+            'Student self-registration via OTP — student_id: %s',
+            $data['student_id']
         ));
 
         jsonResponse(true, 'Account created successfully!', [
@@ -536,7 +531,6 @@ function handleRegisterVerify() {
                 'student_id' => $data['student_id'],
                 'name'       => trim($data['first_name'] . ' ' . $data['last_name']),
                 'email'      => $data['email'],
-                'auto_id'    => $data['auto_id'],
             ],
         ], 201);
     } catch (Exception $e) {

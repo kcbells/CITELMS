@@ -50,6 +50,22 @@ export async function render(container) {
             .di-table td { padding:12px 16px; vertical-align:middle; font-size:13px; color:#374151; }
 
             .di-user { display:flex; align-items:center; gap:12px; }
+            .di-user-clickable { cursor:pointer; border-radius:8px; padding:4px 6px; margin:-4px -6px; transition:background .15s; }
+            .di-user-clickable:hover { background:#F0FDF4; }
+            .di-user-clickable:hover .di-name { color:#1B4D2E; text-decoration:underline; }
+
+            /* ── View Subjects modal ── */
+            .div-year-group { margin-bottom:18px; }
+            .div-year-group:last-child { margin-bottom:0; }
+            .div-year-title { font-size:12px; font-weight:800; color:#1B4D2E; text-transform:uppercase; letter-spacing:.5px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
+            .div-year-title::after { content:''; flex:1; height:1px; background:#E5E7EB; }
+            .div-subj-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid #E5E7EB; border-radius:10px; margin-bottom:8px; background:#fff; }
+            .div-subj-code { font-family:monospace; font-size:12px; font-weight:700; color:#1B4D2E; background:#E8F5E9; padding:3px 8px; border-radius:6px; flex-shrink:0; }
+            .div-subj-name { font-size:13.5px; color:#262626; font-weight:600; flex:1; min-width:0; }
+            .div-subj-units { font-size:11.5px; color:#9CA3AF; flex-shrink:0; }
+            .div-subj-prog { font-size:10.5px; color:#5B21B6; background:#EDE9FE; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
+            .div-empty { text-align:center; padding:36px 20px; color:#a0a0a0; }
+            .div-empty-icon { font-size:32px; margin-bottom:8px; }
             .di-av { width:38px; height:38px; border-radius:50%; background:#00461B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
             .di-name { font-weight:600; color:#262626; display:block; }
             .di-email { font-size:12px; color:#a0a0a0; display:block; margin-top:1px; }
@@ -232,6 +248,12 @@ export async function render(container) {
             btn.addEventListener('click', () => {
                 const inst = allInstructors.find(i => String(i.users_id) === String(btn.dataset.id));
                 if (inst) openEditModal(inst);
+            });
+        });
+        container.querySelectorAll('.di-user-clickable').forEach(row => {
+            row.addEventListener('click', () => {
+                const inst = allInstructors.find(i => String(i.users_id) === String(row.dataset.id));
+                if (inst) openSubjectsModal(inst);
             });
         });
     }
@@ -600,6 +622,70 @@ export async function render(container) {
     }
 }
 
+// Shows every subject this instructor currently teaches (this term), grouped
+// by year level — year level comes straight from the subject's own curriculum
+// placement (subject.year_level), the same field the curriculum builder uses.
+async function openSubjectsModal(inst) {
+    const overlay = document.createElement('div');
+    overlay.className = 'di-modal-overlay';
+    overlay.innerHTML = `
+        <div class="di-modal" style="max-width:560px;">
+            <div class="di-modal-header">
+                <div class="di-modal-header-icon">${icon('book', { size: 20 })}</div>
+                <div class="di-modal-header-text">
+                    <h3>${esc(inst.first_name)} ${esc(inst.last_name)}</h3>
+                    <p>Subjects handled this term</p>
+                </div>
+                <button class="di-modal-close" id="div-close-modal">&times;</button>
+            </div>
+            <div class="di-modal-body" id="div-modal-body">
+                <div class="div-empty">
+                    <div class="div-empty-icon">${iconLg('book')}</div>
+                    <div class="di-empty-text">Loading…</div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const closeModal = () => overlay.remove();
+    overlay.querySelector('#div-close-modal').addEventListener('click', closeModal);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+    const body = overlay.querySelector('#div-modal-body');
+    const res = await Api.get(`/SubjectOfferingsAPI.php?action=instructor-subjects&instructor_id=${inst.users_id}`);
+    const subjects = (res.success ? res.data : []).filter(s => Number(s.is_assigned) === 1);
+
+    if (!subjects.length) {
+        body.innerHTML = `<div class="div-empty">
+            <div class="div-empty-icon">${iconLg('book')}</div>
+            <div class="di-empty-text">Not currently handling any subjects this term</div>
+        </div>`;
+        return;
+    }
+
+    // Group by year level (1st year, 2nd year, ...), same grouping as the curriculum view
+    const byYear = {};
+    subjects.forEach(s => {
+        const y = s.year_level || 0;
+        (byYear[y] ||= []).push(s);
+    });
+    const years = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+
+    body.innerHTML = years.map(y => `
+        <div class="div-year-group">
+            <p class="div-year-title">${y > 0 ? `${y}${ordinal(y)} Year` : 'Year Level Unspecified'}</p>
+            ${byYear[y].map(s => `
+                <div class="div-subj-row">
+                    <span class="div-subj-code">${esc(s.subject_code)}</span>
+                    <span class="div-subj-name">${esc(s.subject_name)}</span>
+                    <span class="div-subj-prog">${esc(s.program_code)}</span>
+                    <span class="div-subj-units">${s.units} unit${s.units == 1 ? '' : 's'}</span>
+                </div>
+            `).join('')}
+        </div>
+    `).join('');
+}
+
 function renderRows(list) {
     if (list.length === 0) {
         return `<tr><td colspan="6">
@@ -620,7 +706,7 @@ function renderRows(list) {
         const roleLabel = i.role === 'program_head' ? 'Program Head' : 'Instructor';
         return `<tr>
             <td>
-                <div class="di-user">
+                <div class="di-user di-user-clickable" data-id="${i.users_id}" title="View subjects handled">
                     <div class="di-av">${initials}</div>
                     <div>
                         <span class="di-name">${esc(i.first_name)} ${esc(i.last_name)}</span>

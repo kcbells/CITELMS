@@ -335,8 +335,13 @@ function handleCreate() {
     }
     $passwordHash = $password ? password_hash($password, PASSWORD_DEFAULT) : null;
 
-    // Auto-sync department from program (admin path only — dean dept is already forced above)
-    if ($programId && !$isDean) {
+    // Auto-sync department from program (admin path only — dean dept is already forced
+    // above when a dean is the actor, AND must never apply when the account being
+    // CREATED is itself a dean: a dean manages a department directly, chosen explicitly
+    // in the form, and should never be silently overwritten by a program's mapped
+    // department — that was the bug behind "new dean doesn't show up under the
+    // department I picked").
+    if ($programId && !$isDean && $role !== 'dean') {
         $progDept = db()->fetchOne("SELECT department_id FROM department_program WHERE program_id = ? LIMIT 1", [$programId]);
         if ($progDept) $departmentId = $progDept['department_id'];
     }

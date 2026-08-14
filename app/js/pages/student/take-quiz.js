@@ -827,6 +827,9 @@ export async function render(container) {
                 quiz_id: parseInt(quiz.quiz_id),
                 time_taken: timeTaken,
                 tab_switches: tabSwitchCount,
+                paste_attempts: pasteCount,
+                copy_attempts: copyCount,
+                screenshot_attempts: screenshotCount,
                 ended_reason: endedReason || undefined,
                 answers: {}
             };
@@ -903,6 +906,9 @@ export async function render(container) {
 
     // ── Tab-switch tracking ───────────────────────────────────────────────────
     let tabSwitchCount  = 0;
+    let pasteCount      = 0;
+    let copyCount       = 0;
+    let screenshotCount = 0;
     let lastLeaveTime   = 0;
 
     function updateSidebarBadge(count) {
@@ -1034,7 +1040,6 @@ export async function render(container) {
     function resolveViolationLeave(violation) {
         if (proctorEnded || quizEnded) return;
         closeViolationHold();
-        tabSwitchCount = Math.max(tabSwitchCount, 1);
         if (!isProctored) {
             updateSidebarBadge(tabSwitchCount);
             return;
@@ -1126,16 +1131,30 @@ export async function render(container) {
         }
     }
 
+    // Bumps the correct counter for the violation that actually happened —
+    // each type is tracked independently so the instructor sees exactly
+    // what a student did (tab switch vs. paste vs. copy vs. screenshot),
+    // not everything lumped together as "tab switch."
+    function bumpViolationCount(type) {
+        if (type === 'tab_switch' || type === 'window_switch') {
+            tabSwitchCount++;
+            updateSidebarBadge(tabSwitchCount);
+        } else if (type === 'paste') {
+            pasteCount++;
+        } else if (type === 'copy') {
+            copyCount++;
+        } else if (type === 'screenshot') {
+            screenshotCount++;
+        }
+    }
+
     function requestViolationHold(type) {
         if (violationHoldOpen || proctorEnded || quizEnded) return;
         const now = Date.now();
         if (now - lastLeaveTime < 600) return;
         lastLeaveTime = now;
 
-        if (type === 'tab_switch' || type === 'window_switch') {
-            tabSwitchCount = Math.max(tabSwitchCount, 1);
-        updateSidebarBadge(tabSwitchCount);
-        }
+        bumpViolationCount(type);
 
         const violation = { type };
         if (document.hidden && (type === 'tab_switch' || type === 'window_switch')) {

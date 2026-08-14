@@ -773,7 +773,10 @@ function computeStudentGrades(sid, grades, project) {
 }
 
 // ── For SIS Table ─────────────────────────────────────────────────────────
-// Columns: # | Student Number | Name | P1 CS (EL) | P1 PE (Mastery) | P2 CS | P2 PE | P3 CS (Final EL) | P3 CFE (Final Mastery)
+// Columns: # | Student Number | Name | P1 Grade | P2 Grade | P3/Final Grade
+// One blended total per period (EL 55% + Mastery 45% already combined by
+// periodGrade() in grading-engine.js) — the SIS record only wants a single
+// final number per period, not the internal Effortful/Mastery breakdown.
 
 function renderSisTable(students, grades, project, subjectCode = '', sectionName = '') {
     const label = subjectCode && sectionName ? `FOR SIS — ${subjectCode} / ${sectionName}` : 'FOR SIS';
@@ -781,17 +784,14 @@ function renderSisTable(students, grades, project, subjectCode = '', sectionName
     const rows = students.map((st, i) => {
         const sid = st.user_student_id;
         const { p1, p2, final } = computeStudentGrades(sid, grades, project);
-        const low = (v, thresh) => v !== null && v < thresh ? ' td-low' : '';
+        const low = (v) => v !== null && v < 80 ? ' td-low' : '';
         return `<tr>
             <td class="td-rank">${i + 1}</td>
             <td class="td-id">${esc(st.student_id || '—')}</td>
             <td class="td-name">${esc(st.name)}</td>
-            <td class="td-num${low(p1.el,    60)}">${fmt(p1.el)}</td>
-            <td class="td-num${low(p1.mastery,80)}">${fmt(p1.mastery)}</td>
-            <td class="td-num${low(p2.el,    60)}">${fmt(p2.el)}</td>
-            <td class="td-num${low(p2.mastery,80)}">${fmt(p2.mastery)}</td>
-            <td class="td-num ggb-sis-cs${low(final.el,    60)}">${fmt(final.el)}</td>
-            <td class="td-num ggb-sis-cfe${low(final.mastery,80)}">${fmt(final.mastery)}</td>
+            <td class="td-num td-grade${low(p1.grade)}">${fmt(p1.grade)}</td>
+            <td class="td-num td-grade${low(p2.grade)}">${fmt(p2.grade)}</td>
+            <td class="td-num td-grade ggb-sis-final${low(final.grade)}">${fmt(final.grade)}</td>
         </tr>`;
     }).join('');
 
@@ -802,27 +802,19 @@ function renderSisTable(students, grades, project, subjectCode = '', sectionName
             <table class="gc-cur-table ggb-sis-table">
                 <thead>
                     <tr>
-                        <th rowspan="2" class="gc-th-info">#</th>
-                        <th rowspan="2" class="gc-th-info th-left">Student Number</th>
-                        <th rowspan="2" class="gc-th-info th-left">Name of Student</th>
-                        <th colspan="2" class="gb-period-th">P1</th>
-                        <th colspan="2" class="gb-period-th gb-period-th--p2">P2</th>
-                        <th colspan="2" class="gb-period-th gb-period-th--p3">P3 — Final</th>
-                    </tr>
-                    <tr>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">CS</span><span class="gb-item-name">Effortful</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">PE</span><span class="gb-item-name">Mastery</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">CS</span><span class="gb-item-name">Effortful</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">PE</span><span class="gb-item-name">Mastery</span></th>
-                        <th class="gb-item-th ggb-sis-th-cs"><span class="gb-item-type quiz">CS</span><span class="gb-item-name">Final Effortful<br>Grade</span></th>
-                        <th class="gb-item-th ggb-sis-th-cfe"><span class="gb-item-name" style="color:#B91C1C;font-weight:800;">CFE</span><span class="gb-item-name">Final Mastery<br>Grade</span></th>
+                        <th class="gc-th-info">#</th>
+                        <th class="gc-th-info th-left">Student Number</th>
+                        <th class="gc-th-info th-left">Name of Student</th>
+                        <th class="gb-period-th">P1 Grade</th>
+                        <th class="gb-period-th gb-period-th--p2">P2 Grade</th>
+                        <th class="gb-period-th gb-period-th--p3 ggb-sis-th-final">P3 — Final Grade</th>
                     </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="9" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
+                <tbody>${rows || '<tr><td colspan="6" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
             </table>
         </div>
     </div>
-    <p class="ggb-proj-note">CS = Cumulative Score (Effortful Learning). PE = Period Effort. CFE = Cumulative Final Effort (Mastery). Remarks are based on CFE (Mastery Status, threshold 80) and the Final Period Grade (threshold 80) — see Overview tab.</p>`;
+    <p class="ggb-proj-note">Each period's grade already blends Effortful Learning (55%) and Mastery (45%) into one total, as required for the SIS record. Low grades (below 80) are highlighted. See the Overview tab for the Effortful/Mastery breakdown and Mastery Status per student.</p>`;
 }
 
 // ── Students for Retry Table ──────────────────────────────────────────────
@@ -1266,10 +1258,8 @@ td.gc-cur-badge-pass .ggb-remark-badge { background:#E8F5E9; color:#00461B; }
 td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 
 /* ── SIS colour bands (sticky covered above) ── */
-.ggb-sis-th-cs  { background:#EDE9FE !important; }
-.ggb-sis-th-cfe { background:#FCE7F3 !important; }
-.ggb-sis-cs  { background:#F5F3FF; }
-.ggb-sis-cfe { background:#FDF2F8; }
+.ggb-sis-th-final { background:#FCE7F3 !important; }
+.ggb-sis-final    { background:#FDF2F8; }
 /* ── Retries table ── */
 .ggb-retries-table { min-width:900px; }
 .ggb-retry-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; white-space:nowrap; }

@@ -276,11 +276,21 @@ export function computeStudentReport({ getModuleInput, getPeriodProject }) {
     function moduleMastery(m, period) {
         const key = `${m}:${period}`;
         if (!(key in masteryCache)) {
-            if (!(period in projectScoreByPeriod)) {
-                const pp = getPeriodProject(period) || {};
-                projectScoreByPeriod[period] = projectOverallGrade(pp.checkins || [], pp.finalOutput ?? null);
+            // A module isn't "graded" for Mastery until it has its own Wrap-Up
+            // Quiz score. The period's Project score is shared across every
+            // module in range, so without this guard an ungraded module would
+            // still produce a partial (quiz=0 + shared project) Mastery value
+            // and silently drag the period average down — even though nothing
+            // has actually been entered for that module yet.
+            if (wuqByModule[m] === null || wuqByModule[m] === undefined) {
+                masteryCache[key] = null;
+            } else {
+                if (!(period in projectScoreByPeriod)) {
+                    const pp = getPeriodProject(period) || {};
+                    projectScoreByPeriod[period] = projectOverallGrade(pp.checkins || [], pp.finalOutput ?? null);
+                }
+                masteryCache[key] = moduleMasteryGrade(wuqByModule[m], projectScoreByPeriod[period]);
             }
-            masteryCache[key] = moduleMasteryGrade(wuqByModule[m], projectScoreByPeriod[period]);
         }
         return masteryCache[key];
     }

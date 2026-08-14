@@ -154,13 +154,19 @@ function submitQuiz() {
         $quizId       = (int)($input['quiz_id']      ?? 0);
         $answers      = $input['answers']             ?? [];
         $timeTaken    = (int)($input['time_taken']    ?? 0);
-        $tabSwitches  = max(0, (int)($input['tab_switches'] ?? 0));
+        $tabSwitches  = max(0, (int)($input['tab_switches']       ?? 0));
+        $pasteCount   = max(0, (int)($input['paste_attempts']     ?? 0));
+        $copyCount    = max(0, (int)($input['copy_attempts']      ?? 0));
+        $screenshotCount = max(0, (int)($input['screenshot_attempts'] ?? 0));
         $endedReason  = trim((string)($input['ended_reason'] ?? ''));
     } else {
         $quizId       = (int)($_POST['quiz_id']      ?? 0);
         $answers      = $_POST['answers']             ?? [];
         $timeTaken    = (int)($_POST['time_taken']    ?? 0);
-        $tabSwitches  = max(0, (int)($_POST['tab_switches'] ?? 0));
+        $tabSwitches  = max(0, (int)($_POST['tab_switches']       ?? 0));
+        $pasteCount   = max(0, (int)($_POST['paste_attempts']     ?? 0));
+        $copyCount    = max(0, (int)($_POST['copy_attempts']      ?? 0));
+        $screenshotCount = max(0, (int)($_POST['screenshot_attempts'] ?? 0));
         $endedReason  = trim((string)($_POST['ended_reason'] ?? ''));
     }
 
@@ -410,10 +416,10 @@ function submitQuiz() {
 
         $stmt = $pdo->prepare(
             "INSERT INTO student_quiz_attempts
-             (quiz_id, user_student_id, attempt_number, total_points, earned_points, percentage, passed, time_spent, started_at, completed_at, status, has_pending_grades, tab_switch_count)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 'completed', ?, ?)"
+             (quiz_id, user_student_id, attempt_number, total_points, earned_points, percentage, passed, time_spent, started_at, completed_at, status, has_pending_grades, tab_switch_count, paste_count, copy_count, screenshot_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 'completed', ?, ?, ?, ?, ?)"
         );
-        $stmt->execute([$quizId, $userId, $attemptCount + 1, $totalPoints, $earnedPoints, round($percentage, 2), $passed ? 1 : 0, $timeTaken, $hasPendingGrades ? 1 : 0, $tabSwitches]);
+        $stmt->execute([$quizId, $userId, $attemptCount + 1, $totalPoints, $earnedPoints, round($percentage, 2), $passed ? 1 : 0, $timeTaken, $hasPendingGrades ? 1 : 0, $tabSwitches, $pasteCount, $copyCount, $screenshotCount]);
         $attemptId = $pdo->lastInsertId();
 
         // Save individual answers
@@ -646,6 +652,9 @@ function getFlaggedAttempts() {
     $attempts = db()->fetchAll(
         "SELECT sqa.attempt_id, sqa.quiz_id, sqa.earned_points, sqa.total_points, sqa.percentage,
                 sqa.completed_at, COALESCE(sqa.tab_switch_count, 0) AS tab_switch_count,
+                COALESCE(sqa.paste_count, 0) AS paste_count,
+                COALESCE(sqa.copy_count, 0) AS copy_count,
+                COALESCE(sqa.screenshot_count, 0) AS screenshot_count,
                 COALESCE(NULLIF(TRIM(q.quiz_title),''), '(Untitled Quiz)') AS quiz_title,
                 COALESCE(NULLIF(TRIM(s.subject_code),''), '—') AS subject_code,
                 s.subject_name,
@@ -659,8 +668,12 @@ function getFlaggedAttempts() {
              WHERE so.user_teacher_id = ?
          ) $where
          AND sqa.status = 'completed'
-         AND COALESCE(sqa.tab_switch_count, 0) > 0
-         ORDER BY sqa.tab_switch_count DESC, sqa.completed_at DESC",
+         AND (COALESCE(sqa.tab_switch_count, 0) > 0
+              OR COALESCE(sqa.paste_count, 0) > 0
+              OR COALESCE(sqa.copy_count, 0) > 0
+              OR COALESCE(sqa.screenshot_count, 0) > 0)
+         ORDER BY (COALESCE(sqa.tab_switch_count,0) + COALESCE(sqa.paste_count,0) + COALESCE(sqa.copy_count,0) + COALESCE(sqa.screenshot_count,0)) DESC,
+                  sqa.completed_at DESC",
         $params
     );
     echo json_encode(['success' => true, 'data' => $attempts ?: []]);

@@ -123,6 +123,7 @@ const PAGE_ALIASES = {
     'program_head/gradebook':       'instructor/gradebook',
     'program_head/messages':        'instructor/messages',
     'program_head/calendar':        'instructor/calendar',
+    'program_head/sections':        'dean/sections',
     // Student accessing shared modules if granted
     // (student/announcements has its own page — no alias needed)
 };

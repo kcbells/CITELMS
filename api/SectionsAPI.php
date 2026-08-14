@@ -47,9 +47,13 @@ $_sectPerms = [
     'delete'                    => 'sections.delete',
 ];
 // Dean has intrinsic access to sections (scoped by dept).
+// Program Head has intrinsic access too, but further scoped to their own
+// program AND the year level range the dean assigned them (see
+// programHeadScope() below) — enforced inside each handler, not here.
 // Instructors have intrinsic access to CRUD on their own sections.
-$isDeanSect  = Auth::role() === 'dean';
-$isInstrSect = Auth::role() === 'instructor';
+$isDeanSect     = Auth::role() === 'dean';
+$isProgHeadSect = Auth::role() === 'program_head';
+$isInstrSect    = Auth::role() === 'instructor';
 // Actions instructors can always perform on their own sections (server-side scoping handles security)
 $instrActions = ['create','update','delete','add-subject','remove-subject','unenroll',
                  'instructor-list','instructor-avail-subjects','instructor-assigned-subjects',
@@ -57,7 +61,7 @@ $instrActions = ['create','update','delete','add-subject','remove-subject','unen
                  'preview-import-students','bulk-import-students'];
 $instrBypassed = $isInstrSect && in_array($action, $instrActions);
 
-if (!$isDeanSect && !$instrBypassed && isset($_sectPerms[$action]) && !Auth::can($_sectPerms[$action])) {
+if (!$isDeanSect && !$isProgHeadSect && !$instrBypassed && isset($_sectPerms[$action]) && !Auth::can($_sectPerms[$action])) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => "Permission denied: {$_sectPerms[$action]}"]);
     exit;
@@ -93,6 +97,34 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 
+// ─── Program Head scope helper ─────────────────────────────────────────────
+// A program head is scoped to their OWN program, further narrowed to the
+// year level range the dean assigned them (users.year_level_from/to, set via
+// SubjectOfferingsAPI.php action=set-ph-scope). If the dean hasn't set a
+// range yet, the program head is treated as unrestricted within their
+// program (no range configured = no narrowing applied).
+function programHeadScope() {
+    $user = db()->fetchOne(
+        "SELECT program_id, year_level_from, year_level_to FROM users WHERE users_id = ?",
+        [Auth::id()]
+    );
+    return [
+        'program_id' => (int)($user['program_id'] ?? 0),
+        'year_from'  => $user['year_level_from'] !== null ? (int)$user['year_level_from'] : null,
+        'year_to'    => $user['year_level_to']   !== null ? (int)$user['year_level_to']   : null,
+    ];
+}
+
+// True if the given year level falls inside a program head's assigned range
+// (or always true if no range was assigned).
+function programHeadYearAllowed(array $scope, $yearLevel) {
+    if ($scope['year_from'] === null && $scope['year_to'] === null) return true;
+    $y = (int)$yearLevel;
+    if ($scope['year_from'] !== null && $y < $scope['year_from']) return false;
+    if ($scope['year_to']   !== null && $y > $scope['year_to'])   return false;
+    return true;
+}
+
 // ─── List all sections with their subjects ─────────────────────────────────
 
 function handleList() {
@@ -110,6 +142,22 @@ function handleList() {
         if ($progId) {
             $conditions[] = 'sec.program_id = ?';
             $params[]     = $progId;
+        }
+    }
+    // Program Head: scope to their own program AND their assigned year range
+    if (Auth::role() === 'program_head') {
+        $scope = programHeadScope();
+        if ($scope['program_id']) {
+            $conditions[] = 'sec.program_id = ?';
+            $params[]     = $scope['program_id'];
+        }
+        if ($scope['year_from'] !== null) {
+            $conditions[] = 'sec.year_level >= ?';
+            $params[]     = $scope['year_from'];
+        }
+        if ($scope['year_to'] !== null) {
+            $conditions[] = 'sec.year_level <= ?';
+            $params[]     = $scope['year_to'];
         }
     }
     $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
@@ -201,6 +249,27 @@ function handleCreate() {
         $instrUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
         if ($instrUser && $instrUser['program_id']) {
             $programId = (int)$instrUser['program_id'];
+        }
+    }
+
+    // Program Head: scoped to their own program AND their assigned year range
+    if (Auth::role() === 'program_head') {
+        $scope = programHeadScope();
+        if (!$scope['program_id']) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Your account has no program assigned yet']);
+            return;
+        }
+        if (!$programId) $programId = $scope['program_id'];
+        if ($programId !== $scope['program_id']) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: program not in your scope']);
+            return;
+        }
+        if ($yearLevel !== null && !programHeadYearAllowed($scope, $yearLevel)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Access denied: year level outside your assigned scope']);
+            return;
         }
     }
 
@@ -1221,6 +1290,15 @@ function handleStudents() {
     $sectionId = (int)($_GET['section_id'] ?? 0);
     if (!$sectionId) { echo json_encode(['success' => false, 'message' => 'section_id required']); return; }
 
+    // Dean/program_head bypass the generic permission gate above, so ownership
+    // must be verified here — otherwise any dean/program_head could pass any
+    // section_id and see students outside their own program/year scope.
+    if (in_array(Auth::role(), ['dean', 'program_head'], true) && !sectionRow_userCanManage($sectionId)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You do not have access to this section']);
+        return;
+    }
+
     $students = db()->fetchAll(
         "SELECT ss.student_subject_id, ss.user_student_id, ss.subject_offered_id, ss.status,
                 u.first_name, u.last_name, u.student_id,
@@ -1259,6 +1337,13 @@ function handlePrograms() {
         $programs = $progId ? db()->fetchAll(
             "SELECT program_id, program_code, program_name FROM program WHERE program_id = ? AND status = 'active'",
             [$progId]
+        ) : [];
+    } elseif (Auth::role() === 'program_head') {
+        // Program Head: same as dean — scoped to their own single program
+        $scope    = programHeadScope();
+        $programs = $scope['program_id'] ? db()->fetchAll(
+            "SELECT program_id, program_code, program_name FROM program WHERE program_id = ? AND status = 'active'",
+            [$scope['program_id']]
         ) : [];
     } else {
         $deptId = (int)($_GET['department_id'] ?? 0);
@@ -1564,7 +1649,7 @@ function handleUnenroll() {
     if (!$studentSubjectId) { echo json_encode(['success' => false, 'message' => 'student_subject_id required']); return; }
 
     $enrollment = db()->fetchOne(
-        "SELECT ss.student_subject_id, ss.section_id, so.subject_offered_id, so.user_teacher_id, s.program_id
+        "SELECT ss.student_subject_id, ss.section_id, so.subject_offered_id, so.user_teacher_id, s.program_id, s.year_level
          FROM student_subject ss
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON s.subject_id = so.subject_id
@@ -1595,13 +1680,19 @@ function sectionRow_userCanManage($sectionId) {
     $role = Auth::role();
     if ($role === 'admin') return true;
 
-    $section = db()->fetchOne("SELECT program_id FROM section WHERE section_id = ?", [$sectionId]);
+    $section = db()->fetchOne("SELECT program_id, year_level FROM section WHERE section_id = ?", [$sectionId]);
     if (!$section) return false;
 
     if ($role === 'dean') {
         $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
         $deanProg = (int)($deanUser['program_id'] ?? 0);
         return $deanProg && $deanProg === (int)($section['program_id'] ?? 0);
+    }
+
+    if ($role === 'program_head') {
+        $scope = programHeadScope();
+        if (!$scope['program_id'] || $scope['program_id'] !== (int)($section['program_id'] ?? 0)) return false;
+        return programHeadYearAllowed($scope, $section['year_level'] ?? null);
     }
 
     if ($role === 'instructor') {
@@ -1632,6 +1723,12 @@ function sectionOffered_userCanManage(array $row) {
         $deanUser = db()->fetchOne("SELECT program_id FROM users WHERE users_id = ?", [Auth::id()]);
         $deanProg = (int)($deanUser['program_id'] ?? 0);
         return $deanProg && $deanProg === (int)($row['program_id'] ?? 0);
+    }
+
+    if ($role === 'program_head') {
+        $scope = programHeadScope();
+        if (!$scope['program_id'] || $scope['program_id'] !== (int)($row['program_id'] ?? 0)) return false;
+        return programHeadYearAllowed($scope, $row['year_level'] ?? null);
     }
 
     return false;
