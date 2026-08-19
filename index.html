@@ -81,8 +81,9 @@
         .nav-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .btn-nav-reg { padding: 9px 20px; background: transparent; color: var(--gold); border: 2px solid var(--gold); border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background .15s, color .15s; white-space: nowrap; }
         .btn-nav-reg:hover { background: var(--gold); color: #fff; }
-        .btn-nav-login { padding: 9px 20px; background: transparent; color: var(--green); border: 2px solid var(--green); border-radius: 6px; font-size: 13px; font-weight: 700; display: inline-block; white-space: nowrap; transition: background .15s; cursor:pointer; font-family:inherit; text-decoration:none; }
-        .btn-nav-login:hover { background: #eef6f1; }
+        .btn-nav-login { padding: 9px 20px; background: transparent; color: var(--green); border: 2px solid var(--green); border-radius: 6px; font-size: 13px; font-weight: 700; display: inline-block; white-space: nowrap; transition: background .2s, color .2s, transform .15s, box-shadow .2s; cursor:pointer; font-family:inherit; text-decoration:none; }
+        .btn-nav-login:hover { background: var(--green); color: #fff; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(27,77,46,.28); }
+        .btn-nav-login:active { transform: translateY(0); box-shadow: none; }
         .hamburger { display: none; background: none; border: 1.5px solid var(--gray-300); border-radius: 6px; padding: 7px 9px; cursor: pointer; color: var(--gray-700); }
         .hamburger:hover { background: var(--gray-100); }
         .mobile-nav { display: none; background: #fff; border-bottom: 1px solid var(--gray-200); padding: 12px 28px 20px; position: sticky; top: 76px; z-index: 899; box-shadow: 0 6px 20px rgba(0,0,0,.07); }
@@ -2124,8 +2125,9 @@
 <!-- VISITOR ASSISTANT -->
 <style>
     /* Chatbot button */
-    #vc-btn { position:fixed; bottom:28px; right:28px; width:56px; height:56px; border-radius:50%; background:var(--green); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 24px rgba(27,77,46,.4); z-index:9000; transition:transform .2s,box-shadow .2s; }
+    #vc-btn { position:fixed; bottom:28px; right:28px; width:56px; height:56px; border-radius:50%; background:var(--green); color:#fff; border:none; cursor:grab; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 24px rgba(27,77,46,.4); z-index:9000; transition:transform .2s,box-shadow .2s; touch-action:none; user-select:none; }
     #vc-btn:hover { transform:scale(1.08); box-shadow:0 10px 32px rgba(27,77,46,.5); }
+    #vc-btn.dragging { cursor:grabbing; transform:scale(1.05); box-shadow:0 14px 36px rgba(27,77,46,.55); transition:box-shadow .15s; }
     #vc-btn .vc-close { display:none; }
     #vc-btn.open .vc-open { display:none; }
     #vc-btn.open .vc-close { display:block; }
@@ -2216,13 +2218,76 @@
         { k:['contact','email','phone','number','reach','help','support','hotline'], a:'For assistance, contact COC through:\n\n• Email: info.coc@phinmaed.com\n• Carmen Campus: 0917-376-5105 · (088) 858-5867\n• Iligan Campus: 0927-120-9941\n• Puerto Campus: 0916-131-8980' },
     ];
 
+    function vcPositionPanel() {
+        const btn = document.getElementById('vc-btn');
+        const panel = document.getElementById('vc-panel');
+        const r = btn.getBoundingClientRect();
+        const panelW = Math.min(340, window.innerWidth - 24);
+        let left = r.right - panelW;
+        left = Math.max(12, Math.min(left, window.innerWidth - panelW - 12));
+        let bottom = window.innerHeight - r.top + 14;
+        bottom = Math.min(bottom, window.innerHeight - 24);
+        panel.style.width = panelW + 'px';
+        panel.style.left = left + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = bottom + 'px';
+    }
+
     function vcToggle() {
+        if (vcJustDragged) return;
         const btn = document.getElementById('vc-btn');
         const panel = document.getElementById('vc-panel');
         btn.classList.toggle('open');
         panel.classList.toggle('open');
-        if (panel.classList.contains('open')) document.getElementById('vc-input').focus();
+        if (panel.classList.contains('open')) {
+            vcPositionPanel();
+            document.getElementById('vc-input').focus();
+        }
     }
+
+    // ── Make the chat button draggable anywhere on screen ────────
+    let vcJustDragged = false;
+    (function initVcDrag() {
+        const btn = document.getElementById('vc-btn');
+        let dragging = false, moved = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        btn.addEventListener('pointerdown', e => {
+            if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+            dragging = true; moved = false;
+            const r = btn.getBoundingClientRect();
+            startX = e.clientX; startY = e.clientY;
+            startLeft = r.left; startTop = r.top;
+            btn.setPointerCapture(e.pointerId);
+        });
+
+        btn.addEventListener('pointermove', e => {
+            if (!dragging) return;
+            const dx = e.clientX - startX, dy = e.clientY - startY;
+            if (!moved && Math.hypot(dx, dy) > 5) { moved = true; btn.classList.add('dragging'); }
+            if (!moved) return;
+            e.preventDefault();
+            const w = btn.offsetWidth, h = btn.offsetHeight;
+            let newLeft = Math.max(8, Math.min(startLeft + dx, window.innerWidth - w - 8));
+            let newTop  = Math.max(8, Math.min(startTop + dy, window.innerHeight - h - 8));
+            btn.style.left = newLeft + 'px';
+            btn.style.top = newTop + 'px';
+            btn.style.right = 'auto';
+            btn.style.bottom = 'auto';
+            if (document.getElementById('vc-panel').classList.contains('open')) vcPositionPanel();
+        });
+
+        function endDrag(e) {
+            if (!dragging) return;
+            dragging = false;
+            btn.classList.remove('dragging');
+            if (moved) {
+                vcJustDragged = true;
+                setTimeout(() => { vcJustDragged = false; }, 50);
+            }
+        }
+        btn.addEventListener('pointerup', endDrag);
+        btn.addEventListener('pointercancel', endDrag);
+    })();
 
     function vcAsk(q) {
         vcAddMsg(q, 'user');

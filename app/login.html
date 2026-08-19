@@ -31,94 +31,87 @@
     html, body { height: 100%; }
     body {
         font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #fff;
+        background: var(--green-dark);
         color: var(--gray-900);
         line-height: 1.55;
         -webkit-font-smoothing: antialiased;
         overflow-x: hidden;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 44px 20px;
+        position: relative;
     }
     a { color: inherit; }
 
-    /* ── Shell: two-pane split ─────────────────────────────────── */
-    .auth-shell {
-        min-height: 100vh;
-        min-height: 100dvh;
-        display: flex;
-        background: #fff;
+    /* ── Full-bleed dimmed campus photo backdrop ───────────────── */
+    .auth-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(180deg, rgba(10,26,16,.72) 0%, rgba(10,24,15,.8) 55%, rgba(7,18,11,.9) 100%),
+            url('../assets/images/campus-building.jpg') center/cover no-repeat;
     }
 
-    /* ── Left pane: brand / campus story ───────────────────────── */
-    .auth-brand {
+    /* ── Centered card stack ────────────────────────────────────── */
+    .auth-page-wrap {
         position: relative;
-        flex: 0 0 45%;
-        min-height: 100vh;
-        min-height: 100dvh;
+        z-index: 1;
+        width: 100%;
+        max-width: 460px;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
-        padding: 40px 52px 44px;
-        color: #fff;
-        background: linear-gradient(195deg, rgba(15,38,24,.32) 0%, rgba(13,34,22,.5) 45%, rgba(20,32,14,.78) 100%),
-                    url('../assets/images/campus-building.jpg') center/cover no-repeat;
-        clip-path: polygon(0 0, 100% 0, 97.5% 100%, 0 100%);
+        align-items: center;
+        gap: 16px;
+    }
+    .auth-page-wrap::before {
+        content: '';
+        position: absolute;
+        inset: -70px -40px;
+        z-index: -1;
+        background: radial-gradient(circle at 50% 28%, rgba(245,200,66,.16) 0%, transparent 62%);
+        filter: blur(18px);
+        pointer-events: none;
+    }
+
+    /* ── The card ───────────────────────────────────────────────── */
+    .auth-card {
+        width: 100%;
+        background: #fff;
+        border-radius: 20px;
         overflow: hidden;
-        min-width: 0;
+        box-shadow: 0 30px 80px -12px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.2);
     }
 
-    .auth-brand-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
-    .auth-brand-top img { width: 42px; height: 42px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,.3)); }
-    .auth-brand-name { font-size: 15px; font-weight: 800; letter-spacing: -.1px; }
-    .auth-brand-sub  { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--gold-light); }
-
-    .auth-brand-mid { position: relative; z-index: 1; max-width: 420px; }
-    .auth-brand-eyebrow {
-        display: inline-flex; align-items: center; gap: 8px;
-        font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
-        color: var(--gold-light); margin-bottom: 18px;
+    .auth-card-head {
+        display: flex; align-items: center; justify-content: space-between; gap: 14px;
+        padding: 22px 22px 22px 32px;
+        border-bottom: 1px solid var(--gray-100);
     }
-    .auth-brand-eyebrow::before { content: ''; width: 22px; height: 2px; background: var(--gold-light); border-radius: 2px; }
-    .auth-brand-mid h1 { font-size: 34px; font-weight: 900; line-height: 1.18; letter-spacing: -.5px; margin-bottom: 16px; }
-    .auth-brand-mid h1 .accent { color: var(--gold-light); }
-    .auth-brand-mid p { font-size: 14.5px; color: rgba(255,255,255,.82); line-height: 1.65; max-width: 380px; }
-
-    .auth-feats { position: relative; z-index: 1; list-style: none; margin-top: 30px; display: flex; flex-direction: column; gap: 14px; }
-    .auth-feats li { display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: rgba(255,255,255,.92); font-weight: 500; }
-    .auth-feats .fi { width: 30px; height: 30px; border-radius: 9px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--gold-light); }
-
-    .auth-brand-bot { position: relative; z-index: 1; }
-    .auth-stats { display: flex; gap: 28px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.18); }
-    .auth-stats div b { display: block; font-size: 19px; font-weight: 800; color: #fff; }
-    .auth-stats div span { font-size: 10.5px; color: rgba(255,255,255,.62); text-transform: uppercase; letter-spacing: .4px; }
-
-    /* ── Right pane: the form ──────────────────────────────────── */
-    .auth-form-pane {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-        min-height: 100dvh;
-        padding: 28px 8vw;
-        background: #fdfdfb;
+    .auth-card-head-brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .auth-card-head img { width: 42px; height: 42px; object-fit: contain; flex-shrink: 0; }
+    .auth-card-name { font-size: 15px; font-weight: 800; color: var(--gray-900); letter-spacing: -.1px; }
+    .auth-card-sub  { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--gold-dark); }
+    .auth-card-close {
+        width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+        background: var(--gray-100); color: var(--gray-500);
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; transition: background .15s, color .15s;
     }
-    .auth-back {
-        display: inline-flex; align-items: center; gap: 6px;
-        font-size: 13px; font-weight: 600; color: var(--gray-500);
-        text-decoration: none; width: fit-content;
-        transition: color .15s;
-    }
-    .auth-back:hover { color: var(--green); }
+    .auth-card-close:hover { background: var(--gray-200); color: var(--gray-900); }
 
-    .auth-form-center { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; }
-    .auth-form-wrap { width: 100%; min-width: 0; max-width: 380px; padding: 30px 0; }
+    .auth-card-body { padding: 28px 32px 30px; }
 
     .auth-view { animation: authFadeIn .35s ease; }
     .auth-view[hidden] { display: none; }
     @keyframes authFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
     .auth-eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--gold-dark); margin-bottom: 10px; }
-    .auth-h1 { font-size: 25px; font-weight: 800; color: var(--gray-900); letter-spacing: -.3px; margin-bottom: 6px; }
-    .auth-lede { font-size: 13.5px; color: var(--gray-500); margin-bottom: 26px; line-height: 1.55; }
+    .auth-h1 { font-size: 23px; font-weight: 800; color: var(--gray-900); letter-spacing: -.3px; margin-bottom: 6px; }
+    .auth-lede { font-size: 13.5px; color: var(--gray-500); margin-bottom: 24px; line-height: 1.55; }
 
     .auth-msg { display: none; border-radius: 9px; padding: 11px 14px; font-size: 13px; line-height: 1.45; margin-bottom: 16px; }
     .auth-msg.error   { display: block; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
@@ -145,6 +138,8 @@
     }
     .fld-toggle:hover { color: var(--green); }
     .fld-hint { font-size: 12px; color: var(--gray-500); margin-top: 5px; }
+    .fld-hint-info { display: flex; align-items: center; gap: 5px; color: var(--gold-dark); font-weight: 600; }
+    .fld-hint-info svg { flex-shrink: 0; }
 
     .auth-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
     .auth-remember { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gray-600); cursor: pointer; }
@@ -154,15 +149,19 @@
 
     .cap-row { display: flex; gap: 10px; align-items: center; }
     .cap-box {
-        flex: 1; background: #f9fafb; border: 1.5px solid var(--gray-200); border-radius: 9px; padding: 10px 16px;
-        display: flex; align-items: center; justify-content: center; gap: 8px;
+        flex: 1; background: linear-gradient(180deg,#f9faf8,#f2f4ef); border: 1.5px solid var(--gray-200); border-radius: 10px; padding: 10px 16px;
+        display: flex; align-items: center; justify-content: center; gap: 10px;
         font-family: 'Courier New', monospace; font-size: 21px; font-weight: 700; color: var(--green); letter-spacing: 2px; user-select: none;
+        box-shadow: inset 0 1px 2px rgba(15,38,24,.05);
     }
+    .cap-box svg { color: var(--gold-dark); opacity: .8; flex-shrink: 0; }
     .cap-input {
-        width: 52px; min-width: 0; text-align: center; font-family: 'Courier New', monospace;
-        font-size: 21px; font-weight: 700; color: var(--green); background: transparent; border: none;
-        border-bottom: 2.5px solid var(--gray-300); outline: none; padding: 0 2px; transition: color .15s, border-color .15s;
+        width: 56px; min-width: 0; text-align: center; font-family: 'Courier New', monospace;
+        font-size: 21px; font-weight: 700; color: var(--green); background: #fff;
+        border: 1.5px solid var(--gray-300); border-radius: 7px; outline: none; padding: 4px 2px;
+        transition: color .15s, border-color .15s, box-shadow .15s;
     }
+    .cap-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(27,77,46,.09); }
     .cap-input::placeholder { color: #c7ccc9; }
     .cap-input.ok    { color: #15803d; border-color: #15803d; }
     .cap-input.bad   { color: #b91c1c; border-color: #b91c1c; }
@@ -182,13 +181,13 @@
     .auth-otp:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(27,77,46,.09); background: #fff; }
 
     .auth-btn {
-        width: 100%; padding: 13px; background: var(--green); color: #fff; border: none; border-radius: 9px;
+        width: 100%; padding: 13px; background: linear-gradient(180deg, var(--green) 0%, var(--green-dark) 100%); color: #fff; border: none; border-radius: 9px;
         font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer; margin-top: 2px;
-        box-shadow: 0 1px 2px rgba(27,77,46,.2);
+        box-shadow: 0 2px 6px rgba(27,77,46,.25);
         transition: background .15s, transform .1s, box-shadow .15s;
         display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .auth-btn:hover:not(:disabled) { background: var(--green-dark); box-shadow: 0 6px 18px rgba(27,77,46,.25); }
+    .auth-btn:hover:not(:disabled) { box-shadow: 0 10px 24px rgba(27,77,46,.3); transform: translateY(-1px); }
     .auth-btn:active:not(:disabled) { transform: translateY(1px); }
     .auth-btn:disabled { opacity: .65; cursor: not-allowed; }
     .auth-btn.ghost { background: #fff; color: var(--green); border: 1.5px solid var(--gray-200); }
@@ -211,235 +210,207 @@
         margin-bottom: 20px; display: flex; gap: 11px; align-items: flex-start;
     }
 
-    .auth-foot { text-align: center; font-size: 11.5px; color: var(--gray-400); padding-bottom: 4px; }
+    .auth-foot { text-align: center; font-size: 11.5px; color: rgba(255,255,255,.55); }
 
-    @media (max-width: 900px) {
-        .auth-shell { flex-direction: column; }
-        .auth-brand {
-            flex: 0 0 auto; min-height: 0; height: 220px; padding: 22px 24px;
-            clip-path: polygon(0 0, 100% 0, 100% 95%, 0 100%);
-        }
-        .auth-brand-mid h1 { font-size: 24px; }
-        .auth-brand-mid p, .auth-feats, .auth-stats { display: none; }
-        .auth-form-pane { padding: 20px 24px 40px; min-height: 0; }
-        .auth-form-wrap { padding: 24px 0; }
-    }
-    @media (max-width: 420px) {
-        .auth-brand { height: 190px; }
+    @media (max-width: 480px) {
+        body { padding: 24px 14px; }
+        .auth-card-head { padding: 22px 20px 18px; }
+        .auth-card-body { padding: 24px 20px 26px; }
     }
 </style>
 </head>
 <body>
 
-<div class="auth-shell">
+<div class="auth-backdrop"></div>
 
-    <!-- LEFT: brand / campus story -->
-    <aside class="auth-brand">
-        <div class="auth-brand-top">
-            <img src="../assets/images/app-icon.png" alt="COC Seal">
-            <div>
-                <div class="auth-brand-name">Cagayan de Oro College</div>
-                <div class="auth-brand-sub">PHINMA Education Network</div>
+<div class="auth-page-wrap">
+
+    <div class="auth-card">
+        <div class="auth-card-head">
+            <div class="auth-card-head-brand">
+                <img src="../assets/images/app-icon.png" alt="COC Seal">
+                <div>
+                    <div class="auth-card-name">Cagayan de Oro College</div>
+                    <div class="auth-card-sub">PHINMA Education Network</div>
+                </div>
             </div>
+            <a class="auth-card-close" href="../index.html" aria-label="Back to homepage" title="Back to homepage">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </a>
         </div>
 
-        <div class="auth-brand-mid">
-            <span class="auth-brand-eyebrow">Phinmaed Learning</span>
-            <h1>Welcome back to your <span class="accent">learning hub.</span></h1>
-            <p>Sign in to access your lessons, grades, classwork, and campus updates &mdash; all in one connected place.</p>
+        <div class="auth-card-body">
 
-            <ul class="auth-feats">
-                <li><span class="fi"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>Centralized lessons, quizzes &amp; materials</li>
-                <li><span class="fi"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg></span>Real-time grade tracking</li>
-                <li><span class="fi"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>Carmen, Iligan &amp; Puerto &mdash; one system</li>
-            </ul>
-        </div>
+            <!-- ══ VIEW: Sign In ══ -->
+            <section class="auth-view" id="view-signin">
+                <span class="auth-eyebrow">Sign In</span>
+                <h1 class="auth-h1">Sign in to your account</h1>
+                <p class="auth-lede">Enter your School ID and password to continue.</p>
 
-        <div class="auth-brand-bot">
-            <div class="auth-stats">
-                <div><b>77+</b><span>Years</span></div>
-                <div><b>3</b><span>Campuses</span></div>
-                <div><b>6</b><span>Colleges</span></div>
-            </div>
-        </div>
-    </aside>
+                <div class="auth-msg" id="si-msg" role="alert"></div>
 
-    <!-- RIGHT: form -->
-    <main class="auth-form-pane">
-        <a class="auth-back" href="../index.html">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m0 0l7 7m-7-7l7-7"/></svg>
-            Back to homepage
-        </a>
-
-        <div class="auth-form-center">
-            <div class="auth-form-wrap">
-
-                <!-- ══ VIEW: Sign In ══ -->
-                <section class="auth-view" id="view-signin">
-                    <span class="auth-eyebrow">Sign In</span>
-                    <h1 class="auth-h1">Sign in to your account</h1>
-                    <p class="auth-lede">Enter your School ID and password to continue.</p>
-
-                    <div class="auth-msg" id="si-msg" role="alert"></div>
-
-                    <form id="form-signin" novalidate>
-                        <div class="fld">
-                            <label class="fld-label" for="si-uid">School ID</label>
-                            <div class="fld-wrap">
-                                <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <input class="fld-input" type="text" id="si-uid" placeholder="Student ID or Employee ID" required maxlength="64" autocomplete="username">
-                            </div>
-                        </div>
-
-                        <div class="fld">
-                            <label class="fld-label" for="si-pw">Password</label>
-                            <div class="fld-wrap">
-                                <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                                <input class="fld-input pw" type="password" id="si-pw" placeholder="Leave blank if first-time login" maxlength="128" autocomplete="current-password">
-                                <button type="button" class="fld-toggle" id="si-pw-toggle" aria-label="Show password" onclick="pwToggle('si-pw','si-pw-toggle')">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                                </button>
-                            </div>
-                            <p class="fld-hint">First time signing in? Leave the password blank.</p>
-                        </div>
-
-                        <div class="auth-row">
-                            <label class="auth-remember"><input type="checkbox" id="si-rem"> Remember me</label>
-                            <button type="button" class="auth-link" onclick="showView('forgot-1')">Forgot password?</button>
-                        </div>
-
-                        <div class="fld">
-                            <label class="fld-label">Captcha Verification</label>
-                            <div class="cap-row">
-                                <div class="cap-box">
-                                    <span id="si-cap-eq"></span>
-                                    <input class="cap-input" type="text" id="si-cap-ans" autocomplete="off" inputmode="numeric" maxlength="3" required oninput="capCheckLive()" aria-label="Captcha answer">
-                                </div>
-                                <button type="button" class="cap-reload" onclick="capGen()" aria-label="Refresh captcha">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="auth-btn" id="si-submit">Sign In</button>
-                    </form>
-
-                    <p class="auth-switch">No account? <a href="../index.html?reg=1">Go to Register Here</a></p>
-                </section>
-
-                <!-- ══ VIEW: Forgot Password — step 1 (identifier) ══ -->
-                <section class="auth-view" id="view-forgot-1" hidden>
-                    <span class="auth-eyebrow">Reset Password</span>
-                    <h1 class="auth-h1">Forgot your password?</h1>
-                    <p class="auth-lede">Enter your registered email or School ID and we'll send you a verification code.</p>
-
+                <form id="form-signin" novalidate>
                     <div class="fld">
-                        <label class="fld-label" for="fp-identifier">Email or School ID</label>
+                        <label class="fld-label" for="si-uid">School ID</label>
                         <div class="fld-wrap">
                             <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                            <input class="fld-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
+                            <input class="fld-input" type="text" id="si-uid" placeholder="Student ID or Employee ID" required maxlength="64" autocomplete="username">
                         </div>
                     </div>
-                    <div class="auth-msg" id="fp-msg1" role="alert"></div>
-                    <button class="auth-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
-                    <button class="auth-btn ghost" style="margin-top:10px;" onclick="showView('signin')">Cancel</button>
-                </section>
-
-                <!-- ══ VIEW: Forgot Password — step 2 (OTP + new password) ══ -->
-                <section class="auth-view" id="view-forgot-2" hidden>
-                    <span class="auth-eyebrow">Reset Password</span>
-                    <h1 class="auth-h1">Check your email</h1>
-                    <p class="auth-lede" id="fp-email-hint">A 6-digit code was sent to your email.</p>
 
                     <div class="fld">
-                        <label class="fld-label">6-Digit Verification Code</label>
-                        <input class="auth-otp" type="text" id="fp-otp" placeholder="&mdash; &mdash; &mdash; &mdash; &mdash; &mdash;" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
-                        <p class="fld-hint" id="fp-timer"></p>
-                    </div>
-
-                    <div class="fld">
-                        <label class="fld-label" for="fp-newpw">New Password</label>
+                        <label class="fld-label" for="si-pw">Password</label>
                         <div class="fld-wrap">
                             <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                            <input class="fld-input pw" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password" oninput="pwMeterUpdate('fp-newpw','fp-meter')">
-                            <button type="button" class="fld-toggle" id="fp-pw-toggle" aria-label="Show password" onclick="pwToggle('fp-newpw','fp-pw-toggle')">
+                            <input class="fld-input pw" type="password" id="si-pw" placeholder="Leave blank if first-time login" maxlength="128" autocomplete="current-password">
+                            <button type="button" class="fld-toggle" id="si-pw-toggle" aria-label="Show password" onclick="pwToggle('si-pw','si-pw-toggle')">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
                         </div>
-                        <div id="fp-meter"></div>
+                        <p class="fld-hint fld-hint-info">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                            First time signing in? Leave the password blank.
+                        </p>
+                    </div>
+
+                    <div class="auth-row">
+                        <label class="auth-remember"><input type="checkbox" id="si-rem"> Remember me</label>
+                        <button type="button" class="auth-link" onclick="showView('forgot-1')">Forgot password?</button>
                     </div>
 
                     <div class="fld">
-                        <label class="fld-label" for="fp-confirmpw">Confirm New Password</label>
-                        <div class="fld-wrap">
-                            <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                            <input class="fld-input pw" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
-                            <button type="button" class="fld-toggle" id="fp-cpw-toggle" aria-label="Show confirm password" onclick="pwToggle('fp-confirmpw','fp-cpw-toggle')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <label class="fld-label">Captcha Verification</label>
+                        <div class="cap-row">
+                            <div class="cap-box">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                <span id="si-cap-eq"></span>
+                                <input class="cap-input" type="text" id="si-cap-ans" autocomplete="off" inputmode="numeric" maxlength="3" required oninput="capCheckLive()" aria-label="Captcha answer">
+                            </div>
+                            <button type="button" class="cap-reload" onclick="capGen()" aria-label="Refresh captcha">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <div class="auth-msg" id="fp-msg2" role="alert"></div>
-                    <button class="auth-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
-                    <p class="auth-switch">Didn't get the code? <button type="button" onclick="showView('forgot-1')">Go back &amp; resend</button></p>
-                </section>
+                    <button type="submit" class="auth-btn" id="si-submit">Sign In</button>
+                </form>
 
-                <!-- ══ VIEW: Forgot Password — step 3 (success) ══ -->
-                <section class="auth-view" id="view-forgot-3" hidden style="text-align:center;">
-                    <div class="auth-success-icon">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <p class="auth-switch">No account? <a href="../index.html?reg=1">Go to Register Here</a></p>
+            </section>
+
+            <!-- ══ VIEW: Forgot Password — step 1 (identifier) ══ -->
+            <section class="auth-view" id="view-forgot-1" hidden>
+                <span class="auth-eyebrow">Reset Password</span>
+                <h1 class="auth-h1">Forgot your password?</h1>
+                <p class="auth-lede">Enter your registered email or School ID and we'll send you a verification code.</p>
+
+                <div class="fld">
+                    <label class="fld-label" for="fp-identifier">Email or School ID</label>
+                    <div class="fld-wrap">
+                        <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <input class="fld-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
                     </div>
-                    <h1 class="auth-h1">Password reset!</h1>
-                    <p class="auth-lede">Your password has been changed. You can now sign in with your new credentials.</p>
-                    <button class="auth-btn" onclick="showView('signin')">Back to Sign In</button>
-                </section>
+                </div>
+                <div class="auth-msg" id="fp-msg1" role="alert"></div>
+                <button class="auth-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
+                <button class="auth-btn ghost" style="margin-top:10px;" onclick="showView('signin')">Cancel</button>
+            </section>
 
-                <!-- ══ VIEW: Set First Password ══ -->
-                <section class="auth-view" id="view-setpw" hidden>
-                    <span class="auth-eyebrow">Almost there</span>
-                    <h1 class="auth-h1">Set your password</h1>
-                    <p class="auth-lede">Secure your account before entering the system.</p>
+            <!-- ══ VIEW: Forgot Password — step 2 (OTP + new password) ══ -->
+            <section class="auth-view" id="view-forgot-2" hidden>
+                <span class="auth-eyebrow">Reset Password</span>
+                <h1 class="auth-h1">Check your email</h1>
+                <p class="auth-lede" id="fp-email-hint">A 6-digit code was sent to your email.</p>
 
-                    <div class="auth-first-banner">
-                        <svg width="19" height="19" style="color:#16a34a;flex-shrink:0;margin-top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        <div>
-                            <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:3px;">First login detected</div>
-                            <div style="font-size:13px;color:#166534;line-height:1.5;">Your account was set up by an administrator. Please create a strong password before continuing.</div>
-                        </div>
+                <div class="fld">
+                    <label class="fld-label">6-Digit Verification Code</label>
+                    <input class="auth-otp" type="text" id="fp-otp" placeholder="&mdash; &mdash; &mdash; &mdash; &mdash; &mdash;" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+                    <p class="fld-hint" id="fp-timer"></p>
+                </div>
+
+                <div class="fld">
+                    <label class="fld-label" for="fp-newpw">New Password</label>
+                    <div class="fld-wrap">
+                        <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="fld-input pw" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password" oninput="pwMeterUpdate('fp-newpw','fp-meter')">
+                        <button type="button" class="fld-toggle" id="fp-pw-toggle" aria-label="Show password" onclick="pwToggle('fp-newpw','fp-pw-toggle')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
                     </div>
+                    <div id="fp-meter"></div>
+                </div>
 
-                    <div class="fld">
-                        <label class="fld-label" for="sp-newpw">New Password</label>
-                        <div class="fld-wrap">
-                            <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                            <input class="fld-input pw" type="password" id="sp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password" oninput="pwMeterUpdate('sp-newpw','sp-meter')">
-                            <button type="button" class="fld-toggle" id="sp-pw-toggle" aria-label="Show password" onclick="pwToggle('sp-newpw','sp-pw-toggle')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                        </div>
-                        <div id="sp-meter"></div>
+                <div class="fld">
+                    <label class="fld-label" for="fp-confirmpw">Confirm New Password</label>
+                    <div class="fld-wrap">
+                        <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="fld-input pw" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="fld-toggle" id="fp-cpw-toggle" aria-label="Show confirm password" onclick="pwToggle('fp-confirmpw','fp-cpw-toggle')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
                     </div>
+                </div>
 
-                    <div class="fld">
-                        <label class="fld-label" for="sp-confirmpw">Confirm Password</label>
-                        <div class="fld-wrap">
-                            <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                            <input class="fld-input pw" type="password" id="sp-confirmpw" placeholder="Repeat your password" maxlength="128" autocomplete="new-password">
-                            <button type="button" class="fld-toggle" id="sp-cpw-toggle" aria-label="Show confirm password" onclick="pwToggle('sp-confirmpw','sp-cpw-toggle')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                        </div>
+                <div class="auth-msg" id="fp-msg2" role="alert"></div>
+                <button class="auth-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
+                <p class="auth-switch">Didn't get the code? <button type="button" onclick="showView('forgot-1')">Go back &amp; resend</button></p>
+            </section>
+
+            <!-- ══ VIEW: Forgot Password — step 3 (success) ══ -->
+            <section class="auth-view" id="view-forgot-3" hidden style="text-align:center;">
+                <div class="auth-success-icon">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h1 class="auth-h1">Password reset!</h1>
+                <p class="auth-lede">Your password has been changed. You can now sign in with your new credentials.</p>
+                <button class="auth-btn" onclick="showView('signin')">Back to Sign In</button>
+            </section>
+
+            <!-- ══ VIEW: Set First Password ══ -->
+            <section class="auth-view" id="view-setpw" hidden>
+                <span class="auth-eyebrow">Almost there</span>
+                <h1 class="auth-h1">Set your password</h1>
+                <p class="auth-lede">Secure your account before entering the system.</p>
+
+                <div class="auth-first-banner">
+                    <svg width="19" height="19" style="color:#16a34a;flex-shrink:0;margin-top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <div>
+                        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:3px;">First login detected</div>
+                        <div style="font-size:13px;color:#166534;line-height:1.5;">Your account was set up by an administrator. Please create a strong password before continuing.</div>
                     </div>
+                </div>
 
-                    <div class="auth-msg" id="sp-msg" role="alert"></div>
-                    <button class="auth-btn" id="sp-submit" onclick="submitSetFirstPassword()">Set Password &amp; Continue</button>
-                </section>
+                <div class="fld">
+                    <label class="fld-label" for="sp-newpw">New Password</label>
+                    <div class="fld-wrap">
+                        <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="fld-input pw" type="password" id="sp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password" oninput="pwMeterUpdate('sp-newpw','sp-meter')">
+                        <button type="button" class="fld-toggle" id="sp-pw-toggle" aria-label="Show password" onclick="pwToggle('sp-newpw','sp-pw-toggle')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <div id="sp-meter"></div>
+                </div>
 
-                <p class="auth-foot">&copy; 2026 PHINMA Cagayan de Oro College</p>
-            </div>
+                <div class="fld">
+                    <label class="fld-label" for="sp-confirmpw">Confirm Password</label>
+                    <div class="fld-wrap">
+                        <span class="fld-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="fld-input pw" type="password" id="sp-confirmpw" placeholder="Repeat your password" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="fld-toggle" id="sp-cpw-toggle" aria-label="Show confirm password" onclick="pwToggle('sp-confirmpw','sp-cpw-toggle')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="auth-msg" id="sp-msg" role="alert"></div>
+                <button class="auth-btn" id="sp-submit" onclick="submitSetFirstPassword()">Set Password &amp; Continue</button>
+            </section>
+
         </div>
-    </main>
+    </div>
+
+    <p class="auth-foot">&copy; 2026 PHINMA Cagayan de Oro College</p>
 </div>
 
 <script>
