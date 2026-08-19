@@ -25,6 +25,7 @@ const MS_ICONS = {
     archive:   'archive',
     school:    'school',
     calendar:  'calendar_month',
+    upload:    'upload_file',
 };
 
 function msIcon(name) {
@@ -44,6 +45,9 @@ const menus = {
         ]},
         { items: [
             { icon: 'building', text: 'Departments', page: 'departments', permission: null },
+        ]},
+        { items: [
+            { icon: 'cloudUpload', text: 'Uploads', page: 'class-density', permission: null },
         ]},
         { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },

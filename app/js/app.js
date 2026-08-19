@@ -42,6 +42,7 @@ function hideNavSpinner() {
 const PAGE_PERMISSIONS = {
     // Admin — technical pages
     'admin/users':               'users.view',
+    'admin/class-density':       'users.view',
     'admin/rbac':                'rbac.view',
     'admin/settings':            'settings.view',
     'admin/departments':         'departments.view',

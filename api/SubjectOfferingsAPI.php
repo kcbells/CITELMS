@@ -168,6 +168,7 @@ function handleList() {
                 s.program_id, p.program_code, p.program_name,
                 d.department_id, d.department_name,
                 so.subject_offered_id, so.semester_id, so.user_teacher_id, so.status, so.batch,
+                so.grading_type,
                 sem.semester_name, sem.academic_year,
                 CONCAT(u.first_name, ' ', u.last_name) AS instructor_name,
                 (SELECT COUNT(*) FROM section_subject ss2
@@ -654,6 +655,11 @@ function handleDeanAssign() {
 
     if (!$isSelf) {
         $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
+        // Program Heads can hold subject assignments too, not just plain
+        // instructors — subject-assign (the other assignment endpoint) never
+        // restricted the target's role at all, so this one requiring
+        // role='instructor' specifically was a real gap that would silently
+        // reject a valid Program Head assignment with "not in your department".
         if ($deptId) {
             $instrCheck = db()->fetchOne(
                 "SELECT u.users_id FROM users u
@@ -661,13 +667,13 @@ function handleDeanAssign() {
                    AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
                        SELECT 1 FROM department_program dp WHERE dp.program_id = u.program_id AND dp.department_id = ?
                    )))
-                   AND u.role = 'instructor' AND u.status = 'active'",
+                   AND u.role IN ('instructor', 'program_head') AND u.status = 'active'",
                 array_merge([$instrId], $scope['campus_ids'], [$deptId, $deptId])
             );
         } else {
             $instrCheck = db()->fetchOne(
                 "SELECT u.users_id FROM users u
-                 WHERE u.users_id = ? AND u.campus_id IN ($campusPlaceholders) AND u.role = 'instructor' AND u.status = 'active'",
+                 WHERE u.users_id = ? AND u.campus_id IN ($campusPlaceholders) AND u.role IN ('instructor', 'program_head') AND u.status = 'active'",
                 array_merge([$instrId], $scope['campus_ids'])
             );
         }

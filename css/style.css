@@ -110,6 +110,17 @@ img {
 
 .main-content {
     flex: 1;
+    /* A flex item's default min-width is "auto", which means it refuses to
+       shrink below the intrinsic width of whatever's inside it — a classic
+       flexbox gotcha. With a very wide table nested deep inside (like the
+       gradebook's 80+ grade columns), that meant .main-content itself grew
+       past the viewport instead of staying capped at it, so the WHOLE PAGE
+       scrolled horizontally instead of the table's own overflow-x:auto
+       wrapper taking over as intended — which is also why nothing inside
+       it could ever visually "freeze" via position:sticky: sticky only
+       works relative to a box that's actually the one scrolling, and here
+       that was never .main-content's job to begin with. */
+    min-width: 0;
     margin-left: var(--sidebar-width);
     min-height: 100vh;
     background: #fff;

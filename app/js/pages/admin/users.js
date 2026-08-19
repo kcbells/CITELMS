@@ -7,6 +7,7 @@ import { L } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
 import { icon } from '../../utils/icons.js';
+import { mountBulkImportUI, bulkImportCss } from '../../components/bulk-import-ui.js';
 
 let departments = [];
 let programs = [];
@@ -61,7 +62,15 @@ async function renderList(container, filters = {}) {
             .up-btn:hover:not(:disabled) { border-color:#00461B; color:#00461B; background:#f0fdf4; }
             .up-btn:disabled { opacity:.4; cursor:not-allowed; }
 
-            .table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; }
+            /* No overflow:hidden here on purpose — it was silently clipping the "⋮"
+               actions dropdown, which is position:absolute and renders below the
+               wrap's edge for most rows. Clicking "⋮" was toggling it open
+               correctly the whole time; it was just invisible. (Putting
+               overflow:hidden on the <table> instead doesn't fix it either — the
+               dropdown lives inside a <td>, so it would still get clipped one
+               level down.) The corner-rounding this was doing is a minor cosmetic
+               nicety, not worth trading away a working menu for. */
+            .table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:14px; }
             .users-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
             .users-table th {
                 background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
@@ -134,6 +143,7 @@ async function renderList(container, filters = {}) {
         </style>
 
         <div class="users-header">
+            <button class="btn-secondary" id="btn-import-excel">${icon('document',{size:14,className:'ui-icon-inline'})} Import Excel</button>
             <button class="btn-secondary" id="btn-export-csv">${icon('download',{size:14,className:'ui-icon-inline'})} Export CSV</button>
             <button class="btn-secondary" id="btn-export-pdf">${icon('download',{size:14,className:'ui-icon-inline'})} Export PDF</button>
             <button class="btn-primary" id="btn-add-user">+ Add User</button>
@@ -218,6 +228,9 @@ async function renderList(container, filters = {}) {
     // Event: Add user
     container.querySelector('#btn-add-user').addEventListener('click', () => openModal(container));
 
+    // Event: Bulk import from Excel
+    container.querySelector('#btn-import-excel').addEventListener('click', () => openImportModal(container, filters));
+
     // Event: Export CSV / PDF (exports every filtered row, not just the current page)
     container.querySelector('#btn-export-csv').addEventListener('click', () => exportUsers('csv', filters));
     container.querySelector('#btn-export-pdf').addEventListener('click', () => exportUsers('pdf', filters));
@@ -266,9 +279,18 @@ async function renderList(container, filters = {}) {
             container.querySelector(`[data-dropdown="${id}"]`).classList.toggle('show');
         });
     });
-    document.addEventListener('click', () => {
-        container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-    }, { once: true });
+    // renderList() re-runs on every filter/page change, so guard against
+    // stacking up a fresh document-level listener on every single one of
+    // those (the previous `{ once: true }` avoided that leak, but at the
+    // cost of "click outside to close" only ever working the very first
+    // time it fired, then silently doing nothing for the rest of the page's
+    // life — worse trade-off than one idempotent listener kept for good).
+    if (!container.dataset.dropdownCloserAttached) {
+        container.dataset.dropdownCloserAttached = '1';
+        document.addEventListener('click', () => {
+            container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
+        });
+    }
 
     // Event: Edit
     container.querySelectorAll('[data-edit]').forEach(a => {
@@ -798,4 +820,38 @@ async function exportUsers(format, filters) {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 250);
+}
+
+// ── Bulk Import from Excel ──────────────────────────────────────────────
+// Admin uploads one .xlsx sheet; BulkImportAPI.php extracts instructor /
+// student accounts, subjects, sections, and class assignments from it.
+// New accounts log in with employee_id/student_id + their last name as a
+// temp password, and must set a real one on first login (config/auth.php +
+// AuthAPI.php's existing first-login flow, reused for this).
+
+function openImportModal(container, filters) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal" style="max-width:640px;">
+            <div class="modal-header">
+                <h3>${icon('document',{size:16,className:'ui-icon-inline'})} Import from Excel</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="bi-host"></div>
+            <div class="modal-footer">
+                <button class="btn-secondary modal-cancel">Close</button>
+            </div>
+        </div>
+        <style>${bulkImportCss()}</style>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.querySelector('.modal-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    mountBulkImportUI(overlay.querySelector('#bi-host'), {
+        onImported: () => renderList(container, filters),
+    });
 }

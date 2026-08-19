@@ -11,6 +11,7 @@ import {
 } from '../../utils/gradebook-periods.js';
 import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
 import { computeStudentReport, formatGrade, PERIODS } from '../../utils/grading-engine.js';
+import { openModuleDocumentsModal } from '../../components/module-documents-modal.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G = '#00461B';
@@ -101,13 +102,12 @@ async function attachGlobalReports(subjects) {
                         wrapUpQuiz: mg.wrap_up_quiz ?? null,
                     };
                 },
-                getPeriodProject: (period) => {
-                    const pg = project[period] || {};
-                    return {
-                        checkins: [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
-                        finalOutput: pg.final_output ?? null,
-                    };
-                },
+                // One shared project for the whole term (not one per period)
+                // — every period's Mastery calc reads the same values here.
+                getPeriodProject: () => ({
+                    checkins: [project.checkin1 ?? null, project.checkin2 ?? null, project.checkin3 ?? null, project.checkin4 ?? null],
+                    finalOutput: project.final_output ?? null,
+                }),
             });
         } catch (err) {
             console.error('Global report fetch failed:', subject.subject_id, err);
@@ -320,6 +320,7 @@ function renderReportCardPage(container, { subjects, myName, myStudentId, me }) 
                 const subject = subjects[idx];
                 if (subject._globalReport) {
                     panel.innerHTML = renderGlobalSummaryTable(subject, myName, myStudentId);
+                    bindDocsButton(panel);
                 } else {
                     const record = buildStudentRecord(subject, myName, myStudentId);
                     panel.innerHTML = renderClassRecordTable(subject, record, { embedded: true });
@@ -340,6 +341,7 @@ function renderClassRecordOnly(container, { subject, myName, myStudentId }) {
                 <div id="sg-record-host">${renderGlobalSummaryTable(subject, myName, myStudentId)}</div>
             </div>
         `;
+        bindDocsButton(container);
         return;
     }
     const record = buildStudentRecord(subject, myName, myStudentId);
@@ -562,7 +564,12 @@ function renderGlobalSummaryTable(subject, myName, myStudentId) {
     return `
         <div class="gb-record-head">
             <span class="gb-role-pill">${icon('gradebook', inl)} Student view</span>
-            <h2>Global Grading Summary</h2>
+            <div class="sg-summary-titlerow">
+                <h2>Global Grading Summary</h2>
+                <button type="button" class="sg-docs-btn" data-sg-docs="${subject.subject_id}">
+                    ${icon('document', inl)} Activity Sheets
+                </button>
+            </div>
             <p>${meta}</p>
             <p class="gb-period-legend">Effortful Learning / Mastery model — the same standard shown on your instructor's Summary &amp; Remarks sheet.</p>
         </div>
@@ -626,6 +633,12 @@ function renderGlobalSummaryTable(subject, myName, myStudentId) {
 }
 
 /* ─── Shared UI helpers ─────────────────────────────────────── */
+
+function bindDocsButton(root) {
+    root.querySelector('[data-sg-docs]')?.addEventListener('click', (e) => {
+        openModuleDocumentsModal(e.currentTarget.dataset.sgDocs, { canUpload: false });
+    });
+}
 
 function emptyBox(msg) {
     return `
@@ -737,6 +750,12 @@ function pageCss() {
             font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; background:${GL}; color:${G}; }
         .gb-record-head { margin-bottom:16px; padding:0 20px; }
         .gb-record-head h2 { font-size:18px; font-weight:800; color:#111; margin:8px 0 4px; }
+        .sg-summary-titlerow { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+        .sg-summary-titlerow h2 { margin:8px 0 0; }
+        .sg-docs-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; margin-top:6px;
+            border-radius:8px; border:1.5px solid ${G}; background:#fff; color:${G};
+            font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+        .sg-docs-btn:hover { background:${GL}; }
         .gb-record-head > p { font-size:13px; color:#6B7280; margin:0 0 10px; }
         .gb-period-legend { font-size:12px !important; color:#00461B !important; background:#E8F5EC;
             padding:8px 12px; border-radius:8px; margin-bottom:10px !important; }

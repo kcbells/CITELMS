@@ -1369,6 +1369,45 @@
     </div>
 </div>
 
+<!-- SET PHINMAED EMAIL MODAL — shown when a bulk-imported account has no real email on file -->
+<style>
+    #set-email-modal { position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
+    #set-email-modal[hidden] { display:none; animation:none; }
+</style>
+<div id="set-email-modal" hidden aria-hidden="true">
+    <div class="reg-modal" style="max-width:460px;">
+        <div class="modal-hdr">
+            <img src="assets/images/app-icon.png" alt="COC Seal">
+            <div class="modal-hdr-text">
+                <h2>Add Your Email</h2>
+                <p>One more step before entering the system</p>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;">
+                <svg width="20" height="20" style="color:#16a34a;flex-shrink:0;margin-top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:3px;">No email on file</div>
+                    <div style="font-size:13px;color:#166534;line-height:1.5;">Your account was set up by an administrator without an email address. Enter your <strong>PHINMAed email</strong> so we can reach you and you can recover your account if needed.</div>
+                </div>
+            </div>
+
+            <div class="si-group">
+                <label class="si-label" for="phinmaed-email">PHINMAed Email <span style="color:#dc2626">*</span></label>
+                <div class="si-wrap">
+                    <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+                    <input class="si-input" type="email" id="phinmaed-email" placeholder="juan.delacruz@phinmaed.com" maxlength="254" autocomplete="email">
+                </div>
+            </div>
+
+            <div id="set-email-error" style="display:none;"></div>
+            <button class="si-btn" id="set-email-submit" onclick="submitSetPhinmaedEmail()" style="margin-top:6px;">
+                <span id="set-email-btn-text">Save &amp; Continue</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     // Scroll top
     window.addEventListener('scroll', () => {
@@ -1767,6 +1806,11 @@
         else { inp.type = 'password'; btn.style.color = ''; }
     }
 
+    // Set by submitSignIn() from the login response, read by submitSetFirstPassword()
+    // once the password step (if any) is done, to decide whether the
+    // PHINMAed-email step comes next before reaching the dashboard.
+    let pendingNeedsPhinmaedEmail = false;
+
     // Submit sign in — validate captcha, call login API, redirect to role dashboard
     async function submitSignIn(e) {
         e.preventDefault();
@@ -1816,10 +1860,23 @@
                 localStorage.setItem('jwt_token', json.data.token);
             }
 
-            // First login: no password yet — open the set-password modal
-            if (json.data && json.data.first_login) {
+            // A bulk-imported account with no email column gets a placeholder
+            // ("EMPID@pending.local") on creation — remembered here so it can
+            // be asked for after the password step (if any) instead of being
+            // dropped straight onto the dashboard with a fake address on file.
+            pendingNeedsPhinmaedEmail = !!(json.data && json.data.needs_phinmaed_email);
+
+            // First login (no password yet) OR a bulk-imported account still
+            // on its temp password — either way, set a real password first.
+            if (json.data && (json.data.first_login || json.data.must_change_password)) {
                 closeSignIn();
                 openSetPwModal();
+                return;
+            }
+
+            if (pendingNeedsPhinmaedEmail) {
+                closeSignIn();
+                openSetEmailModal();
                 return;
             }
 
@@ -2082,8 +2139,18 @@
             }
 
             if (res.data && res.data.token) localStorage.setItem('jwt_token', res.data.token);
-            btnText.textContent = '✓ Password set! Redirecting…';
 
+            // Password's done — if this account also still has a placeholder
+            // email (no email column in the sheet it was imported from), ask
+            // for the real one next instead of going straight to the dashboard.
+            if (pendingNeedsPhinmaedEmail) {
+                document.getElementById('set-password-modal').setAttribute('hidden', '');
+                document.getElementById('set-password-modal').setAttribute('aria-hidden', 'true');
+                openSetEmailModal();
+                return;
+            }
+
+            btnText.textContent = '✓ Password set! Redirecting…';
             const dest = (res.data && res.data.redirect) || 'app/dashboard.html';
             setTimeout(() => { window.location.href = dest; }, 900);
         } catch {
@@ -2092,6 +2159,63 @@
             if (!btnText.textContent.includes('Redirecting')) {
                 btn.disabled = false;
                 btnText.textContent = 'Set Password & Continue';
+            }
+        }
+    }
+
+    // ── Set PHINMAed Email Modal (bulk-imported account, no email on file) ──
+    function openSetEmailModal() {
+        const modal = document.getElementById('set-email-modal');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => document.getElementById('phinmaed-email').focus(), 80);
+    }
+
+    async function submitSetPhinmaedEmail() {
+        const email   = document.getElementById('phinmaed-email').value.trim();
+        const errEl   = document.getElementById('set-email-error');
+        const btn     = document.getElementById('set-email-submit');
+        const btnText = document.getElementById('set-email-btn-text');
+
+        errEl.style.display = 'none';
+        function showErr(msg) {
+            errEl.textContent = msg;
+            errEl.className   = 'auth-error';
+            errEl.style.display = 'block';
+        }
+
+        if (!email) { showErr('Enter your PHINMAed email address.'); return; }
+        if (!/^[^\s@]+@phinmaed\.com$/i.test(email)) {
+            showErr('Please use your PHINMAed email address (e.g. juan.delacruz@phinmaed.com).');
+            return;
+        }
+
+        btn.disabled = true;
+        btnText.textContent = 'Saving…';
+
+        try {
+            const res = await fetch('api/AuthAPI.php?action=set-phinmaed-email', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ email })
+            }).then(r => r.json());
+
+            if (!res.success) {
+                showErr(res.message || 'Failed to save email. Please try again.');
+                return;
+            }
+
+            btnText.textContent = '✓ Email saved! Redirecting…';
+            const dest = (res.data && res.data.redirect) || 'app/dashboard.html';
+            setTimeout(() => { window.location.href = dest; }, 900);
+        } catch {
+            showErr('Connection error. Please try again.');
+        } finally {
+            if (!btnText.textContent.includes('Redirecting')) {
+                btn.disabled = false;
+                btnText.textContent = 'Save & Continue';
             }
         }
     }

@@ -226,7 +226,7 @@ function handleList() {
     $users = db()->fetchAll(
         "SELECT u.users_id, u.first_name, u.middle_name, u.last_name, u.suffix, u.email, u.role, u.status,
                 u.employee_id, u.student_id, u.department_id, u.program_id,
-                u.campus_id, u.year_level, u.created_at,
+                u.campus_id, u.year_level, u.year_level_from, u.year_level_to, u.created_at,
                 d.department_name, p.program_code, p.program_name,
                 c.campus_name, c.campus_code
          FROM users u
