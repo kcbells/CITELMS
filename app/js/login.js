@@ -256,7 +256,7 @@ loginForm.addEventListener('submit', async e => {
             localStorage.setItem('jwt_token', loginRes.data.token);
         }
 
-        if (loginRes.data?.first_login || loginRes.data?.must_change_password) {
+        if (loginRes.data?.first_login) {
             openModal('set-password-modal');
             attachStrengthMeter(document.getElementById('new-password'));
             return;

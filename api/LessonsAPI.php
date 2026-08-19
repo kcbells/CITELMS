@@ -316,7 +316,6 @@ function getLesson() {
         }
 
         ensureLessonSectionTable();
-        ensureLessonStudentTable();
         $studentSection = db()->fetchOne(
             "SELECT ss.section_id FROM student_subject ss
              JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
@@ -397,13 +396,6 @@ function getLessons() {
 
     try {
         ensureLessonSectionTable();
-        // lesson_student is only ever created lazily on the write path
-        // (attachLessonStudents) — never here on the read path. Same class
-        // of bug as the announcement_student table: if no lesson had used
-        // per-student targeting yet, this table simply didn't exist, the
-        // query below threw, and lessons/activities silently never showed
-        // up on the student side at all.
-        ensureLessonStudentTable();
         ensureLessonDueDateColumn();
         ensureLessonPointsColumn();
         $studentSection = db()->fetchOne(

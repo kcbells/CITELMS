@@ -17,7 +17,7 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole(['instructor', 'program_head', 'dean']);
+Auth::requireRole('instructor');
 
 // Auto-migrate: add lessons_id to question_bank if it doesn't exist yet
 (function() {
@@ -340,12 +340,10 @@ function deleteQuestion() {
         return;
     }
 
-    // Dean has moderation authority over the whole bank — not limited to their
-    // own posts, same as a dean can moderate any instructor's classroom content.
-    $isModerator = Auth::role() === 'dean';
-    $q = $isModerator
-        ? db()->fetchOne("SELECT qbank_id FROM question_bank WHERE qbank_id = ?", [$qbankId])
-        : db()->fetchOne("SELECT qbank_id FROM question_bank WHERE qbank_id = ? AND created_by = ?", [$qbankId, $userId]);
+    $q = db()->fetchOne(
+        "SELECT qbank_id FROM question_bank WHERE qbank_id = ? AND created_by = ?",
+        [$qbankId, $userId]
+    );
     if (!$q) {
         echo json_encode(['success' => false, 'message' => 'Question not found or not yours']);
         return;

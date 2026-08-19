@@ -105,10 +105,6 @@ switch ($action) {
         handleSetFirstPassword();
         break;
 
-    case 'set-phinmaed-email':
-        handleSetPhinmaedEmail();
-        break;
-
     case 'forgot-password':
         handleForgotPassword();
         break;
@@ -632,7 +628,6 @@ function handleLogin() {
                 'first_login' => true,
                 'token'       => $token,
                 'tab_lease'   => Auth::tabLease(),
-                'needs_phinmaed_email' => isPlaceholderEmail($user['email']),
                 'user'        => [
                     'id'    => $user['users_id'],
                     'name'  => trim($user['first_name'] . ' ' . $user['last_name']),
@@ -682,21 +677,9 @@ function handleLogin() {
                 'email' => $user['email'],
                 'role'  => $user['role']
             ],
-            'token'                => $token,
-            'tab_lease'            => Auth::tabLease(),
-            'redirect'             => $redirectUrl,
-            // Bulk-imported accounts log in with a temp password (their last
-            // name) and must set a real one before they can reach their
-            // dashboard — the frontend shows the same "set password" modal
-            // used for first_login and posts to set-first-password, which
-            // accepts either case (see handleSetFirstPassword()).
-            'must_change_password' => !empty($user['must_change_password']),
-            // A row bulk-imported with no email column gets a placeholder
-            // ("EMPID@pending.local", see BulkImportAPI.php) just so account
-            // creation doesn't hit the UNIQUE(email) constraint — it was
-            // never meant to be a real address. Ask for their actual
-            // @phinmaed.com email before they reach their dashboard.
-            'needs_phinmaed_email' => isPlaceholderEmail($user['email']),
+            'token'     => $token,
+            'tab_lease' => Auth::tabLease(),
+            'redirect'  => $redirectUrl
         ]);
         
     } catch (Exception $e) {
@@ -1298,26 +1281,21 @@ function handleSetFirstPassword() {
         jsonResponse(false, 'Passwords do not match.');
     }
 
-    // Allowed in two cases: a true first-login (no password yet), or a
-    // bulk-imported account that has a temp password (last name) and is
-    // flagged must_change_password — everyone else should use the normal
-    // change-password feature instead.
-    $user = db()->fetchOne("SELECT password, role, must_change_password FROM users WHERE users_id = ?", [$userId]);
+    // Ensure this is truly a first-login (no password yet)
+    $user = db()->fetchOne("SELECT password, role FROM users WHERE users_id = ?", [$userId]);
     if (!$user) {
         jsonResponse(false, 'User not found.', null, 404);
     }
-    $isFirstLogin = $user['password'] === null || $user['password'] === '';
-    $isForcedReset = !empty($user['must_change_password']);
-    if (!$isFirstLogin && !$isForcedReset) {
+    if ($user['password'] !== null && $user['password'] !== '') {
         jsonResponse(false, 'Password already set. Use the change-password feature instead.');
     }
 
     db()->execute(
-        "UPDATE users SET password = ?, must_change_password = 0, updated_at = NOW() WHERE users_id = ?",
+        "UPDATE users SET password = ?, updated_at = NOW() WHERE users_id = ?",
         [password_hash($password, PASSWORD_DEFAULT), $userId]
     );
 
-    logActivity($userId, 'password_set', $isForcedReset ? 'User changed temp password after bulk import' : 'User set password on first login');
+    logActivity($userId, 'password_set', 'User set password on first login');
 
     // Re-establish session so Auth::dashboardUrl() picks the right role
     $fullUser = db()->fetchOne("SELECT * FROM users WHERE users_id = ?", [$userId]);
@@ -1325,69 +1303,6 @@ function handleSetFirstPassword() {
 
     jsonResponse(true, 'Password set successfully. Welcome!', [
         'role'     => $user['role'],
-        'redirect' => Auth::dashboardUrl(),
-    ]);
-}
-
-/** True for the "EMPID@pending.local" placeholder BulkImportAPI.php invents when a row has no real email. */
-function isPlaceholderEmail(?string $email): bool
-{
-    return $email !== null && str_ends_with(strtolower($email), '@pending.local');
-}
-
-/**
- * A bulk-imported account whose sheet had no email column gets a
- * placeholder address just to satisfy the UNIQUE(email) constraint (see
- * upsertPerson() in BulkImportAPI.php). This lets that person replace it
- * with their real @phinmaed.com email the first time they log in, before
- * reaching their dashboard — same "one-time gate before home" pattern as
- * handleSetFirstPassword().
- */
-function handleSetPhinmaedEmail() {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        jsonResponse(false, 'Method not allowed', null, 405);
-    }
-
-    $userId = Auth::id();
-    if (!$userId) {
-        $jwtUser = JWT::authenticate();
-        if ($jwtUser) $userId = $jwtUser['sub'];
-    }
-    if (!$userId) {
-        jsonResponse(false, 'Not authenticated', null, 401);
-    }
-
-    $input = json_decode(file_get_contents('php://input'), true) ?: [];
-    $email = strtolower(trim($input['email'] ?? ''));
-
-    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        jsonResponse(false, 'Enter a valid email address.');
-    }
-    if (!str_ends_with($email, '@phinmaed.com')) {
-        jsonResponse(false, 'Please use your PHINMAed email address (e.g. juan.dela.cruz@phinmaed.com).');
-    }
-
-    $user = db()->fetchOne("SELECT email FROM users WHERE users_id = ?", [$userId]);
-    if (!$user) {
-        jsonResponse(false, 'User not found.', null, 404);
-    }
-    if (!isPlaceholderEmail($user['email'])) {
-        jsonResponse(false, 'This account already has an email on file. Use the change-email feature instead.');
-    }
-
-    $taken = db()->fetchOne("SELECT 1 FROM users WHERE email = ? AND users_id != ?", [$email, $userId]);
-    if ($taken) {
-        jsonResponse(false, 'That email is already used by another account.');
-    }
-
-    db()->execute("UPDATE users SET email = ?, updated_at = NOW() WHERE users_id = ?", [$email, $userId]);
-    logActivity($userId, 'email_set', 'User set their PHINMAed email after bulk import');
-
-    $fullUser = db()->fetchOne("SELECT * FROM users WHERE users_id = ?", [$userId]);
-    if ($fullUser) Auth::login($fullUser);
-
-    jsonResponse(true, 'Email saved.', [
-        'email'    => $email,
         'redirect' => Auth::dashboardUrl(),
     ]);
 }

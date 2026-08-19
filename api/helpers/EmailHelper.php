@@ -300,7 +300,10 @@ HTML;
         }
 
         $priority = !empty($options['priority']);
-        $requireDelivery = !empty($options['require_delivery']);
+        // In local dev (APP_ENV=development), never hard-block the log fallback —
+        // lets you read OTP codes from storage/logs/mail.log when no real mail
+        // provider is configured. Production keeps the strict require_delivery behavior.
+        $requireDelivery = !empty($options['require_delivery']) && !(defined('DEBUG_MODE') && DEBUG_MODE);
         $inlineImages = $options['inline_images'] ?? [];
         if ($inlineImages === [] && str_contains($htmlBody, 'cid:phinma_logo')) {
             $logoAtt = self::logoInlineAttachment();

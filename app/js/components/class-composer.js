@@ -239,15 +239,7 @@ function injectStyles() {
 }
 
 function audiencePanelHtml(sections, presetSectionId, pfx = 'cm') {
-    // Always default to "All students," even when the composer was opened
-    // while a specific section was filtered/selected on the page. Silently
-    // narrowing to "whichever section you happened to be looking at" caused
-    // posts to appear to "not show up" for students in every other section
-    // of the same subject — nothing was broken, the post just never reached
-    // them. The instructor/dean/program head can still deliberately narrow
-    // to specific sections themselves; it's just no longer the surprise
-    // default.
-    const defaultAll = true;
+    const defaultAll = !presetSectionId;
     const secChecks = sections.length ? sections.map(sec => `
         <label class="cm-sec-check">
             <input type="checkbox" class="${pfx}-sec-pick" value="${sec.section_id}"

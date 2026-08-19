@@ -5,10 +5,7 @@
  *
  * Tables used:
  *   global_module_grades  — per student × offering × module (1-14)
- *   global_project_grades — per student × offering (ONE project for the
- *       whole term, not one per period — 4 check-ins spread across it:
- *       checkin1=P1, checkin2=P2, checkin3=P3.1, checkin4=P3.2 (optional),
- *       plus one final_output. Shared by all three periods' Mastery calc.
+ *   global_project_grades — per student × offering × period (P1, P2, Final)
  */
 require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
@@ -56,17 +53,18 @@ try {
         KEY `idx_gmg_student`  (`student_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $__db->exec("CREATE TABLE IF NOT EXISTS `global_project_grades` (
-        `proj_id`            INT           NOT NULL AUTO_INCREMENT,
-        `subject_offered_id` INT           NOT NULL,
-        `student_id`         INT           NOT NULL,
-        `checkin1`           DECIMAL(6,2)  NULL,
-        `checkin2`           DECIMAL(6,2)  NULL,
-        `checkin3`           DECIMAL(6,2)  NULL,
-        `checkin4`           DECIMAL(6,2)  NULL,
-        `final_output`       DECIMAL(6,2)  NULL,
-        `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        `proj_id`            INT                    NOT NULL AUTO_INCREMENT,
+        `subject_offered_id` INT                    NOT NULL,
+        `student_id`         INT                    NOT NULL,
+        `period`             ENUM('P1','P2','Final') NOT NULL,
+        `checkin1`           DECIMAL(6,2)           NULL,
+        `checkin2`           DECIMAL(6,2)           NULL,
+        `checkin3`           DECIMAL(6,2)           NULL,
+        `checkin4`           DECIMAL(6,2)           NULL,
+        `final_output`       DECIMAL(6,2)           NULL,
+        `updated_at`         TIMESTAMP              NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (`proj_id`),
-        UNIQUE KEY `uq_gpg` (`subject_offered_id`, `student_id`),
+        UNIQUE KEY `uq_gpg` (`subject_offered_id`, `student_id`, `period`),
         KEY `idx_gpg_offering` (`subject_offered_id`),
         KEY `idx_gpg_student`  (`student_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -156,18 +154,21 @@ function handleStudentSummary(): void
         ];
     }
 
-    $projectRow = db()->fetchOne(
-        "SELECT checkin1, checkin2, checkin3, checkin4, final_output
+    $projectRows = db()->fetchAll(
+        "SELECT period, checkin1, checkin2, checkin3, checkin4, final_output
          FROM global_project_grades WHERE subject_offered_id = ? AND student_id = ?",
         [$offeredId, $studentId]
     );
-    $project = $projectRow ? [
-        'checkin1'     => $projectRow['checkin1']     !== null ? (float)$projectRow['checkin1']     : null,
-        'checkin2'     => $projectRow['checkin2']     !== null ? (float)$projectRow['checkin2']     : null,
-        'checkin3'     => $projectRow['checkin3']     !== null ? (float)$projectRow['checkin3']     : null,
-        'checkin4'     => $projectRow['checkin4']     !== null ? (float)$projectRow['checkin4']     : null,
-        'final_output' => $projectRow['final_output'] !== null ? (float)$projectRow['final_output'] : null,
-    ] : [];
+    $project = [];
+    foreach ($projectRows as $r) {
+        $project[$r['period']] = [
+            'checkin1'     => $r['checkin1']     !== null ? (float)$r['checkin1']     : null,
+            'checkin2'     => $r['checkin2']     !== null ? (float)$r['checkin2']     : null,
+            'checkin3'     => $r['checkin3']     !== null ? (float)$r['checkin3']     : null,
+            'checkin4'     => $r['checkin4']     !== null ? (float)$r['checkin4']     : null,
+            'final_output' => $r['final_output'] !== null ? (float)$r['final_output'] : null,
+        ];
+    }
 
     echo json_encode(['success' => true, 'data' => ['modules' => $modules, 'project' => $project]]);
 }
@@ -229,12 +230,11 @@ function handleModuleGrades(): void
 /**
  * GET ?action=project-grades&subject_offered_id=X&section_id=Y
  *
- * Returns the ONE project's grades per student (not per period — see the
- * file-level doc comment for why).
+ * Returns project/final-output grades per period per student.
  * Response shape:
  *   {
  *     success: true,
- *     project: { "<student_id>": { checkin1…checkin4, final_output } }
+ *     project: { "<student_id>": { "P1": { checkin1…checkin4, final_output }, "P2": {…}, "Final": {…} } }
  *   }
  */
 function handleProjectGrades(): void
@@ -247,7 +247,7 @@ function handleProjectGrades(): void
     }
 
     $rows = db()->fetchAll(
-        "SELECT student_id,
+        "SELECT student_id, period,
                 checkin1, checkin2, checkin3, checkin4, final_output
          FROM global_project_grades
          WHERE subject_offered_id = ?
@@ -262,8 +262,9 @@ function handleProjectGrades(): void
 
     $project = [];
     foreach ($rows as $r) {
-        $sid = (int)$r['student_id'];
-        $project[$sid] = [
+        $sid    = (int)$r['student_id'];
+        $period = $r['period'];
+        $project[$sid][$period] = [
             'checkin1'     => $r['checkin1']     !== null ? (float)$r['checkin1']     : null,
             'checkin2'     => $r['checkin2']     !== null ? (float)$r['checkin2']     : null,
             'checkin3'     => $r['checkin3']     !== null ? (float)$r['checkin3']     : null,
@@ -322,22 +323,24 @@ function handleSaveField(): void
 
 /**
  * POST ?action=save-project
- * Body: { subject_offered_id, student_id, field, value }
+ * Body: { subject_offered_id, student_id, period, field, value }
  *
- * Upserts one field in global_project_grades — one row per student per
- * offering (no period; see the file-level doc comment).
- * field: checkin1 (P1) | checkin2 (P2) | checkin3 (P3.1) | checkin4 (P3.2, optional) | final_output
+ * Upserts one field in global_project_grades.
+ * period: P1 | P2 | Final
+ * field:  checkin1 | checkin2 | checkin3 | checkin4 | final_output
  */
 function handleSaveProject(): void
 {
     $data      = json_decode(file_get_contents('php://input'), true) ?? [];
     $offeredId = (int)($data['subject_offered_id'] ?? 0);
     $studentId = (int)($data['student_id']         ?? 0);
+    $period    = $data['period'] ?? '';
     $field     = $data['field']  ?? '';
     $value     = $data['value'];
 
-    $validFields = ['checkin1', 'checkin2', 'checkin3', 'checkin4', 'final_output'];
-    if (!$offeredId || !$studentId || !in_array($field, $validFields)) {
+    $validPeriods = ['P1', 'P2', 'Final'];
+    $validFields  = ['checkin1', 'checkin2', 'checkin3', 'checkin4', 'final_output'];
+    if (!$offeredId || !$studentId || !in_array($period, $validPeriods) || !in_array($field, $validFields)) {
         echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
         return;
     }
@@ -347,10 +350,10 @@ function handleSaveProject(): void
     try {
         pdo()->prepare(
             "INSERT INTO global_project_grades
-                (subject_offered_id, student_id, {$field})
-             VALUES (?, ?, ?)
+                (subject_offered_id, student_id, period, {$field})
+             VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE {$field} = VALUES({$field}), updated_at = NOW()"
-        )->execute([$offeredId, $studentId, $value]);
+        )->execute([$offeredId, $studentId, $period, $value]);
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         error_log('GlobalGradebook save-project: ' . $e->getMessage());

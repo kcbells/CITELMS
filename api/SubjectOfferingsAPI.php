@@ -168,7 +168,6 @@ function handleList() {
                 s.program_id, p.program_code, p.program_name,
                 d.department_id, d.department_name,
                 so.subject_offered_id, so.semester_id, so.user_teacher_id, so.status, so.batch,
-                so.grading_type,
                 sem.semester_name, sem.academic_year,
                 CONCAT(u.first_name, ' ', u.last_name) AS instructor_name,
                 (SELECT COUNT(*) FROM section_subject ss2
@@ -579,6 +578,8 @@ function handleInstructorSubjects() {
                 s.year_level, s.semester AS subject_semester,
                 p.program_id, p.program_code, p.program_name,
                 MAX(CASE WHEN so.user_teacher_id = $instrParam AND $instrParam > 0 THEN 1 ELSE 0 END) AS is_assigned,
+                MAX(CASE WHEN so.user_teacher_id = $instrParam AND $instrParam > 0 THEN so.subject_offered_id ELSE NULL END) AS assigned_offering_id,
+                MAX(CASE WHEN so.user_teacher_id = $instrParam AND $instrParam > 0 THEN so.grading_type ELSE NULL END) AS grading_type,
                 MAX(CASE WHEN so.subject_offered_id IS NOT NULL THEN 1 ELSE 0 END) AS has_offering,
                 MAX(CASE WHEN so.user_teacher_id IS NOT NULL AND so.user_teacher_id != $instrParam THEN 1 ELSE 0 END) AS taken_by_other,
                 GROUP_CONCAT(DISTINCT
@@ -655,11 +656,6 @@ function handleDeanAssign() {
 
     if (!$isSelf) {
         $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
-        // Program Heads can hold subject assignments too, not just plain
-        // instructors — subject-assign (the other assignment endpoint) never
-        // restricted the target's role at all, so this one requiring
-        // role='instructor' specifically was a real gap that would silently
-        // reject a valid Program Head assignment with "not in your department".
         if ($deptId) {
             $instrCheck = db()->fetchOne(
                 "SELECT u.users_id FROM users u

@@ -125,23 +125,11 @@ export function moduleMasteryGrade(wrapUpQuiz, projectScore) {
 
 /**
  * @param {(number|null)[]} checkins  up to 4 check-in grades (P1, P2, P3.1, P3.2)
- * @returns {number|null} plain average of whichever check-ins have a value —
- *          the same "Check-in Grades Average" column shown on the reference
- *          SAS spreadsheet, factored out so the table can display it
- *          alongside the overall grade instead of only using it internally.
- */
-export function checkinAverage(checkins) {
-    const valid = (checkins || []).filter((v) => v !== null && v !== undefined);
-    return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
-}
-
-/**
- * @param {(number|null)[]} checkins  up to 4 check-in grades (P1, P2, P3.1, P3.2)
  * @param {number|null} finalOutputGrade
  */
 export function projectOverallGrade(checkins, finalOutputGrade) {
     const valid = (checkins || []).filter((v) => v !== null && v !== undefined);
-    const checkinAvg = checkinAverage(checkins);
+    const checkinAvg = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
 
     const hasOutput = finalOutputGrade !== null && finalOutputGrade !== undefined;
 

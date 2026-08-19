@@ -18,7 +18,7 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole(['instructor', 'program_head', 'dean']);
+Auth::requireRole('instructor');
 
 $action = $_GET['action'] ?? '';
 
@@ -403,12 +403,10 @@ function deleteLesson() {
         return;
     }
 
-    // Dean has moderation authority over the whole bank — not limited to their
-    // own posts, same as a dean can moderate any instructor's classroom content.
-    $isModerator = Auth::role() === 'dean';
-    $lesson = $isModerator
-        ? db()->fetchOne("SELECT bank_id FROM lesson_bank WHERE bank_id = ?", [$bankId])
-        : db()->fetchOne("SELECT bank_id FROM lesson_bank WHERE bank_id = ? AND created_by = ?", [$bankId, $userId]);
+    $lesson = db()->fetchOne(
+        "SELECT bank_id FROM lesson_bank WHERE bank_id = ? AND created_by = ?",
+        [$bankId, $userId]
+    );
     if (!$lesson) {
         echo json_encode(['success' => false, 'message' => 'Lesson not found or not yours']);
         return;

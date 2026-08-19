@@ -25,7 +25,6 @@ const MS_ICONS = {
     archive:   'archive',
     school:    'school',
     calendar:  'calendar_month',
-    upload:    'upload_file',
 };
 
 function msIcon(name) {
@@ -47,9 +46,6 @@ const menus = {
             { icon: 'building', text: 'Departments', page: 'departments', permission: null },
         ]},
         { items: [
-            { icon: 'cloudUpload', text: 'Uploads', page: 'class-density', permission: null },
-        ]},
-        { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },
         ]},
         { items: [
@@ -63,7 +59,6 @@ const menus = {
         ]},
         { items: [
             { icon: 'book', text: 'My Subjects', subjects: true, key: 'my-subjects', permission: null },
-            { icon: 'bank', text: 'Content Bank', page: 'content-bank', permission: null },
         ]},
         { items: [
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
@@ -102,7 +97,7 @@ const menus = {
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
         ]},
         { items: [
-            { icon: 'users', text: 'Oversee Sections', page: 'sections', permission: null },
+            { icon: 'users', text: 'Sections', page: 'sections', permission: null },
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: null },

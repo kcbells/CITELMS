@@ -1896,7 +1896,6 @@ export async function render(container, params) {
                 <p class="sc-person-modal-role">${esc(person.studentId || 'Student')}</p>
                 <div class="sc-person-modal-actions">
                     <button type="button" class="sc-rail-btn primary sc-person-msg-btn"><span>${icon('messages', { size: 16 })}</span> Send Message</button>
-                    ${person.studentSubjectId ? `<button type="button" class="sc-rail-btn danger sc-person-unenroll-btn">Unenroll</button>` : ''}
                     <button type="button" class="sc-rail-btn outline sc-person-close-btn">Cancel</button>
                 </div>
             </div>
@@ -1904,21 +1903,6 @@ export async function render(container, params) {
         overlay.querySelector('.sc-person-msg-btn').addEventListener('click', () => {
             overlay.remove();
             openFloatingChat(person.id, person.name, 'student');
-        });
-        overlay.querySelector('.sc-person-unenroll-btn')?.addEventListener('click', async () => {
-            overlay.remove();
-            const ok = await notify.confirm(
-                `Unenroll ${person.name} from this subject?\n\nThey will lose access to lessons, quizzes, and announcements for this class. This can't be undone from here — they'd need to re-enroll with the class code.`,
-                { danger: true, confirmText: 'Unenroll' }
-            );
-            if (!ok) return;
-            const res = await Api.post('/SectionsAPI.php?action=unenroll', { student_subject_id: parseInt(person.studentSubjectId, 10) });
-            if (res.success) {
-                notify.success(`${person.name} has been unenrolled.`);
-                render(container, { subject_id: subjectId, section_id: effectiveSectionId, tab: 'people' });
-            } else {
-                notify.error(res.message || 'Failed to unenroll student');
-            }
         });
         overlay.querySelector('.sc-person-close').addEventListener('click', () => overlay.remove());
         overlay.querySelector('.sc-person-close-btn').addEventListener('click', () => overlay.remove());
@@ -2192,7 +2176,6 @@ export async function render(container, params) {
                     name,
                     role: 'student',
                     studentId: student.student_id || '',
-                    studentSubjectId: student.student_subject_id || null,
                 });
             });
         });

@@ -9,10 +9,9 @@ import { icon } from '../../utils/icons.js';
 import { curriculumTableCss } from '../../utils/classroom-ui.js';
 import { gradingPeriodTableCss } from '../../utils/gradebook-periods.js';
 import {
-    rubricToPercent, socGrade, letsPracticeGrade, projectOverallGrade, checkinAverage,
+    rubricToPercent, socGrade, letsPracticeGrade, projectOverallGrade,
     computeStudentReport, formatGrade, PERIOD_MODULES, PERIODS,
 } from '../../utils/grading-engine.js';
-import { openModuleDocumentsModal } from '../../components/module-documents-modal.js';
 
 const G      = '#00461B';
 const G2     = '#006428';
@@ -320,7 +319,8 @@ const VIEWS = ['modules', 'project', 'summary', 'sis', 'retries'];
 const VIEW_LABELS = { modules: 'Module Records', project: 'Project Grades', summary: 'Summary & Remarks', sis: 'For SIS', retries: 'Students for Retry' };
 
 function mountRecord(host, container, subject, section, offeredId, students, grades, project, retries, opts) {
-    let activeView = opts.view || 'modules';
+    let activeView   = opts.view || 'modules';
+    let activeModule = 'all'; // 'all' or 1-14 — filters the Module Records table so it doesn't force a 14-module-wide scroll
 
     function renderShell() {
         const schedule = [section.schedule, section.room].filter(Boolean).join(' · ');
@@ -334,12 +334,6 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
                 </div>
                 <div class="gb-record-actions">
                     <span class="gb-record-count">${students.length} student${students.length !== 1 ? 's' : ''}</span>
-                    <button class="ggb-grade-btn" id="ggb-grade-btn">
-                        ${icon('edit', { size: 13, className: 'ui-icon-inline' })} GRADE
-                    </button>
-                    <button class="gb-export-btn" id="ggb-docs-btn">
-                        ${icon('document', { size: 13, className: 'ui-icon-inline' })} Documents
-                    </button>
                     <button class="gb-export-btn" id="ggb-export">
                         ${icon('download', { size: 13, className: 'ui-icon-inline' })} Export
                     </button>
@@ -377,14 +371,6 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
             exportCsv(subject, section, students, grades, project)
         );
 
-        host.querySelector('#ggb-docs-btn').addEventListener('click', () =>
-            openModuleDocumentsModal(subject.subject_id)
-        );
-
-        host.querySelector('#ggb-grade-btn').addEventListener('click', () =>
-            openGradeModal(offeredId, students, grades, () => renderView())
-        );
-
         const guideOverlay = host.querySelector('#ggb-guide-overlay');
         // Mount the fixed-position overlay on <body> — nesting it inside the
         // classroom page's tabs (which sit in a sibling z-index stacking
@@ -409,13 +395,21 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
     function renderView() {
         const area = host.querySelector('#ggb-view-area');
         if (!area) return;
-        if      (activeView === 'modules') area.innerHTML = renderModuleTable(students, grades, project, subject.subject_code, section.section_name);
+        if      (activeView === 'modules') area.innerHTML = renderModuleTable(students, grades, project, subject.subject_code, section.section_name, activeModule);
         else if (activeView === 'project') area.innerHTML = renderProjectTable(students, project, subject.subject_code, section.section_name);
         else if (activeView === 'sis')     area.innerHTML = renderSisTable(students, grades, project, subject.subject_code, section.section_name);
         else if (activeView === 'retries') area.innerHTML = renderRetriesTable(students, grades, project, retries, subject.subject_code, section.section_name);
         else                               area.innerHTML = renderSummaryTable(students, grades, project, subject.subject_code, section.section_name);
 
-        if (activeView === 'modules') attachModuleEvents(area, offeredId, grades, project);
+        if (activeView === 'modules') {
+            attachModuleEvents(area, offeredId, grades, project);
+            attachDefaultsBar(area);
+            const filterSel = area.querySelector('#ggb-module-filter');
+            filterSel?.addEventListener('change', () => {
+                activeModule = filterSel.value === 'all' ? 'all' : parseInt(filterSel.value, 10);
+                renderView();
+            });
+        }
         if (activeView === 'project') attachProjectEvents(area, offeredId, project);
         if (activeView === 'retries') attachRetriesEvents(area, offeredId, retries);
     }
@@ -426,8 +420,79 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
 // ── Horizontal module table (all 14 modules side-by-side) ─────────────────
 // Uses the SAME CSS classes as the raw-score gradebook for visual consistency.
 
-function renderModuleTable(students, grades, project, subjectCode = '', sectionName = '') {
-    const modules = Array.from({ length: 14 }, (_, i) => i + 1);
+// Rubric columns that use the 0–3 "3,2,1,0" scale — Let's Practice, its
+// optional variant, and Reflection. WUQ uses a different (percentage) scale
+// so it's intentionally left out of the quick-fill bar.
+const RUBRIC_DEFAULT_FIELDS = [
+    { field: 'lets_practice',          label: 'LP'     },
+    { field: 'lets_practice_optional', label: 'LP Opt' },
+    { field: 'reflection',             label: 'Refl'   },
+];
+
+function defaultsBarHtml(moduleFilter) {
+    const scopeLabel = moduleFilter === 'all' ? 'all modules' : `Module ${moduleFilter}`;
+    return `
+    <div class="ggb-default-bar">
+        <span class="ggb-default-label">${icon('gradebook', { size: 13, className: 'ui-icon-inline' })} Quick-fill defaults</span>
+        ${RUBRIC_DEFAULT_FIELDS.map(f => `
+        <label class="ggb-default-field">
+            <span>${f.label}</span>
+            <select class="ggb-default-sel" data-field="${f.field}">
+                <option value="">—</option>
+                <option value="3">3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+                <option value="0">0</option>
+            </select>
+        </label>`).join('')}
+        <button type="button" class="ggb-default-apply" id="ggb-default-apply">Apply to blanks — ${scopeLabel}</button>
+        <span class="ggb-default-hint">Fills only cells still showing “—”. Grades already entered are never overwritten.</span>
+    </div>`;
+}
+
+function attachDefaultsBar(area) {
+    const btn = area.querySelector('#ggb-default-apply');
+    if (!btn) return;
+    const baseLabel = btn.textContent;
+    btn.addEventListener('click', () => {
+        const defaults = {};
+        area.querySelectorAll('.ggb-default-sel').forEach(sel => {
+            if (sel.value !== '') defaults[sel.dataset.field] = sel.value;
+        });
+        if (!Object.keys(defaults).length) {
+            btn.textContent = 'Pick a default value first';
+            setTimeout(() => { btn.textContent = baseLabel; }, 2000);
+            return;
+        }
+        let filled = 0;
+        area.querySelectorAll('.ggb-rubric').forEach(sel => {
+            const def = defaults[sel.dataset.field];
+            if (def !== undefined && sel.value === '') {
+                sel.value = def;
+                // Reuse the existing per-cell save listener (attachModuleEvents)
+                // instead of duplicating the save-field API call here.
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                filled++;
+            }
+        });
+        btn.textContent = filled ? `Filled ${filled} cell${filled !== 1 ? 's' : ''}` : 'No blank cells to fill';
+        setTimeout(() => { btn.textContent = baseLabel; }, 2500);
+    });
+}
+
+function renderModuleTable(students, grades, project, subjectCode = '', sectionName = '', moduleFilter = 'all') {
+    const allModules = Array.from({ length: 14 }, (_, i) => i + 1);
+    const modules     = moduleFilter === 'all' ? allModules : allModules.filter(m => m === moduleFilter);
+    const periodOf     = m => (m <= 4 ? 'P1' : m <= 9 ? 'P2' : 'Final');
+    const filterBar     = `
+    <div class="ggb-module-filter-bar">
+        <label for="ggb-module-filter">${icon('gradebook', { size: 13, className: 'ui-icon-inline' })} Module</label>
+        <select id="ggb-module-filter" class="ggb-module-filter">
+            <option value="all" ${moduleFilter === 'all' ? 'selected' : ''}>All modules (1–14)</option>
+            ${allModules.map(m => `<option value="${m}" ${moduleFilter === m ? 'selected' : ''}>Module ${m} — ${periodOf(m)}</option>`).join('')}
+        </select>
+        ${moduleFilter !== 'all' ? `<span class="ggb-module-filter-hint"><span class="ggb-module-filter-dot"></span>Showing Module ${moduleFilter} only</span>` : ''}
+    </div>`;
 
     // Row 1: Module N (dark green, period-coloured)
     let hdr1 = `<th rowspan="3" class="gc-th-info">#</th>
@@ -479,41 +544,41 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
     }).join('');
 
     const label = subjectCode && sectionName ? `CLASS RECORD — ${subjectCode} / ${sectionName}` : 'MODULE GRADES';
+    const emptyColspan = 3 + modules.length * 6;
 
     return `
+    ${filterBar}
+    ${defaultsBarHtml(moduleFilter)}
     <div class="gc-cur-wrap">
         <div class="gc-cur-label">${esc(label)}</div>
         <div class="gb-table-scroll">
-            <table class="gc-cur-table ggb-module-table">
+            <table class="gc-cur-table ggb-module-table${moduleFilter !== 'all' ? ' ggb-module-table--single' : ''}">
                 <thead>
                     <tr>${hdr1}</tr>
                     <tr>${hdr2}</tr>
                     <tr>${hdr3}</tr>
                 </thead>
                 <tbody>
-                    ${rows || '<tr><td colspan="87" class="gc-cur-empty">No students enrolled in this section.</td></tr>'}
+                    ${rows || `<tr><td colspan="${emptyColspan}" class="gc-cur-empty">No students enrolled in this section.</td></tr>`}
                 </tbody>
             </table>
         </div>
     </div>`;
 }
 
-/**
- * SOC dropdown + an Excel-style fill handle — set the first student's value,
- * then press-drag that little square down through the rows below it in the
- * SAME column (same field + same module) to copy the value onto all of
- * them in one motion, instead of opening each dropdown individually.
- * See attachFillHandles() for the drag mechanics.
- */
+// Present is the assumed default — a class is naturally more present than
+// absent, so an untouched cell (no saved value yet) reads as "P" and the
+// instructor only has to act (pick "A") for the exception, an absence.
 function socSel(field, sid, mod, val) {
-    return `<span class="ggb-fillwrap">
-        <select class="ggb-sel ggb-soc" data-field="${field}" data-sid="${sid}" data-mod="${mod}">
-            <option value="" ${val === '' || val === null ? 'selected' : ''}>—</option>
-            <option value="P" ${val === 'P' ? 'selected' : ''}>P</option>
-            <option value="A" ${val === 'A' ? 'selected' : ''}>A</option>
-        </select>
-        <span class="ggb-fill-handle" title="Drag down to fill this value into the rows below"></span>
-    </span>`;
+    const v = val === 'A' ? 'A' : 'P';
+    // NOTE: class is "ggb-soc-sel-p/-a", NOT "ggb-soc-p/-a" — those names are
+    // already used by the grading-guide modal's legend pills (padding:6px 14px),
+    // and reusing them here let that rule win the cascade and crush this select
+    // down to a sliver. Keep the two namespaces separate.
+    return `<select class="ggb-sel ggb-soc ggb-soc-sel-${v.toLowerCase()}" data-field="${field}" data-sid="${sid}" data-mod="${mod}">
+        <option value="P" ${v === 'P' ? 'selected' : ''}>P</option>
+        <option value="A" ${v === 'A' ? 'selected' : ''}>A</option>
+    </select>`;
 }
 
 function rubricSel(field, sid, mod, val) {
@@ -571,6 +636,11 @@ function attachModuleEvents(area, offeredId, grades) {
             if (!grades[sid][mod]) grades[sid][mod] = {};
             grades[sid][mod][field] = value;
 
+            if (field === 'soc1' || field === 'soc2') {
+                sel.classList.toggle('ggb-soc-sel-a', value === 'A');
+                sel.classList.toggle('ggb-soc-sel-p', value !== 'A');
+            }
+
             try {
                 const res = await Api.post('/GlobalGradebookAPI.php?action=save-field', {
                     subject_offered_id: parseInt(offeredId, 10),
@@ -585,231 +655,33 @@ function attachModuleEvents(area, offeredId, grades) {
             }
         });
     });
-    attachFillHandles(area);
-}
-
-// ── Excel-style fill handle — drag a SOC value down through the rows below
-// it (same column: same field + same module) to copy it onto all of them,
-// same gesture as Excel's autofill handle. Reuses the existing per-select
-// `change` listener from attachModuleEvents() to actually persist each
-// filled cell (via a synthetic 'change' event) instead of duplicating the
-// save logic here.
-//
-// The mousemove/mouseup listeners are attached to `document` (need to keep
-// tracking the drag even if the cursor leaves the table), so — same
-// gotcha as the Users page dropdown-closer earlier — they must be attached
-// ONCE for the page's lifetime, not once per table re-render, or repeated
-// re-renders (switching modules, tabs, etc.) would stack up duplicate
-// listeners indefinitely.
-let fillDragGloballyAttached = false;
-let fillDrag = null; // { cells: HTMLSelectElement[], startIndex, sourceValue, currentEnd }
-
-function attachFillHandles(area) {
-    area.querySelectorAll('.ggb-fill-handle').forEach(handle => {
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            const sourceSelect = handle.previousElementSibling;
-            const field = sourceSelect.dataset.field;
-            const mod   = sourceSelect.dataset.mod;
-            // Every SOC select for this exact field+module, in row order —
-            // "the column" the fill drags down through.
-            const cells = Array.from(area.querySelectorAll(
-                `select.ggb-soc[data-field="${CSS.escape(field)}"][data-mod="${CSS.escape(mod)}"]`
-            ));
-            fillDrag = {
-                cells,
-                startIndex: cells.indexOf(sourceSelect),
-                sourceValue: sourceSelect.value,
-                currentEnd: cells.indexOf(sourceSelect),
-            };
-        });
-    });
-
-    if (fillDragGloballyAttached) return;
-    fillDragGloballyAttached = true;
-
-    document.addEventListener('mousemove', (e) => {
-        if (!fillDrag) return;
-        const { cells, startIndex } = fillDrag;
-        let endIndex = startIndex;
-        for (let i = 0; i < cells.length; i++) {
-            const rect = cells[i].getBoundingClientRect();
-            const mid = rect.top + rect.height / 2;
-            if (e.clientY >= mid) endIndex = i;
-        }
-        fillDrag.currentEnd = endIndex;
-
-        const lo = Math.min(startIndex, endIndex);
-        const hi = Math.max(startIndex, endIndex);
-        cells.forEach((c, i) => {
-            c.closest('td')?.classList.toggle('ggb-fill-preview', i >= lo && i <= hi);
-        });
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (!fillDrag) return;
-        const { cells, startIndex, sourceValue, currentEnd } = fillDrag;
-        // Clear every cell's preview highlight, not just the final [lo,hi]
-        // range — if the drag went past a row and back, that row could
-        // still be marked from earlier in the gesture otherwise.
-        cells.forEach(c => c.closest('td')?.classList.remove('ggb-fill-preview'));
-
-        const lo = Math.min(startIndex, currentEnd);
-        const hi = Math.max(startIndex, currentEnd);
-        for (let i = lo; i <= hi; i++) {
-            if (i === startIndex) continue;
-            const sel = cells[i];
-            if (sel.value !== sourceValue) {
-                sel.value = sourceValue;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-        fillDrag = null;
-    });
-}
-
-// ── GRADE modal — pick a module, grade every student in a focused form ─────
-// Reads/writes the SAME `grades` object (and the SAME save endpoint) as the
-// inline Module Records table, so this is just an alternate entry point —
-// nothing about the underlying data model changes. Project grading (one
-// shared project per student, not per module) lives only on the dedicated
-// Project Grades tab now, not duplicated here.
-
-function openGradeModal(offeredId, students, grades, onClose) {
-    document.querySelectorAll('#ggb-grade-overlay').forEach(el => el.remove());
-
-    const overlay = document.createElement('div');
-    overlay.id = 'ggb-grade-overlay';
-    overlay.innerHTML = `<style>${gradeModalCss()}</style>
-        <div class="ggm-modal" role="dialog" aria-label="Grade a Module">
-            <div class="ggm-hdr">
-                <div>
-                    <h3>GRADE</h3>
-                    <p class="ggm-sub">Pick a module, then fill in Start of Class, Effortful Learning and Mastery for every student.</p>
-                </div>
-                <button class="ggm-close" id="ggm-close" aria-label="Close">&#x2715;</button>
-            </div>
-            <div class="ggm-toolbar">
-                <label for="ggm-mod-select">Module</label>
-                <select id="ggm-mod-select">
-                    ${Array.from({ length: 14 }, (_, i) => i + 1).map(m => `<option value="${m}">Module ${m}</option>`).join('')}
-                </select>
-            </div>
-            <div class="ggm-body" id="ggm-body"></div>
-        </div>`;
-    document.body.appendChild(overlay);
-
-    const close = () => { overlay.remove(); if (onClose) onClose(); };
-    overlay.querySelector('#ggm-close').addEventListener('click', close);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-    const sel = overlay.querySelector('#ggm-mod-select');
-    const renderModule = () => {
-        const mod  = parseInt(sel.value, 10);
-        const body = overlay.querySelector('#ggm-body');
-        // Project Check-in used to also live here, but it's redundant with —
-        // and was actually out of sync with — the dedicated Project Grades
-        // tab, which is the single source of truth for the one shared
-        // project grade now. This popup only handles per-module grading.
-        body.innerHTML = renderGradeModuleTable(students, grades, mod);
-        attachModuleEvents(body, offeredId, grades);
-    };
-    sel.addEventListener('change', renderModule);
-    renderModule();
-}
-
-function renderGradeModuleTable(students, grades, mod) {
-    const rows = students.map((st, i) => {
-        const sid = st.user_student_id;
-        const mg  = grades[sid]?.[mod] || {};
-        return `<tr data-stu="${sid}">
-            <td class="td-rank">${i + 1}</td>
-            <td class="td-id">${esc(st.student_id || '—')}</td>
-            <td class="td-name">${esc(st.name)}</td>
-            <td class="td-num td-soc-cell">${socSel('soc1', sid, mod, mg.soc1 ?? '')}</td>
-            <td class="td-num td-soc-cell">${socSel('soc2', sid, mod, mg.soc2 ?? '')}</td>
-            <td class="td-num">${rubricSel('lets_practice',          sid, mod, mg.lets_practice          ?? '')}</td>
-            <td class="td-num">${rubricSel('lets_practice_optional', sid, mod, mg.lets_practice_optional ?? '')}</td>
-            <td class="td-num">${rubricSel('reflection',             sid, mod, mg.reflection             ?? '')}</td>
-            <td class="td-num">${wuqSel(   'wrap_up_quiz',           sid, mod, mg.wrap_up_quiz           ?? '')}</td>
-        </tr>`;
-    }).join('');
-
-    return `
-    <div class="gc-cur-wrap">
-        <div class="gc-cur-label">MODULE ${mod} — GRADING</div>
-        <div class="gb-table-scroll">
-            <table class="gc-cur-table ggm-table">
-                <thead>
-                    <tr>
-                        <th rowspan="2" class="gc-th-info">#</th>
-                        <th rowspan="2" class="gc-th-info th-left">Student ID</th>
-                        <th rowspan="2" class="gc-th-info th-left">Name</th>
-                        <th colspan="2" class="gb-item-th">Start of Class (5%)</th>
-                        <th colspan="3" class="gb-item-th">Effortful Learning</th>
-                        <th colspan="1" class="gb-item-th">Mastery (15%)</th>
-                    </tr>
-                    <tr>
-                        <th class="gb-item-th">SOC 1</th>
-                        <th class="gb-item-th">SOC 2</th>
-                        <th class="gb-item-th">LP (35%)</th>
-                        <th class="gb-item-th">LP Opt</th>
-                        <th class="gb-item-th">Refl (15%)</th>
-                        <th class="gb-item-th">WUQ (15%)</th>
-                    </tr>
-                </thead>
-                <tbody>${rows || '<tr><td colspan="9" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
-            </table>
-        </div>
-    </div>`;
-}
-
-function gradeModalCss() {
-    return `
-    #ggb-grade-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999;
-        display:flex; align-items:center; justify-content:center; padding:20px; }
-    .ggm-modal { background:#fff; border-radius:16px; width:100%; max-width:920px; max-height:88vh;
-        display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3); overflow:hidden; }
-    .ggm-hdr { display:flex; align-items:center; justify-content:space-between; padding:18px 22px;
-        border-bottom:1px solid ${BORDER}; background:${GL}; }
-    .ggm-hdr h3 { margin:0; font-size:16px; font-weight:800; color:${G}; letter-spacing:.5px; }
-    .ggm-sub { margin:2px 0 0; font-size:12px; color:#4b7a5a; max-width:560px; }
-    .ggm-close { background:none; border:none; font-size:16px; cursor:pointer; color:#6b7280; padding:4px 8px; }
-    .ggm-close:hover { color:#111; }
-    .ggm-toolbar { display:flex; align-items:center; gap:10px; padding:14px 22px; border-bottom:1px solid ${BORDER}; }
-    .ggm-toolbar label { font-size:12px; font-weight:700; color:${G}; }
-    .ggm-toolbar select { padding:7px 12px; border:1.5px solid ${BORDER}; border-radius:8px; font-size:13px; font-family:inherit; }
-    .ggm-body { padding:16px 22px 22px; overflow-y:auto; }
-    `;
 }
 
 // ── Project tab ────────────────────────────────────────────────────────────
-// ONE project for the whole term — not three separate per-period projects.
-// Check-ins are spread across the term (P1's, P2's, and two during the
-// Final period — P3.1 required, P3.2 optional) but all feed into a single
-// Check-in Average, a single Final Output/Presentation Grade, and a single
-// Project Overall Grade, matching the reference SAS spreadsheet exactly.
-
-const PROJECT_CHECKIN_LABELS = ['P1 Check-in Grade', 'P2 Check-in Grade', 'P3.1 Check-in Grade', 'P3.2 Check-in Grade'];
 
 function renderProjectTable(students, project, subjectCode = '', sectionName = '') {
     const rows = students.map((st, i) => {
         const sid = st.user_student_id;
-        const pg  = project[sid] || {};
-        const checkins = [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null];
-        const avg     = checkinAverage(checkins);
-        const overall = projectOverallGrade(checkins, pg.final_output ?? null);
+        let cells = '';
+        PERIODS.forEach(per => {
+            const pg      = project[sid]?.[per] || {};
+            const overall = projectOverallGrade(
+                [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
+                pg.final_output ?? null
+            );
+            cells += `
+            <td class="td-num">${projInput(sid, per, 'checkin1',    pg.checkin1)}</td>
+            <td class="td-num">${projInput(sid, per, 'checkin2',    pg.checkin2)}</td>
+            <td class="td-num">${projInput(sid, per, 'checkin3',    pg.checkin3)}</td>
+            <td class="td-num">${projInput(sid, per, 'checkin4',    pg.checkin4)}</td>
+            <td class="td-num">${projInput(sid, per, 'final_output',pg.final_output)}</td>
+            <td class="td-num td-proj-overall${overall !== null && overall < 80 ? ' td-low' : ''}" data-proj-overall="${sid}-${per}">${fmt(overall)}</td>`;
+        });
         return `<tr data-stu="${sid}">
             <td class="td-rank">${i + 1}</td>
             <td class="td-id">${esc(st.student_id || '—')}</td>
             <td class="td-name">${esc(st.name)}</td>
-            <td class="td-num">${projInput(sid, 'checkin1',     pg.checkin1)}</td>
-            <td class="td-num">${projInput(sid, 'checkin2',     pg.checkin2)}</td>
-            <td class="td-num">${projInput(sid, 'checkin3',     pg.checkin3)}</td>
-            <td class="td-num">${projInput(sid, 'checkin4',     pg.checkin4)}</td>
-            <td class="td-num td-computed" data-proj-avg="${sid}">${fmt(avg)}</td>
-            <td class="td-num">${projInput(sid, 'final_output', pg.final_output)}</td>
-            <td class="td-num td-proj-overall${overall !== null && overall < 80 ? ' td-low' : ''}" data-proj-overall="${sid}">${fmt(overall)}</td>
+            ${cells}
         </tr>`;
     }).join('');
 
@@ -822,68 +694,64 @@ function renderProjectTable(students, project, subjectCode = '', sectionName = '
             <table class="gc-cur-table ggb-proj-table">
                 <thead>
                     <tr>
-                        <th rowspan="3" class="gc-th-info">#</th>
-                        <th rowspan="3" class="gc-th-info th-left">Student ID</th>
-                        <th rowspan="3" class="gc-th-info th-left">Name</th>
-                        <th colspan="7" class="gb-period-th">Final Project/Output/Task (30%)</th>
+                        <th rowspan="2" class="gc-th-info">#</th>
+                        <th rowspan="2" class="gc-th-info th-left">Student ID</th>
+                        <th rowspan="2" class="gc-th-info th-left">Name</th>
+                        <th colspan="6" class="gb-period-th">P1 Project</th>
+                        <th colspan="6" class="gb-period-th gb-period-th--p2">P2 Project</th>
+                        <th colspan="6" class="gb-period-th gb-period-th--p3">Final Project</th>
                     </tr>
                     <tr>
-                        <th colspan="4" class="gb-weight-th">Check-in Grades (minimum of 1, max of 4)</th>
-                        <th class="gb-weight-th">65%</th>
-                        <th class="gb-weight-th">35%</th>
-                        <th class="gb-weight-th gb-weight-th--note">*if there's only one check-in, weightage becomes 50-50</th>
-                    </tr>
-                    <tr>
-                        ${PROJECT_CHECKIN_LABELS.map(lbl => `<th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">${lbl}</span></th>`).join('')}
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Avg</span><span class="gb-item-name">Check-in Grades Average</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Final</span><span class="gb-item-name">Final Output/Presentation Grade</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Overall</span><span class="gb-item-name">Project Overall Grade</span></th>
+                        ${PERIODS.map(() => `
+                        <th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">Check-in 1</span></th>
+                        <th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">Check-in 2</span></th>
+                        <th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">Check-in 3</span></th>
+                        <th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">Check-in 4</span></th>
+                        <th class="gb-item-th"><span class="gb-item-type quiz">Final</span><span class="gb-item-name">Final Output</span></th>
+                        <th class="gb-item-th"><span class="gb-item-type quiz">Overall</span><span class="gb-item-name">Project %</span></th>`).join('')}
                     </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="10" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
+                <tbody>${rows || '<tr><td colspan="21" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
             </table>
         </div>
     </div>
-    <p class="ggb-proj-note">One project for the whole term. Check-in Grades (minimum of 1, max of 4) + Final Output/Presentation Grade (0–100).
-        Project Overall Grade = Check-in Grades Average × 65% + Final Output/Presentation Grade × 35%
-        (50/50 if there's only one check-in). This same grade is shared by every period's Mastery calculation.</p>`;
+    <p class="ggb-proj-note">Up to 4 check-ins + final output per period (0–100). Overall = CI avg × 65% + Final × 35% (50/50 if only 1 CI).</p>`;
 }
 
-function projInput(sid, field, val) {
+function projInput(sid, period, field, val) {
     const display = (val === null || val === undefined) ? '' : String(val);
     return `<input type="number" class="ggb-num-input" min="0" max="100" step="0.01"
-        data-sid="${sid}" data-field="${field}"
+        data-sid="${sid}" data-period="${period}" data-field="${field}"
         value="${esc(display)}" placeholder="—">`;
 }
 
 function attachProjectEvents(area, offeredId, project) {
     area.querySelectorAll('.ggb-num-input').forEach(inp => {
         inp.addEventListener('change', async () => {
-            const sid   = parseInt(inp.dataset.sid, 10);
-            const field = inp.dataset.field;
-            const value = inp.value !== '' ? parseFloat(inp.value) : null;
+            const sid    = parseInt(inp.dataset.sid, 10);
+            const period = inp.dataset.period;
+            const field  = inp.dataset.field;
+            const value  = inp.value !== '' ? parseFloat(inp.value) : null;
 
             if (!project[sid]) project[sid] = {};
-            project[sid][field] = value;
+            if (!project[sid][period]) project[sid][period] = {};
+            project[sid][period][field] = value;
 
-            const pg       = project[sid];
-            const checkins = [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null];
-            const avg      = checkinAverage(checkins);
-            const overall  = projectOverallGrade(checkins, pg.final_output ?? null);
-
-            const avgCell = area.querySelector(`[data-proj-avg="${sid}"]`);
-            if (avgCell) avgCell.textContent = fmt(avg);
-
-            const cell = area.querySelector(`[data-proj-overall="${sid}"]`);
+            const pg      = project[sid][period];
+            const overall = projectOverallGrade(
+                [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
+                pg.final_output ?? null
+            );
+            const cell = area.querySelector(`[data-proj-overall="${sid}-${period}"]`);
             if (cell) {
                 cell.textContent = fmt(overall);
-                cell.className   = `td-num td-proj-overall td-computed${overall !== null && overall < 80 ? ' td-low' : ''}`;
+                cell.className   = `td-computed${overall !== null && overall < 80 ? ' td-low' : ''}`;
             }
 
             try {
                 const res = await Api.post('/GlobalGradebookAPI.php?action=save-project', {
                     subject_offered_id: parseInt(offeredId, 10),
-                    student_id: sid, field, value,
+                    student_id: sid, period, field, value,
                 });
                 if (!res?.success) {
                     showSaveError(inp.closest('tr'), res?.message || 'Save failed');
@@ -966,19 +834,19 @@ function computeStudentGrades(sid, grades, project) {
     const report = computeStudentReport({
         getModuleInput: (m) => {
             const mg = grades[sid]?.[m] || {};
+            // Unset SOC defaults to "P" (present) — matches the module table's
+            // dropdown default, so Summary/SIS/Retries agree with what's on screen.
             return {
-                soc1: mg.soc1 ?? null,
-                soc2: mg.soc2 ?? null,
+                soc1: mg.soc1 === 'A' ? 'A' : 'P',
+                soc2: mg.soc2 === 'A' ? 'A' : 'P',
                 letsPractice: mg.lets_practice ?? null,
                 letsPracticeOptional: mg.lets_practice_optional ?? null,
                 reflection: mg.reflection ?? null,
                 wrapUpQuiz: mg.wrap_up_quiz ?? null,
             };
         },
-        // One shared project for the whole term (not one per period) —
-        // every period's Mastery calc reads the same values here.
-        getPeriodProject: () => {
-            const pg = project[sid] || {};
+        getPeriodProject: (periodKey) => {
+            const pg = project[sid]?.[periodKey] || {};
             return {
                 checkins: [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
                 finalOutput: pg.final_output ?? null,
@@ -1138,9 +1006,9 @@ function exportCsv(subject, section, students, grades, project) {
     for (let m = 1; m <= 14; m++) {
         hdrs.push(`M${m} SOC1`, `M${m} SOC2`, `M${m} LP`, `M${m} LP Opt`, `M${m} Reflection`, `M${m} WUQ`);
     }
-    // One project for the whole term, not one per period.
-    hdrs.push('P1 Check-in Grade', 'P2 Check-in Grade', 'P3.1 Check-in Grade', 'P3.2 Check-in Grade',
-        'Check-in Grades Average', 'Final Output/Presentation Grade', 'Project Overall Grade');
+    for (const per of PERIODS) {
+        hdrs.push(`${per} CI1`, `${per} CI2`, `${per} CI3`, `${per} CI4`, `${per} Final Output`, `${per} Project`);
+    }
     hdrs.push('P1 EL','P1 Mastery','P1 Grade','P2 EL','P2 Mastery','P2 Grade','Final EL','Final Mastery','Final Grade','Mastery Status','Remarks');
 
     const body = students.map((st, i) => {
@@ -1148,14 +1016,13 @@ function exportCsv(subject, section, students, grades, project) {
         const row = [i + 1, st.student_id || '', st.name];
         for (let m = 1; m <= 14; m++) {
             const mg = grades[sid]?.[m] || {};
-            row.push(mg.soc1 || '', mg.soc2 || '', mg.lets_practice ?? '', mg.lets_practice_optional ?? '', mg.reflection ?? '', mg.wrap_up_quiz ?? '');
+            row.push(mg.soc1 === 'A' ? 'A' : 'P', mg.soc2 === 'A' ? 'A' : 'P', mg.lets_practice ?? '', mg.lets_practice_optional ?? '', mg.reflection ?? '', mg.wrap_up_quiz ?? '');
         }
-        const pg       = project[sid] || {};
-        const checkins = [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null];
-        const avg      = checkinAverage(checkins);
-        const overall  = projectOverallGrade(checkins, pg.final_output ?? null);
-        row.push(pg.checkin1??'',pg.checkin2??'',pg.checkin3??'',pg.checkin4??'',fmt(avg),pg.final_output??'',fmt(overall));
-
+        for (const per of PERIODS) {
+            const pg      = project[sid]?.[per] || {};
+            const overall = projectOverallGrade([pg.checkin1??null,pg.checkin2??null,pg.checkin3??null,pg.checkin4??null], pg.final_output??null);
+            row.push(pg.checkin1??'',pg.checkin2??'',pg.checkin3??'',pg.checkin4??'',pg.final_output??'',fmt(overall));
+        }
         const { p1, p2, final, masteryStatus, remarks } = computeStudentGrades(sid, grades, project);
         row.push(fmt(p1.el),fmt(p1.mastery),fmt(p1.grade),fmt(p2.el),fmt(p2.mastery),fmt(p2.grade),fmt(final.el),fmt(final.mastery),fmt(final.grade),masteryStatus||'',remarks||'');
         return row;
@@ -1394,58 +1261,41 @@ function tableCss() { return `
 .gc-cur-wrap { overflow:visible !important; }
 
 /* ── Sticky freeze: # + Student ID + Name of Student (3 columns) ── */
-/* # = 36px at 0 | ID = 110px at 36px | Name = 160px at 146px.
-   FIXED width (not min-width) on purpose on every one of these cells,
-   header and body alike — min-width lets a cell grow past the offset the
-   *next* frozen column assumes it starts at (e.g. a long student name
-   pushing "Name" wider than 160px), which throws off every column after
-   it and can look like "freezing isn't working" even though sticky itself
-   is active. Overflow is ellipsized instead of wrapping/growing. */
+/* # = 36px at 0 | ID = 110px at 36px | Name = 160px at 146px        */
 .gc-th-info {
     position:sticky; z-index:4;
-    background:#f7f7f7; overflow:hidden; text-overflow:ellipsis;
+    background:#f7f7f7;
 }
-.gc-th-info:nth-child(1) { left:0;    width:36px; }
-.gc-th-info:nth-child(2) { left:36px; width:110px; }
-.gc-th-info:nth-child(3) { left:146px; width:160px; box-shadow:2px 0 8px rgba(0,0,0,.14); }
-
-/* A real solid filler strip glued to the right edge of the 3rd frozen
-   header cell, instead of a soft box-shadow blur — guarantees full opaque
-   coverage of the seam between the frozen block and the scrolling columns
-   no matter how wide that gap actually renders, rather than hoping a
-   shadow's spread happens to be wide enough. */
-.gc-th-info:nth-child(3)::after {
-    content:''; position:absolute; top:0; bottom:0; left:100%;
-    width:14px; background:#f7f7f7;
-}
+.gc-th-info:nth-child(1) { left:0;    min-width:36px; }
+.gc-th-info:nth-child(2) { left:36px; min-width:110px; }
+.gc-th-info:nth-child(3) { left:146px; min-width:160px; box-shadow:2px 0 8px rgba(0,0,0,.14); }
 .th-left { text-align:left !important; }
 
-/* Sticky body cells: #, Student ID, Name — scoped to the shared .gc-cur-table
-   base class every gradebook table in this file uses (main class-record
-   views AND the per-module "quick grade" popup's tables), instead of
-   listing each specific table class one by one. Listing them individually
-   was the actual bug: two tables (.ggm-table, .ggm-checkin-table, in the
-   quick-grade popup) were never added to that list, so their first three
-   columns silently never froze while every other gradebook table's did. */
-.gc-cur-table .td-rank {
+/* Sticky body cells: #, Student ID, Name */
+.ggb-module-table .td-rank,
+.ggb-proj-table   .td-rank,
+.ggb-summary-table .td-rank,
+.ggb-sis-table    .td-rank,
+.ggb-retries-table .td-rank {
     position:sticky; left:0; z-index:2;
-    width:36px; background:#fff; text-align:center;
-    overflow:hidden; text-overflow:ellipsis;
+    min-width:36px; background:#fff; text-align:center;
 }
-.gc-cur-table .td-id {
+.ggb-module-table .td-id,
+.ggb-proj-table   .td-id,
+.ggb-summary-table .td-id,
+.ggb-sis-table    .td-id,
+.ggb-retries-table .td-id {
     position:sticky; left:36px; z-index:2;
-    width:110px; background:#fff; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis;
+    min-width:110px; background:#fff; white-space:nowrap;
 }
-.gc-cur-table .td-name {
+.ggb-module-table .td-name,
+.ggb-proj-table   .td-name,
+.ggb-summary-table .td-name,
+.ggb-sis-table    .td-name,
+.ggb-retries-table .td-name {
     position:sticky; left:146px; z-index:2;
-    width:160px; background:#fff; white-space:nowrap;
+    min-width:160px; background:#fff; white-space:nowrap;
     box-shadow:2px 0 8px rgba(0,0,0,.10);
-    overflow:hidden; text-overflow:ellipsis;
-}
-.gc-cur-table .td-name::after {
-    content:''; position:absolute; top:0; bottom:0; left:100%;
-    width:14px; background:#fff;
 }
 
 /* Zebra rows keep bg on sticky cells */
@@ -1456,55 +1306,26 @@ function tableCss() { return `
 .gc-cur-table tbody tr:hover .td-id,
 .gc-cur-table tbody tr:hover .td-name { background:#f0fdf4; }
 
-/* Project Grades header text was overlapping between columns — the shared
-   base rule for .gc-cur-table thead tr th sets white-space:nowrap (see
-   classroom-ui.js) and has higher specificity than .gb-item-th, so it was
-   silently winning and refusing to let long labels like "Check-in Grades
-   Average" wrap inside their ~90px-wide column, spilling the un-wrapped
-   text straight into the neighboring header cell instead. Re-declared here
-   with matching specificity (.gc-cur-table + a class) so it actually wins. */
-.gc-cur-table .gb-item-th { white-space:normal; line-height:1.25; }
-
-/* Weight/explanation row — "Check-in Grades (min 1, max 4)" / 65% / 35% /
-   the 50-50 footnote, matching the reference SAS spreadsheet's row above
-   the column headers. */
-.gc-cur-table .gb-weight-th {
-    background:#FBEAEA; color:#7A1F1F; font-size:10px; font-weight:700;
-    text-align:center; padding:6px 8px; white-space:normal; line-height:1.3;
-}
-.gc-cur-table .gb-weight-th--note { font-weight:600; font-style:italic; font-size:9.5px; }
-
 /* Select inputs */
 .ggb-sel { padding:2px 1px; border:1px solid #d1d5db; border-radius:3px; font-size:10.5px;
     background:#fff; cursor:pointer; width:100%; }
 .ggb-sel:focus { outline:none; border-color:#00461B; }
-
-/* Excel-style fill handle on SOC cells — the small square only shows up on
-   hover so it doesn't clutter every cell all the time; dragging it copies
-   that cell's P/A value down through the rows below in the same column. */
-.ggb-fillwrap { position:relative; display:block; }
-.ggb-fill-handle {
-    position:absolute; right:-1px; bottom:-1px; width:7px; height:7px;
-    background:#00461B; border:1px solid #fff; cursor:crosshair;
-    opacity:0; transition:opacity .1s; z-index:3;
-}
-.ggb-fillwrap:hover .ggb-fill-handle { opacity:1; }
-.td-soc-cell.ggb-fill-preview {
-    background:#E8F5EC !important; outline:1.5px dashed #00461B; outline-offset:-1px;
-}
 .ggb-wuq { min-width:64px; }
+/* SOC (attendance) dropdown: show the actual letter — big, bold, centred —
+   instead of a barely-visible sliver. Present stays neutral (it's the
+   assumed default); Absent is flagged red so exceptions jump out while
+   scanning a row. Class names are "ggb-soc-sel-*", kept apart from the
+   unrelated "ggb-soc-p/-a" legend pills used in the grading guide modal. */
+.ggb-soc { min-width:34px; padding:3px 2px; font-size:13px; font-weight:800;
+    text-align:center; text-align-last:center; -moz-text-align-last:center; }
+.ggb-soc-sel-p { color:${G}; background:${GL}; border-color:#A7D4B5; }
+.ggb-soc-sel-a { color:#B91C1C; background:#FEF2F2; border-color:#FCA5A5; }
 .ggb-num-input { width:62px; padding:3px 4px; border:1.5px solid #d1d5db; border-radius:4px;
     font-size:11px; text-align:center; font-family:inherit; }
 .ggb-num-input:focus { outline:none; border-color:#00461B; }
 
 /* Computed / grade cells — use table-qualified selector to beat shared .gc-cur-table .td-num */
-/* Project Overall Grade — highlighted like the reference SAS spreadsheet's
-   shaded "final answer" column, so it visually stands apart from the raw
-   inputs that feed into it, instead of blending in as a plain number. */
-.gc-cur-table .td-proj-overall { background:#E8F5EC !important; color:#00461B !important; font-weight:800; }
-/* Check-in Grades Average — a computed, read-only value (not an input like
-   its neighbors), so it gets a plain grey "this isn't editable" tint. */
-.gc-cur-table .td-computed { background:#F3F4F6 !important; color:#374151; font-weight:700; }
+.gc-cur-table .td-proj-overall { font-weight:700; color:#1B4D3E; }
 .gc-cur-table .td-grade { background:#E8F5EC !important; color:#00461B !important; font-weight:800; }
 .gc-cur-table .td-low   { color:#B91C1C !important; background:#FEF2F2 !important; }
 
@@ -1514,7 +1335,42 @@ function tableCss() { return `
 
 /* Table min-widths */
 .ggb-module-table { min-width:1400px; }
+.ggb-module-table--single { min-width:0; }
 .ggb-proj-table   { min-width:700px;  }
+
+/* ── Module filter bar (Module Records tab) ── */
+.ggb-module-filter-bar { display:flex; align-items:center; gap:12px; margin-bottom:14px; padding:11px 16px;
+    background:#fff; border:1.5px solid ${BORDER}; border-radius:12px; flex-wrap:wrap;
+    box-shadow:0 1px 2px rgba(16,24,40,.04); }
+.ggb-module-filter-bar label { display:inline-flex; align-items:center; gap:6px; font-size:11px;
+    font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:${G}; white-space:nowrap; }
+.ggb-module-filter-bar label svg { flex-shrink:0; }
+.ggb-module-filter { appearance:none; -webkit-appearance:none; padding:8px 34px 8px 14px;
+    border:1.5px solid #E5E7EB; border-radius:9px; background:#fff no-repeat right 12px center/11px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300461B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    font-size:12.5px; font-weight:700; color:#111; cursor:pointer;
+    font-family:inherit; min-width:200px; transition:border-color .15s, box-shadow .15s; }
+.ggb-module-filter:hover  { border-color:#B9C1CC; }
+.ggb-module-filter:focus  { outline:none; border-color:${G}; box-shadow:0 0 0 3px ${GL}; }
+.ggb-module-filter-hint { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700;
+    color:${G}; background:${GL}; padding:5px 12px; border-radius:20px; margin-left:auto; white-space:nowrap; }
+.ggb-module-filter-dot { width:6px; height:6px; border-radius:50%; background:${G}; flex-shrink:0; }
+
+/* ── Quick-fill defaults bar (Module Records tab) ── */
+.ggb-default-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:10px 16px;
+    background:${GL}; border:1.5px dashed ${G}; border-radius:12px; flex-wrap:wrap; }
+.ggb-default-label { display:inline-flex; align-items:center; gap:6px; font-size:11px;
+    font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:${G}; white-space:nowrap; }
+.ggb-default-field { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#374151; }
+.ggb-default-sel { appearance:none; -webkit-appearance:none; padding:5px 24px 5px 10px;
+    border:1.5px solid #E5E7EB; border-radius:7px; background:#fff no-repeat right 8px center/9px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300461B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    font-size:12px; font-weight:700; color:#111; cursor:pointer; font-family:inherit; }
+.ggb-default-sel:focus { outline:none; border-color:${G}; box-shadow:0 0 0 3px #fff; }
+.ggb-default-apply { padding:6px 14px; border-radius:8px; border:none; background:${G}; color:#fff;
+    font-size:11.5px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.ggb-default-apply:hover { background:${G2}; }
+.ggb-default-hint { font-size:10.5px; color:#3f6b52; flex-basis:100%; }
 
 /* Summary table: override shared gb-item-th max-width so labels don't bleed into adjacent cells */
 .ggb-summary-table .gb-item-th {
@@ -1591,15 +1447,10 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 .ggb-row-hl td { background:#FFFBEB; }
 
 /* ── Guide button ── */
-.ggb-guide-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 10px;
+.ggb-guide-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
     border-radius:8px; border:1.5px solid #E5E7EB; background:#fff; color:#374151;
-    font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+    font-size:12px; font-weight:600; cursor:pointer; }
 .ggb-guide-btn:hover { border-color:${G}; color:${G}; background:${GL}; }
-
-.ggb-grade-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
-    border-radius:8px; border:1.5px solid ${G}; background:${G}; color:#fff;
-    font-size:12px; font-weight:700; cursor:pointer; letter-spacing:.3px; }
-.ggb-grade-btn:hover { background:${G2}; border-color:${G2}; }
 
 /* ── Grading Guide Modal ── */
 .ggb-guide-overlay {
@@ -1807,16 +1658,16 @@ function css() { return `
 
 /* ── Record head ── */
 .ggb-record-head { margin-bottom:14px; }
-.gb-record-titlerow { display:flex; align-items:center; justify-content:flex-start; gap:14px; flex-wrap:wrap; }
+.gb-record-titlerow { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .gb-record-title { font-size:17px; font-weight:800; color:#111; margin:0 0 3px; }
 .gb-record-section { font-weight:500; color:#6B7280; }
 .gb-record-meta { font-size:12px; color:#9CA3AF; margin:0; }
-.gb-record-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.gb-record-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
 .gb-record-count { font-size:12px; color:#9CA3AF; }
-.gb-export-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 10px;
+.ggb-export-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
     border-radius:8px; border:1.5px solid ${G}; background:#fff; color:${G};
-    font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
-.gb-export-btn:hover { background:${GL}; }
+    font-size:12px; font-weight:700; cursor:pointer; }
+.ggb-export-btn:hover { background:${GL}; }
 
 /* ── View tabs ── */
 .ggb-view-tabs { display:flex; gap:4px; margin-bottom:14px; padding:5px;

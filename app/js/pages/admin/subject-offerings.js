@@ -92,14 +92,6 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             .alert-error { background:#FEE2E2; color:#b91c1c; border:1px solid #FECACA; }
             .batch-badge { background:#DBEAFE; color:#1E40AF; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
-
-            .grading-toggle-btn { display:inline-flex; align-items:center; gap:5px; border:1.5px solid #e0e0e0; background:#fff;
-                color:#404040; padding:4px 10px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer;
-                font-family:inherit; transition:border-color .15s, background .15s, color .15s; white-space:nowrap; }
-            .grading-toggle-btn:hover { border-color:#00461B; }
-            .grading-toggle-btn.is-global { border-color:#00461B; background:#E8F5E9; color:#1B4D3E; }
-            .grading-toggle-btn svg { width:12px; height:12px; flex-shrink:0; }
-            .grading-toggle-btn:disabled { opacity:.5; cursor:not-allowed; }
         </style>
 
         <div class="page-header">
@@ -134,9 +126,9 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
         </div>
 
         <table class="data-table">
-            <thead><tr><th>Subject</th><th>Semester</th><th>Year Level</th><th>Units</th><th>Sections</th><th>Students</th><th>Status</th><th>Grading</th><th></th></tr></thead>
+            <thead><tr><th>Subject</th><th>Semester</th><th>Year Level</th><th>Units</th><th>Sections</th><th>Students</th><th>Status</th><th></th></tr></thead>
             <tbody>
-                ${offerings.length === 0 ? '<tr><td colspan="9"><div class="empty-state-sm">No offerings found</div></td></tr>' :
+                ${offerings.length === 0 ? '<tr><td colspan="8"><div class="empty-state-sm">No offerings found</div></td></tr>' :
                   offerings.map(o => `
                     <tr>
                         <td><span class="subj-code">${esc(o.subject_code)}</span>${esc(o.subject_name)}</td>
@@ -146,15 +138,6 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
                         <td><span class="meta-badge">${o.section_count}</span></td>
                         <td><span class="meta-badge">${o.student_count}</span></td>
                         <td><span class="badge badge-${o.status||'open'}">${o.status||'open'}</span></td>
-                        <td>${o.subject_offered_id ? `
-                            <button type="button" class="grading-toggle-btn ${o.grading_type === 'global' ? 'is-global' : ''}"
-                                data-grading-toggle="${o.subject_offered_id}"
-                                data-current="${o.grading_type || 'raw_score'}"
-                                data-name="${esc(o.subject_code)}"
-                                title="Click to switch to ${o.grading_type === 'global' ? 'Raw Score' : 'Global Gradebook'}">
-                                ${icon('document', inl)} ${o.grading_type === 'global' ? 'Global' : 'Raw Score'}
-                            </button>
-                        ` : '<span style="color:#aaa;font-size:12px">— no offering —</span>'}</td>
                         <td class="actions-cell">
                             <button class="btn-actions" data-id="${o.subject_offered_id}">⋮</button>
                             <div class="actions-dropdown" data-dropdown="${o.subject_offered_id}">
@@ -200,35 +183,6 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             const res = await Api.post('/SubjectOfferingsAPI.php?action=update', { subject_offered_id: parseInt(a.dataset.toggle), status: a.dataset.status });
             if (res.success) renderList(container, semFilter, batchFilter);
             else notify.error(res.message);
-        });
-    });
-
-    // Switch a single offering between raw-score grading and the 14-module
-    // Global Gradebook — existing grade entries for the offering aren't
-    // touched or deleted, only which gradebook screen the instructor sees.
-    container.querySelectorAll('[data-grading-toggle]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const offeredId = parseInt(btn.dataset.gradingToggle, 10);
-            const goingTo = btn.dataset.current === 'global' ? 'raw_score' : 'global';
-            const label = goingTo === 'global' ? 'Global Gradebook' : 'Raw Score grading';
-            const confirmed = await notify.confirm(
-                `Switch "${btn.dataset.name}" to ${label}? The instructor's gradebook view for this offering will change; existing grades already entered are kept, not deleted.`,
-                { confirmText: `Switch to ${goingTo === 'global' ? 'Global' : 'Raw Score'}` }
-            );
-            if (!confirmed) return;
-
-            btn.disabled = true;
-            const res = await Api.post('/SubjectOfferingsAPI.php?action=set-grading-type', {
-                subject_offered_id: offeredId,
-                grading_type: goingTo,
-            });
-            if (res.success) {
-                notify.success(`"${btn.dataset.name}" is now on ${label}.`);
-                renderList(container, semFilter, batchFilter);
-            } else {
-                notify.error(res.message || 'Failed to update grading type.');
-                btn.disabled = false;
-            }
         });
     });
 
