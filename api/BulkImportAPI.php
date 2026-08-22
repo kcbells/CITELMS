@@ -48,19 +48,34 @@ if (!Auth::check()) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
-if (Auth::role() !== 'admin') {
+
+$action = $_GET['action'] ?? '';
+
+// The dean's own "Manage Faculty" page gets a scoped bulk-upload of just
+// instructor accounts into their own department — everything else here
+// (full Class Density, Class List, mark-as-Global) stays admin-only.
+$_bulkDeanAllowed = ['faculty-list-import', 'preview'];
+if (Auth::role() !== 'admin' && !(Auth::role() === 'dean' && in_array($action, $_bulkDeanAllowed, true))) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Only admin accounts can run a bulk import']);
     exit;
 }
 
-$action = $_GET['action'] ?? '';
 try {
     switch ($action) {
         case 'import':  handleImport();  break;
         case 'preview': handlePreview(); break;
         case 'preview-global': handlePreviewGlobal(); break;
         case 'apply-global':   handleApplyGlobal();   break;
+        // Class List tab — enroll students from a roster that names its own
+        // Subject + Section per row, matched against EXISTING classes only
+        // (never created), instead of Class Density's "create everything
+        // from one big roster" flow.
+        case 'class-list-import':  handleClassListImport(); break;
+        // Dean's "Manage Faculty" page — upload just a faculty list (Last
+        // Name, First Name, Employee ID, Email), scoped to the dean's own
+        // department. Never touches subjects/sections/students.
+        case 'faculty-list-import': handleFacultyListImport(); break;
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -100,18 +115,28 @@ function fieldAliases(): array
         // combined "Name" column. Kept separate from instructor/student
         // first/last so a shared "First Name"/"Last Name" pair (used when a
         // sheet has only one person type per row) still resolves correctly.
-        'instructor_first_name' => ['instructor first name', 'faculty first name'],
-        'instructor_last_name'  => ['instructor last name', 'faculty last name', 'instructor surname', 'faculty surname'],
-        'student_first_name'    => ['student first name'],
-        'student_last_name'     => ['student last name', 'student surname'],
+        'instructor_first_name'  => ['instructor first name', 'faculty first name'],
+        'instructor_last_name'   => ['instructor last name', 'faculty last name', 'instructor surname', 'faculty surname'],
+        'instructor_middle_name' => ['instructor middle name', 'faculty middle name'],
+        'student_first_name'     => ['student first name'],
+        'student_last_name'      => ['student last name', 'student surname'],
+        'student_middle_name'    => ['student middle name'],
         'first_name'       => ['first name', 'firstname', 'given name'],
-        'last_name'         => ['last name', 'lastname', 'surname', 'family name'],
+        'last_name'        => ['last name', 'lastname', 'surname', 'family name'],
+        'middle_name'      => ['middle name', 'middlename', 'middle initial', 'mi'],
         'section'          => ['section', 'section name', 'sections'],
-        'subject_code'     => ['subject code'],
+        // A bare "Subject" column (no "code"/"name" in it — e.g. a registrar's
+        // class-list export) is ambiguous about whether it holds a code
+        // ("GEN 001") or a full title ("Purposive Communication"). Matched
+        // against both subject_code and subject_name — see resolveSubject().
+        'subject_code'     => ['subject code', 'subject'],
         'subject_name'     => ['subject name'],
         'subject_type'     => ['subject type'],
         'program'          => ['program', 'course', 'program/course', 'program / course', 'program course'],
-        'department'       => ['department', 'dept'],
+        // "College" is how PHINMA COC refers to its departments — e.g. a
+        // registrar's export column header, same table under the hood.
+        'department'       => ['department', 'dept', 'college'],
+        'campus'           => ['campus', 'campus name'],
         'lect_hrs'         => ['lect hrs', 'lecture hrs', 'lecture hours', 'lect hours'],
         'lab_hrs'          => ['lab hrs', 'laboratory hrs', 'laboratory hours', 'lab hours'],
         'total_hrs'        => ['total hrs', 'total hours'],
@@ -185,7 +210,13 @@ function detectColumnMap(array $headerRow): array
         foreach ($aliases as $field => $names) {
             if (isset($map[$field])) continue;
             foreach ($names as $alias) {
-                if (strlen($alias) < 4) continue; // skip short aliases (e.g. "dept") — too easy to false-match
+                // Skip short/generic aliases in the fuzzy pass — "name" (4
+                // chars) would otherwise match ANY header containing that
+                // word, e.g. "Session Name" or "Middle Name" getting
+                // swallowed into the generic Name field. These still match
+                // fine via the exact pass (pass 1) when a header really is
+                // just "Name"/"Dept" — this only blocks the loose fuzzy net.
+                if (strlen($alias) < 5) continue;
                 if (str_contains($norm, $alias) || str_contains($alias, $norm)) {
                     if (strlen($alias) > $bestLen) {
                         $bestField = $field;
@@ -366,10 +397,12 @@ function handlePreview(): void
         'generic_id' => 'ID (auto: letters = instructor, numbers only = student)',
         'instructor_name' => 'Instructor Name', 'student_name' => 'Student Name', 'name' => 'Name',
         'instructor_first_name' => 'Instructor First Name', 'instructor_last_name' => 'Instructor Last Name',
+        'instructor_middle_name' => 'Instructor Middle Name',
         'student_first_name' => 'Student First Name', 'student_last_name' => 'Student Last Name',
-        'first_name' => 'First Name', 'last_name' => 'Last Name',
+        'student_middle_name' => 'Student Middle Name',
+        'first_name' => 'First Name', 'last_name' => 'Last Name', 'middle_name' => 'Middle Name',
         'section' => 'Section', 'subject_code' => 'Subject Code', 'subject_name' => 'Subject Name',
-        'subject_type' => 'Subject Type', 'program' => 'Program/Course', 'department' => 'Department',
+        'subject_type' => 'Subject Type', 'program' => 'Program/Course', 'department' => 'Department', 'campus' => 'Campus',
         'lect_hrs' => 'Lect Hrs', 'lab_hrs' => 'Lab Hrs', 'total_hrs' => 'Total Hrs',
         'lect_units' => 'Lect Units', 'lab_units' => 'Lab Units', 'units' => 'Units', 'capacity' => 'Capacity',
     ];
@@ -592,6 +625,261 @@ function handleApplyGlobal(): void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Class List — enroll students from a roster that already names its own
+// Subject + Section per row (e.g. a registrar's class-list export). Unlike
+// Class Density, nothing about the class itself is created here — Subject
+// and Section must already exist, matched exactly (never invented); only
+// student accounts are upserted and enrolled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Matches a row's Subject value against subject_code first, then subject_name — never creates. */
+function resolveSubjectForClassList(string $value): ?array
+{
+    $value = trim($value);
+    if ($value === '') return null;
+    static $cache = [];
+    $key = strtolower($value);
+    if (array_key_exists($key, $cache)) return $cache[$key];
+
+    $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_code) = ?", [$key])
+        ?: db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_name) = ?", [$key]);
+
+    return $cache[$key] = $row ? ['id' => (int)$row['subject_id'], 'code' => $row['subject_code']] : null;
+}
+
+/** Matches a row's Section value against an existing section — never creates. */
+function resolveSectionForClassList(string $value, ?int $programId): ?int
+{
+    $value = trim($value);
+    if ($value === '') return null;
+    static $cache = [];
+    $key = strtolower($value) . '|' . ($programId ?? '');
+    if (array_key_exists($key, $cache)) return $cache[$key];
+
+    $row = null;
+    if ($programId) {
+        $row = db()->fetchOne(
+            "SELECT section_id FROM section WHERE LOWER(section_name) = ? AND (program_id = ? OR program_id IS NULL)
+             ORDER BY (program_id IS NOT NULL) DESC LIMIT 1",
+            [strtolower($value), $programId]
+        );
+    }
+    // Fall back to matching by name alone — a Course column that doesn't
+    // resolve to (or doesn't match) the section's actual program shouldn't
+    // block an otherwise-unambiguous section name match. Real registrar
+    // exports don't always agree with how sections were set up here.
+    if (!$row) {
+        $row = db()->fetchOne("SELECT section_id FROM section WHERE LOWER(section_name) = ? LIMIT 1", [strtolower($value)]);
+    }
+
+    return $cache[$key] = $row ? (int)$row['section_id'] : null;
+}
+
+/** Finds the existing subject_offered linking a subject to a section — never creates. */
+function findExistingOffering(int $subjectId, ?int $sectionId): ?int
+{
+    if ($sectionId) {
+        $row = db()->fetchOne(
+            "SELECT so.subject_offered_id FROM subject_offered so
+             JOIN section_subject ss ON ss.subject_offered_id = so.subject_offered_id AND ss.status != 'cancelled'
+             WHERE so.subject_id = ? AND ss.section_id = ? AND so.status != 'cancelled' LIMIT 1",
+            [$subjectId, $sectionId]
+        );
+        if ($row) return (int)$row['subject_offered_id'];
+    }
+    // No section match (or no section given) — fall back to any open
+    // offering for that subject, same as Class Density's linkOffering().
+    $row = db()->fetchOne(
+        "SELECT subject_offered_id FROM subject_offered WHERE subject_id = ? AND status != 'cancelled' LIMIT 1",
+        [$subjectId]
+    );
+    return $row ? (int)$row['subject_offered_id'] : null;
+}
+
+/** POST ?action=class-list-import — matches each row's Subject+Section and enrolls the student. */
+function handleClassListImport(): void
+{
+    $parsed = readAndMapUpload();
+    if ($parsed === null) return; // error already echoed
+    ['colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows] = $parsed;
+
+    $hasStudentCol = isset($colMap['student_id']) || isset($colMap['generic_id'])
+        || isset($colMap['student_name']) || isset($colMap['name'])
+        || isset($colMap['student_first_name']) || isset($colMap['first_name'])
+        || isset($colMap['student_last_name'])  || isset($colMap['last_name']);
+    if (!$hasStudentCol) {
+        echo json_encode(['success' => false, 'message' =>
+            'No Student ID or Student Name column was recognized in this file — a roster needs at least one of those.'
+        ]);
+        return;
+    }
+    if (!isset($colMap['subject_code']) && !isset($colMap['subject_name'])) {
+        echo json_encode(['success' => false, 'message' =>
+            'No Subject column was recognized — each row needs to say which existing subject/class it belongs to.'
+        ]);
+        return;
+    }
+
+    $summary = [
+        'created_students'    => 0, 'updated_students'   => 0,
+        'enrolled_students'   => 0, 'already_enrolled'   => 0,
+        'rows_processed'      => 0, 'rows_skipped_blank' => 0,
+        'matched_columns'     => array_keys($colMap),
+        'header_row'          => $headerRowIdx + 1,
+        'notes' => [], 'warnings' => [], 'errors' => [],
+    ];
+
+    db()->beginTransaction();
+    try {
+        foreach ($rows as $i => $rawRow) {
+            $rowNum = $headerRowIdx + $i + 2;
+            if (isBlankRow($rawRow)) { $summary['rows_skipped_blank']++; continue; }
+
+            $d = extractRowData($rawRow, $colMap);
+            // A bare "ID" column with no explicit Student ID header — same
+            // per-row letters-vs-numbers heuristic processRow() uses.
+            $genericId = trim($d['generic_id'] ?? '');
+            if ($genericId !== '' && empty($d['student_id']) && !preg_match('/[A-Za-z]/', $genericId)) {
+                $d['student_id'] = $genericId;
+            }
+            // A file built for students only (no instructor column at all)
+            // still has one bare "Email" column, which detectColumnMap()
+            // assigns to instructor_email by default (first email column
+            // seen) — reclaim it as the student's when nothing else has it.
+            if (!empty($d['instructor_email']) && empty($d['student_email'])) {
+                $d['student_email'] = $d['instructor_email'];
+            }
+
+            try {
+                $subjectValue = $d['subject_code'] ?? ($d['subject_name'] ?? '');
+                if (trim($subjectValue) === '') {
+                    throw new Exception('no Subject given for this row');
+                }
+                $subject = resolveSubjectForClassList($subjectValue);
+                if (!$subject) {
+                    throw new Exception("subject \"$subjectValue\" doesn't match any existing subject — skipped (Class List never creates subjects)");
+                }
+
+                $programId = resolveProgram($d['program'] ?? '');
+                $sectionId = !empty($d['section']) ? resolveSectionForClassList($d['section'], $programId) : null;
+                if (!empty($d['section']) && !$sectionId) {
+                    $summary['warnings'][] = "Row $rowNum: section \"{$d['section']}\" doesn't match any existing section — matched by subject only";
+                }
+
+                $offeredId = findExistingOffering($subject['id'], $sectionId);
+                if (!$offeredId) {
+                    throw new Exception("no existing class found for subject \"{$subject['code']}\"" . ($sectionId ? " + that section" : '') . " — skipped (Class List never creates classes)");
+                }
+
+                ['id' => $stuId, 'name' => $stuName, 'email' => $stuEmail, 'middle' => $stuMiddle] = personIdentityFromRow($d, 'student');
+                if ($stuId === '' && $stuEmail === '') {
+                    throw new Exception('no Student ID, ID, or email — can\'t identify this student');
+                }
+                $campusId     = resolveCampus($d['campus'] ?? '');
+                $departmentId = resolveDepartment($d['department'] ?? '');
+                $res = upsertPerson('student', $stuId, $stuEmail, $stuName, $departmentId, $programId, $stuMiddle, $campusId);
+                if ($res['created']) { $summary['created_students']++; $summary['notes'][] = "Row $rowNum: created student account — {$res['note']}"; }
+                else                 { $summary['updated_students']++; }
+
+                if (enrollStudent($res['users_id'], $offeredId, $sectionId)) {
+                    $summary['enrolled_students']++;
+                } else {
+                    $summary['already_enrolled']++;
+                }
+                $summary['rows_processed']++;
+            } catch (Throwable $e) {
+                $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollback();
+        throw $e;
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Class list import finished', 'data' => $summary]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faculty List — Dean's "Manage Faculty" page. Upload just a faculty roster
+// (Last Name, First Name, Employee ID, Email) and every row becomes an
+// instructor account in the dean's OWN department — never touches subjects,
+// sections, or students. Department/campus are never read from the file;
+// they're always the acting dean's own, so a dean can't (even accidentally)
+// place a row's account somewhere outside their department.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** POST ?action=faculty-list-import — upserts one instructor account per row, all into the dean's own department. */
+function handleFacultyListImport(): void
+{
+    $me = db()->fetchOne("SELECT department_id, campus_id FROM users WHERE users_id = ?", [Auth::id()]);
+    $departmentId = $me['department_id'] ?? null;
+    $campusId     = $me['campus_id'] ?? null;
+
+    $parsed = readAndMapUpload();
+    if ($parsed === null) return; // error already echoed
+    ['colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows] = $parsed;
+
+    $hasNameCol = isset($colMap['instructor_first_name']) || isset($colMap['first_name'])
+        || isset($colMap['instructor_last_name'])  || isset($colMap['last_name'])
+        || isset($colMap['instructor_name'])       || isset($colMap['name']);
+    if (!$hasNameCol) {
+        echo json_encode(['success' => false, 'message' =>
+            'No name column was recognized — a faculty list needs at least Last Name / First Name (or a combined Name column).'
+        ]);
+        return;
+    }
+
+    $summary = [
+        'created_instructors' => 0, 'updated_instructors' => 0,
+        'rows_processed'      => 0, 'rows_skipped_blank'  => 0,
+        'matched_columns'     => array_keys($colMap),
+        'header_row'          => $headerRowIdx + 1,
+        'notes' => [], 'warnings' => [], 'errors' => [],
+    ];
+
+    db()->beginTransaction();
+    try {
+        foreach ($rows as $i => $rawRow) {
+            $rowNum = $headerRowIdx + $i + 2;
+            if (isBlankRow($rawRow)) { $summary['rows_skipped_blank']++; continue; }
+
+            $d = extractRowData($rawRow, $colMap);
+            // A bare "ID" column with no explicit Employee ID header — same
+            // per-row letters-vs-numbers heuristic processRow() uses.
+            $genericId = trim($d['generic_id'] ?? '');
+            if ($genericId !== '' && empty($d['employee_id']) && preg_match('/[A-Za-z]/', $genericId)) {
+                $d['employee_id'] = $genericId;
+            }
+            // A file built for faculty only (no student column at all) still
+            // has one bare "Email" column, which detectColumnMap() assigns
+            // to instructor_email by default — already correct here, but a
+            // sheet that happened to label it "Student Email" would still
+            // work since personIdentityFromRow() falls back to whichever's set.
+
+            try {
+                ['id' => $empId, 'name' => $instName, 'email' => $instEmail, 'middle' => $instMiddle] = personIdentityFromRow($d, 'instructor');
+                if ($empId === '' && $instEmail === '') {
+                    throw new Exception('no Employee ID, ID, or email — can\'t identify this instructor');
+                }
+                $res = upsertPerson('instructor', $empId, $instEmail, $instName, $departmentId, null, $instMiddle, $campusId);
+                if ($res['created']) { $summary['created_instructors']++; $summary['notes'][] = "Row $rowNum: created instructor account — {$res['note']}"; }
+                else                 { $summary['updated_instructors']++; }
+                $summary['rows_processed']++;
+            } catch (Throwable $e) {
+                $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollback();
+        throw $e;
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Faculty list import finished', 'data' => $summary]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Per-row processing
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -613,12 +901,16 @@ function processRow(array $d, int $rowNum, array &$summary): void
 
     $departmentId = resolveDepartment($d['department'] ?? '');
     $programId    = resolveProgram($d['program'] ?? '');
+    $campusId     = resolveCampus($d['campus'] ?? '');
 
     if (!empty($d['department']) && !$departmentId) {
         $summary['warnings'][] = "Row $rowNum: department \"{$d['department']}\" doesn't match any existing department — left unset";
     }
     if (!empty($d['program']) && !$programId) {
         $summary['warnings'][] = "Row $rowNum: program/course \"{$d['program']}\" doesn't match any existing program — left unset";
+    }
+    if (!empty($d['campus']) && !$campusId) {
+        $summary['warnings'][] = "Row $rowNum: campus \"{$d['campus']}\" doesn't match any existing campus — left unset";
     }
 
     // Subject
@@ -645,19 +937,9 @@ function processRow(array $d, int $rowNum, array &$summary): void
 
     // Instructor
     $instructorId = null;
-    $empId     = $d['employee_id']      ?? '';
-    $instFirst = $d['instructor_first_name'] ?? ($d['first_name'] ?? '');
-    $instLast  = $d['instructor_last_name']  ?? ($d['last_name']  ?? '');
-    // Recombine as "Last, First" (not "First Last") so splitPersonName's
-    // comma branch — which keeps whatever's on each side intact — is what
-    // handles it, instead of its no-comma fallback that would otherwise
-    // chop a multi-word last name like "Dela Cruz" down to just "Cruz".
-    $instName  = ($instFirst !== '' || $instLast !== '')
-        ? trim(trim("$instLast, $instFirst"), ', ')
-        : ($d['instructor_name']  ?? ($d['name'] ?? ''));
-    $instEmail = $d['instructor_email'] ?? '';
+    ['id' => $empId, 'name' => $instName, 'email' => $instEmail, 'middle' => $instMiddle] = personIdentityFromRow($d, 'instructor');
     if ($empId !== '' || $instEmail !== '') {
-        $res = upsertPerson('instructor', $empId, $instEmail, $instName, $departmentId, $programId);
+        $res = upsertPerson('instructor', $empId, $instEmail, $instName, $departmentId, $programId, $instMiddle, $campusId);
         $instructorId = $res['users_id'];
         if ($res['created']) { $summary['created_instructors']++; $summary['notes'][] = "Row $rowNum: created instructor account — {$res['note']}"; }
         else                 { $summary['updated_instructors']++; }
@@ -665,15 +947,9 @@ function processRow(array $d, int $rowNum, array &$summary): void
 
     // Student
     $studentId = null;
-    $stuId    = $d['student_id']    ?? '';
-    $stuFirst = $d['student_first_name'] ?? ($d['first_name'] ?? '');
-    $stuLast  = $d['student_last_name']  ?? ($d['last_name']  ?? '');
-    $stuName  = ($stuFirst !== '' || $stuLast !== '')
-        ? trim(trim("$stuLast, $stuFirst"), ', ')
-        : ($d['student_name']  ?? ($d['name'] ?? ''));
-    $stuEmail = $d['student_email'] ?? '';
+    ['id' => $stuId, 'name' => $stuName, 'email' => $stuEmail, 'middle' => $stuMiddle] = personIdentityFromRow($d, 'student');
     if ($stuId !== '' || $stuEmail !== '') {
-        $res = upsertPerson('student', $stuId, $stuEmail, $stuName, $departmentId, $programId);
+        $res = upsertPerson('student', $stuId, $stuEmail, $stuName, $departmentId, $programId, $stuMiddle, $campusId);
         $studentId = $res['users_id'];
         if ($res['created']) { $summary['created_students']++; $summary['notes'][] = "Row $rowNum: created student account — {$res['note']}"; }
         else                 { $summary['updated_students']++; }
@@ -724,6 +1000,48 @@ function resolveProgram(string $name): ?int
         [$key, $key]
     );
     return $cache[$key] = $row ? (int)$row['program_id'] : null;
+}
+
+/** Never auto-created — same reasoning as resolveDepartment/resolveProgram. */
+function resolveCampus(string $name): ?int
+{
+    static $cache = [];
+    $name = trim($name);
+    if ($name === '') return null;
+    $key = strtolower($name);
+    if (array_key_exists($key, $cache)) return $cache[$key];
+    $row = db()->fetchOne(
+        "SELECT campus_id FROM campus WHERE LOWER(campus_name) = ? OR LOWER(campus_code) = ? LIMIT 1",
+        [$key, $key]
+    );
+    return $cache[$key] = $row ? (int)$row['campus_id'] : null;
+}
+
+/**
+ * Pulls id/name/email/middle-name for one row, for either 'instructor' or
+ * 'student' — role-specific columns (e.g. instructor_first_name) win over
+ * the generic shared ones (first_name), same as processRow() always did.
+ * Name is recombined as "Last, First" so splitPersonName()'s comma branch —
+ * which keeps whatever's on each side intact — is what handles it, instead
+ * of its no-comma fallback that would otherwise chop a multi-word last name
+ * like "Dela Cruz" down to just "Cruz". Middle name is kept out of this and
+ * returned separately so it lands in its own `middle_name` column instead
+ * of getting glued onto the first name.
+ *
+ * @return array{id:string, name:string, email:string, middle:string}
+ */
+function personIdentityFromRow(array $d, string $role): array
+{
+    $isInstr = $role === 'instructor';
+    $id     = $d[$isInstr ? 'employee_id' : 'student_id'] ?? '';
+    $first  = $d[$isInstr ? 'instructor_first_name'  : 'student_first_name']  ?? ($d['first_name']  ?? '');
+    $last   = $d[$isInstr ? 'instructor_last_name'   : 'student_last_name']   ?? ($d['last_name']   ?? '');
+    $middle = $d[$isInstr ? 'instructor_middle_name' : 'student_middle_name'] ?? ($d['middle_name'] ?? '');
+    $name   = ($first !== '' || $last !== '')
+        ? trim(trim("$last, $first"), ', ')
+        : ($d[$isInstr ? 'instructor_name' : 'student_name'] ?? ($d['name'] ?? ''));
+    $email  = $d[$isInstr ? 'instructor_email' : 'student_email'] ?? '';
+    return ['id' => $id, 'name' => $name, 'email' => $email, 'middle' => $middle];
 }
 
 /** "Dela Cruz, Juan P." or "Juan P. Dela Cruz" -> [first, last] */
@@ -868,11 +1186,12 @@ function generateSectionEnrollmentCode(): string
  *
  * @return array{users_id:int, created:bool, note:string}
  */
-function upsertPerson(string $role, string $idValue, string $email, string $fullName, ?int $departmentId, ?int $programId): array
+function upsertPerson(string $role, string $idValue, string $email, string $fullName, ?int $departmentId, ?int $programId, string $middleName = '', ?int $campusId = null): array
 {
     $idColumn = $role === 'instructor' ? 'employee_id' : 'student_id';
     $idValue  = trim($idValue);
     $email    = trim($email);
+    $middleName = trim($middleName);
 
     $user = null;
     if ($idValue !== '') {
@@ -904,6 +1223,8 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         }
         if ($departmentId && empty($user['department_id']))     { $sets[] = "department_id = ?";   $params[] = $departmentId; }
         if ($programId && empty($user['program_id']))           { $sets[] = "program_id = ?";       $params[] = $programId; }
+        if ($middleName !== '' && empty($user['middle_name']))  { $sets[] = "middle_name = ?";      $params[] = $middleName; }
+        if ($campusId && empty($user['campus_id']))              { $sets[] = "campus_id = ?";        $params[] = $campusId; }
         if ($sets) {
             $params[] = $user['users_id'];
             pdo()->prepare("UPDATE users SET " . implode(', ', $sets) . ", updated_at = NOW() WHERE users_id = ?")->execute($params);
@@ -935,12 +1256,12 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     // hand out or for them to already know, so must_change_password isn't
     // needed here either; the NULL password alone gates that first login.
     pdo()->prepare(
-        "INSERT INTO users (first_name, last_name, email, password, role, status,
-             department_id, program_id, employee_id, student_id, must_change_password, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, 'active', ?, ?, ?, ?, 0, NOW(), NOW())"
+        "INSERT INTO users (first_name, middle_name, last_name, email, password, role, status,
+             department_id, program_id, campus_id, employee_id, student_id, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, ?, ?, ?, ?, 0, NOW(), NOW())"
     )->execute([
-        $firstName, $lastName, $finalEmail, $role,
-        $departmentId, $programId,
+        $firstName, $middleName !== '' ? $middleName : null, $lastName, $finalEmail, $role,
+        $departmentId, $programId, $campusId,
         $role === 'instructor' ? $idValue : null,
         $role === 'student'    ? $idValue : null,
     ]);

@@ -25,6 +25,22 @@ $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? ($_GET['ac
 
 ensureVideoSchema();
 
+// RBAC: video.view (join/participate) is granted to every role; video.host
+// (end a session for everyone) is enforced separately inside isHostRole().
+$_videoPerms = [
+    'join'     => 'video.view',
+    'poll'     => 'video.view',
+    'signal'   => 'video.view',
+    'leave'    => 'video.view',
+    'comments' => 'video.view',
+    'comment'  => 'video.view',
+];
+if (isset($_videoPerms[$action]) && !Auth::can($_videoPerms[$action])) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => "Permission denied: {$_videoPerms[$action]}"]);
+    exit;
+}
+
 switch ($action) {
     case 'join':   handleJoin();   break;
     case 'poll':   handlePoll();   break;
@@ -97,8 +113,13 @@ function parseSubjectIdFromRoom($roomKey) {
     return 0;
 }
 
+// $role is unused now but kept in the signature — every call site passes
+// Auth::role() (the current session's own role; there's no "check some
+// other user's role" caller here), so this just reads live off RBAC
+// instead of a hardcoded ['instructor','admin','dean'] list that silently
+// excluded program_head even though they hold video.host per role_permissions.
 function isHostRole($role) {
-    return in_array($role, ['instructor', 'admin', 'dean'], true);
+    return Auth::can('video.host');
 }
 
 function buildDisplayName($user) {

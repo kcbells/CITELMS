@@ -50,20 +50,6 @@ export async function render(container) {
         </div>
 
     </div>
-
-    <!-- Add Subject modal -->
-    <div id="ps-modal" class="ps-backdrop" style="display:none;">
-        <div class="ps-modal">
-            <div class="ps-modal-hdr">
-                <h3>Add Subject to <span id="ps-modal-prog-name"></span></h3>
-                <button class="ps-modal-close" id="ps-modal-close">&times;</button>
-            </div>
-            <div class="ps-modal-body">
-                <div class="ps-modal-msg" id="ps-modal-msg" style="display:none;"></div>
-                <div id="ps-modal-content"></div>
-            </div>
-        </div>
-    </div>
     `;
 
     container.querySelector('#ps-add-prog-btn').addEventListener('click', () => openAddProgramModal(container));
@@ -79,13 +65,6 @@ export async function render(container) {
                 await loadVersionsAndSubjects(container);
             }
         });
-    });
-
-    container.querySelector('#ps-modal-close')?.addEventListener('click', () => {
-        container.querySelector('#ps-modal').style.display = 'none';
-    });
-    container.querySelector('#ps-modal')?.addEventListener('click', e => {
-        if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
     });
 
     await loadVersionsAndSubjects(container);
@@ -222,9 +201,8 @@ function renderChecklist(area, container) {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
             </svg>
             <p>No subjects${vMsg} yet.</p>
-            <button class="ps-btn-add-inline" id="ps-empty-add">+ Add subjects</button>
+            <p class="ps-empty-hint">Upload a curriculum file above to add subjects — see the version tabs.</p>
         </div>`;
-        area.querySelector('#ps-empty-add')?.addEventListener('click', () => openAddModal(container, 1));
         return;
     }
 
@@ -318,7 +296,6 @@ function renderChecklist(area, container) {
                     <tr>
                         <th colspan="13" class="cr-year-hd">
                             <span>${YEAR_LABELS[yr] || `Year ${yr}`}</span>
-                            <button class="cr-yr-add-btn" data-yr="${yr}">+ Add Subject</button>
                         </th>
                     </tr>
                     <tr>
@@ -366,10 +343,6 @@ function renderChecklist(area, container) {
     }).join('');
 
     area.innerHTML = `<div class="cr-wrap">${blocks}</div><div id="ps-elective-area"></div>`;
-
-    area.querySelectorAll('.cr-yr-add-btn').forEach(btn => {
-        btn.addEventListener('click', () => openAddModal(container, parseInt(btn.dataset.yr)));
-    });
 
     loadElectives(null, area.querySelector('#ps-elective-area'));
 }
@@ -526,128 +499,6 @@ async function openAddSubjectModal(el, trackId, trackName) {
 
     renderList('');
     searchEl.addEventListener('input', () => renderList(searchEl.value.toLowerCase()));
-}
-
-// ── Add Subject modal ──────────────────────────────────────────────────────
-
-async function openAddModal(container, startYear) {
-    const modal     = container.querySelector('#ps-modal');
-    const nameEl    = container.querySelector('#ps-modal-prog-name');
-    const msgEl     = container.querySelector('#ps-modal-msg');
-    const contentEl = container.querySelector('#ps-modal-content');
-
-    const YEAR_LABELS_M = { 1:'First Year', 2:'Second Year', 3:'Third Year', 4:'Fourth Year' };
-    nameEl.textContent = _activeProg.program_code + (startYear ? ` — ${YEAR_LABELS_M[startYear] || ''}` : '');
-    msgEl.style.display = 'none';
-    modal.style.display = 'flex';
-
-    const versionSelect = _versions.length ? `
-        <div class="am-field">
-            <label class="am-label">Curriculum Version <span style="font-weight:400;color:#9AA0A6">(optional)</span></label>
-            <select class="am-input" id="am-version">
-                <option value="">— No version / All —</option>
-                ${_versions.map(v => `<option value="${v.version_id}" ${_activeVer?.version_id === v.version_id ? 'selected' : ''}>${esc(v.version_label)}</option>`).join('')}
-            </select>
-        </div>` : '';
-
-    contentEl.innerHTML = `
-    <form class="am-form" id="am-form" autocomplete="off">
-        <div class="am-field">
-            <label class="am-label">Subject Code</label>
-            <input class="am-input" id="am-code" placeholder="e.g. IT 101" maxlength="30">
-        </div>
-        <div class="am-field">
-            <label class="am-label">Subject Name</label>
-            <input class="am-input" id="am-name" placeholder="e.g. Introduction to Computing" maxlength="150">
-        </div>
-        <div class="am-field">
-            <label class="am-label">Description</label>
-            <textarea class="am-input am-textarea" id="am-desc" placeholder="Brief description…" rows="3"></textarea>
-        </div>
-        <div class="am-field">
-            <label class="am-label">Units</label>
-            <div class="am-units-row">
-                <div class="am-unit-field">
-                    <span class="am-unit-label">Lec</span>
-                    <input class="am-input am-unit-input" id="am-lec" type="number" min="0" max="10" value="3">
-                </div>
-                <div class="am-unit-field">
-                    <span class="am-unit-label">Lab</span>
-                    <input class="am-input am-unit-input" id="am-lab" type="number" min="0" max="10" value="0">
-                </div>
-                <div class="am-unit-field">
-                    <span class="am-unit-label">Total</span>
-                    <input class="am-input am-unit-input am-total" id="am-total" type="number" min="0" max="20" value="3">
-                </div>
-            </div>
-        </div>
-        <div class="am-field">
-            <label class="am-label">Pre-requisite</label>
-            <input class="am-input" id="am-prereq" placeholder="e.g. IT 101 or None" maxlength="150">
-        </div>
-        <div class="am-field">
-            <label class="am-label">Semester</label>
-            <div class="am-radio-group">
-                <label class="am-radio"><input type="radio" name="am-sem" value="1" checked> First Semester</label>
-                <label class="am-radio"><input type="radio" name="am-sem" value="2"> Second Semester</label>
-                <label class="am-radio"><input type="radio" name="am-sem" value="3"> Summer</label>
-            </div>
-        </div>
-        ${versionSelect}
-        <div class="am-actions">
-            <button type="button" class="am-cancel-btn" id="am-cancel">Cancel</button>
-            <button type="submit" class="am-save-btn">Save Subject</button>
-        </div>
-    </form>`;
-
-    contentEl.querySelector('#am-cancel').addEventListener('click', () => { modal.style.display = 'none'; });
-
-    const lecEl = contentEl.querySelector('#am-lec');
-    const labEl = contentEl.querySelector('#am-lab');
-    const totEl = contentEl.querySelector('#am-total');
-    function syncTotal() { totEl.value = (parseInt(lecEl.value) || 0) + (parseInt(labEl.value) || 0); }
-    lecEl.addEventListener('input', syncTotal);
-    labEl.addEventListener('input', syncTotal);
-
-    contentEl.querySelector('#am-form').addEventListener('submit', async e => {
-        e.preventDefault();
-        const saveBtn = contentEl.querySelector('.am-save-btn');
-        const code    = contentEl.querySelector('#am-code').value.trim();
-        const name    = contentEl.querySelector('#am-name').value.trim();
-        const desc    = contentEl.querySelector('#am-desc').value.trim();
-        const prereq  = contentEl.querySelector('#am-prereq').value.trim();
-        const lec     = parseInt(lecEl.value) || 0;
-        const lab     = parseInt(labEl.value) || 0;
-        const units   = parseInt(totEl.value) || (lec + lab);
-        const sem     = parseInt(contentEl.querySelector('input[name="am-sem"]:checked').value);
-        const vid     = parseInt(contentEl.querySelector('#am-version')?.value || '0') || 0;
-
-        if (!code || !name) { showMsg(msgEl, 'Subject Code and Subject Name are required.', 'err'); return; }
-
-        saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-
-        const r = await Api.post('/CurriculumAPI.php?action=create_subject', {
-            program_id:    _activeProg.program_id,
-            version_id:    vid || null,
-            year_level:    startYear || null,
-            subject_code:  code,
-            subject_name:  name,
-            description:   desc,
-            pre_requisite: prereq,
-            lecture_hours: lec,
-            lab_hours:     lab,
-            units:         units,
-            semester:      sem,
-        });
-
-        if (r.success) {
-            modal.style.display = 'none';
-            await reloadSubjects(container);
-        } else {
-            showMsg(msgEl, r.message || 'Failed to save subject', 'err');
-            saveBtn.disabled = false; saveBtn.textContent = 'Save Subject';
-        }
-    });
 }
 
 // ── Add Program modal ──────────────────────────────────────────────────────
@@ -1681,12 +1532,6 @@ function css() { return `
     letter-spacing:1px; text-transform:uppercase; text-align:center;
     padding:7px 12px; border:1px solid #00461B; position:relative;
 }
-.cr-yr-add-btn {
-    position:absolute; right:12px; top:50%; transform:translateY(-50%);
-    padding:4px 14px; background:#fff; color:#00461B;
-    border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;
-}
-.cr-yr-add-btn:hover { background:#f0fdf4; }
 .cr-sem-hd {
     background:#1B4D3E; color:#fff; font-size:12px; font-weight:700;
     letter-spacing:.5px; text-transform:uppercase; text-align:center;
@@ -1718,11 +1563,8 @@ function css() { return `
     background:#fff; border:1px dashed #E5E7EB; border-radius:10px; margin-top:8px;
 }
 .ps-empty p { margin:12px 0 16px; }
+.ps-empty-hint { font-size:12.5px; color:#9CA3AF; }
 .ps-empty-full { text-align:center; padding:80px 24px; color:#6B7280; }
-.ps-btn-add-inline {
-    padding:8px 18px; background:#00461B; color:#fff; border:none;
-    border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
-}
 
 /* ── Modal ── */
 .ps-backdrop {
@@ -1779,14 +1621,6 @@ function css() { return `
 }
 .am-input:focus { border-color:#00461B; box-shadow:0 0 0 3px rgba(0,70,27,.08); }
 .am-textarea { resize:vertical; min-height:72px; }
-.am-units-row { display:flex; gap:12px; }
-.am-unit-field { display:flex; flex-direction:column; gap:4px; flex:1; }
-.am-unit-label { font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.5px; }
-.am-unit-input { text-align:center; }
-.am-total { background:#f0fdf4; font-weight:700; color:#00461B; }
-.am-radio-group { display:flex; gap:20px; flex-wrap:wrap; padding-top:4px; }
-.am-radio { display:flex; align-items:center; gap:7px; font-size:13px; color:#374151; cursor:pointer; }
-.am-radio input { accent-color:#00461B; width:15px; height:15px; cursor:pointer; }
 .am-actions { display:flex; justify-content:flex-end; gap:10px; padding-top:4px; }
 .am-cancel-btn {
     padding:8px 18px; background:#f3f4f6; color:#374151;

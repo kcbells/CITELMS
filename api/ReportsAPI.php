@@ -20,13 +20,26 @@ if (!Auth::check()) {
 
 $action = $_GET['action'] ?? '';
 
+// RBAC: was Auth::requireRole(), which redirects on failure instead of
+// returning JSON — breaks a fetch().then(r => r.json()) caller. reports.view
+// is granted to admin/dean/program_head/instructor (added instructor here
+// to match this file's own existing "for instructors and admins" scope).
+if (!Auth::can('reports.view')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied: reports.view']);
+    exit;
+}
+
 switch ($action) {
     case 'instructor':
-        Auth::requireRole(['admin', 'instructor']);
         handleInstructorReport();
         break;
     case 'admin':
-        Auth::requireRole('admin');
+        if (Auth::role() !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Admin only']);
+            break;
+        }
         handleAdminReport();
         break;
     default:

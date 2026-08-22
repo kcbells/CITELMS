@@ -30,6 +30,9 @@ $_soPerms = [
     'bulk-assign'         => 'faculty_assignments.create',
     'update'              => 'subject_offerings.edit',
     'delete'              => 'subject_offerings.delete',
+    // Faculty Assignments — per-section instructor view + manual transfer
+    'subject-section-instructors' => 'faculty_assignments.view',
+    'reassign-section'            => 'faculty_assignments.edit',
 ];
 // Dean has intrinsic access to subject offerings (scoped by dept)
 $isDeanSO = Auth::role() === 'dean';
@@ -99,6 +102,11 @@ switch ($action) {
     case 'bulk-assign':          handleBulkAssign();          break;
     case 'instructor-subjects':  handleInstructorSubjects();  break;
     case 'dean-assign':          handleDeanAssign();          break;
+    // Faculty Assignments — see every section of a subject with its current
+    // instructor (if any) across ALL offerings, not just one, so a dean can
+    // spot a specific section and transfer it to a different instructor.
+    case 'subject-section-instructors': handleSubjectSectionInstructors(); break;
+    case 'reassign-section':            handleReassignSection();           break;
     case 'subject-instructors':  handleSubjectInstructors();  break;
     case 'subject-assign':       handleSubjectAssign();       break;
     case 'set-grading-type':     handleSetGradingType();      break;
@@ -586,7 +594,15 @@ function handleInstructorSubjects() {
                          THEN CONCAT(ou.first_name,' ',ou.last_name)
                          ELSE NULL END
                     ORDER BY ou.last_name SEPARATOR ', ')
-                AS other_instructor_names
+                AS other_instructor_names,
+                -- Which section(s) THIS instructor teaches this subject in —
+                -- Manage Faculty's what-section-do-they-handle view needs
+                -- this; the checklist view above just ignores the column.
+                GROUP_CONCAT(DISTINCT
+                    CASE WHEN so.user_teacher_id = $instrParam AND $instrParam > 0
+                         THEN sec.section_name ELSE NULL END
+                    ORDER BY sec.section_name SEPARATOR ', ')
+                AS assigned_sections
          FROM subject s
          JOIN program p ON p.program_id = s.program_id
          LEFT JOIN subject_offered so
@@ -596,6 +612,10 @@ function handleInstructorSubjects() {
          LEFT JOIN users ou
                ON ou.users_id = so.user_teacher_id
               AND so.user_teacher_id != $instrParam
+         LEFT JOIN section_subject ssub
+               ON ssub.subject_offered_id = so.subject_offered_id
+              AND ssub.status != 'cancelled'
+         LEFT JOIN section sec ON sec.section_id = ssub.section_id
          WHERE s.program_id IN ($progIdList) AND s.status = 'active'
          GROUP BY s.subject_id, s.subject_code, s.subject_name, s.units,
                   s.year_level, s.semester,
@@ -730,6 +750,243 @@ function handleDeanAssign() {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('DeanAssign: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to save assignments']);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-section instructor view + transfer — a subject can have several
+// sections, and each section's subject_offered can carry a DIFFERENT
+// instructor (linkOffering()/dean-assign both find-or-create one offering
+// PER instructor, not one shared offering per subject) — handleSubjectSections()
+// above only ever looks at the single latest offering, which silently hides
+// any section attached to an older/different instructor's offering. These
+// two actions look across ALL of a subject's offerings for one semester.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET ?action=subject-section-instructors&subject_id=&semester_id= — every section + its current instructor, across all offerings. */
+function handleSubjectSectionInstructors() {
+    if (!in_array(Auth::role(), ['dean', 'admin'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $subjectId = (int)($_GET['subject_id'] ?? 0);
+    $semId     = (int)($_GET['semester_id'] ?? 0);
+    if (!$subjectId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+    if (!$semId) {
+        $act   = db()->fetchOne("SELECT semester_id FROM semester WHERE status = 'active' LIMIT 1");
+        $semId = $act ? (int)$act['semester_id'] : 0;
+    }
+
+    if (Auth::role() === 'dean') {
+        $progIds = deanProgramIds();
+        $subj = db()->fetchOne("SELECT program_id FROM subject WHERE subject_id = ?", [$subjectId]);
+        if ($progIds && $subj && !in_array((int)$subj['program_id'], $progIds, true)) {
+            echo json_encode(['success' => false, 'message' => 'Subject not in your program']);
+            return;
+        }
+    }
+
+    $rows = db()->fetchAll(
+        "SELECT sec.section_id, sec.section_name, ss.section_subject_id, ss.subject_offered_id,
+                so.user_teacher_id, u.first_name AS instr_first, u.last_name AS instr_last
+         FROM section_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         JOIN section sec ON sec.section_id = ss.section_id
+         LEFT JOIN users u ON u.users_id = so.user_teacher_id
+         WHERE so.subject_id = ? AND so.semester_id = ? AND so.status != 'cancelled' AND ss.status != 'cancelled'
+         ORDER BY sec.section_name",
+        [$subjectId, $semId]
+    );
+
+    $sections = array_map(function ($r) {
+        return [
+            'section_id'         => (int)$r['section_id'],
+            'section_name'       => $r['section_name'],
+            'section_subject_id' => (int)$r['section_subject_id'],
+            'subject_offered_id' => (int)$r['subject_offered_id'],
+            'instructor_id'      => $r['user_teacher_id'] ? (int)$r['user_teacher_id'] : null,
+            'instructor_name'    => $r['user_teacher_id'] ? trim($r['instr_first'] . ' ' . $r['instr_last']) : null,
+        ];
+    }, $rows);
+
+    echo json_encode(['success' => true, 'data' => ['sections' => $sections, 'semester_id' => $semId]]);
+}
+
+/** POST ?action=reassign-section — move one section from its current instructor to a different one. */
+function handleReassignSection() {
+    if (!in_array(Auth::role(), ['dean', 'admin'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $data       = json_decode(file_get_contents('php://input'), true) ?? [];
+    $sectSubjId = (int)($data['section_subject_id'] ?? 0);
+    $newInstrId = (int)($data['new_instructor_id']  ?? 0);
+    if (!$sectSubjId || !$newInstrId) {
+        echo json_encode(['success' => false, 'message' => 'section_subject_id and new_instructor_id are required']);
+        return;
+    }
+
+    $current = db()->fetchOne(
+        "SELECT ss.section_subject_id, ss.section_id, so.subject_offered_id, so.subject_id, so.semester_id, so.user_teacher_id
+         FROM section_subject ss JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE ss.section_subject_id = ?",
+        [$sectSubjId]
+    );
+    if (!$current) {
+        echo json_encode(['success' => false, 'message' => 'Section assignment not found']);
+        return;
+    }
+
+    // Dean scope check — same "in my department" rule dean-assign uses,
+    // applied to the NEW instructor being handed this section.
+    if (Auth::role() === 'dean') {
+        $scope  = deanScope();
+        $deptId = $scope['department_id'];
+        if (empty($scope['campus_ids'])) {
+            echo json_encode(['success' => false, 'message' => 'Your account is not assigned to a campus.']);
+            return;
+        }
+        $campusPlaceholders = implode(',', array_fill(0, count($scope['campus_ids']), '?'));
+        $params = array_merge([$newInstrId], $scope['campus_ids']);
+        $deptCond = '';
+        if ($deptId) {
+            $deptCond = "AND (u.department_id = ? OR (u.program_id IS NOT NULL AND EXISTS (
+                SELECT 1 FROM department_program dp WHERE dp.program_id = u.program_id AND dp.department_id = ?
+            )))";
+            $params[] = $deptId; $params[] = $deptId;
+        }
+        $check = db()->fetchOne(
+            "SELECT u.users_id FROM users u WHERE u.users_id = ? AND u.campus_id IN ($campusPlaceholders)
+             $deptCond AND u.role IN ('instructor','program_head') AND u.status = 'active'",
+            $params
+        );
+        if (!$check) {
+            echo json_encode(['success' => false, 'message' => 'Instructor not in your department']);
+            return;
+        }
+    }
+
+    if ((int)$current['user_teacher_id'] === $newInstrId) {
+        echo json_encode(['success' => false, 'message' => 'Already assigned to that instructor']);
+        return;
+    }
+
+    try {
+        $pdo = pdo();
+        $pdo->beginTransaction();
+
+        // Find-or-create the new instructor's own offering for this subject
+        // + semester — identical logic to dean-assign's "assign" branch,
+        // just reused here for a single section transfer instead of a whole
+        // subject.
+        $mine = db()->fetchOne(
+            "SELECT subject_offered_id FROM subject_offered
+              WHERE subject_id = ? AND semester_id = ? AND user_teacher_id = ? AND status = 'open' LIMIT 1",
+            [$current['subject_id'], $current['semester_id'], $newInstrId]
+        );
+        if ($mine) {
+            $targetOfferingId = (int)$mine['subject_offered_id'];
+        } else {
+            $empty = db()->fetchOne(
+                "SELECT subject_offered_id FROM subject_offered
+                  WHERE subject_id = ? AND semester_id = ? AND user_teacher_id IS NULL AND status = 'open' LIMIT 1",
+                [$current['subject_id'], $current['semester_id']]
+            );
+            if ($empty) {
+                $pdo->prepare("UPDATE subject_offered SET user_teacher_id = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+                    ->execute([$newInstrId, $empty['subject_offered_id']]);
+                $targetOfferingId = (int)$empty['subject_offered_id'];
+            } else {
+                $pdo->prepare(
+                    "INSERT INTO subject_offered (subject_id, semester_id, user_teacher_id, status, created_at, updated_at)
+                     VALUES (?, ?, ?, 'open', NOW(), NOW())"
+                )->execute([$current['subject_id'], $current['semester_id'], $newInstrId]);
+                $targetOfferingId = (int)$pdo->lastInsertId();
+            }
+        }
+
+        // Only the INSTRUCTOR changes here — every student's existing grades
+        // and progress must survive the move untouched, not reset to zero.
+        // Figure out who's actually in this section BEFORE moving anything,
+        // since global_module_grades/global_project_grades/global_retry_tracker
+        // are keyed by (subject_offered_id, student_id) — moving the section
+        // without also moving these would leave real, already-entered grades
+        // orphaned under the old offering, invisible from the student's new
+        // (post-transfer) enrollment.
+        $studentIds = array_column(
+            db()->fetchAll(
+                "SELECT user_student_id FROM student_subject WHERE section_id = ? AND subject_offered_id = ?",
+                [$current['section_id'], $current['subject_offered_id']]
+            ),
+            'user_student_id'
+        );
+
+        // Move just this one section over to the new instructor's offering —
+        // every other section on the old offering is untouched.
+        $pdo->prepare("UPDATE section_subject SET subject_offered_id = ? WHERE section_subject_id = ?")
+            ->execute([$targetOfferingId, $sectSubjId]);
+
+        // Carry the student enrollments for this section along with it —
+        // otherwise they'd stay pointed at the old instructor's offering.
+        // final_grade/status/remarks live on this same row, so they move too.
+        $pdo->prepare(
+            "UPDATE student_subject SET subject_offered_id = ?, updated_at = NOW()
+             WHERE section_id = ? AND subject_offered_id = ?"
+        )->execute([$targetOfferingId, $current['section_id'], $current['subject_offered_id']]);
+
+        // Carry each moved student's Global Gradebook records along too — a
+        // NOT EXISTS guard so a student who (unusually) already has a row
+        // under the target offering keeps that one intact instead of a raw
+        // UPDATE hitting a duplicate-key conflict or silently overwriting it.
+        foreach ($studentIds as $sid) {
+            $pdo->prepare(
+                "UPDATE global_module_grades SET subject_offered_id = ?
+                 WHERE subject_offered_id = ? AND student_id = ?
+                   AND NOT EXISTS (
+                     SELECT 1 FROM (SELECT * FROM global_module_grades) g2
+                     WHERE g2.subject_offered_id = ? AND g2.student_id = ?
+                       AND g2.module_number = global_module_grades.module_number
+                   )"
+            )->execute([$targetOfferingId, $current['subject_offered_id'], $sid, $targetOfferingId, $sid]);
+
+            $pdo->prepare(
+                "UPDATE global_project_grades SET subject_offered_id = ?
+                 WHERE subject_offered_id = ? AND student_id = ?
+                   AND NOT EXISTS (
+                     SELECT 1 FROM (SELECT * FROM global_project_grades) g2
+                     WHERE g2.subject_offered_id = ? AND g2.student_id = ?
+                   )"
+            )->execute([$targetOfferingId, $current['subject_offered_id'], $sid, $targetOfferingId, $sid]);
+
+            $pdo->prepare(
+                "UPDATE global_retry_tracker SET subject_offered_id = ?
+                 WHERE subject_offered_id = ? AND student_id = ?
+                   AND NOT EXISTS (
+                     SELECT 1 FROM (SELECT * FROM global_retry_tracker) g2
+                     WHERE g2.subject_offered_id = ? AND g2.student_id = ?
+                   )"
+            )->execute([$targetOfferingId, $current['subject_offered_id'], $sid, $targetOfferingId, $sid]);
+        }
+
+        $pdo->commit();
+
+        $newInstr = db()->fetchOne("SELECT first_name, last_name FROM users WHERE users_id = ?", [$newInstrId]);
+        echo json_encode(['success' => true, 'message' => 'Section transferred', 'data' => [
+            'section_subject_id' => $sectSubjId,
+            'subject_offered_id' => $targetOfferingId,
+            'instructor_name'    => $newInstr ? trim($newInstr['first_name'] . ' ' . $newInstr['last_name']) : null,
+        ]]);
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('ReassignSection: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to transfer section']);
     }
 }
 

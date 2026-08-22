@@ -13,15 +13,29 @@ if (!Auth::check()) {
     exit;
 }
 
+// Scoping flag used throughout below (dean sees only their own department;
+// admin sees everything) — kept even though the access GATE itself is now
+// the RBAC check below, not a hardcoded role list.
 $isDean  = Auth::role() === 'dean';
 $isAdmin = Auth::role() === 'admin';
-if (!$isDean && !$isAdmin) {
+
+// RBAC: enforce permission per action — electives.view/manage are currently
+// only granted to admin and dean (see role_permissions), same effective
+// scope as before, just data-driven instead of a hardcoded role check.
+$action = $_GET['action'] ?? '';
+$_elecPerms = [
+    'list'           => 'electives.view',
+    'add_track'      => 'electives.manage',
+    'delete_track'   => 'electives.manage',
+    'add_subject'    => 'electives.manage',
+    'remove_subject' => 'electives.manage',
+];
+if (isset($_elecPerms[$action]) && !Auth::can($_elecPerms[$action])) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Dean or admin access required']);
+    echo json_encode(['success' => false, 'message' => "Permission denied: {$_elecPerms[$action]}"]);
     exit;
 }
 
-$action = $_GET['action'] ?? '';
 switch ($action) {
     case 'list':           handleList();          break;
     case 'add_track':      handleAddTrack();      break;

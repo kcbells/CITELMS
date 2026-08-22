@@ -36,7 +36,7 @@ if ($_cors_allowed) {
 }
 
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Tab-Lease, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Tab-Lease, X-Requested-With, X-CSRF-Token');
 
 /* ── Security hardening headers ──────────────────────────────────────────── */
 header('X-Content-Type-Options: nosniff');

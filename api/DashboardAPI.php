@@ -68,6 +68,20 @@ function deanFullScope(): array {
 
 $action = $_GET['action'] ?? 'admin';
 
+// Each dashboard action returns that role's own stats — nothing here was
+// previously checking the caller's role at all, so any authenticated user
+// (including a student) could call ?action=admin directly and get
+// full system-wide counts. Not tied to the analytics.view permission
+// specifically — the "admin" action also feeds the plain admin home
+// Dashboard and a Settings widget, not just the Analytics page, so gating
+// it behind one feature's permission would incorrectly couple all three.
+$_dashRoleMap = ['admin' => 'admin', 'instructor' => 'instructor', 'student' => 'student', 'dean' => 'dean'];
+if (isset($_dashRoleMap[$action]) && Auth::role() !== $_dashRoleMap[$action]) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
+
 switch ($action) {
     case 'admin':
         handleAdminDashboard();

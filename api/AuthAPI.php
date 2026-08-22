@@ -631,6 +631,7 @@ function handleLogin() {
             jsonResponse(true, 'First login detected. Please set your password.', [
                 'first_login' => true,
                 'token'       => $token,
+                'csrf_token'  => Auth::csrfToken(),
                 'tab_lease'   => Auth::tabLease(),
                 'needs_phinmaed_email' => isPlaceholderEmail($user['email']),
                 'user'        => [
@@ -683,6 +684,7 @@ function handleLogin() {
                 'role'  => $user['role']
             ],
             'token'                => $token,
+            'csrf_token'           => Auth::csrfToken(),
             'tab_lease'            => Auth::tabLease(),
             'redirect'             => $redirectUrl,
             // Bulk-imported accounts log in with a temp password (their last
@@ -766,6 +768,7 @@ function handleCheck() {
             'authenticated' => true,
             'auth_method'   => 'session',
             'user'          => Auth::user(),
+            'csrf_token'    => Auth::csrfToken(),
             'tab_lease'     => Auth::tabLease(),
         ]);
         return;
@@ -777,6 +780,7 @@ function handleCheck() {
             'authenticated' => true,
             'auth_method'   => 'jwt',
             'user'          => $jwtUser,
+            'csrf_token'    => Auth::csrfToken(),
             'tab_lease'     => Auth::tabLease(),
         ]);
         return;
@@ -859,8 +863,8 @@ function handleGetCurrentUser() {
             jsonResponse(false, 'User not found', null, 404);
         }
         
-        jsonResponse(true, 'User data retrieved', ['user' => $user]);
-        
+        jsonResponse(true, 'User data retrieved', ['user' => $user, 'csrf_token' => Auth::csrfToken()]);
+
     } catch (Exception $e) {
         error_log('Get user error: ' . $e->getMessage());
         jsonResponse(false, 'Failed to get user data', null, 500);

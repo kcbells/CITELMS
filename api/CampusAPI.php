@@ -25,6 +25,9 @@ switch ($action) {
 }
 
 function handleList() {
+    if (!Auth::can('campuses.view')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: campuses.view']); return;
+    }
     $campuses = db()->fetchAll(
         "SELECT c.*,
             (SELECT COUNT(*) FROM department d WHERE d.campus_id = c.campus_id AND d.status = 'active') AS department_count,
@@ -36,8 +39,8 @@ function handleList() {
 }
 
 function handleCreate() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('campuses.create')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: campuses.create']); return;
     }
 
     $data    = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -70,8 +73,8 @@ function handleCreate() {
 }
 
 function handleUpdate() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('campuses.edit')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: campuses.edit']); return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -107,8 +110,8 @@ function handleUpdate() {
 }
 
 function handleDelete() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('campuses.delete')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: campuses.delete']); return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];

@@ -21,8 +21,9 @@ let _subjects     = [];        // full curriculum list from API, with is_assigne
 let _original     = new Set(); // subject_ids originally assigned to the selected person
 let _pending      = new Set(); // current checked state
 let _deptFilter   = '';
-let _roleFilter   = '';        // '', 'instructor', 'program_head'
 let _deanSelf     = null;
+let _expanded     = new Set();     // person ids currently expanded in the left list
+let _subjCache    = new Map();     // `${semId}:${personId}` -> subjects array (is_assigned filtered), for the inline preview
 
 export async function render(container) {
     container.innerHTML = `<style>${css()}</style><div class="fa-boot"><div class="spinner"></div></div>`;
@@ -82,13 +83,6 @@ export async function render(container) {
                     <span class="fa-left-title">Faculty <span class="fa-instr-count" id="fa-instr-count">${_people.length}</span></span>
                 </div>
                 <div class="fa-dept-wrap">
-                    <select id="fa-role-filter" class="fa-dept-sel">
-                        <option value="">All Roles</option>
-                        <option value="instructor">Instructors</option>
-                        <option value="program_head">Program Heads</option>
-                    </select>
-                </div>
-                <div class="fa-dept-wrap">
                     <select id="fa-dept-filter" class="fa-dept-sel">
                         <option value="">All Programs</option>
                         ${buildDeptOptions(_people)}
@@ -119,10 +113,6 @@ export async function render(container) {
         if (_selectedPerson) loadSubjects(_selectedPerson);
     });
 
-    container.querySelector('#fa-role-filter').addEventListener('change', e => {
-        _roleFilter = e.target.value;
-        applyFilters(container);
-    });
     container.querySelector('#fa-dept-filter').addEventListener('change', e => {
         _deptFilter = e.target.value;
         applyFilters(container);
@@ -182,7 +172,6 @@ function applyFilters(container) {
     const q = (container.querySelector('#fa-instr-search')?.value || '').toLowerCase();
 
     let filtered = _people;
-    if (_roleFilter) filtered = filtered.filter(i => i.role === _roleFilter);
     if (_deptFilter) filtered = filtered.filter(i => (i.program_code || '') === _deptFilter);
     if (q) {
         filtered = filtered.filter(i =>
@@ -203,31 +192,89 @@ function renderPeopleList(list) {
         const init = ((i.first_name||'?')[0] + (i.last_name||'?')[0]).toUpperCase();
         const isActive = _selectedPerson && _selectedPerson.users_id === i.users_id;
         const isPH = i.role === 'program_head';
+        const isOpen = _expanded.has(i.users_id);
         return `
-        <div class="fa-instr-card ${isActive ? 'active' : ''}" data-id="${i.users_id}">
-            <div class="fa-instr-av ${isPH ? 'fa-ph-av' : ''}">${init}</div>
-            <div class="fa-instr-info">
-                <div class="fa-instr-name">${esc(i.first_name)} ${esc(i.last_name)}</div>
-                <div class="fa-instr-meta">${esc(i.employee_id||'—')}</div>
-                <div class="fa-instr-tags">
-                    ${isPH ? `<span class="fa-instr-role fa-ph-badge">Program Head</span>` : ''}
-                    ${i.program_code ? `<span class="fa-instr-dept">${esc(i.program_code)}</span>` : ''}
+        <div class="fa-instr-item">
+            <div class="fa-instr-card ${isActive ? 'active' : ''}" data-id="${i.users_id}">
+                <button type="button" class="fa-expand-btn ${isOpen ? 'open' : ''}" data-expand-id="${i.users_id}" title="Show subjects handled">
+                    ${icon('chevronDown', inl)}
+                </button>
+                <div class="fa-instr-av ${isPH ? 'fa-ph-av' : ''}">${init}</div>
+                <div class="fa-instr-info">
+                    <div class="fa-instr-name">${esc(i.first_name)} ${esc(i.last_name)}</div>
+                    <div class="fa-instr-meta">${esc(i.employee_id||'—')}</div>
+                    <div class="fa-instr-tags">
+                        ${isPH ? `<span class="fa-instr-role fa-ph-badge">Program Head</span>` : ''}
+                        ${i.program_code ? `<span class="fa-instr-dept">${esc(i.program_code)}</span>` : ''}
+                    </div>
                 </div>
+                <div class="fa-instr-badge" id="badge-${i.users_id}">—</div>
             </div>
-            <div class="fa-instr-badge" id="badge-${i.users_id}">—</div>
+            <div class="fa-inline-subjects ${isOpen ? 'open' : ''}" id="inline-${i.users_id}">
+                ${isOpen ? renderInlineSubjects(i.users_id) : ''}
+            </div>
         </div>`;
     }).join('');
 }
 
+function renderInlineSubjects(personId) {
+    const key = `${_semId}:${personId}`;
+    const cached = _subjCache.get(key);
+    if (!cached) return `<div class="fa-inline-loading"><div class="spinner-sm"></div> Loading…</div>`;
+    if (!cached.length) return `<div class="fa-inline-empty">Not currently handling any subjects this term</div>`;
+    return cached.map(s => `
+        <div class="fa-inline-row">
+            <span class="fa-inline-code">${esc(s.subject_code)}</span>
+            <span class="fa-inline-name">${esc(s.subject_name)}</span>
+            ${s.assigned_sections ? `<span class="fa-inline-section">${esc(s.assigned_sections)}</span>` : ''}
+        </div>`).join('');
+}
+
 function bindPersonClicks() {
     document.querySelectorAll('.fa-instr-card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.fa-expand-btn')) return; // handled separately below
             const person = _people.find(i => i.users_id == card.dataset.id);
             if (!person) return;
             _selectedPerson = person;
             document.querySelectorAll('.fa-instr-card').forEach(c => c.classList.remove('active'));
             card.classList.add('active');
             loadSubjects(person);
+        });
+    });
+
+    // Expand/collapse — shows this person's currently assigned subjects
+    // right in the list, so the dean can scan several people's current
+    // load without losing their place clicking in and out of the right
+    // panel each time.
+    document.querySelectorAll('.fa-expand-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id = parseInt(btn.dataset.expandId);
+            const panel = document.getElementById(`inline-${id}`);
+            if (!panel) return;
+
+            if (_expanded.has(id)) {
+                _expanded.delete(id);
+                btn.classList.remove('open');
+                panel.classList.remove('open');
+                panel.innerHTML = '';
+                return;
+            }
+
+            _expanded.add(id);
+            btn.classList.add('open');
+            panel.classList.add('open');
+
+            const key = `${_semId}:${id}`;
+            if (!_subjCache.has(key)) {
+                panel.innerHTML = renderInlineSubjects(id); // loading state
+                const res = await Api.get(`/SubjectOfferingsAPI.php?action=instructor-subjects&instructor_id=${id}&semester_id=${_semId}`);
+                const assigned = (res.success ? res.data : []).filter(s => Number(s.is_assigned) === 1);
+                _subjCache.set(key, assigned);
+            }
+            // Still expanded? (dean could've collapsed it again while the request was in flight)
+            if (_expanded.has(id)) panel.innerHTML = renderInlineSubjects(id);
         });
     });
 }
@@ -308,6 +355,7 @@ function applySubjSearch(right, personProg) {
         : _subjects;
     right.querySelector('#fa-checklist').innerHTML = buildChecklistHtml(list, personProg);
     bindCheckboxes();
+    bindSectionToggles();
 }
 
 function renderRight(person, right) {
@@ -371,6 +419,7 @@ function renderRight(person, right) {
     </div>`;
 
     bindCheckboxes();
+    bindSectionToggles();
     bindSaveBar(person);
     bindPhScope(person);
 
@@ -433,6 +482,7 @@ function renderSubjectRow(s) {
     const key          = `sid:${s.subject_id}`;
     const checked      = _pending.has(key);
     const takenByOther = s.taken_by_other == 1;
+    const hasOffering  = s.has_offering == 1;
     const otherNames   = s.other_instructor_names || '';
 
     const dotClass = checked ? 'checked' : (takenByOther ? 'other' : 'free');
@@ -442,20 +492,122 @@ function renderSubjectRow(s) {
         : '';
 
     return `
-    <label class="fa-subj-row ${checked ? 'assigned' : ''}" data-key="${key}">
-        <input type="checkbox" class="fa-cb" data-key="${key}" ${checked ? 'checked' : ''}>
-        <span class="fa-dot ${dotClass}"></span>
-        <div class="fa-subj-body">
-            <div class="fa-subj-top">
-                <span class="fa-subj-code">${esc(s.subject_code)}</span>
-                <span class="fa-subj-name">${esc(s.subject_name)}</span>
+    <div class="fa-subj-wrap">
+        <label class="fa-subj-row ${checked ? 'assigned' : ''}" data-key="${key}">
+            <input type="checkbox" class="fa-cb" data-key="${key}" ${checked ? 'checked' : ''}>
+            <span class="fa-dot ${dotClass}"></span>
+            <div class="fa-subj-body">
+                <div class="fa-subj-top">
+                    <span class="fa-subj-code">${esc(s.subject_code)}</span>
+                    <span class="fa-subj-name">${esc(s.subject_name)}</span>
+                </div>
+                <div class="fa-subj-meta">
+                    <span>${s.units} unit${s.units != 1 ? 's' : ''}</span>
+                    ${alsoNote}
+                </div>
             </div>
-            <div class="fa-subj-meta">
-                <span>${s.units} unit${s.units != 1 ? 's' : ''}</span>
-                ${alsoNote}
-            </div>
-        </div>
-    </label>`;
+            ${hasOffering ? `
+            <button type="button" class="fa-sections-toggle" data-sections-id="${s.subject_id}" title="View or transfer this subject's sections">
+                Sections ${icon('chevronDown', inl)}
+            </button>` : ''}
+        </label>
+        ${hasOffering ? `<div class="fa-subj-sections" id="fa-sections-${s.subject_id}"></div>` : ''}
+    </div>`;
+}
+
+/**
+ * A subject can have several sections, each possibly taught by a DIFFERENT
+ * instructor (Class Density/Class List each create one offering PER
+ * instructor, not one shared offering per subject) — this panel is where a
+ * dean sees that breakdown and transfers one specific section to a
+ * different instructor, without touching the subject's other sections.
+ */
+function bindSectionToggles() {
+    document.querySelectorAll('.fa-sections-toggle').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();  // this button lives inside a <label> — don't let the click toggle the checkbox
+            e.stopPropagation();
+
+            const subjId = parseInt(btn.dataset.sectionsId);
+            const panel = document.getElementById(`fa-sections-${subjId}`);
+            if (!panel) return;
+
+            const isOpen = panel.classList.contains('open');
+            if (isOpen) {
+                panel.classList.remove('open');
+                btn.classList.remove('open');
+                panel.innerHTML = '';
+                return;
+            }
+
+            panel.classList.add('open');
+            btn.classList.add('open');
+            panel.innerHTML = `<div class="fa-inline-loading"><div class="spinner-sm"></div> Loading sections…</div>`;
+
+            const res = await Api.get(`/SubjectOfferingsAPI.php?action=subject-section-instructors&subject_id=${subjId}&semester_id=${_semId}`);
+            const sections = res.success ? res.data.sections : [];
+            panel.innerHTML = renderSectionsPanel(sections);
+            bindSectionsPanel(subjId);
+        });
+    });
+}
+
+function renderSectionsPanel(sections) {
+    if (!sections.length) return `<div class="fa-inline-empty">No sections set up for this subject yet</div>`;
+    const instrOptions = _people
+        .map(p => `<option value="${p.users_id}">${esc(p.first_name)} ${esc(p.last_name)}</option>`)
+        .join('');
+    return sections.map(sec => `
+        <div class="fa-section-row" data-ss-id="${sec.section_subject_id}">
+            <span class="fa-section-name">${esc(sec.section_name)}</span>
+            <span class="fa-section-instr">${sec.instructor_name ? esc(sec.instructor_name) : '<em>Unassigned</em>'}</span>
+            <select class="fa-section-select">
+                <option value="">Transfer to…</option>
+                ${instrOptions}
+            </select>
+            <button type="button" class="fa-section-transfer-btn" data-ss-id="${sec.section_subject_id}">Transfer</button>
+        </div>`).join('');
+}
+
+function bindSectionsPanel(subjId) {
+    const panel = document.getElementById(`fa-sections-${subjId}`);
+    if (!panel) return;
+    panel.querySelectorAll('.fa-section-transfer-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const row = btn.closest('.fa-section-row');
+            const select = row.querySelector('.fa-section-select');
+            const newInstrId = parseInt(select.value);
+            if (!newInstrId) { notify.error('Pick an instructor first.'); return; }
+
+            const ssId = parseInt(btn.dataset.ssId);
+            const sectionName = row.querySelector('.fa-section-name').textContent;
+            const instrName = select.options[select.selectedIndex].textContent;
+
+            const confirmed = await notify.confirm(
+                `Transfer section "${sectionName}" to ${instrName}? Any students already enrolled move with it.`,
+                { confirmText: 'Transfer' }
+            );
+            if (!confirmed) return;
+
+            btn.disabled = true;
+            btn.textContent = 'Transferring…';
+            const res = await Api.post('/SubjectOfferingsAPI.php?action=reassign-section', {
+                section_subject_id: ssId,
+                new_instructor_id: newInstrId,
+            });
+
+            if (res.success) {
+                row.querySelector('.fa-section-instr').innerHTML = esc(res.data.instructor_name || '');
+                select.value = '';
+                notify.success('Section transferred.');
+                _subjCache.clear(); // old/new instructors' inline previews are now stale
+            } else {
+                notify.error(res.message || 'Transfer failed.');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Transfer';
+        });
+    });
 }
 
 function bindCheckboxes() {
@@ -507,16 +659,69 @@ function bindSaveBar(person) {
         updateBadge(person.users_id);
     });
 
-    saveBtn.addEventListener('click', async () => {
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving...';
-
+    saveBtn.addEventListener('click', () => {
         const assignIds   = [..._pending]
             .filter(k => !_original.has(k) && k.startsWith('sid:'))
             .map(k => parseInt(k.slice(4)));
         const unassignIds = [..._original]
             .filter(k => !_pending.has(k)  && k.startsWith('sid:'))
             .map(k => parseInt(k.slice(4)));
+
+        openReviewModal(person, assignIds, unassignIds, saveBtn);
+    });
+}
+
+/**
+ * Review step — shows exactly what's about to change (subject names, not
+ * just a count) before it's actually saved. This is a manual-override tool
+ * for one-off reassignments/transfers (the normal way faculty get assigned
+ * is the admin side's Class Density/Class List bulk uploads), so a wrong
+ * click here directly changes who teaches what — worth a confirm.
+ */
+function openReviewModal(person, assignIds, unassignIds, saveBtn) {
+    const nameOf = (id) => {
+        const s = _subjects.find(x => x.subject_id === id);
+        return s ? `${s.subject_code} — ${s.subject_name}` : `Subject #${id}`;
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fa-review-overlay';
+    overlay.innerHTML = `
+        <div class="fa-review-modal">
+            <div class="fa-review-head">
+                <h3>Review Changes</h3>
+                <p>${esc(person.first_name)} ${esc(person.last_name)} — confirm before saving</p>
+            </div>
+            <div class="fa-review-body">
+                ${assignIds.length ? `
+                <div class="fa-review-group">
+                    <div class="fa-review-group-lbl fa-review-add">${icon('check', inl)} Assigning (${assignIds.length})</div>
+                    ${assignIds.map(id => `<div class="fa-review-row fa-review-add-row">${esc(nameOf(id))}</div>`).join('')}
+                </div>` : ''}
+                ${unassignIds.length ? `
+                <div class="fa-review-group">
+                    <div class="fa-review-group-lbl fa-review-remove">${icon('close', inl)} Removing (${unassignIds.length})</div>
+                    ${unassignIds.map(id => `<div class="fa-review-row fa-review-remove-row">${esc(nameOf(id))}</div>`).join('')}
+                </div>` : ''}
+                ${!assignIds.length && !unassignIds.length ? `<p class="fa-review-none">No changes to save.</p>` : ''}
+            </div>
+            <div class="fa-review-foot">
+                <button class="fa-btn-discard" id="fa-review-cancel">Cancel</button>
+                <button class="fa-btn-save" id="fa-review-confirm">Confirm &amp; Save</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#fa-review-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#fa-review-confirm').addEventListener('click', async () => {
+        const confirmBtn = overlay.querySelector('#fa-review-confirm');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
 
         const res = await Api.post('/SubjectOfferingsAPI.php?action=dean-assign', {
             instructor_id:        person.users_id,
@@ -526,13 +731,16 @@ function bindSaveBar(person) {
         });
 
         if (res.success) {
+            close();
+            _subjCache.delete(`${_semId}:${person.users_id}`); // stale now — refetch next time it's expanded
             await loadSubjects(person);
             notify.success('Assignments saved.');
         } else {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirm & Save';
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save Assignments';
-            const lbl = document.getElementById('fa-change-label');
-            if (lbl) lbl.innerHTML = `${icon('warning', inl)} ${res.message || 'Save failed'}`;
+            notify.error(res.message || 'Save failed.');
         }
     });
 }
@@ -617,6 +825,22 @@ function css() { return `
     .fa-dean-badge { background:#EDE9FE;color:#6D28D9; }
     .fa-instr-badge { margin-left:auto;min-width:22px;text-align:center;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#f3f4f6;color:#9ca3af;flex-shrink:0; }
     .fa-instr-badge.has { background:#E8F5E9;color:#1B4D3E; }
+
+    /* Expand chevron + inline subjects preview */
+    .fa-instr-item { border-bottom:1px solid #f5f5f5; }
+    .fa-instr-item .fa-instr-card { border-bottom:none; }
+    .fa-expand-btn { background:none;border:none;padding:2px;color:#9ca3af;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s,color .15s;border-radius:6px; }
+    .fa-expand-btn:hover { color:#00461B;background:#E8F5E9; }
+    .fa-expand-btn.open { transform:rotate(180deg);color:#00461B; }
+    .fa-inline-subjects { max-height:0;overflow:hidden;background:#F9FAFB; }
+    .fa-inline-subjects.open { max-height:400px;overflow-y:auto;padding:6px 14px 10px 46px; }
+    .fa-inline-loading { display:flex;align-items:center;gap:8px;font-size:12px;color:#9ca3af;padding:8px 0; }
+    .spinner-sm { width:14px;height:14px;border:2px solid #e5e7eb;border-top-color:#00461B;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0; }
+    .fa-inline-empty { font-size:12px;color:#9ca3af;padding:8px 0;font-style:italic; }
+    .fa-inline-row { display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;flex-wrap:wrap; }
+    .fa-inline-code { background:#fff;border:1px solid #E5E7EB;color:#374151;padding:1px 6px;border-radius:4px;font-family:monospace;font-size:10.5px;font-weight:700;flex-shrink:0; }
+    .fa-inline-name { color:#374151;font-weight:600;flex:1;min-width:0; }
+    .fa-inline-section { background:#E8F5E9;color:#1B4D3E;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;flex-shrink:0; }
     .fa-no-inst { padding:24px;text-align:center;color:#9ca3af;font-size:13px; }
 
     /* RIGHT panel */
@@ -693,6 +917,25 @@ function css() { return `
     .fa-subj-meta { display:flex;gap:10px;font-size:11px;color:#9ca3af;margin-top:3px;flex-wrap:wrap; }
     .fa-also-note { color:#1d4ed8;font-weight:600; }
 
+    /* Per-section instructor breakdown + transfer */
+    .fa-subj-wrap { margin-bottom:4px; }
+    .fa-subj-wrap .fa-subj-row { margin-bottom:0; }
+    .fa-sections-toggle { display:inline-flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;padding:5px 10px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;align-self:flex-start;transition:all .15s; }
+    .fa-sections-toggle:hover { border-color:#00461B;color:#00461B; }
+    .fa-sections-toggle svg { transition:transform .15s; }
+    .fa-sections-toggle.open svg { transform:rotate(180deg); }
+    .fa-subj-sections { max-height:0;overflow:hidden;background:#F9FAFB;border-radius:0 0 10px 10px; }
+    .fa-subj-sections.open { max-height:320px;overflow-y:auto;padding:8px 14px 10px 34px;border:1px solid #E5E7EB;border-top:none; }
+    .fa-section-row { display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eef0f2;flex-wrap:wrap; }
+    .fa-section-row:last-child { border-bottom:none; }
+    .fa-section-name { font-size:12px;font-weight:700;color:#1a1a1a;background:#fff;border:1px solid #E5E7EB;padding:2px 8px;border-radius:6px;flex-shrink:0; }
+    .fa-section-instr { font-size:12px;color:#374151;flex:1;min-width:100px; }
+    .fa-section-instr em { color:#9ca3af;font-style:italic; }
+    .fa-section-select { font-size:12px;padding:5px 8px;border:1.5px solid #e5e7eb;border-radius:6px;color:#374151;background:#fff;max-width:160px; }
+    .fa-section-transfer-btn { font-size:11.5px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:#00461B;color:#fff;cursor:pointer;flex-shrink:0; }
+    .fa-section-transfer-btn:hover { background:#006428; }
+    .fa-section-transfer-btn:disabled { opacity:.6;cursor:not-allowed; }
+
     /* Save bar */
     .fa-save-bar { position:sticky;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border-top:2px solid #00461B;padding:12px 20px;border-radius:0 0 14px 14px;box-shadow:0 -4px 16px rgba(0,0,0,.08);flex-wrap:wrap; }
     .fa-save-info { display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#374151; }
@@ -712,6 +955,24 @@ function css() { return `
     .fa-dean-self-card.active { background:#E8F5E9;border-color:#00461B;border-style:solid; }
     .fa-dean-av { background:#7C3AED !important; }
     .fa-dean-self-divider { height:1px;background:#f0f0f0;margin:10px 0 2px; }
+
+    /* Review-before-save modal */
+    .fa-review-overlay { position:fixed;inset:0;background:rgba(17,24,39,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
+    .fa-review-modal { background:#fff;border-radius:16px;width:100%;max-width:460px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 32px 80px rgba(0,0,0,.28); }
+    .fa-review-head { padding:20px 24px 14px;border-bottom:1.5px solid #e5e7eb; }
+    .fa-review-head h3 { font-size:17px;font-weight:800;color:#1B4D2E;margin:0 0 3px; }
+    .fa-review-head p { font-size:12.5px;color:#6b7280;margin:0; }
+    .fa-review-body { padding:16px 24px;overflow-y:auto;flex:1; }
+    .fa-review-group { margin-bottom:16px; }
+    .fa-review-group:last-child { margin-bottom:0; }
+    .fa-review-group-lbl { display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-bottom:8px; }
+    .fa-review-add { color:#15803d; }
+    .fa-review-remove { color:#b91c1c; }
+    .fa-review-row { font-size:13px;padding:7px 10px;border-radius:8px;margin-bottom:4px; }
+    .fa-review-add-row { background:#F0FDF4;color:#166534; }
+    .fa-review-remove-row { background:#FEF2F2;color:#991B1B; }
+    .fa-review-none { text-align:center;color:#9ca3af;font-size:13px;padding:20px 0; }
+    .fa-review-foot { padding:14px 24px 20px;border-top:1px solid #f3f4f6;display:flex;gap:10px;justify-content:flex-end;background:#fafafa;border-radius:0 0 16px 16px; }
 
     @media (max-width:768px) {
         .fa-layout { grid-template-columns:1fr; }

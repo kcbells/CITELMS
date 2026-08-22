@@ -19,13 +19,24 @@ if (!Auth::check()) {
 
 $action = $_GET['action'] ?? '';
 
-// Instructors (who own their announcements), program heads and deans co-managing
-// a subject, and admins may create/edit/delete announcements or their materials —
-// students/other roles are read-only here.
-$announcementWriteActions = ['create', 'update', 'delete', 'upload-material', 'add-link'];
-if (in_array($action, $announcementWriteActions, true) && !in_array(Auth::role(), ['instructor', 'admin', 'program_head', 'dean'], true)) {
+// RBAC: enforce permission per action — instructors (who own their
+// announcements), program heads and deans co-managing a subject, and
+// admins may create/edit/delete announcements or their materials;
+// everyone (including students) can view.
+$_annPerms = [
+    'instructor-list'   => 'announcements.view',
+    'student-list'      => 'announcements.view',
+    'new-announcements' => 'announcements.view',
+    'serve-material'    => 'announcements.view',
+    'create'            => 'announcements.create',
+    'update'            => 'announcements.edit',
+    'upload-material'   => 'announcements.edit',
+    'add-link'          => 'announcements.edit',
+    'delete'            => 'announcements.delete',
+];
+if (isset($_annPerms[$action]) && !Auth::can($_annPerms[$action])) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    echo json_encode(['success' => false, 'message' => "Permission denied: {$_annPerms[$action]}"]);
     exit;
 }
 

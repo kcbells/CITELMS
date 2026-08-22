@@ -35,10 +35,23 @@ export const Api = {
         return localStorage.getItem('jwt_token') || null;
     },
 
+    // CSRF guard token — handed out fresh by AuthAPI's login/check/me
+    // responses (see setCsrfToken()) and echoed back on every mutating
+    // request via the X-CSRF-Token header. Kept in memory only (not
+    // localStorage): it's meaningless to anyone but the same tab that
+    // received it alongside the session cookie.
+    _csrfToken: null,
+
+    /** Called by auth.js whenever a login/check/me response carries a fresh token. */
+    setCsrfToken(token) {
+        if (token) this._csrfToken = token;
+    },
+
     _authHeaders(extra = {}) {
         const headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...extra };
         const token = this._getToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (this._csrfToken) headers['X-CSRF-Token'] = this._csrfToken;
         const lease = getTabLease();
         if (lease) headers['X-Tab-Lease'] = lease;
         return headers;
@@ -174,7 +187,10 @@ export const Api = {
         // 401 — session expired or superseded by another tab
         if (response.status === 401) {
             const superseded = data?.code === 'SESSION_SUPERSEDED';
-            if (!superseded) localStorage.removeItem('jwt_token');
+            if (!superseded) {
+                localStorage.removeItem('jwt_token');
+                this._csrfToken = null;
+            }
             const onLandingPage = /\/index\.html$|\/COC_LMS\(2\)\/?$/i.test(window.location.pathname);
             if (!onLandingPage) {
                 window.location.href = BASE_URL + '/index.html';

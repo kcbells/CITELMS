@@ -28,13 +28,17 @@ $action = $_GET['action'] ?? '';
 // for self-service actions so missing DB seeds never lock a student out.
 $studentSelfActions = ['grades', 'subject-progress', 'student-quizzes', 'new-quizzes', 'reminders', 'quiz-result'];
 if (Auth::role() !== 'student') {
+    // progress.view is granted to every role identically to grades.view/
+    // quizzes.view (verified before this change), so this doesn't alter
+    // access for anyone — it just makes the "progress" RBAC module (which
+    // was otherwise fully decorative) actually mean something.
     $_progPerms = [
-        'grades'           => 'grades.view',
-        'subject-progress' => 'grades.view',
-        'student-quizzes'  => 'quizzes.view',
-        'new-quizzes'      => 'quizzes.view',
-        'reminders'        => 'quizzes.view',
-        'quiz-result'      => 'quizzes.view',
+        'grades'           => 'progress.view',
+        'subject-progress' => 'progress.view',
+        'student-quizzes'  => 'progress.view',
+        'new-quizzes'      => 'progress.view',
+        'reminders'        => 'progress.view',
+        'quiz-result'      => 'progress.view',
     ];
     if (isset($_progPerms[$action]) && !Auth::can($_progPerms[$action])) {
         http_response_code(403);

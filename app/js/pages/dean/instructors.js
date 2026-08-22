@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
+import { mountBulkImportUI, bulkImportCss } from '../../components/bulk-import-ui.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -32,8 +33,11 @@ export async function render(container) {
             .di-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
             .di-count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
 
+            .di-header-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
             .btn-add-instructor { background:#1B4D3E; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; }
             .btn-add-instructor:hover { background:#00461B; }
+            .btn-add-instructor.di-btn-outline { background:#fff; color:#1B4D3E; border:1.5px solid #1B4D3E; }
+            .btn-add-instructor.di-btn-outline:hover { background:#E8F5E9; }
 
             .di-filters { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; align-items:center; }
             .di-filters input, .di-filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; background:#fff; }
@@ -64,6 +68,7 @@ export async function render(container) {
             .div-subj-name { font-size:13.5px; color:#262626; font-weight:600; flex:1; min-width:0; }
             .div-subj-units { font-size:11.5px; color:#9CA3AF; flex-shrink:0; }
             .div-subj-prog { font-size:10.5px; color:#5B21B6; background:#EDE9FE; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
+            .div-subj-section { font-size:10.5px; color:#1B4D3E; background:#E8F5E9; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
             .div-empty { text-align:center; padding:36px 20px; color:#a0a0a0; }
             .div-empty-icon { font-size:32px; margin-bottom:8px; }
             .di-av { width:38px; height:38px; border-radius:50%; background:#00461B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
@@ -154,14 +159,28 @@ export async function render(container) {
                 .di-filters input, .di-filters select { min-width:100%; }
                 .di-form-grid { grid-template-columns:1fr; }
             }
+
+            /* ── Upload Faculty List modal ── */
+            .di-upload-modal { max-width:640px; }
+            ${bulkImportCss()}
         </style>
 
         <div class="di-header">
             <h2>Faculty <span class="di-count" id="di-total">${allInstructors.length}</span></h2>
-            <button class="btn-add-instructor" id="di-add-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Faculty
-            </button>
+            <div class="di-header-actions">
+                <button class="btn-add-instructor di-btn-outline" id="di-template-btn" title="Download a blank faculty list template">
+                    ${icon('download', { size: 15, className: 'ui-icon-inline' })}
+                    Download Template
+                </button>
+                <button class="btn-add-instructor di-btn-outline" id="di-upload-btn">
+                    ${icon('cloudUpload', { size: 15, className: 'ui-icon-inline' })}
+                    Upload Faculty List
+                </button>
+                <button class="btn-add-instructor" id="di-add-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Faculty
+                </button>
+            </div>
         </div>
 
         <div class="di-filters">
@@ -261,6 +280,8 @@ export async function render(container) {
 
     // Add instructor modal
     container.querySelector('#di-add-btn').addEventListener('click', () => openModal());
+    container.querySelector('#di-upload-btn').addEventListener('click', () => openUploadModal());
+    container.querySelector('#di-template-btn').addEventListener('click', downloadFacultyTemplate);
 
     async function reload() {
         const r = await Api.get('/UsersAPI.php?action=list&role=instructor,program_head');
@@ -620,6 +641,90 @@ export async function render(container) {
             }
         });
     }
+
+    // Upload Faculty List — bulk-create/update instructor accounts from a
+    // file, all landing in this dean's own department (BulkImportAPI.php's
+    // faculty-list-import action; never touches subjects/sections/students).
+    function openUploadModal() {
+        const overlay = document.createElement('div');
+        overlay.className = 'di-modal-overlay';
+        overlay.innerHTML = `
+            <div class="di-modal di-upload-modal">
+                <div class="di-modal-header">
+                    <div class="di-modal-header-icon">${icon('cloudUpload', { size: 20 })}</div>
+                    <div class="di-modal-header-text">
+                        <h3>Upload Faculty List</h3>
+                        <p>Creates or updates instructor accounts in your department</p>
+                    </div>
+                    <button class="di-modal-close" id="diu-close-modal">&times;</button>
+                </div>
+                <div class="di-modal-body">
+                    <div id="diu-import-host"></div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const closeModal = () => overlay.remove();
+        overlay.querySelector('#diu-close-modal').addEventListener('click', closeModal);
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+        mountBulkImportUI(overlay.querySelector('#diu-import-host'), {
+            importAction: 'faculty-list-import',
+            helpHtml: `
+                <p>Upload one file — <strong>Excel (.xlsx), CSV/text (.csv, .txt), a Word document with a table (.docx),
+                    or a clear photo of a printed table (.jpg, .png)</strong> — listing your faculty. Needs
+                    <strong>Last Name, First Name</strong> (or a combined Name column), <strong>Employee ID</strong>,
+                    and ideally <strong>Email</strong>; anything else in the file is ignored.
+                    <a href="#" id="diu-template-link" style="color:#1B4D2E;font-weight:700;">Download a blank template</a>.</p>
+                <p>Every row becomes an instructor account in <strong>your own department</strong> — this never creates or
+                    changes subjects, sections, or students. Accounts that don't exist yet log in with just their
+                    Employee ID (no password needed) and are asked to set one on first login.</p>`,
+            renderResult: renderFacultyListResult,
+            onImported: () => { reload(); },
+        });
+        overlay.querySelector('#diu-template-link')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            downloadFacultyTemplate();
+        });
+    }
+}
+
+function renderFacultyListResult(d) {
+    const stats = [
+        ['Instructors created', d.created_instructors],
+        ['Instructors updated', d.updated_instructors],
+    ];
+    const logRows = [
+        ...(d.notes    || []).map(m => ({ cls: '',     m })),
+        ...(d.warnings || []).map(m => ({ cls: 'warn', m })),
+        ...(d.errors   || []).map(m => ({ cls: 'err',  m })),
+    ];
+    return `
+        <div class="bi-alert bi-alert-success">
+            Used row ${d.header_row || 1} as the column headers.
+            Processed ${d.rows_processed} row${d.rows_processed !== 1 ? 's' : ''}
+            ${d.rows_skipped_blank ? ` (${d.rows_skipped_blank} blank row${d.rows_skipped_blank !== 1 ? 's' : ''} skipped)` : ''}.
+            Recognized columns: ${d.matched_columns?.length ? esc(d.matched_columns.join(', ')) : 'none'}.
+        </div>
+        <div class="bi-summary">
+            ${stats.map(([label, val]) => `<div class="bi-stat"><strong>${val}</strong><span>${label}</span></div>`).join('')}
+        </div>
+        ${logRows.length ? `<div class="bi-log">${logRows.map(r => `<div class="bi-log-row ${r.cls}">${esc(r.m)}</div>`).join('')}</div>` : ''}
+    `;
+}
+
+/** Blank CSV template — Last Name, First Name, Employee ID, Email. Pure client-side, no backend needed. */
+function downloadFacultyTemplate() {
+    const csv = 'Last Name,First Name,Employee ID,Email\n';
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'faculty-list-template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 }
 
 // Shows every subject this instructor currently teaches (this term), grouped
@@ -678,6 +783,7 @@ async function openSubjectsModal(inst) {
                 <div class="div-subj-row">
                     <span class="div-subj-code">${esc(s.subject_code)}</span>
                     <span class="div-subj-name">${esc(s.subject_name)}</span>
+                    ${s.assigned_sections ? `<span class="div-subj-section">${esc(s.assigned_sections)}</span>` : ''}
                     <span class="div-subj-prog">${esc(s.program_code)}</span>
                     <span class="div-subj-units">${s.units} unit${s.units == 1 ? '' : 's'}</span>
                 </div>

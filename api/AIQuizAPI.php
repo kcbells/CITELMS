@@ -28,11 +28,11 @@ $action = $_GET['action'] ?? $input['action'] ?? '';
 
 // RBAC: enforce permission per action
 $_aiPerms = [
-    'subjects'      => 'quizzes.view',
-    'lessons'       => 'lessons.view',
-    'extract-text'  => 'quizzes.create',
-    'generate'      => 'quizzes.create',
-    'save'          => 'quizzes.create',
+    'subjects'      => 'ai_tools.use',
+    'lessons'       => 'ai_tools.use',
+    'extract-text'  => 'ai_tools.generate',
+    'generate'      => 'ai_tools.generate',
+    'save'          => 'ai_tools.generate',
 ];
 if (isset($_aiPerms[$action]) && !Auth::can($_aiPerms[$action])) {
     http_response_code(403);

@@ -21,8 +21,15 @@ const MODULE_ICONS = {
     users:'users', departments:'building', programs:'graduation', subjects:'book',
     curriculum:'clipboard', sections:'school', subject_offerings:'calendar',
     faculty_assignments:'instructor', quizzes:'quiz', lessons:'lessons',
-    question_bank:'bank', grades:'dashboard', reports:'chart',
-    analytics:'chart', settings:'settings', rbac:'lock'
+    question_bank:'bank', grades:'gradebook', reports:'chart',
+    analytics:'chart', settings:'settings', rbac:'lock',
+    // Added alongside newer feature areas — keep this in sync with
+    // whatever modules exist in the `permissions` table (RBACApi.php's
+    // `permissions`/`matrix` actions), or a module silently falls back to
+    // a generic pin icon and an underscore-replaced raw name below.
+    campuses:'school', ai_tools:'robot', announcements:'announce',
+    content_bank:'folderOpen', electives:'link', enrollment:'checkCircle',
+    messaging:'messages', progress:'dashboard', remedials:'tools', video:'video',
 };
 const MODULE_LABELS = {
     users: 'User Management',
@@ -41,6 +48,16 @@ const MODULE_LABELS = {
     analytics: 'Analytics',
     settings: 'System Settings',
     rbac: 'Access Control',
+    campuses: 'Campuses',
+    ai_tools: 'AI Tools',
+    announcements: 'Announcements',
+    content_bank: 'Content Bank',
+    electives: 'Electives',
+    enrollment: 'Enrollment',
+    messaging: 'Messaging',
+    progress: 'Student Progress',
+    remedials: 'Remedials',
+    video: 'Video Conferencing',
 };
 
 export async function render(container) {

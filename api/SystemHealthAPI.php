@@ -14,9 +14,9 @@ if (!Auth::check()) {
     echo json_encode(['success' => false, 'message' => 'Not authenticated']);
     exit;
 }
-if (!Auth::isAdmin()) {
+if (!Auth::can('settings.view')) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Admin only']);
+    echo json_encode(['success' => false, 'message' => 'Permission denied: settings.view']);
     exit;
 }
 

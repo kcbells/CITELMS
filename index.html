@@ -540,6 +540,60 @@
         .fp-success-box h3 { font-size:18px; font-weight:700; color:#111827; margin:0 0 8px; }
         .fp-success-box p { font-size:14px; color:#6b7280; margin:0 0 24px; }
 
+        /* â”€â”€ SIGN-IN LANDING â”€â”€ the app now opens straight into this split-
+           screen sign-in instead of the marketing homepage. Same modal
+           element/JS as before (#signin-backdrop, openSignIn/closeSignIn) â€”
+           only the chrome is different here, via ID selectors that outrank
+           the shared .modal-backdrop rules above. */
+        #signin-backdrop.open { background:#eef1ef; backdrop-filter:none; padding:0; align-items:stretch; justify-content:stretch; }
+        #signin-backdrop .si-brand-panel {
+            position:relative; flex:1 1 42%; max-width:620px; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; text-align:center; overflow:hidden; padding:48px; color:#fff;
+        }
+        #signin-backdrop .si-brand-bg { position:absolute; inset:0; background:#0f2e1a url('assets/images/campus-building.jpg') center/cover; }
+        #signin-backdrop .si-brand-overlay { position:absolute; inset:0; background:rgba(6,20,10,.74); }
+        #signin-backdrop .si-brand-content { position:relative; z-index:1; }
+        #signin-backdrop .si-brand-seal { width:112px; height:112px; object-fit:contain; margin:0 auto 22px; filter:drop-shadow(0 8px 24px rgba(0,0,0,.4)); }
+        #signin-backdrop .si-brand-kicker { font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--gold); margin-bottom:12px; }
+        #signin-backdrop .si-brand-college { font-size:28px; font-weight:900; line-height:1.2; margin-bottom:10px; }
+        #signin-backdrop .si-brand-tagline { font-size:12.5px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,.75); }
+        #signin-backdrop .si-brand-footer { position:absolute; left:0; right:0; bottom:32px; z-index:1; font-size:12px; color:rgba(255,255,255,.62); text-align:center; }
+        #signin-backdrop .si-brand-footer .si-brand-motto { font-style:italic; margin-bottom:4px; }
+        #signin-backdrop .si-form-side { flex:1 1 58%; display:flex; align-items:center; justify-content:center; padding:32px; overflow-y:auto; }
+        /* No card â€” the form sits directly on the plain background, no
+           white box/shadow/border around it. */
+        #signin-backdrop .si-form-side .reg-modal { background:transparent; box-shadow:none; border-radius:0; animation:none; }
+        #signin-backdrop .si-form-side .modal-hdr { background:transparent; border-bottom:none; border-radius:0; }
+        /* Bigger card: scale up the header, body padding and fields beyond
+           the compact modal defaults used elsewhere on the site. */
+        #signin-backdrop .si-form-side .modal-hdr { padding:48px 60px 30px; }
+        #signin-backdrop .si-form-side .modal-hdr img { width:72px; height:72px; }
+        #signin-backdrop .si-form-side .modal-hdr-text h2 { font-size:32px; }
+        #signin-backdrop .si-form-side .modal-hdr-text p { font-size:17px; }
+        #signin-backdrop .si-form-side .modal-body { padding:8px 60px 56px; }
+        #signin-backdrop .si-form-side .si-label { font-size:16px; }
+        #signin-backdrop .si-form-side .si-input { padding:19px 19px 19px 52px; font-size:18px; border-radius:12px; }
+        #signin-backdrop .si-form-side .si-icon svg { width:21px; height:21px; }
+        #signin-backdrop .si-form-side .si-icon { left:17px; }
+        #signin-backdrop .si-form-side .si-pw-toggle { right:15px; }
+        #signin-backdrop .si-form-side .si-pw-toggle svg { width:21px; height:21px; }
+        #signin-backdrop .si-form-side .si-hint { font-size:14px; }
+        #signin-backdrop .si-form-side .si-group { margin-bottom:26px; }
+        #signin-backdrop .si-form-side .si-remember, #signin-backdrop .si-form-side .si-forgot { font-size:15px; }
+        #signin-backdrop .si-form-side .si-captcha-box { padding:17px 22px; }
+        #signin-backdrop .si-form-side .si-captcha-box span,
+        #signin-backdrop .si-form-side .si-captcha-inline-input { font-size:28px; }
+        #signin-backdrop .si-form-side .si-captcha-reload { width:58px; height:58px; }
+        #signin-backdrop .si-form-side .si-captcha-reload svg { width:20px; height:20px; }
+        #signin-backdrop .si-form-side .si-btn { padding:20px; font-size:19px; border-radius:12px; }
+        #signin-backdrop .modal-close { display:none; }
+        @media (max-width: 860px) {
+            #signin-backdrop.open { flex-direction:column; overflow-y:auto; }
+            #signin-backdrop .si-brand-panel { flex:0 0 auto; min-height:200px; padding:32px; }
+            #signin-backdrop .si-brand-footer { display:none; }
+            #signin-backdrop .si-form-side { padding:24px 20px 40px; }
+        }
+
         /* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         @media (max-width:1100px) {
             .feat-layout { grid-template-columns:1fr; gap:40px; }
@@ -580,6 +634,10 @@
 </head>
 <body>
 
+<!-- The full marketing site still exists below, unchanged, but the app now
+     opens straight into the sign-in screen (see #signin-backdrop) instead of
+     this homepage — kept hidden so nothing here is lost. -->
+<div id="site-marketing" style="display:none;">
 
 <!-- NAVBAR -->
 <nav class="navbar" id="navbar">
@@ -1009,6 +1067,8 @@
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
 </button>
 
+</div><!-- /#site-marketing -->
+
 <!-- REGISTRATION MODAL -->
 <div class="modal-backdrop" id="reg-backdrop" onclick="if(event.target===this)closeReg()">
     <div class="reg-modal">
@@ -1171,14 +1231,31 @@
     </div>
 </div>
 
-<!-- SIGN IN MODAL -->
+<!-- SIGN IN MODAL — this is now the app's landing screen; it opens by
+     default (see openSignIn() call near the closing </body>) instead of
+     the marketing homepage above, which is kept but hidden. -->
 <div class="modal-backdrop" id="signin-backdrop" onclick="if(event.target===this)closeSignIn()">
-    <div class="reg-modal" style="max-width:480px;">
+    <div class="si-brand-panel">
+        <div class="si-brand-bg"></div>
+        <div class="si-brand-overlay"></div>
+        <div class="si-brand-content">
+            <img class="si-brand-seal" src="assets/images/app-icon.png" alt="COC Seal">
+            <div class="si-brand-kicker">Phinma Education Network</div>
+            <div class="si-brand-college">Cagayan De Oro College</div>
+            <div class="si-brand-tagline">Learning Management System</div>
+        </div>
+        <div class="si-brand-footer">
+            <div class="si-brand-motto">Making Lives Better Through Education</div>
+            <div>&copy; 2026 PHINMA Cagayan de Oro College</div>
+        </div>
+    </div>
+    <div class="si-form-side">
+    <div class="reg-modal" style="max-width:760px;">
         <div class="modal-hdr">
             <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
                 <h2>Welcome Back!</h2>
-                <p>Sign in to continue to your home page</p>
+                <p>Sign in to continue to your dashboard</p>
             </div>
             <button class="modal-close" onclick="closeSignIn()">&#x2715;</button>
         </div>
@@ -1186,9 +1263,9 @@
             <div class="rmsg" id="signin-msg" role="alert"></div>
             <form id="form-signin" onsubmit="submitSignIn(event)" novalidate>
 
-                <!-- School ID -->
+                <!-- User ID -->
                 <div class="si-group">
-                    <label class="si-label" for="si-uid">School ID</label>
+                    <label class="si-label" for="si-uid">User ID</label>
                     <div class="si-wrap">
                         <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
                         <input class="si-input" type="text" id="si-uid" placeholder="Student ID or Employee ID" required maxlength="64" autocomplete="username">
@@ -1232,9 +1309,8 @@
 
                 <button type="submit" class="si-btn">Sign In</button>
             </form>
-
-            <p class="si-switch">No account? <button type="button" class="si-switch-link" onclick="closeSignIn();openReg()">Go to Register Here</button></p>
         </div>
+    </div>
     </div>
 </div>
 
@@ -1798,6 +1874,11 @@
         document.body.style.overflow = '';
     }
 
+    // The app now opens straight into sign-in instead of the marketing
+    // homepage (the homepage markup is still there, just hidden via
+    // #site-marketing so nothing is lost, in case it's wanted again later).
+    openSignIn();
+
     // Password show/hide
     function toggleSiPw() {
         const inp = document.getElementById('si-pw');
@@ -1810,6 +1891,14 @@
     // once the password step (if any) is done, to decide whether the
     // PHINMAed-email step comes next before reaching the dashboard.
     let pendingNeedsPhinmaedEmail = false;
+
+    // CSRF guard token (see config/auth.php's Auth::check()) — handed out in
+    // the login response. Everything on THIS page before login (register,
+    // forgot-password, login itself) doesn't need it since Auth::check()
+    // only requires it once a session already exists; the set-first-
+    // password / set-phinmaed-email steps below run right after a login
+    // response, so they do need it attached.
+    let _csrfToken = null;
 
     // Submit sign in — validate captcha, call login API, redirect to role dashboard
     async function submitSignIn(e) {
@@ -1858,6 +1947,9 @@
 
             if (json.data && json.data.token) {
                 localStorage.setItem('jwt_token', json.data.token);
+            }
+            if (json.data && json.data.csrf_token) {
+                _csrfToken = json.data.csrf_token;
             }
 
             // A bulk-imported account with no email column gets a placeholder
@@ -2129,7 +2221,12 @@
             const res = await fetch('api/AuthAPI.php?action=set-first-password', {
                 method: 'POST',
                 credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Authorization': 'Bearer ' + (localStorage.getItem('jwt_token') || ''),
+                    'X-CSRF-Token': _csrfToken || '',
+                },
                 body: JSON.stringify({ new_password: newPw, confirm_password: confirmPw })
             }).then(r => r.json());
 
@@ -2139,6 +2236,7 @@
             }
 
             if (res.data && res.data.token) localStorage.setItem('jwt_token', res.data.token);
+            if (res.data && res.data.csrf_token) _csrfToken = res.data.csrf_token;
 
             // Password's done — if this account also still has a placeholder
             // email (no email column in the sheet it was imported from), ask

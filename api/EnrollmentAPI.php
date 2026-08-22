@@ -17,6 +17,15 @@ if (!Auth::check()) {
 
 $action = $_GET['action'] ?? '';
 
+// RBAC: every action here is self-service (scoped to Auth::id(), never an
+// arbitrary target user) — enroll/preview/my-subjects/drop all just need
+// enrollment.view, which every role holds by default.
+if (!Auth::can('enrollment.view')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied: enrollment.view']);
+    exit;
+}
+
 switch ($action) {
     case 'enroll':      enrollByCode();   break;
     case 'preview':     previewCode();    break;

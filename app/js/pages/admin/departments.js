@@ -493,6 +493,16 @@ function openDeanModal(container, info) {
             .cs-multi-hint.warn { background:#fef9ec; color:#92400e; }
             .cs-multi-hint.ok   { background:#dcfce7; color:#15803d; }
             .dean-warn-note { background:#fef9ec; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:#92400e; line-height:1.5; }
+            .dean-src-box  { border:1.5px solid #e5e7eb; border-radius:8px; overflow:hidden; margin-bottom:16px; }
+            .dean-src-row  { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; font-size:14px; color:#374151; transition:background .12s; }
+            .dean-src-row:first-child { border-bottom:1px solid #e5e7eb; }
+            .dean-src-row:hover { background:#f9fafb; }
+            .dean-src-radio { accent-color:#1B4D2E; width:16px; height:16px; flex-shrink:0; }
+            .dean-instr-preview { display:flex; align-items:center; gap:10px; background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:9px; padding:10px 14px; margin-top:10px; }
+            .dean-instr-preview .dip-avatar { width:34px; height:34px; border-radius:50%; background:#00461B; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+            .dean-instr-preview .dip-text { font-size:13px; line-height:1.4; }
+            .dean-instr-preview .dip-name { font-weight:700; color:#166534; }
+            .dean-instr-preview .dip-meta { color:#6b7280; font-size:11.5px; }
         </style>
         <div class="modal-hd">
             <div class="modal-hd-icon">
@@ -509,6 +519,33 @@ function openDeanModal(container, info) {
             ${isChange && info.current_dean
                 ? `<div class="dean-warn-note"><strong>Current dean:</strong> ${esc(info.current_dean)} — the new account will replace this assignment.</div>`
                 : ''}
+
+            <!-- Where the dean account comes from -->
+            <div class="fg">
+                <label>Dean Account</label>
+                <div class="dean-src-box">
+                    <label class="dean-src-row">
+                        <input type="radio" name="d-src" value="new" checked class="dean-src-radio">
+                        Create a new account
+                    </label>
+                    <label class="dean-src-row">
+                        <input type="radio" name="d-src" value="existing" class="dean-src-radio">
+                        Promote an existing instructor
+                    </label>
+                </div>
+            </div>
+
+            <!-- Existing-instructor picker -->
+            <div class="fg" id="d-existing-wrap" style="display:none;">
+                <label>Instructor *</label>
+                <div class="fi-wrap">
+                    <span class="fi-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                    <select class="fi-input" id="d-instr-select">
+                        <option value="">Loading instructors…</option>
+                    </select>
+                </div>
+                <div id="d-instr-preview"></div>
+            </div>
 
             <!-- Campus Scope -->
             <div class="fg">
@@ -544,6 +581,8 @@ function openDeanModal(container, info) {
                 <div id="d-multi-hint" class="cs-multi-hint"></div>
             </div>
 
+            <!-- New-account fields (hidden when promoting an existing instructor) -->
+            <div id="d-new-fields">
             <!-- Name row 1: First + Middle -->
             <div class="fg-row" style="margin-bottom:14px;">
                 <div class="fg" style="margin-bottom:0;">
@@ -604,12 +643,60 @@ function openDeanModal(container, info) {
                     <strong>No password needed.</strong> The dean will be asked to set their own secure password the first time they log in.
                 </div>
             </div>
+            </div><!-- /#d-new-fields -->
         </div>
         <div class="modal-ft">
             <button class="btn-modal-cancel modal-cancel">${isChange ? 'Cancel' : 'Skip for now'}</button>
             <button class="btn-modal-submit" id="dean-save">${isChange ? 'Change Dean' : 'Create Dean Account'}</button>
         </div>
     `);
+
+    // Dean-account source toggle: create new vs. promote an existing instructor
+    // (e.g. one created via the admin Uploads → Class Density bulk import).
+    const newFieldsWrap = overlay.querySelector('#d-new-fields');
+    const existingWrap  = overlay.querySelector('#d-existing-wrap');
+    const instrSelect   = overlay.querySelector('#d-instr-select');
+    const instrPreview  = overlay.querySelector('#d-instr-preview');
+    let instructors = null; // lazy-loaded on first switch to "existing"
+
+    async function loadInstructors() {
+        if (instructors) return;
+        const r = await Api.get('/UsersAPI.php?action=list&role=instructor&export=1');
+        instructors = r.success ? r.data.users : [];
+        instrSelect.innerHTML = instructors.length
+            ? `<option value="">Select an instructor…</option>` + instructors.map(u => {
+                const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+                const idBit = u.employee_id ? ` — ${esc(u.employee_id)}` : '';
+                return `<option value="${u.users_id}">${esc(name)}${idBit}</option>`;
+            }).join('')
+            : `<option value="">No instructor accounts found</option>`;
+    }
+
+    function renderInstrPreview() {
+        const id = parseInt(instrSelect.value);
+        const u = instructors?.find(x => x.users_id == id);
+        if (!u) { instrPreview.innerHTML = ''; return; }
+        const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+        const initials = (u.first_name?.[0] || '') + (u.last_name?.[0] || '');
+        instrPreview.innerHTML = `
+            <div class="dean-instr-preview">
+                <div class="dip-avatar">${esc(initials.toUpperCase())}</div>
+                <div class="dip-text">
+                    <div class="dip-name">${esc(name)}</div>
+                    <div class="dip-meta">${esc(u.email || 'no email on file')}${u.employee_id ? ` · ${esc(u.employee_id)}` : ''}</div>
+                </div>
+            </div>`;
+    }
+    instrSelect.addEventListener('change', renderInstrPreview);
+
+    overlay.querySelectorAll('[name="d-src"]').forEach(r => {
+        r.addEventListener('change', async () => {
+            const isExisting = overlay.querySelector('[name="d-src"]:checked')?.value === 'existing';
+            newFieldsWrap.style.display = isExisting ? 'none' : '';
+            existingWrap.style.display  = isExisting ? '' : 'none';
+            if (isExisting) await loadInstructors();
+        });
+    });
 
     // Scope toggle
     const singleWrap = overlay.querySelector('#d-single-wrap');
@@ -639,13 +726,8 @@ function openDeanModal(container, info) {
 
     overlay.querySelector('#dean-save').addEventListener('click', async () => {
         const alertEl = overlay.querySelector('#dean-alert');
+        const isExisting = overlay.querySelector('[name="d-src"]:checked')?.value === 'existing';
         const isMulti = overlay.querySelector('[name="d-scope"]:checked')?.value === 'multi';
-        const fname   = overlay.querySelector('#d-fname').value.trim();
-        const mname   = overlay.querySelector('#d-mname').value.trim();
-        const lname   = overlay.querySelector('#d-lname').value.trim();
-        const suffix  = overlay.querySelector('#d-suffix').value.trim();
-        const email   = overlay.querySelector('#d-email').value.trim();
-        const empId   = overlay.querySelector('#d-empid').value.trim();
 
         let campusId, campusIds;
         if (isMulti) {
@@ -660,25 +742,59 @@ function openDeanModal(container, info) {
             campusIds = [campusId];
         }
 
-        if (!fname || !lname || !email) {
-            showAlert(alertEl, 'First name, last name, and email are required.', 'err'); return;
-        }
+        let r, fname, lname;
+        if (isExisting) {
+            // Promote an existing instructor account (e.g. one created via
+            // Class Density) to dean — keep their name/email/employee ID as-is,
+            // just change role + department + campus scope.
+            const id = parseInt(instrSelect.value);
+            const u = instructors?.find(x => x.users_id == id);
+            if (!u) { showAlert(alertEl, 'Please select an instructor.', 'err'); return; }
+            fname = u.first_name; lname = u.last_name;
 
-        const r = await Api.post('/UsersAPI.php?action=create', {
-            first_name:    fname,
-            middle_name:   mname || null,
-            last_name:     lname,
-            suffix:        suffix || null,
-            email,
-            password:      null,
-            role:          'dean',
-            status:        'active',
-            campus_id:     campusId,
-            campus_ids:    campusIds,
-            department_id: info.department_id,
-            program_id:    null,
-            employee_id:   empId || null,
-        });
+            r = await Api.post('/UsersAPI.php?action=update', {
+                users_id:      u.users_id,
+                first_name:    u.first_name,
+                middle_name:   u.middle_name || null,
+                last_name:     u.last_name,
+                suffix:        u.suffix || null,
+                email:         u.email,
+                role:          'dean',
+                status:        'active',
+                campus_id:     campusId,
+                campus_ids:    campusIds,
+                department_id: info.department_id,
+                program_id:    null,
+                employee_id:   u.employee_id || null,
+            });
+        } else {
+            fname  = overlay.querySelector('#d-fname').value.trim();
+            const mname   = overlay.querySelector('#d-mname').value.trim();
+            lname  = overlay.querySelector('#d-lname').value.trim();
+            const suffix  = overlay.querySelector('#d-suffix').value.trim();
+            const email   = overlay.querySelector('#d-email').value.trim();
+            const empId   = overlay.querySelector('#d-empid').value.trim();
+
+            if (!fname || !lname || !email) {
+                showAlert(alertEl, 'First name, last name, and email are required.', 'err'); return;
+            }
+
+            r = await Api.post('/UsersAPI.php?action=create', {
+                first_name:    fname,
+                middle_name:   mname || null,
+                last_name:     lname,
+                suffix:        suffix || null,
+                email,
+                password:      null,
+                role:          'dean',
+                status:        'active',
+                campus_id:     campusId,
+                campus_ids:    campusIds,
+                department_id: info.department_id,
+                program_id:    null,
+                employee_id:   empId || null,
+            });
+        }
 
         if (r.success) {
             overlay.remove();
@@ -686,7 +802,9 @@ function openDeanModal(container, info) {
             const scopeLabel = isMulti ? ` (${campusIds.length} campuses)` : '';
             notify.success(isChange
                 ? `Dean changed to ${fname} ${lname}${scopeLabel}`
-                : `Dean account created for ${fname} ${lname}${scopeLabel}`);
+                : isExisting
+                    ? `${fname} ${lname} promoted to Dean${scopeLabel}`
+                    : `Dean account created for ${fname} ${lname}${scopeLabel}`);
         } else {
             showAlert(alertEl, r.message || 'Failed to create dean account.', 'err');
         }

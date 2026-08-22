@@ -18,7 +18,7 @@ require_once __DIR__ . '/helpers/Sanitize.php';
 $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? ($_GET['action'] ?? 'threads') : 'threads');
 
 if ($action === 'attachment') {
-    if (!Auth::check()) {
+    if (!Auth::check() || !Auth::can('messaging.view')) {
         http_response_code(401);
         exit('Unauthorized');
     }
@@ -36,6 +36,24 @@ if (!Auth::check()) {
 }
 
 ensureMessageSchema();
+
+// RBAC: every action here is self-scoped (Auth::id()) — messaging.view and
+// messaging.send are both granted to every role by default, so this only
+// matters once someone actually revokes one in the RBAC page.
+$_msgPerms = [
+    'contacts'      => 'messaging.view',
+    'threads'       => 'messaging.view',
+    'messages'      => 'messaging.view',
+    'unread_count'  => 'messaging.view',
+    'mark_read'     => 'messaging.view',
+    'mark_all_read' => 'messaging.view',
+    'send'          => 'messaging.send',
+];
+if (isset($_msgPerms[$action]) && !Auth::can($_msgPerms[$action])) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => "Permission denied: {$_msgPerms[$action]}"]);
+    exit;
+}
 
 switch ($action) {
     case 'contacts':      handleContacts();     break;

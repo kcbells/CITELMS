@@ -49,14 +49,31 @@ class Auth {
     private static $permissionsCache = null;
 
     /**
-     * Check if user is logged in
-     * 
+     * Check if user is logged in.
+     *
+     * REVERTED TO SESSION-ONLY (2026-08-21): an attempt to also hard-require
+     * a matching JWT + CSRF token on every request (see git history / the
+     * JWT::validate()+verifyCsrfToken() machinery still below, now unused
+     * by check() itself) caused a real, repeated "loads then bounces back
+     * to login" failure for every account, including admin — reproducible
+     * in a real browser but NOT reproducible through direct HTTP testing
+     * (curl) no matter how exactly the successful browser sequence was
+     * replayed, including reusing a JWT/CSRF token pair from a login just
+     * seconds old. That gap between "provably correct over raw HTTP" and
+     * "broken in an actual browser" was never root-caused before it needed
+     * reverting to stop the outage — something about the real browser
+     * environment (service worker, timing, or another client-side factor)
+     * was never pinned down. Do not re-attempt hard JWT/CSRF enforcement
+     * here without first reproducing the failure live, in a real browser
+     * with devtools open, not just via curl.
+     *
      * @return bool
      */
     public static function check() {
         return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
     }
-    
+
+
     /**
      * Alias for check()
      * 

@@ -80,8 +80,8 @@ function handleList() {
 // ─── Create new semester ───────────────────────────────────────────────────
 
 function handleCreate() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('settings.edit')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: settings.edit']); return;
     }
 
     $data       = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -142,8 +142,8 @@ function handleCreate() {
 // ─── Update a semester ─────────────────────────────────────────────────────
 
 function handleUpdate() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('settings.edit')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: settings.edit']); return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -183,8 +183,8 @@ function handleUpdate() {
 // ─── Delete a semester ─────────────────────────────────────────────────────
 
 function handleDelete() {
-    if (!Auth::isAdmin()) {
-        echo json_encode(['success' => false, 'message' => 'Admin only']); return;
+    if (!Auth::can('settings.edit')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: settings.edit']); return;
     }
 
     $data = json_decode(file_get_contents('php://input'), true) ?? [];

@@ -16,14 +16,17 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole(['instructor', 'program_head', 'dean']);
-
 $action = $_GET['action'] ?? '';
 
+// RBAC: enforce permission per action. Previously a hardcoded
+// Auth::requireRole(['instructor','program_head','dean']) gated this whole
+// file — that silently excluded admin (who does hold content_bank.* per
+// RBAC) and used a page-redirect on failure, which breaks a JSON API's
+// fetch().then(r => r.json()) on the frontend instead of returning 403 JSON.
 $_cbPerms = [
-    'comments'        => 'lessons.view',
-    'add-comment'     => 'lessons.view',
-    'comment-counts'  => 'lessons.view',
+    'comments'        => 'content_bank.view',
+    'add-comment'     => 'content_bank.create',
+    'comment-counts'  => 'content_bank.view',
 ];
 if (isset($_cbPerms[$action]) && !Auth::can($_cbPerms[$action])) {
     http_response_code(403);

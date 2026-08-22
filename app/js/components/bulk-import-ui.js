@@ -114,22 +114,37 @@ function openImportProgressModal(fileName) {
  * @param {{ onImported?: (data: object) => void }} [opts]
  */
 export function mountBulkImportUI(host, opts = {}) {
+    // Class Density (default) creates/updates everything from one roster;
+    // Class List (opts.importAction set) only ever enrolls students into a
+    // class the caller already picked — same dropzone/preview/progress
+    // chrome, different help text, import endpoint, extra POST fields, and
+    // result summary.
+    const importAction = opts.importAction || 'import';
     host.innerHTML = `
         <div class="bi-help">
-            <p>Upload one file — <strong>Excel (.xlsx), CSV/text (.csv, .txt), a Word document with a table (.docx),
-                or a clear photo of a printed table (.jpg, .png)</strong>. The system reads the header row and matches
-                whichever of these it finds — the rest are simply ignored:</p>
-            <p class="bi-cols">Employee ID &middot; Email &middot; Student ID &middot; Email &middot; Name &middot; Section &middot;
-                Program/Course &middot; Department &middot; Subject Code &middot; Subject Name &middot; Subject Type &middot;
-                Lect Hrs &middot; Lab Hrs &middot; Lect Units &middot; Lab Units &middot; Units &middot; Capacity</p>
-            <p>Accounts that don't exist yet are created automatically with <strong>Employee ID / Student ID as the login ID</strong>
-                and <strong>no password yet</strong> — the first time they sign in, they log in with just that ID (no password needed),
-                then are asked to set a real password, and their <strong>@phinmaed.com email</strong> too if the sheet didn't have one.</p>
-            <p>If a sheet has one shared <strong>"ID"</strong> column instead of separate Employee ID / Student ID columns,
-                each row is sorted automatically: an ID with any <strong>letters</strong> in it (e.g. "T-2024-015") is treated
-                as an instructor, a <strong>numbers-only</strong> ID (e.g. "21-0001") is treated as a student.</p>
-            <p>A <strong>photo</strong> is read with OCR (text recognition), which is never as reliable as a real file —
-                double-check the preview below carefully before importing one, especially ID numbers.</p>
+            <button type="button" class="bi-help-toggle" id="bi-help-toggle">
+                ${icon('document', { size: 14, className: 'ui-icon-inline' })}
+                <span>File format &amp; how accounts are created</span>
+                ${icon('chevronDown', { size: 14, className: 'ui-icon-inline bi-help-chevron' })}
+            </button>
+            <div class="bi-help-body" id="bi-help-body" hidden>
+                ${opts.helpHtml || `
+                <p>Upload one file — <strong>Excel (.xlsx), CSV/text (.csv, .txt), a Word document with a table (.docx),
+                    or a clear photo of a printed table (.jpg, .png)</strong>. The system reads the header row and matches
+                    whichever of these it finds — the rest are simply ignored:</p>
+                <p class="bi-cols">Employee ID &middot; Email &middot; Student ID &middot; Email &middot; Name &middot; Section &middot;
+                    Program/Course &middot; Department &middot; Subject Code &middot; Subject Name &middot; Subject Type &middot;
+                    Lect Hrs &middot; Lab Hrs &middot; Lect Units &middot; Lab Units &middot; Units &middot; Capacity</p>
+                <p>Accounts that don't exist yet are created automatically with <strong>Employee ID / Student ID as the login ID</strong>
+                    and <strong>no password yet</strong> — the first time they sign in, they log in with just that ID (no password needed),
+                    then are asked to set a real password, and their <strong>@phinmaed.com email</strong> too if the sheet didn't have one.</p>
+                <p>If a sheet has one shared <strong>"ID"</strong> column instead of separate Employee ID / Student ID columns,
+                    each row is sorted automatically: an ID with any <strong>letters</strong> in it (e.g. "T-2024-015") is treated
+                    as an instructor, a <strong>numbers-only</strong> ID (e.g. "21-0001") is treated as a student.</p>
+                <p>A <strong>photo</strong> is read with OCR (text recognition), which is never as reliable as a real file —
+                    double-check the preview below carefully before importing one, especially ID numbers.</p>
+                `}
+            </div>
         </div>
 
         <div class="bi-dropzone" id="bi-dropzone">
@@ -171,6 +186,14 @@ export function mountBulkImportUI(host, opts = {}) {
     const runBtn     = host.querySelector('#bi-run');
     const previewEl  = host.querySelector('#bi-preview');
     const resultEl   = host.querySelector('#bi-result');
+
+    const helpToggle = host.querySelector('#bi-help-toggle');
+    const helpBody   = host.querySelector('#bi-help-body');
+    helpToggle.addEventListener('click', () => {
+        const willOpen = helpBody.hidden;
+        helpBody.hidden = !willOpen;
+        helpToggle.classList.toggle('is-open', willOpen);
+    });
 
     let selectedFile = null;
     let previewOk = false;
@@ -246,6 +269,20 @@ export function mountBulkImportUI(host, opts = {}) {
 
     runBtn.addEventListener('click', async () => {
         if (!selectedFile || !previewOk) return;
+
+        // Caller-supplied gate — e.g. Class List requires a class to be
+        // picked first. Returns a plain object of extra POST fields to send,
+        // or a string error message to abort with instead.
+        let extraFields = {};
+        if (opts.extraFields) {
+            const result = opts.extraFields();
+            if (typeof result === 'string') {
+                notify.error(result);
+                return;
+            }
+            extraFields = result || {};
+        }
+
         runBtn.disabled = true;
         runBtn.textContent = 'Importing…';
         resultEl.innerHTML = '';
@@ -255,7 +292,8 @@ export function mountBulkImportUI(host, opts = {}) {
         try {
             const fd = new FormData();
             fd.append('file', selectedFile);
-            const res = await postFormWithProgress('/BulkImportAPI.php?action=import', fd, {
+            Object.entries(extraFields).forEach(([k, v]) => fd.append(k, v));
+            const res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, fd, {
                 onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
                 // The file itself is fully sent — from here on the server is
                 // parsing rows and writing to the database, which can take a
@@ -276,7 +314,7 @@ export function mountBulkImportUI(host, opts = {}) {
                 return;
             }
 
-            resultEl.innerHTML = renderImportResult(res.data);
+            resultEl.innerHTML = (opts.renderResult || renderImportResult)(res.data);
             notify.success('Import finished.');
             opts.onImported?.(res.data);
         } catch (err) {
@@ -354,9 +392,18 @@ function renderImportResult(d) {
 
 export function bulkImportCss() {
     return `
-        .bi-help { background:#F8FDF9; border:1px solid #C5D9CB; border-radius:10px; padding:12px 14px; margin-bottom:16px; }
-        .bi-help p { font-size:12.5px; color:#374151; line-height:1.6; margin:0 0 8px; }
-        .bi-help p:last-child { margin-bottom:0; }
+        .bi-help { background:#F8FDF9; border:1px solid #C5D9CB; border-radius:10px; margin-bottom:16px; overflow:hidden; }
+        .bi-help-toggle { display:flex; align-items:center; gap:8px; width:100%; background:none; border:none;
+            padding:12px 14px; font-size:12.5px; font-weight:700; color:#00461B; cursor:pointer; font-family:inherit; }
+        .bi-help-toggle:hover { background:rgba(0,70,27,.04); }
+        .bi-help-toggle svg:first-child { color:#00461B; flex-shrink:0; }
+        .bi-help-toggle span { flex:1; text-align:left; }
+        .bi-help-chevron { transition:transform .15s; flex-shrink:0; color:#5B8A6B; }
+        .bi-help-toggle.is-open .bi-help-chevron { transform:rotate(180deg); }
+        .bi-help-body { padding:0 14px 14px; border-top:1px solid #E1EFE4; margin-top:0; }
+        .bi-help-body p { font-size:12.5px; color:#374151; line-height:1.6; margin:12px 0 8px; }
+        .bi-help-body p:first-child { margin-top:12px; }
+        .bi-help-body p:last-child { margin-bottom:0; }
         .bi-cols { color:#00461B !important; font-weight:600; }
         .bi-dropzone { border:2px dashed #d1d5db; border-radius:12px; padding:24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s; }
         .bi-dropzone:hover, .bi-dropzone.bi-drag-over { border-color:#00461B; background:#F8FDF9; }

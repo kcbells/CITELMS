@@ -778,6 +778,13 @@ export async function render(container) {
                         // ── Activate ──────────────────────────────────────────
                         const currentActive = allSems.find(s => s.status === 'active');
                         const year = targetAcademicYear(level, currentActive);
+
+                        const confirmMsg = currentActive
+                            ? `Switch the active semester to "${def.name}" (AY ${year})?\n"${currentActive.semester_name}" (AY ${currentActive.academic_year}) will be deactivated.`
+                            : `Set "${def.name}" (AY ${year}) as the active semester?`;
+                        const ok = await notify.confirm(confirmMsg, { confirmText: 'Activate' });
+                        if (!ok) { cb.checked = false; render(); return; }
+
                         let existing = allSems.find(s => s.academic_year === year && parseInt(s.sem_level) === level);
 
                         if (!existing) {
