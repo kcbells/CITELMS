@@ -73,10 +73,47 @@ async function renderGlobalGradebook(container, opts) {
     const res    = await Api.get('/SectionsAPI.php?action=instructor-classes');
     _classesData = res.success ? (res.data || []) : [];
 
+    bindRowSelect(container);
+
     const { subjectId, sectionId } = opts;
     if (sectionId && subjectId) await renderClassRecord(container, opts);
     else if (subjectId)          renderSectionsView(container, opts);
     else                         renderSubjectsView(container, opts);
+}
+
+/**
+ * Clicking a student's row (or focusing any input/select inside it) selects
+ * and highlights it (see .gb-row-selected in classroom-ui.js's shared
+ * curriculumTableCss). Delegated once on the outer container rather than
+ * re-bound per table — every gradebook table here (module records,
+ * quick-grade popup, project grades, retries, SIS view, summary view) gets
+ * it for free even though their HTML is swapped in and out independently as
+ * the instructor navigates/opens modals. Guarded so container re-renders
+ * (this function runs again on every nav) never double-bind the same
+ * listener.
+ *
+ * Always SETS the highlight, never toggles it off — a toggle looked right
+ * for a single click, but a second click on the same already-selected row
+ * (e.g. opening its dropdown to actually grade it) flipped the highlight
+ * back off right as the instructor started inputting, which is exactly the
+ * "highlight disappears while I'm entering a grade" bug this fixes.
+ * 'focusin' (not 'click' alone) is what makes the highlight follow
+ * auto-advance too (see focusNextRowDown()) — that moves focus
+ * programmatically without a click, so 'focusin' is the only thing that
+ * both a manual click AND an auto-advance jump have in common.
+ */
+function bindRowSelect(container) {
+    if (container.dataset.gbRowSelectBound) return;
+    container.dataset.gbRowSelectBound = '1';
+    const select = e => {
+        const row = e.target.closest('tr[data-stu]');
+        if (!row) return;
+        const table = row.closest('table');
+        table?.querySelectorAll('tr.gb-row-selected').forEach(r => { if (r !== row) r.classList.remove('gb-row-selected'); });
+        row.classList.add('gb-row-selected');
+    };
+    container.addEventListener('click', select);
+    container.addEventListener('focusin', select);
 }
 
 function nav(container, opts, patch = {}) {
@@ -308,6 +345,10 @@ function buildStudentList(studRes, offeredId, subjectId) {
             user_student_id: r.user_student_id,
             student_id: r.student_id || '',
             name: `${r.last_name || ''}, ${r.first_name || ''}`.replace(/^,\s*/, '').trim() || 'Student',
+            program_code: r.program_code || '',
+            program_name: r.program_name || '',
+            campus_name: r.campus_name || '',
+            department_code: r.department_code || '',
         });
     }
     students.sort((a, b) => a.name.localeCompare(b.name));
@@ -343,6 +384,9 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
                     <button class="gb-export-btn" id="ggb-export">
                         ${icon('download', { size: 13, className: 'ui-icon-inline' })} Export
                     </button>
+                    <button class="gb-export-btn" id="ggb-export-sis" title="Downloads 6 files: P1/P2/P3 x Effortful (CS) + Mastery (PE), named for SIS upload">
+                        ${icon('download', { size: 13, className: 'ui-icon-inline' })} Export for SIS
+                    </button>
                     <button class="ggb-guide-btn" id="ggb-guide-btn">
                         ${icon('info', { size: 13, className: 'ui-icon-inline' })} Guide
                     </button>
@@ -375,6 +419,9 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
 
         host.querySelector('#ggb-export').addEventListener('click', () =>
             exportCsv(subject, section, students, grades, project)
+        );
+        host.querySelector('#ggb-export-sis').addEventListener('click', () =>
+            exportSisCsvs(subject, section, students, grades, project)
         );
 
         host.querySelector('#ggb-docs-btn').addEventListener('click', () =>
@@ -411,7 +458,7 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
         if (!area) return;
         if      (activeView === 'modules') area.innerHTML = renderModuleTable(students, grades, project, subject.subject_code, section.section_name);
         else if (activeView === 'project') area.innerHTML = renderProjectTable(students, project, subject.subject_code, section.section_name);
-        else if (activeView === 'sis')     area.innerHTML = renderSisTable(students, grades, project, subject.subject_code, section.section_name);
+        else if (activeView === 'sis')     area.innerHTML = renderSisTable(students, grades, project, subject, section);
         else if (activeView === 'retries') area.innerHTML = renderRetriesTable(students, grades, project, retries, subject.subject_code, section.section_name);
         else                               area.innerHTML = renderSummaryTable(students, grades, project, subject.subject_code, section.section_name);
 
@@ -430,19 +477,20 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
     const modules = Array.from({ length: 14 }, (_, i) => i + 1);
 
     // Row 1: Module N (dark green, period-coloured)
-    let hdr1 = `<th rowspan="3" class="gc-th-info">#</th>
-                <th rowspan="3" class="gc-th-info th-left">Student ID</th>
+    let hdr1 = `<th rowspan="3">#</th>
+                <th rowspan="3" class="th-left">Student ID</th>
                 <th rowspan="3" class="gc-th-info th-left">Name of Student</th>`;
     modules.forEach(m => {
         hdr1 += `<th colspan="6" class="gb-period-th">Module ${m}<span class="gb-period-sub">${m <= 4 ? 'P1' : m <= 9 ? 'P2' : 'Final'}</span></th>`;
     });
 
-    // Row 2: SOC (2) | EL (3) | Mastery (1) per module — white bg via gb-item-th
+    // Row 2: SOC (2) | EL (3) | Mastery (1) per module — each group colored
+    // via gb-group-th (see tableCss() below), not the plain gb-item-th look
     let hdr2 = '';
     modules.forEach(() => {
-        hdr2 += `<th colspan="2" class="gb-item-th">Start of Class (5%)</th>
-                 <th colspan="3" class="gb-item-th">Effortful Learning</th>
-                 <th colspan="1" class="gb-item-th">Mastery (15%)</th>`;
+        hdr2 += `<th colspan="2" class="gb-group-th gb-group-th--soc">Start of Class (5%)</th>
+                 <th colspan="3" class="gb-group-th gb-group-th--el">Effortful Learning</th>
+                 <th colspan="1" class="gb-group-th gb-group-th--mastery">Mastery (15%)</th>`;
     });
 
     // Row 3: individual fields
@@ -506,8 +554,9 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
  * See attachFillHandles() for the drag mechanics.
  */
 function socSel(field, sid, mod, val) {
+    const colorClass = val === 'P' ? ' ggb-soc-p' : val === 'A' ? ' ggb-soc-a' : '';
     return `<span class="ggb-fillwrap">
-        <select class="ggb-sel ggb-soc" data-field="${field}" data-sid="${sid}" data-mod="${mod}">
+        <select class="ggb-sel ggb-soc${colorClass}" data-field="${field}" data-sid="${sid}" data-mod="${mod}">
             <option value="" ${val === '' || val === null ? 'selected' : ''}>—</option>
             <option value="P" ${val === 'P' ? 'selected' : ''}>P</option>
             <option value="A" ${val === 'A' ? 'selected' : ''}>A</option>
@@ -571,6 +620,22 @@ function attachModuleEvents(area, offeredId, grades) {
             if (!grades[sid][mod]) grades[sid][mod] = {};
             grades[sid][mod][field] = value;
 
+            // P/A color — updated immediately (before the save round-trip)
+            // so the dropdown reflects the new value right away, same as the
+            // color it's rendered with on initial load (see socSel()).
+            if (field === 'soc1' || field === 'soc2') {
+                sel.classList.remove('ggb-soc-p', 'ggb-soc-a');
+                if (raw === 'P') sel.classList.add('ggb-soc-p');
+                else if (raw === 'A') sel.classList.add('ggb-soc-a');
+            }
+
+            // Auto-advance to the same field one row down — same "finished
+            // this cell, move to the next" flow as the Excel-style fill
+            // handle uses to find a column (same field+module, in row
+            // order), so grading a whole column top-to-bottom never needs
+            // the mouse. Doesn't fire on the last row — nothing below it.
+            focusNextRowDown(area, sel);
+
             try {
                 const res = await Api.post('/GlobalGradebookAPI.php?action=save-field', {
                     subject_offered_id: parseInt(offeredId, 10),
@@ -603,6 +668,62 @@ function attachModuleEvents(area, offeredId, grades) {
 // listeners indefinitely.
 let fillDragGloballyAttached = false;
 let fillDrag = null; // { cells: HTMLSelectElement[], startIndex, sourceValue, currentEnd }
+
+/**
+ * Moves focus to the same field (+ module, if this table has one) input/
+ * select one row down from `el`, inside `area` — the same "column" the SOC
+ * fill handle drags a value through (see attachFillHandles() below), just
+ * walked one step at a time instead of dragged. Works for both <select>s
+ * (module grading) and <input>s (project grades, retry tracker), and for
+ * tables with no module dimension at all (data-mod simply isn't part of the
+ * selector then). A no-op past the last row.
+ *
+ * Also carries `el`'s value forward as the next row's starting value —
+ * a class list often repeats the same answer down a column (everyone
+ * Present, the same rubric score, etc.), so the instructor doesn't have to
+ * re-pick it for every student; they only need to act on the rows that are
+ * actually different. It's a real change, not just a visual copy: setting
+ * `.value` and dispatching a genuine 'change' event reuses whichever
+ * attach*Events listener owns that field to actually save it, the same way
+ * the fill handle already persists each cell it drags over. The instructor
+ * can always override it — picking something else on the now-focused next
+ * cell fires its own ordinary change event, which simply saves their choice
+ * over the carried one.
+ *
+ * Only carries into a next row that's genuinely BLANK — a student who
+ * already has their own value saved there (from a previous session, or
+ * because grading didn't happen in row order) must never have it silently
+ * overwritten just because the row above happened to get a new value.
+ *
+ * `dataset.gbCarrying` guards against this carried-forward change cascading
+ * further down the column — without it, saving the carried value on the
+ * next row would trigger ITS change handler, which would carry a value
+ * forward AGAIN onto the row after that, and so on for the rest of the
+ * column in one shot. Only the row immediately after a real, user-driven
+ * change should ever receive a carried value.
+ */
+function focusNextRowDown(area, el) {
+    if (el.dataset.gbCarrying) return;
+
+    const field = el.dataset.field;
+    if (!field) return;
+    const mod = el.dataset.mod;
+    const selector = mod !== undefined
+        ? `[data-field="${CSS.escape(field)}"][data-mod="${CSS.escape(mod)}"]`
+        : `[data-field="${CSS.escape(field)}"]`;
+    const cells = Array.from(area.querySelectorAll(selector));
+    const idx = cells.indexOf(el);
+    if (idx === -1 || idx === cells.length - 1) return;
+    const next = cells[idx + 1];
+    next.focus();
+
+    if (next.value === '' && el.value !== '') {
+        next.value = el.value;
+        next.dataset.gbCarrying = '1';
+        next.dispatchEvent(new Event('change', { bubbles: true }));
+        delete next.dataset.gbCarrying;
+    }
+}
 
 function attachFillHandles(area) {
     area.querySelectorAll('.ggb-fill-handle').forEach(handle => {
@@ -742,12 +863,12 @@ function renderGradeModuleTable(students, grades, mod) {
             <table class="gc-cur-table ggm-table">
                 <thead>
                     <tr>
-                        <th rowspan="2" class="gc-th-info">#</th>
-                        <th rowspan="2" class="gc-th-info th-left">Student ID</th>
+                        <th rowspan="2">#</th>
+                        <th rowspan="2" class="th-left">Student ID</th>
                         <th rowspan="2" class="gc-th-info th-left">Name</th>
-                        <th colspan="2" class="gb-item-th">Start of Class (5%)</th>
-                        <th colspan="3" class="gb-item-th">Effortful Learning</th>
-                        <th colspan="1" class="gb-item-th">Mastery (15%)</th>
+                        <th colspan="2" class="gb-group-th gb-group-th--soc">Start of Class (5%)</th>
+                        <th colspan="3" class="gb-group-th gb-group-th--el">Effortful Learning</th>
+                        <th colspan="1" class="gb-group-th gb-group-th--mastery">Mastery (15%)</th>
                     </tr>
                     <tr>
                         <th class="gb-item-th">SOC 1</th>
@@ -822,8 +943,8 @@ function renderProjectTable(students, project, subjectCode = '', sectionName = '
             <table class="gc-cur-table ggb-proj-table">
                 <thead>
                     <tr>
-                        <th rowspan="3" class="gc-th-info">#</th>
-                        <th rowspan="3" class="gc-th-info th-left">Student ID</th>
+                        <th rowspan="3">#</th>
+                        <th rowspan="3" class="th-left">Student ID</th>
                         <th rowspan="3" class="gc-th-info th-left">Name</th>
                         <th colspan="7" class="gb-period-th">Final Project/Output/Task (30%)</th>
                     </tr>
@@ -834,10 +955,10 @@ function renderProjectTable(students, project, subjectCode = '', sectionName = '
                         <th class="gb-weight-th gb-weight-th--note">*if there's only one check-in, weightage becomes 50-50</th>
                     </tr>
                     <tr>
-                        ${PROJECT_CHECKIN_LABELS.map(lbl => `<th class="gb-item-th"><span class="gb-item-type activity">CI</span><span class="gb-item-name">${lbl}</span></th>`).join('')}
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Avg</span><span class="gb-item-name">Check-in Grades Average</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Final</span><span class="gb-item-name">Final Output/Presentation Grade</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Overall</span><span class="gb-item-name">Project Overall Grade</span></th>
+                        ${PROJECT_CHECKIN_LABELS.map(lbl => `<th class="gb-group-th gb-group-th--el"><span class="gb-item-type activity">CI</span><span class="gb-item-name">${lbl}</span></th>`).join('')}
+                        <th class="gb-group-th gb-group-th--el"><span class="gb-item-type quiz">Avg</span><span class="gb-item-name">Check-in Grades Average</span></th>
+                        <th class="gb-group-th gb-group-th--mastery"><span class="gb-item-type quiz">Final</span><span class="gb-item-name">Final Output/Presentation Grade</span></th>
+                        <th class="gb-group-th gb-group-th--mastery"><span class="gb-item-type quiz">Overall</span><span class="gb-item-name">Project Overall Grade</span></th>
                     </tr>
                 </thead>
                 <tbody>${rows || '<tr><td colspan="10" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
@@ -865,6 +986,8 @@ function attachProjectEvents(area, offeredId, project) {
 
             if (!project[sid]) project[sid] = {};
             project[sid][field] = value;
+
+            focusNextRowDown(area, inp);
 
             const pg       = project[sid];
             const checkins = [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null];
@@ -934,8 +1057,8 @@ function renderSummaryTable(students, grades, project, subjectCode = '', section
             <table class="gc-cur-table ggb-summary-table">
                 <thead>
                     <tr>
-                        <th rowspan="2" class="gc-th-info">#</th>
-                        <th rowspan="2" class="gc-th-info th-left">Student ID</th>
+                        <th rowspan="2">#</th>
+                        <th rowspan="2" class="th-left">Student ID</th>
                         <th rowspan="2" class="gc-th-info th-left">Name</th>
                         <th colspan="3" class="gb-period-th">Period 1 — Modules 1–4</th>
                         <th colspan="3" class="gb-period-th gb-period-th--p2">Period 2 — Modules 1–9</th>
@@ -944,15 +1067,15 @@ function renderSummaryTable(students, grades, project, subjectCode = '', section
                         <th rowspan="2" class="gb-item-th">Remarks</th>
                     </tr>
                     <tr>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P1 Final</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P2 Final</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
-                        <th class="gb-item-th"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">Final<br>Grade</span></th>
+                        <th class="gb-group-th gb-group-th--el"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                        <th class="gb-group-th gb-group-th--mastery"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                        <th class="gb-group-th gb-group-th--soc"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P1 Final</span></th>
+                        <th class="gb-group-th gb-group-th--el"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                        <th class="gb-group-th gb-group-th--mastery"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                        <th class="gb-group-th gb-group-th--soc"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">P2 Final</span></th>
+                        <th class="gb-group-th gb-group-th--el"><span class="gb-item-type quiz">EL (55%)</span><span class="gb-item-name">Effortful<br>Learning</span></th>
+                        <th class="gb-group-th gb-group-th--mastery"><span class="gb-item-type quiz">Mastery (45%)</span><span class="gb-item-name">WUQ +<br>Project</span></th>
+                        <th class="gb-group-th gb-group-th--soc"><span class="gb-item-type quiz">Grade</span><span class="gb-item-name">Final<br>Grade</span></th>
                     </tr>
                 </thead>
                 <tbody>${rows || '<tr><td colspan="14" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
@@ -1002,25 +1125,32 @@ function computeStudentGrades(sid, grades, project) {
 }
 
 // ── For SIS Table ─────────────────────────────────────────────────────────
-// Columns: # | Student Number | Name | P1 Grade | P2 Grade | P3/Final Grade
-// One blended total per period (EL 55% + Mastery 45% already combined by
-// periodGrade() in grading-engine.js) — the SIS record only wants a single
-// final number per period, not the internal Effortful/Mastery breakdown.
+// Columns match the exact SIS submission format agreed on for the CSV
+// export (see exportSisCsvs()): CS (Effortful) / PE (Mastery) broken out for
+// each of P1, P2, P3, instead of the single blended period grade the old
+// version of this table showed. Student ID/Name only — the Gender, Course,
+// Campus, Section, Semester columns are exported-file-only (see
+// exportSisCsvs()), not shown on this on-screen table.
 
-function renderSisTable(students, grades, project, subjectCode = '', sectionName = '') {
+function renderSisTable(students, grades, project, subject, section) {
+    const subjectCode = subject?.subject_code || '';
+    const sectionName = section?.section_name || '';
     const label = subjectCode && sectionName ? `FOR SIS — ${subjectCode} / ${sectionName}` : 'FOR SIS';
+    const low = v => v !== null && v < 80 ? ' td-low' : '';
 
     const rows = students.map((st, i) => {
         const sid = st.user_student_id;
         const { p1, p2, final } = computeStudentGrades(sid, grades, project);
-        const low = (v) => v !== null && v < 80 ? ' td-low' : '';
-        return `<tr>
+        return `<tr data-stu="${sid}">
             <td class="td-rank">${i + 1}</td>
             <td class="td-id">${esc(st.student_id || '—')}</td>
             <td class="td-name">${esc(st.name)}</td>
-            <td class="td-num td-grade${low(p1.grade)}">${fmt(p1.grade)}</td>
-            <td class="td-num td-grade${low(p2.grade)}">${fmt(p2.grade)}</td>
-            <td class="td-num td-grade ggb-sis-final${low(final.grade)}">${fmt(final.grade)}</td>
+            <td class="td-num td-grade${low(p1.el)}">${fmt(p1.el)}</td>
+            <td class="td-num td-grade">${fmt(p1.mastery)}</td>
+            <td class="td-num td-grade${low(p2.el)}">${fmt(p2.el)}</td>
+            <td class="td-num td-grade">${fmt(p2.mastery)}</td>
+            <td class="td-num td-grade${low(final.el)}">${fmt(final.el)}</td>
+            <td class="td-num td-grade ggb-sis-final">${fmt(final.mastery)}</td>
         </tr>`;
     }).join('');
 
@@ -1031,19 +1161,27 @@ function renderSisTable(students, grades, project, subjectCode = '', sectionName
             <table class="gc-cur-table ggb-sis-table">
                 <thead>
                     <tr>
-                        <th class="gc-th-info">#</th>
-                        <th class="gc-th-info th-left">Student Number</th>
-                        <th class="gc-th-info th-left">Name of Student</th>
-                        <th class="gb-period-th">P1 Grade</th>
-                        <th class="gb-period-th gb-period-th--p2">P2 Grade</th>
-                        <th class="gb-period-th gb-period-th--p3 ggb-sis-th-final">P3 — Final Grade</th>
+                        <th rowspan="2">#</th>
+                        <th rowspan="2" class="th-left">Student ID</th>
+                        <th rowspan="2" class="gc-th-info th-left">Student Name</th>
+                        <th colspan="2" class="gb-period-th">P1</th>
+                        <th colspan="2" class="gb-period-th gb-period-th--p2">P2</th>
+                        <th colspan="2" class="gb-period-th gb-period-th--p3 ggb-sis-th-final">P3 — Final</th>
+                    </tr>
+                    <tr>
+                        <th class="gb-group-th gb-group-th--el">CS</th>
+                        <th class="gb-group-th gb-group-th--mastery">PE</th>
+                        <th class="gb-group-th gb-group-th--el">CS</th>
+                        <th class="gb-group-th gb-group-th--mastery">PE</th>
+                        <th class="gb-group-th gb-group-th--el">CS</th>
+                        <th class="gb-group-th gb-group-th--mastery">PE</th>
                     </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="6" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
+                <tbody>${rows || '<tr><td colspan="9" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
             </table>
         </div>
     </div>
-    <p class="ggb-proj-note">Each period's grade already blends Effortful Learning (55%) and Mastery (45%) into one total, as required for the SIS record. Low grades (below 80) are highlighted. See the Overview tab for the Effortful/Mastery breakdown and Mastery Status per student.</p>`;
+    <p class="ggb-proj-note">CS = Effortful Learning grade, PE = Mastery grade, for each period. Low Effortful grades (below 80) are highlighted; low Mastery values are the shared project grade and aren't flagged here individually.</p>`;
 }
 
 // ── Students for Retry Table ──────────────────────────────────────────────
@@ -1097,8 +1235,8 @@ function renderRetriesTable(students, grades, project, retries, subjectCode = ''
             <table class="gc-cur-table ggb-retries-table">
                 <thead>
                     <tr>
-                        <th class="gc-th-info">#</th>
-                        <th class="gc-th-info th-left">Student Number</th>
+                        <th>#</th>
+                        <th class="th-left">Student Number</th>
                         <th class="gc-th-info th-left">Name of Student</th>
                         <th class="gb-item-th">Remarks</th>
                         <th class="gb-item-th">Modules with<br>Components for Retry</th>
@@ -1124,10 +1262,16 @@ function attachRetriesEvents(area, offeredId, retries) {
         }).catch(err => console.error('save-retry:', err));
     };
     area.querySelectorAll('.ggb-retry-inp').forEach(inp => {
-        inp.addEventListener('change', () => save(parseInt(inp.dataset.sid, 10), inp.dataset.field, inp.value));
+        inp.addEventListener('change', () => {
+            save(parseInt(inp.dataset.sid, 10), inp.dataset.field, inp.value);
+            focusNextRowDown(area, inp);
+        });
     });
     area.querySelectorAll('.ggb-retry-status').forEach(sel => {
-        sel.addEventListener('change', () => save(parseInt(sel.dataset.sid, 10), sel.dataset.field, sel.value));
+        sel.addEventListener('change', () => {
+            save(parseInt(sel.dataset.sid, 10), sel.dataset.field, sel.value);
+            focusNextRowDown(area, sel);
+        });
     });
 }
 
@@ -1169,6 +1313,79 @@ function exportCsv(subject, section, students, grades, project) {
     a.download = `global-gradebook_${subject.subject_code}_${section.section_name}.csv`.replace(/[^\w.-]+/g,'_');
     a.click();
     URL.revokeObjectURL(url);
+}
+
+/** "2026-2027" + "First Semester" -> "SY26-27SEMI" (SEM + roman numeral). */
+function schoolYearSemCode(academicYear, semesterName) {
+    const yrs = String(academicYear || '').split(/[^0-9]+/).filter(Boolean).map(y => y.slice(-2));
+    const yy  = yrs.length >= 2 ? `${yrs[0]}-${yrs[1]}` : (yrs[0] || '');
+    const sem = /first|1st/i.test(semesterName)  ? 'I'
+              : /second|2nd/i.test(semesterName) ? 'II'
+              : /sum/i.test(semesterName)        ? 'III' : 'I';
+    return `SY${yy}SEM${sem}`;
+}
+
+/**
+ * SIS submission format — one file per grading period per score type:
+ *   {SY+SEM code}-{DEPARTMENT}-{PERIOD}-{CS|PE}.csv
+ *   e.g. SY26-27SEMI-CIT-P1-CS.csv, SY26-27SEMI-CIT-P1-PE.csv
+ * CS = Effortful Learning grade, PE = Mastery grade, for that period — NOT
+ * the single blended period grade the regular Export button produces.
+ * Six files total (P1/P2/P3 × CS/PE), all downloaded from one click.
+ *
+ * Gender is left blank in every row on purpose — there's no gender column
+ * anywhere in this system's users table, so it genuinely isn't tracked
+ * data, not an oversight. Leave the column so the file still matches the
+ * expected header shape, and fill it in manually if the SIS import needs it.
+ */
+async function exportSisCsvs(subject, section, students, grades, project) {
+    const semRes     = await Api.get('/SubjectOfferingsAPI.php?action=semesters');
+    const semesters   = semRes.success ? (semRes.data || []) : [];
+    const activeSem   = semesters.find(s => s.status === 'active') || semesters[0] || {};
+    const syCode      = schoolYearSemCode(activeSem.academic_year, activeSem.semester_name);
+    const deptCode    = students.find(s => s.department_code)?.department_code || subject.program_code || 'DEPT';
+
+    const HEADERS = ['Student ID', 'Student Name', 'Gender', 'Course', 'Campus', 'Section', 'Semester', 'Obtained'];
+    // Effortful is always "CS" and Mastery is always "PE", the same for
+    // every period — P1, P2, and P3/Final all use the same two suffixes.
+    const PERIODS = [
+        { key: 'p1',    label: 'P1', masterySuffix: 'PE' },
+        { key: 'p2',    label: 'P2', masterySuffix: 'PE' },
+        { key: 'final', label: 'P3', masterySuffix: 'PE' },
+    ];
+
+    function buildRows(periodKey, field) {
+        return students.map(st => {
+            const g   = computeStudentGrades(st.user_student_id, grades, project);
+            const val = g[periodKey]?.[field];
+            return [
+                st.student_id || '',
+                st.name || '',
+                '',
+                st.program_code || subject.program_code || '',
+                st.campus_name || '',
+                section.section_name || '',
+                activeSem.semester_name || '',
+                fmt(val),
+            ];
+        });
+    }
+
+    function downloadCsv(filename, rows) {
+        const csv  = [HEADERS, ...rows].map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    for (const p of PERIODS) {
+        downloadCsv(`${syCode}-${deptCode}-${p.label}-CS.csv`, buildRows(p.key, 'el'));
+        downloadCsv(`${syCode}-${deptCode}-${p.label}-${p.masterySuffix}.csv`, buildRows(p.key, 'mastery'));
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1389,72 +1606,34 @@ function guideModalHtml() {
 function tableCss() { return `
 /* Scrollable table wrapper */
 .gb-table-scroll { overflow-x:auto; }
-/* Override curriculumTableCss overflow:hidden — clip doesn't create a scroll context
-   so position:sticky on td-id / td-name works against gb-table-scroll, not gc-cur-wrap */
+/* Override curriculumTableCss's overflow:hidden — clip doesn't create a scroll
+   context, so the frozen Name column (see classroom-ui.js's curriculumTableCss,
+   the shared source for this — .gc-th-info / .td-name) needs this wrapper
+   left at overflow:visible so position:sticky reads against .gb-table-scroll
+   instead of .gc-cur-wrap. */
 .gc-cur-wrap { overflow:visible !important; }
-
-/* ── Sticky freeze: # + Student ID + Name of Student (3 columns) ── */
-/* # = 36px at 0 | ID = 110px at 36px | Name = 160px at 146px.
-   FIXED width (not min-width) on purpose on every one of these cells,
-   header and body alike — min-width lets a cell grow past the offset the
-   *next* frozen column assumes it starts at (e.g. a long student name
-   pushing "Name" wider than 160px), which throws off every column after
-   it and can look like "freezing isn't working" even though sticky itself
-   is active. Overflow is ellipsized instead of wrapping/growing. */
-.gc-th-info {
-    position:sticky; z-index:4;
-    background:#f7f7f7; overflow:hidden; text-overflow:ellipsis;
-}
-.gc-th-info:nth-child(1) { left:0;    width:36px; }
-.gc-th-info:nth-child(2) { left:36px; width:110px; }
-.gc-th-info:nth-child(3) { left:146px; width:160px; box-shadow:2px 0 8px rgba(0,0,0,.14); }
-
-/* A real solid filler strip glued to the right edge of the 3rd frozen
-   header cell, instead of a soft box-shadow blur — guarantees full opaque
-   coverage of the seam between the frozen block and the scrolling columns
-   no matter how wide that gap actually renders, rather than hoping a
-   shadow's spread happens to be wide enough. */
-.gc-th-info:nth-child(3)::after {
-    content:''; position:absolute; top:0; bottom:0; left:100%;
-    width:14px; background:#f7f7f7;
-}
 .th-left { text-align:left !important; }
 
-/* Sticky body cells: #, Student ID, Name — scoped to the shared .gc-cur-table
-   base class every gradebook table in this file uses (main class-record
-   views AND the per-module "quick grade" popup's tables), instead of
-   listing each specific table class one by one. Listing them individually
-   was the actual bug: two tables (.ggm-table, .ggm-checkin-table, in the
-   quick-grade popup) were never added to that list, so their first three
-   columns silently never froze while every other gradebook table's did. */
-.gc-cur-table .td-rank {
-    position:sticky; left:0; z-index:2;
-    width:36px; background:#fff; text-align:center;
-    overflow:hidden; text-overflow:ellipsis;
+/* Group header row above the per-module quick-grade table's individual SOC/
+   LP/Reflection/WUQ columns — each group gets its own distinct color instead
+   of sharing the plain grey .gb-item-th look every sub-column already uses,
+   so the three scoring groups (Start of Class, Effortful Learning, Mastery)
+   are visually distinguishable from each other and from the columns beneath
+   them at a glance. */
+.gb-group-th {
+    color:#fff !important; text-align:center !important;
+    font-size:11px !important; font-weight:800 !important; letter-spacing:.3px;
 }
-.gc-cur-table .td-id {
-    position:sticky; left:36px; z-index:2;
-    width:110px; background:#fff; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis;
-}
-.gc-cur-table .td-name {
-    position:sticky; left:146px; z-index:2;
-    width:160px; background:#fff; white-space:nowrap;
-    box-shadow:2px 0 8px rgba(0,0,0,.10);
-    overflow:hidden; text-overflow:ellipsis;
-}
-.gc-cur-table .td-name::after {
-    content:''; position:absolute; top:0; bottom:0; left:100%;
-    width:14px; background:#fff;
-}
-
-/* Zebra rows keep bg on sticky cells */
-.gc-cur-table tbody tr:nth-child(even) .td-rank,
-.gc-cur-table tbody tr:nth-child(even) .td-id,
-.gc-cur-table tbody tr:nth-child(even) .td-name { background:#f9fafb; }
-.gc-cur-table tbody tr:hover .td-rank,
-.gc-cur-table tbody tr:hover .td-id,
-.gc-cur-table tbody tr:hover .td-name { background:#f0fdf4; }
+.gb-group-th--soc      { background:#1D4ED8 !important; }
+.gb-group-th--el       { background:#7C3AED !important; }
+.gb-group-th--mastery  { background:#B45309 !important; }
+/* .gb-item-type/.gb-item-name (see gradingPeriodTableCss() in
+   gradebook-periods.js) each carry their own dark color meant for the
+   plain grey .gb-item-th background — Project Grades' header row reuses
+   those same spans inside colored .gb-group-th cells now, so without this
+   override they'd render dark-on-purple/dark-on-amber, the same low-
+   contrast mistake the P3 pink header had. Force white here too. */
+.gb-group-th .gb-item-type, .gb-group-th .gb-item-name { color:#fff !important; }
 
 /* Project Grades header text was overlapping between columns — the shared
    base rule for .gc-cur-table thead tr th sets white-space:nowrap (see
@@ -1474,10 +1653,31 @@ function tableCss() { return `
 }
 .gc-cur-table .gb-weight-th--note { font-weight:600; font-style:italic; font-size:9.5px; }
 
-/* Select inputs */
-.ggb-sel { padding:2px 1px; border:1px solid #d1d5db; border-radius:3px; font-size:10.5px;
-    background:#fff; cursor:pointer; width:100%; }
-.ggb-sel:focus { outline:none; border-color:#00461B; }
+/* Select inputs — appearance:none strips the OS/browser's own native control
+   chrome (Windows in particular can paint an unstyled <select> with the
+   user's system accent color, which can land anywhere from blue to pink/red
+   depending on their theme — completely unrelated to any value the field
+   actually holds, but easy to mistake for an error state). A custom chevron
+   replaces the native dropdown arrow that appearance:none also removes. */
+.ggb-sel {
+    appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    padding:2px 16px 2px 4px; border:1px solid #d1d5db; border-radius:3px; font-size:10.5px;
+    background:#fff; box-shadow:none; outline:none; cursor:pointer; width:100%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M2.5 4.5l3.5 3.5 3.5-3.5z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 3px center; background-size:9px;
+}
+.ggb-sel:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
+
+/* SOC 1 / SOC 2 attendance dropdowns — P (present) green, A (absent) red,
+   colored the moment a value is picked (see socSel() for initial render and
+   the change handler in attachModuleEvents() for live updates) so a glance
+   down the column shows attendance at a glance instead of reading each "P"
+   or "A" letter individually. Explicitly forced back to neutral white/grey
+   when blank — no value picked yet is not the same as "Absent" and must
+   never render red. */
+select.ggb-soc:not(.ggb-soc-p):not(.ggb-soc-a) { background-color:#fff; border-color:#d1d5db; color:inherit; font-weight:400; }
+select.ggb-soc.ggb-soc-p { background-color:${GL}; border-color:${G}; color:${G}; font-weight:700; }
+select.ggb-soc.ggb-soc-a { background-color:#FEF2F2; border-color:#991B1B; color:#991B1B; font-weight:700; }
 
 /* Excel-style fill handle on SOC cells — the small square only shows up on
    hover so it doesn't clutter every cell all the time; dragging it copies
@@ -1543,7 +1743,11 @@ td.gc-cur-badge-pass .ggb-remark-badge { background:#E8F5E9; color:#00461B; }
 td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 
 /* ── SIS colour bands (sticky covered above) ── */
-.ggb-sis-th-final { background:#FCE7F3 !important; }
+/* Was a light pink (#FCE7F3) fighting .gb-period-th's white text — nearly
+   unreadable. Match the same dark-green "Final" shade every other period
+   header in the gradebook already uses (.gb-period-th--p3) instead of a
+   one-off color here, for both readability and consistency. */
+.ggb-sis-th-final { background:#1B5E20 !important; }
 .ggb-sis-final    { background:#FDF2F8; }
 /* ── Retries table ── */
 .ggb-retries-table { min-width:900px; }

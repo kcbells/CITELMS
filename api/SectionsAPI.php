@@ -1369,11 +1369,18 @@ function handleStudents() {
     $students = db()->fetchAll(
         "SELECT ss.student_subject_id, ss.user_student_id, ss.subject_offered_id, ss.status,
                 u.first_name, u.last_name, u.student_id,
+                u.program_id, p.program_code, p.program_name,
+                u.campus_id, c.campus_name,
+                d.department_code, d.department_name,
                 s.subject_id, s.subject_code, s.subject_name
          FROM student_subject ss
          JOIN users u ON u.users_id = ss.user_student_id
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON s.subject_id = so.subject_id
+         LEFT JOIN program p ON p.program_id = u.program_id
+         LEFT JOIN campus  c ON c.campus_id  = u.campus_id
+         LEFT JOIN department_program dp ON dp.program_id = u.program_id
+         LEFT JOIN department d ON d.department_id = dp.department_id
          WHERE ss.section_id = ? AND ss.status = 'enrolled'
          ORDER BY u.last_name, u.first_name, s.subject_code",
         [$sectionId]

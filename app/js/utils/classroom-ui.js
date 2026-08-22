@@ -84,25 +84,68 @@ export function renderClassworkPostCard(opts) {
 /** Curriculum-style table CSS (reuse for grade tables) */
 export function curriculumTableCss() {
     return `
-        .gc-cur-wrap { border:2px solid #1B4D3E; border-radius:0 0 8px 8px; overflow:hidden; background:#fff; }
+        .gc-cur-wrap { border:2px solid #000; border-radius:0 0 8px 8px; overflow:hidden; background:#fff; }
         .gc-cur-label {
             font-size:12px; font-weight:700; text-align:center; padding:7px 12px;
-            background:#E8F5E9; color:#1B4D3E; border-bottom:1px solid #1B4D3E; letter-spacing:.5px;
+            background:#E8F5E9; color:#1B4D3E; border-bottom:1px solid #000; letter-spacing:.5px;
         }
-        .gc-cur-table { width:100%; border-collapse:collapse; font-size:12px; }
+        /* Full black grid — every cell gets its own border instead of just a
+           row separator, so columns are visually divided too, not only rows. */
+        .gc-cur-table { width:100%; border-collapse:collapse; font-size:12px; border:1px solid #000; }
+        .gc-cur-table th, .gc-cur-table td { border:1px solid #000; }
         .gc-cur-table thead tr th {
             background:#f7f7f7; color:#404040; font-weight:700;
-            padding:8px 10px; border-bottom:1px solid #ccc; text-align:center; white-space:nowrap;
+            padding:8px 10px; text-align:center; white-space:nowrap;
         }
         .gc-cur-table thead tr th.th-left { text-align:left; }
-        .gc-cur-table tbody tr { border-bottom:1px solid #f0f0f0; }
         .gc-cur-table tbody tr:last-child { border-bottom:none; }
         .gc-cur-table tbody tr:hover { background:#f9fffe; }
         .gc-cur-table td { padding:8px 10px; vertical-align:middle; }
-        .gc-cur-table .td-rank { text-align:center; font-weight:700; color:#5F6368; width:40px; }
-        .gc-cur-table .td-id { font-family:monospace; font-size:11px; font-weight:700; color:#1B4D3E; white-space:nowrap; }
-        .gc-cur-table .td-name { font-size:12px; color:#262626; }
         .gc-cur-table .td-num { text-align:center; font-weight:600; color:#202124; white-space:nowrap; }
+
+        /* Clicking a student's row selects/highlights it — one selected row
+           per table at a time (see the shared row-click handler each
+           gradebook page wires up on its container). !important beats the
+           zebra-striping and at-risk/hover backgrounds this same row could
+           otherwise be showing. */
+        .gc-cur-table tbody tr.gb-row-selected td { background:#FEF3C7 !important; }
+        .gc-cur-table tbody tr.gb-row-selected .td-name { background:#FDE68A !important; }
+
+        /* ── Frozen Name column — every gradebook-style table using this
+           shared CSS (.gc-cur-table + .gc-th-info) gets the same sticky
+           "Name" column pinned at the left edge while its score/grade
+           columns scroll underneath, instead of each page reimplementing
+           its own version differently. A wrapping element with class
+           .gb-table-scroll (overflow-x:auto) is what sticky positions
+           against — .gc-cur-wrap's own overflow:hidden (above) does NOT
+           create a scroll context, so it must stay overflow:visible when a
+           .gb-table-scroll ancestor is present (each page's own CSS should
+           add ".gc-cur-wrap { overflow:visible !important; }" once it opts
+           into horizontal scrolling). FIXED width (not min-width) is
+           deliberate — a min-width lets a long name grow the cell past what
+           sticky is holding it to, which then looks like "freezing isn't
+           working" even though sticky itself is fine. */
+        .gc-th-info {
+            position:sticky; left:0; z-index:4; width:160px;
+            background:#f7f7f7; overflow:hidden; text-overflow:ellipsis;
+            box-shadow:2px 0 8px rgba(0,0,0,.14);
+        }
+        .gc-th-info::after {
+            content:''; position:absolute; top:0; bottom:0; left:100%;
+            width:14px; background:#f7f7f7;
+        }
+        .gc-cur-table .td-name {
+            position:sticky; left:0; z-index:2;
+            width:160px; background:#fff; white-space:nowrap;
+            box-shadow:2px 0 8px rgba(0,0,0,.10);
+            overflow:hidden; text-overflow:ellipsis; font-size:12px; color:#262626;
+        }
+        .gc-cur-table .td-name::after {
+            content:''; position:absolute; top:0; bottom:0; left:100%;
+            width:14px; background:#fff;
+        }
+        .gc-cur-table tbody tr:nth-child(even) .td-name { background:#f9fafb; }
+        .gc-cur-table tbody tr:hover .td-name { background:#f0fdf4; }
         .gc-cur-table .td-pass { text-align:center; }
         .gc-cur-badge-pass { font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:#E6F4EA; color:#137333; }
         .gc-cur-badge-fail { font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:#FCE8E6; color:#C5221F; }

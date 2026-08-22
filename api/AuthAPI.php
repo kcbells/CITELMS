@@ -220,8 +220,8 @@ function handleRegister() {
         pdo()->prepare(
             "INSERT INTO users (
                 first_name, last_name, email, password, role, status,
-                department_id, program_id, major, student_id, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, 'student', 'active', ?, ?, ?, ?, NOW(), NOW())"
+                department_id, program_id, major, student_id, campus_id, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, 'student', 'active', ?, ?, ?, ?, ?, NOW(), NOW())"
         )->execute([
             $firstName,
             $lastName,
@@ -231,6 +231,7 @@ function handleRegister() {
             $resolved['program_id'],
             $resolved['major'],
             $studentId,
+            $resolved['campus_id'],
         ]);
 
         $userId = (int)pdo()->lastInsertId();

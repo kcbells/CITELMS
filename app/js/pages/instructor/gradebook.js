@@ -44,10 +44,39 @@ async function renderGradebook(container, opts = {}) {
     const res = await Api.get('/SectionsAPI.php?action=instructor-classes');
     classesData = res.success ? (res.data || []) : [];
 
+    bindRowSelect(container);
+
     const { subjectId = '', sectionId = '' } = opts;
     if (sectionId && subjectId)  await renderClassRecord(container, opts);
     else if (subjectId)          renderSectionsView(container, opts);
     else                         renderSubjectsView(container, opts);
+}
+
+/**
+ * Clicking a student's row (or focusing anything inside it) selects and
+ * highlights it (see .gb-row-selected in classroom-ui.js's shared
+ * curriculumTableCss — same behavior as Global Gradebook). Delegated once on
+ * the outer container instead of re-bound per table, guarded so re-renders
+ * (this function runs again on every nav) never double-bind the same
+ * listener.
+ *
+ * Always SETS the highlight rather than toggling it — see the matching
+ * comment in global-gradebook.js's bindRowSelect() for why a toggle was the
+ * actual bug (a second click on an already-selected row, e.g. to start
+ * editing something in it, flipped the highlight back off).
+ */
+function bindRowSelect(container) {
+    if (container.dataset.gbRowSelectBound) return;
+    container.dataset.gbRowSelectBound = '1';
+    const select = e => {
+        const row = e.target.closest('tr[data-stu]');
+        if (!row) return;
+        const table = row.closest('table');
+        table?.querySelectorAll('tr.gb-row-selected').forEach(r => { if (r !== row) r.classList.remove('gb-row-selected'); });
+        row.classList.add('gb-row-selected');
+    };
+    container.addEventListener('click', select);
+    container.addEventListener('focusin', select);
 }
 
 function navigate(container, opts, { subjectId = '', sectionId = '' } = {}) {
@@ -322,7 +351,7 @@ async function loadClassRecord(subject, section) {
 
 function renderTableHeaders(allItems) {
     const colCount = Math.max(allItems.length, 1);
-    let periodRow = `<th rowspan="2">#</th><th rowspan="2" class="th-left">Student ID</th><th rowspan="2" class="th-left">Name</th>`;
+    let periodRow = `<th rowspan="2">#</th><th rowspan="2" class="th-left">Student ID</th><th rowspan="2" class="gc-th-info th-left">Name</th>`;
     periodRow += `<th colspan="${colCount}" class="gb-period-th gb-period-th--p1">Activities &amp; Quizzes</th>`;
     periodRow += `<th rowspan="2">Total</th><th rowspan="2">Remarks</th>`;
 
@@ -423,7 +452,7 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
             : atRisk ? 'At risk' : 'In progress';
 
         return `
-            <tr class="${atRisk ? 'gb-at-risk' : ''}">
+            <tr class="${atRisk ? 'gb-at-risk' : ''}" data-stu="${st.user_student_id}">
                 <td class="td-rank">${i + 1}</td>
                 <td class="td-id">${esc(st.student_id || '—')}</td>
                 <td class="td-name">${esc(st.name)}${atRisk ? ' <span class="gb-risk-tag">!</span>' : ''}</td>
@@ -456,7 +485,7 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
                     ${allItems.length ? `
                     <tfoot>
                         <tr class="gb-record-avg-row">
-                            <td colspan="3" class="td-name" style="font-weight:700;text-align:right;padding-right:12px;">Class avg / completion</td>
+                            <td colspan="3" style="position:static;width:auto;font-size:12px;color:#262626;font-weight:700;text-align:right;padding-right:12px;">Class avg / completion</td>
                             ${footerCells}
                             <td colspan="2"></td>
                         </tr>
@@ -634,6 +663,12 @@ function pageCss() {
         .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
 
         .gb-table-scroll { overflow-x:auto; }
+        /* Override curriculumTableCss's overflow:hidden — clip doesn't create a
+           scroll context, so the frozen Name column (see classroom-ui.js's
+           curriculumTableCss, the shared source — .gc-th-info / .td-name)
+           needs this wrapper left at overflow:visible so position:sticky reads
+           against .gb-table-scroll instead of .gc-cur-wrap. */
+        .gc-cur-wrap { overflow:visible !important; }
         .gb-record-table { min-width:640px; }
         .gb-record-table tfoot .gb-record-avg-row td { border-top:2px solid #1B4D3E; font-size:11px; }
 

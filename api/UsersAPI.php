@@ -45,6 +45,7 @@ $_userPerms = [
     'activate'     => 'users.edit',
     'deactivate'   => 'users.edit',
     'set-password' => 'users.edit',
+    'activity-log' => 'users.view',
 ];
 
 if (isset($_userPerms[$action]) && !Auth::can($_userPerms[$action]) && !($isDean && in_array($action, $deanAllowed))) {
@@ -65,6 +66,7 @@ switch ($action) {
     case 'programs':    handlePrograms();    break;
     case 'campuses':      handleCampuses();      break;
     case 'set-password':  handleSetPassword();   break;
+    case 'activity-log':  handleActivityLog();   break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
@@ -148,6 +150,71 @@ function getDeanCampusIds(int $deanId): array {
 }
 
 // ── handlers ──────────────────────────────────────────────────────────────
+
+/**
+ * GET ?action=activity-log — recent activity across the whole system (logins,
+ * registrations, password changes, etc. — see every logActivity() call).
+ * Admin-only regardless of RBAC grants: this spans every campus/department,
+ * unlike the rest of this file's dean-scoped actions, so it must never be
+ * reachable by a dean even if 'users.view' happens to be granted to them.
+ */
+function handleActivityLog() {
+    if (Auth::role() !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Admin only']);
+        return;
+    }
+
+    $search   = trim($_GET['search'] ?? '');
+    $type     = trim($_GET['activity_type'] ?? '');
+    $page     = max(1, (int)($_GET['page'] ?? 1));
+    $perPage  = min(100, max(1, (int)($_GET['per_page'] ?? 30)));
+    $offset   = ($page - 1) * $perPage;
+
+    $where  = [];
+    $params = [];
+    if ($search !== '') {
+        $where[]  = "(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR al.activity_description LIKE ?)";
+        $s = "%$search%";
+        array_push($params, $s, $s, $s, $s);
+    }
+    if ($type !== '') {
+        $where[]  = "al.activity_type = ?";
+        $params[] = $type;
+    }
+    $whereSQL = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $total = (int)(db()->fetchOne(
+        "SELECT COUNT(*) AS c FROM activity_logs al LEFT JOIN users u ON u.users_id = al.users_id $whereSQL",
+        $params
+    )['c'] ?? 0);
+
+    $logs = db()->fetchAll(
+        "SELECT al.log_id, al.activity_type, al.activity_description, al.created_at,
+                al.users_id, u.first_name, u.last_name, u.email, u.role
+         FROM activity_logs al
+         LEFT JOIN users u ON u.users_id = al.users_id
+         $whereSQL
+         ORDER BY al.created_at DESC, al.log_id DESC
+         LIMIT $perPage OFFSET $offset",
+        $params
+    );
+
+    // Distinct activity types seen overall (not just this page/filter) — lets
+    // the frontend populate a type filter dropdown without a separate call.
+    $types = array_column(db()->fetchAll(
+        "SELECT DISTINCT activity_type FROM activity_logs ORDER BY activity_type"
+    ), 'activity_type');
+
+    echo json_encode(['success' => true, 'data' => [
+        'logs'        => $logs,
+        'types'       => $types,
+        'total'       => $total,
+        'page'        => $page,
+        'per_page'    => $perPage,
+        'total_pages' => (int)ceil($total / $perPage),
+    ]]);
+}
 
 function handleList() {
     $search     = $_GET['search']        ?? '';

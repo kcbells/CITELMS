@@ -49,7 +49,7 @@ function signupCatalogDefinition(): array {
             ],
         ],
         [
-            'code' => 'CIT',
+            'code' => 'CITE',
             'name' => 'College of Information Technology',
             'programs' => [
                 ['code' => 'BSIT', 'name' => 'Bachelor of Science in Information Technology'],
@@ -259,7 +259,7 @@ function resolveSignupProgram(string $programCode, ?string $major = null): array
 
     $prog = db()->fetchOne(
         "SELECT p.program_id, p.program_code, p.program_name,
-                dp.department_id, d.department_code, d.department_name
+                dp.department_id, d.department_code, d.department_name, d.campus_id
          FROM program p
          LEFT JOIN department_program dp ON p.program_id = dp.program_id
          LEFT JOIN department d ON dp.department_id = d.department_id
@@ -279,6 +279,14 @@ function resolveSignupProgram(string $programCode, ?string $major = null): array
         'department_id'     => (int)$prog['department_id'],
         'department_code'   => $prog['department_code'],
         'department_name'   => $prog['department_name'],
+        // Every department belongs to exactly one campus (see the 3-campus
+        // department.campus_id mapping) — a self-registered student's own
+        // campus is always their chosen program's department's campus, same
+        // as every other account-creation path in this app already derives
+        // it. Without this, the student's campus_id was silently left NULL,
+        // which excludes them from every campus-scoped dean view (Manage
+        // Faculty, Users list, etc. all filter by campus_id).
+        'campus_id'         => $prog['campus_id'] !== null ? (int)$prog['campus_id'] : null,
         'major'             => $major,
     ];
 }

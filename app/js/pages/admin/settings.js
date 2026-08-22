@@ -177,8 +177,8 @@ export async function render(container) {
                     <div class="set-nav-item" data-section="overview">
                         <span class="nav-icon">${icon('chart')}</span> System Overview
                     </div>
-                    <div class="set-nav-item" data-section="health">
-                        <span class="nav-icon">${icon('checkCircle')}</span> System Health
+                    <div class="set-nav-item" data-section="activity">
+                        <span class="nav-icon">${icon('checkCircle')}</span> Activity Log
                     </div>
                     <div class="set-nav-item" data-section="maintenance">
                         <span class="nav-icon">${icon('wrench')}</span> Maintenance
@@ -227,19 +227,19 @@ export async function render(container) {
                         </div>
                     </div>
 
-                    <!-- ── System Health ── -->
-                    <div class="set-panel" data-panel="health">
+                    <!-- ── Activity Log ── -->
+                    <div class="set-panel" data-panel="activity">
                         <div class="set-card">
                             <div class="set-card-head">
                                 <div class="set-card-head-icon">${icon('checkCircle', { size: 22 })}</div>
                                 <div class="set-card-title">
-                                    <h3>System Health</h3>
-                                    <p>Live status check of core modules — database, storage, and academic features</p>
+                                    <h3>Activity Log</h3>
+                                    <p>Recent activity across the system — logins, registrations, and account changes</p>
                                 </div>
-                                <button class="btn-primary" id="btn-refresh-health" style="margin-left:auto;">${icon('clock', inl)} Refresh</button>
+                                <button class="btn-primary" id="btn-refresh-activity" style="margin-left:auto;">${icon('clock', inl)} Refresh</button>
                             </div>
-                            <div class="set-card-body" id="health-body">
-                                <div class="sov-loading">Checking system health...</div>
+                            <div class="set-card-body" id="activity-body">
+                                <div class="sov-loading">Loading activity...</div>
                             </div>
                         </div>
                     </div>
@@ -331,7 +331,7 @@ export async function render(container) {
     `;
 
     // ── Nav switching ──
-    const _loaded = { users: false, rbac: false, overview: false, health: false };
+    const _loaded = { users: false, rbac: false, overview: false, activity: false };
 
     container.querySelectorAll('.set-nav-item').forEach(item => {
         item.addEventListener('click', async () => {
@@ -347,9 +347,9 @@ export async function render(container) {
                 _loaded.overview = true;
                 loadSystemOverview();
             }
-            if (sec === 'health' && !_loaded.health) {
-                _loaded.health = true;
-                loadSystemHealth();
+            if (sec === 'activity' && !_loaded.activity) {
+                _loaded.activity = true;
+                loadActivityLog();
             }
             if (sec === 'users' && !_loaded.users) {
                 _loaded.users = true;
@@ -390,7 +390,7 @@ export async function render(container) {
         });
     });
 
-    container.querySelector('#btn-refresh-health')?.addEventListener('click', () => loadSystemHealth());
+    container.querySelector('#btn-refresh-activity')?.addEventListener('click', () => loadActivityLog());
 
     // ── Data Management buttons ──
     container.querySelector('#btn-clear-inactive').addEventListener('click', async () => {
@@ -565,74 +565,128 @@ export async function render(container) {
             : `${sy + 1}-${sy + 2}`;
     }
 
-    // ── System Health ────────────────────────────────────────────────────────
+    // ── Activity Log ─────────────────────────────────────────────────────────
 
-    async function loadSystemHealth() {
-        const body = container.querySelector('#health-body');
-        body.innerHTML = '<div class="sov-loading">Checking system health...</div>';
+    let _actPage = 1;
+    let _actSearch = '';
+    let _actType = '';
 
-        const res = await Api.get('/SystemHealthAPI.php?action=check');
+    // Human labels + a rough grouping color for each raw activity_type — new
+    // types just fall back to a neutral badge instead of breaking anything.
+    const ACTIVITY_META = {
+        login_success:        { label: 'Logged in',            color: '#15803d', bg: '#f0fdf4' },
+        login_failed:         { label: 'Failed login',         color: '#b91c1c', bg: '#fef2f2' },
+        login_blocked:        { label: 'Login blocked',        color: '#b91c1c', bg: '#fef2f2' },
+        logout:                { label: 'Logged out',           color: '#6b7280', bg: '#f9fafb' },
+        first_login:           { label: 'First login',          color: '#1d4ed8', bg: '#eff6ff' },
+        password_set:          { label: 'Password set',         color: '#1d4ed8', bg: '#eff6ff' },
+        password_reset:        { label: 'Password reset',       color: '#b45309', bg: '#fffbeb' },
+        register:               { label: 'Self-registered',      color: '#7c3aed', bg: '#f5f3ff' },
+    };
+    function activityMeta(type) {
+        return ACTIVITY_META[type] || { label: type.replace(/_/g, ' '), color: '#374151', bg: '#f3f4f6' };
+    }
+
+    async function loadActivityLog() {
+        const body = container.querySelector('#activity-body');
+        body.innerHTML = '<div class="sov-loading">Loading activity...</div>';
+
+        const params = new URLSearchParams({ page: _actPage, per_page: 30 });
+        if (_actSearch) params.set('search', _actSearch);
+        if (_actType) params.set('activity_type', _actType);
+
+        const res = await Api.get(`/UsersAPI.php?action=activity-log&${params}`, { ttl: 0 });
         if (!res.success) {
-            body.innerHTML = `<div style="color:#b91c1c;font-size:13px;padding:20px;">Could not run health check: ${escSy(res.message || 'Unknown error')}</div>`;
+            body.innerHTML = `<div style="color:#b91c1c;font-size:13px;padding:20px;">Could not load activity log: ${escSy(res.message || 'Unknown error')}</div>`;
             return;
         }
 
-        const { modules, summary } = res.data;
-
-        const statusMeta = {
-            ok:      { label: 'Operational',   color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
-            warning: { label: 'Needs Attention', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
-            error:   { label: 'Problem',        color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
-        };
-
-        const overallStatus = summary.error > 0 ? 'error' : (summary.warning > 0 ? 'warning' : 'ok');
-        const overallMeta = statusMeta[overallStatus];
+        const { logs, types, total, page, total_pages } = res.data;
 
         body.innerHTML = `
             <style>
-                .health-summary {
-                    display: flex; align-items: center; gap: 14px;
-                    padding: 16px 18px; border-radius: 12px; margin-bottom: 20px;
-                    background: ${overallMeta.bg}; border: 1px solid ${overallMeta.border};
-                }
-                .health-summary-icon { font-size: 22px; color: ${overallMeta.color}; flex-shrink: 0; }
-                .health-summary-text strong { font-size: 14px; color: ${overallMeta.color}; }
-                .health-summary-text p { font-size: 12.5px; color: #6b7280; margin-top: 2px; }
-                .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-                .health-card {
-                    border: 1px solid #e8e8e8; border-radius: 12px; padding: 14px 16px;
-                    display: flex; align-items: flex-start; gap: 12px;
-                }
-                .health-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-                .health-card-name { font-size: 13.5px; font-weight: 700; color: #262626; }
-                .health-card-detail { font-size: 12px; color: #737373; margin-top: 2px; }
-                .health-card-badge {
-                    margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
-                    border-radius: 20px; white-space: nowrap; align-self: center;
-                }
+                .act-toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+                .act-search { flex:1; min-width:200px; padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; }
+                .act-type-select { padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; background:#fff; }
+                .act-count { font-size:12px; color:#6b7280; margin-bottom:10px; }
+                .act-table-wrap { border:1px solid #e8e8e8; border-radius:12px; overflow:auto; }
+                .act-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+                .act-table th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
+                    color:#6b7280; background:#f9fafb; padding:10px 14px; border-bottom:1px solid #e8e8e8; white-space:nowrap; }
+                .act-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+                .act-table tr:last-child td { border-bottom:none; }
+                .act-table tr:nth-child(even) td { background:#fafafa; }
+                .act-badge { display:inline-block; font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+                .act-who { font-weight:700; color:#262626; }
+                .act-email { color:#9ca3af; font-weight:400; }
+                .act-desc { color:#6b7280; }
+                .act-time { color:#9ca3af; white-space:nowrap; }
+                .act-empty { text-align:center; padding:40px; color:#9ca3af; font-size:13px; }
+                .act-pager { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:16px; }
+                .act-pager button { border:1px solid #e5e7eb; background:#fff; border-radius:6px; padding:6px 12px; font-size:12.5px; cursor:pointer; }
+                .act-pager button:disabled { opacity:.4; cursor:default; }
+                .act-pager span { font-size:12.5px; color:#6b7280; }
             </style>
-            <div class="health-summary">
-                <span class="health-summary-icon">${icon(overallStatus === 'ok' ? 'checkCircle' : 'warning', { size: 22 })}</span>
-                <div class="health-summary-text">
-                    <strong>${summary.error > 0 ? `${summary.error} module${summary.error !== 1 ? 's' : ''} with a problem` : summary.warning > 0 ? `${summary.warning} module${summary.warning !== 1 ? 's' : ''} need attention` : 'All systems operational'}</strong>
-                    <p>${summary.ok} of ${summary.total} modules fully healthy — last checked ${new Date(res.data.checked_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
-                </div>
+            <div class="act-toolbar">
+                <input type="text" class="act-search" id="act-search" placeholder="Search by name, email, or description..." value="${escSy(_actSearch)}">
+                <select class="act-type-select" id="act-type-select">
+                    <option value="">All activity types</option>
+                    ${types.map(t => `<option value="${escSy(t)}" ${t === _actType ? 'selected' : ''}>${escSy(activityMeta(t).label)}</option>`).join('')}
+                </select>
             </div>
-            <div class="health-grid">
-                ${modules.map(m => {
-                    const meta = statusMeta[m.status] || statusMeta.ok;
-                    return `
-                    <div class="health-card">
-                        <span class="health-dot" style="background:${meta.color}"></span>
-                        <div>
-                            <div class="health-card-name">${escSy(m.name)}</div>
-                            <div class="health-card-detail">${escSy(m.detail)}</div>
-                        </div>
-                        <span class="health-card-badge" style="background:${meta.bg};color:${meta.color};border:1px solid ${meta.border}">${meta.label}</span>
-                    </div>`;
-                }).join('')}
+            <div class="act-count">${total} ${total === 1 ? 'entry' : 'entries'}</div>
+            ${logs.length === 0 ? `<div class="act-empty">No activity found${_actSearch || _actType ? ' for this filter' : ''}.</div>` : `
+            <div class="act-table-wrap">
+                <table class="act-table">
+                    <thead>
+                        <tr>
+                            <th>Activity</th>
+                            <th>User</th>
+                            <th>Description</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${logs.map(l => {
+                            const meta = activityMeta(l.activity_type);
+                            const who = l.users_id
+                                ? `<span class="act-who">${escSy((l.first_name || '') + ' ' + (l.last_name || '')).trim() || 'Unknown user'}</span><br><span class="act-email">${escSy(l.email || '')}</span>`
+                                : `<span class="act-email">System / unauthenticated</span>`;
+                            const time = new Date(l.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                            return `
+                            <tr>
+                                <td><span class="act-badge" style="background:${meta.bg};color:${meta.color}">${escSy(meta.label)}</span></td>
+                                <td>${who}</td>
+                                <td class="act-desc">${escSy(l.activity_description || '')}</td>
+                                <td class="act-time">${time}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
             </div>
+            <div class="act-pager">
+                <button id="act-prev" ${page <= 1 ? 'disabled' : ''}>&larr; Newer</button>
+                <span>Page ${page} of ${total_pages || 1}</span>
+                <button id="act-next" ${page >= total_pages ? 'disabled' : ''}>Older &rarr;</button>
+            </div>`}
         `;
+
+        let searchDebounce;
+        body.querySelector('#act-search')?.addEventListener('input', (e) => {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+                _actSearch = e.target.value.trim();
+                _actPage = 1;
+                loadActivityLog();
+            }, 350);
+        });
+        body.querySelector('#act-type-select')?.addEventListener('change', (e) => {
+            _actType = e.target.value;
+            _actPage = 1;
+            loadActivityLog();
+        });
+        body.querySelector('#act-prev')?.addEventListener('click', () => { if (_actPage > 1) { _actPage--; loadActivityLog(); } });
+        body.querySelector('#act-next')?.addEventListener('click', () => { if (_actPage < total_pages) { _actPage++; loadActivityLog(); } });
     }
 
     async function loadSchoolYear() {
