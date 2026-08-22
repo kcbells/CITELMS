@@ -107,6 +107,7 @@ async function loadSubjects(container) {
             _offeredBySubId[row.subject_id] = {
                 subject_offered_id: row.subject_offered_id,
                 offering_status: row.offering_status,
+                grading_type: row.grading_type || 'raw_score',
             };
         }
     }
@@ -142,7 +143,22 @@ function statusCell(subjectId, semNum) {
         action = `<button class="so-btn-open" data-reopen="${offered.subject_offered_id}"${offTermAttr}>Reopen</button>`;
     }
 
-    return `<td class="so-status">${badge}</td><td class="so-action">${action}${offTermTag}</td>`;
+    // Raw Score <-> Global Gradebook — only meaningful once a subject is
+    // actually offered (there's no grading mode to speak of for one that
+    // isn't). A click flips it and re-sends the offering's own current
+    // status right alongside grading_type, since the update endpoint always
+    // expects a status — omitting it would default to 'open' and could
+    // silently reopen a subject the dean deliberately closed.
+    const gradingToggle = offered ? `
+        <button type="button" class="so-grading-toggle so-grading-${offered.grading_type}"
+                data-grading-toggle="${offered.subject_offered_id}"
+                data-current-status="${esc(status)}"
+                data-current-grading="${offered.grading_type}"
+                title="${offered.grading_type === 'global' ? 'Global Gradebook — click to switch to Raw Score' : 'Raw Score — click to switch to Global Gradebook'}">
+            ${offered.grading_type === 'global' ? 'Global' : 'Raw Score'}
+        </button>` : '';
+
+    return `<td class="so-status">${badge}</td><td class="so-action">${action}${offTermTag}${gradingToggle}</td>`;
 }
 
 function emptyStatusCells() {
@@ -293,6 +309,12 @@ function renderChecklist(area, container) {
             toggleOffering(container, parseInt(btn.dataset.reopen), 'open');
         });
     });
+    area.querySelectorAll('[data-grading-toggle]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const newType = btn.dataset.currentGrading === 'global' ? 'raw_score' : 'global';
+            toggleGradingType(container, parseInt(btn.dataset.gradingToggle), btn.dataset.currentStatus, newType);
+        });
+    });
 }
 
 async function openAllForTerm(container) {
@@ -343,6 +365,27 @@ async function toggleOffering(container, subjectOfferedId, status) {
     });
     if (res.success) await loadSubjects(container);
     else notify.error(res.message || 'Failed to update subject status');
+}
+
+async function toggleGradingType(container, subjectOfferedId, currentStatus, gradingType) {
+    const label = gradingType === 'global' ? 'Global Gradebook' : 'Raw Score';
+    const confirmed = await notify.confirm(
+        `Switch this class to ${label} grading? This changes how grades are recorded and shown for every student already enrolled.`,
+        { confirmText: 'Switch' }
+    );
+    if (!confirmed) return;
+
+    const res = await Api.post('/SubjectOfferingsAPI.php?action=update', {
+        subject_offered_id: subjectOfferedId,
+        status: currentStatus,   // resend current status — the endpoint requires one and defaults to 'open' if omitted
+        grading_type: gradingType,
+    });
+    if (res.success) {
+        notify.success(`Switched to ${label}`);
+        await loadSubjects(container);
+    } else {
+        notify.error(res.message || 'Failed to change grading type');
+    }
 }
 
 function esc(str) {
@@ -427,6 +470,12 @@ function css() { return `
 .so-btn-close { background:#FEE2E2; color:#b91c1c; }
 .so-btn-close:hover { background:#FECACA; }
 .so-offterm-tag { display:block; margin-top:3px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#b45309; cursor:help; }
+.so-grading-toggle { display:block; margin:5px auto 0; border:1px solid transparent; border-radius:6px; padding:3px 9px;
+    font-size:10px; font-weight:700; letter-spacing:.2px; cursor:pointer; white-space:nowrap; font-family:inherit; }
+.so-grading-raw_score { background:#F3F4F6; color:#4B5563; border-color:#E5E7EB; }
+.so-grading-raw_score:hover { background:#E5E7EB; }
+.so-grading-global { background:#EDE9FE; color:#6D28D9; border-color:#DDD6FE; }
+.so-grading-global:hover { background:#DDD6FE; }
 
 @media(max-width:900px) {
     .cr-summer-table { width:100%; }

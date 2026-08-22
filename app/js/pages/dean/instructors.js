@@ -823,7 +823,11 @@ function renderRows(list) {
             <td><span class="di-empid">${esc(i.employee_id || '—')}</span></td>
             <td><span class="di-role-badge ${i.role}">${esc(roleLabel)}</span></td>
             <td>${progLabel}${deptLabel}</td>
-            <td><span class="badge badge-${i.status}">${i.status}</span></td>
+            <td><span class="badge badge-${i.status}">${i.status}</span> ${
+                (i.never_logged_in == 1 || i.on_temp_password == 1)
+                    ? `<span class="badge badge-pending" title="Hasn't logged in and set a real password yet">Not activated</span>`
+                    : `<span class="badge badge-active" title="Has logged in and set their own password">Active</span>`
+            }</td>
             <td>
                 <div class="di-actions">
                     <button class="btn-row btn-row-edit di-edit-btn" data-id="${i.users_id}">Edit</button>

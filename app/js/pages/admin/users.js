@@ -191,13 +191,22 @@ async function renderList(container, filters = {}) {
                         : '';
                     const deptProg = u.department_name || u.program_code || '—';
                     const date = new Date(u.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
+                    // Distinct from u.status (which gates login entirely — always 'active' on
+                    // creation): this is whether the person has actually SET their own password
+                    // yet, i.e. logged in and engaged with the account at all, vs still sitting
+                    // on the system-issued temp password (NULL password = true first-login-by-ID-
+                    // only case; must_change_password=1 = bulk-import temp-password case).
+                    const notActivated = (u.never_logged_in == 1 || u.never_logged_in === true) || (u.on_temp_password == 1 || u.on_temp_password === true);
+                    const activationBadge = notActivated
+                        ? `<span class="badge badge-pending" title="Hasn't logged in and set a real password yet">Not activated</span>`
+                        : `<span class="badge badge-active" title="Has logged in and set their own password">Active</span>`;
                     return `
                         <tr>
                             <td><div class="user-cell"><div class="user-av ${u.role}">${initials}</div><div><span class="user-name">${esc(u.first_name+' '+u.last_name)}</span><span class="user-email">${esc(u.email)}</span></div></div></td>
                             <td>${esc(id)}</td>
                             <td><span class="badge badge-${u.role}">${u.role === 'program_head' ? 'Program Head' : u.role}</span></td>
                             <td>${esc(deptProg)}${campusLabel}</td>
-                            <td><span class="badge badge-${u.status}">${u.status}</span></td>
+                            <td><span class="badge badge-${u.status}">${u.status}</span> ${activationBadge}</td>
                             <td style="color:#737373;font-size:13px">${date}</td>
                             <td class="actions-cell">
                                 <button class="btn-actions" data-id="${u.users_id}">⋮</button>

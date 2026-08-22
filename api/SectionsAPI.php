@@ -830,8 +830,8 @@ function handleSubjectSections() {
 function handleInstructorClasses() {
     $userId = Auth::id();
 
-    $subjects = db()->fetchAll(
-        "SELECT DISTINCT s.subject_id, s.subject_code, s.subject_name, s.units,
+    $offerings = db()->fetchAll(
+        "SELECT s.subject_id, s.subject_code, s.subject_name, s.units,
                 so.subject_offered_id, so.status AS offering_status, so.grading_type,
                 p.program_code, p.program_name
          FROM subject_offered so
@@ -842,7 +842,34 @@ function handleInstructorClasses() {
         [$userId]
     );
 
-    foreach ($subjects as &$sub) {
+    // One instructor commonly ends up with SEVERAL subject_offered rows for
+    // the very same subject — e.g. Class Density's own model gives each
+    // section its own offering row even under one teacher. Those need to
+    // present as ONE subject card with every section nested under it, not
+    // one duplicate card per offering (which is what a flat per-offering
+    // list produces — the exact "why does it show 7 separate ITE 310 cards"
+    // bug). Group here so the frontend, which already only ever expected one
+    // card per subject_id, needs no changes at all.
+    $bySubject = [];
+    foreach ($offerings as $o) {
+        $sid = $o['subject_id'];
+        if (!isset($bySubject[$sid])) {
+            $bySubject[$sid] = $o;
+            $bySubject[$sid]['subject_offered_ids'] = [];
+        }
+        $bySubject[$sid]['subject_offered_ids'][] = (int)$o['subject_offered_id'];
+        // An 'open' offering represents the subject better than an
+        // 'archived' one if both exist — prefer it for the card's own
+        // status/grading_type once any offering for this subject is open.
+        if ($o['offering_status'] === 'open') {
+            $bySubject[$sid]['offering_status'] = $o['offering_status'];
+            $bySubject[$sid]['grading_type']    = $o['grading_type'];
+        }
+    }
+
+    foreach ($bySubject as &$sub) {
+        $ids = $sub['subject_offered_ids'];
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $sub['sections'] = db()->fetchAll(
             "SELECT sec.section_id, sec.section_name, sec.enrollment_code,
                     sec.max_students, sec.status,
@@ -853,17 +880,21 @@ function handleInstructorClasses() {
              LEFT JOIN student_subject st ON st.section_id = sec.section_id
                   AND st.subject_offered_id = ss.subject_offered_id
                   AND st.status = 'enrolled'
-             WHERE ss.subject_offered_id = ? AND ss.status = 'active'
+             WHERE ss.subject_offered_id IN ($placeholders) AND ss.status = 'active'
              GROUP BY ss.section_subject_id, ss.subject_offered_id, sec.section_id, sec.section_name,
                       sec.enrollment_code, sec.max_students, sec.status,
                       ss.schedule, ss.room
              ORDER BY sec.section_name",
-            [$sub['subject_offered_id']]
+            $ids
         );
+        // Kept for whatever already reads a single subject_offered_id off
+        // the card (e.g. the archive button, "add section") — the first
+        // offering stands in as the primary one for those single-ID actions.
+        $sub['subject_offered_id'] = $ids[0];
     }
     unset($sub);
 
-    echo json_encode(['success' => true, 'data' => $subjects]);
+    echo json_encode(['success' => true, 'data' => array_values($bySubject)]);
 }
 
 // ─── Create section for a subject (section name + schedule + room) ───────────

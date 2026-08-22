@@ -88,10 +88,12 @@ export async function render(container) {
 
 function renderClassListResult(d) {
     const stats = [
-        ['Students created',  d.created_students],
-        ['Students updated',  d.updated_students],
-        ['Newly enrolled',    d.enrolled_students],
-        ['Already enrolled',  d.already_enrolled],
+        ['Students created',    d.created_students],
+        ['Students updated',    d.updated_students],
+        ['Instructors created', d.created_instructors],
+        ['Instructors updated', d.updated_instructors],
+        ['Newly enrolled',      d.enrolled_students],
+        ['Already enrolled',    d.already_enrolled],
     ];
     const logRows = [
         ...(d.notes    || []).map(m => ({ cls: '',     m })),

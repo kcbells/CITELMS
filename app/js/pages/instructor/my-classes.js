@@ -64,7 +64,12 @@ function renderSubjectList(container, subjects, view = 'active') {
         btn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const offeredId = parseInt(btn.dataset.offeredId, 10);
+            // A subject can back onto several subject_offered rows at once
+            // (one per section, under the same instructor) — archiving "this
+            // subject" has to apply to every one of them, or sections behind
+            // the other IDs would silently stay open while the card shows
+            // Archived.
+            const offeredIds = (btn.dataset.offeredIds || '').split(',').map(v => parseInt(v, 10)).filter(Boolean);
             const newStatus = btn.dataset.newStatus;
             const isArchiving = newStatus === 'archived';
             const ok = await showMcConfirm(
@@ -77,14 +82,15 @@ function renderSubjectList(container, subjects, view = 'active') {
             if (!ok) return;
             btn.disabled = true;
             btn.innerHTML = 'Saving…';
-            const res = await Api.post('/SubjectOfferingsAPI.php?action=update', {
-                subject_offered_id: offeredId,
+            const results = await Promise.all(offeredIds.map(id => Api.post('/SubjectOfferingsAPI.php?action=update', {
+                subject_offered_id: id,
                 status: newStatus,
-            });
-            if (res.success) {
+            })));
+            const failed = results.find(r => !r.success);
+            if (!failed) {
                 render(container, { view: newStatus === 'archived' ? 'archived' : 'active' });
             } else {
-                showMcPopup(res.message || 'Failed to update.', { title: 'Error', type: 'error' });
+                showMcPopup(failed.message || 'Failed to update.', { title: 'Error', type: 'error' });
                 btn.disabled = false;
                 btn.innerHTML = icon('archive', inl) + ' ' + (isArchiving ? 'Archive' : 'Unarchive');
             }
@@ -236,7 +242,7 @@ function subjectCard(s) {
             </a>
             ${s.subject_offered_id ? `
             <button type="button" class="mc-archive-btn${isArchived ? ' mc-archive-btn--restore' : ''}"
-                    data-offered-id="${s.subject_offered_id}"
+                    data-offered-ids="${esc((s.subject_offered_ids || [s.subject_offered_id]).join(','))}"
                     data-new-status="${isArchived ? 'open' : 'archived'}"
                     title="${isArchived ? 'Unarchive this subject' : 'Archive this subject'}">
                 ${icon('archive', inl)} ${isArchived ? 'Unarchive' : 'Archive'}

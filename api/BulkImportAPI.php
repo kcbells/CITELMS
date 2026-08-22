@@ -91,8 +91,39 @@ try {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Header recognition
+// Live row-progress streaming (Class Density / Class List — files big enough
+// to take a while). One HTTP response, but instead of staying silent until
+// the very end, it's newline-delimited: zero or more
+// {"type":"progress","done":N,"total":M} lines while the row loop runs, then
+// exactly one final line — the normal {"success":...,"data":{...}} response,
+// unchanged shape, just with no "type" key, so anything reading it as one
+// whole JSON body (or the last line of one) still works. See
+// postFormWithProgress()'s xhr.onprogress handling in bulk-import-ui.js for
+// the reader side.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Turns off buffering so echo+flush() actually reaches the client mid-request instead of arriving all at once at the end. */
+function startProgressStream(): void
+{
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    @ini_set('zlib.output_compression', '0');
+    @ini_set('output_buffering', 'off');
+    @ini_set('implicit_flush', '1');
+    header('X-Accel-Buffering: no'); // no-op on Apache/XAMPP, harmless; matters if this ever sits behind nginx
+}
+
+/** Emits one progress line. Caller decides the cadence (see progressStep()) — flushing every single row on a 10,000-row file would be its own bottleneck. */
+function emitProgress(int $done, int $total): void
+{
+    echo json_encode(['type' => 'progress', 'done' => $done, 'total' => $total]) . "\n";
+    @flush();
+}
+
+/** How many rows between progress emits — caps it at ~200 updates over the whole file so the flush overhead never outweighs the row work itself. */
+function progressStep(int $total): int
+{
+    return max(1, (int)ceil($total / 200));
+}
 
 function fieldAliases(): array
 {
@@ -108,7 +139,15 @@ function fieldAliases(): array
         // (e.g. "21-0001" — a dash isn't a letter) are student IDs.
         'generic_id'       => ['id', 'id no', 'id number', 'id#'],
         'student_email'    => ['student email'],
-        'instructor_name'  => ['instructor name', 'faculty name', 'teacher name'],
+        // 'faculty' and 'instructor' bare (a real class-density export's own
+        // header, holding the instructor's full name in one column, no ID/
+        // email/middle-name qualifier) are listed as direct exact aliases
+        // rather than left to the fuzzy pass — a bare short word like
+        // "Faculty" is also a substring-prefix of faculty id/email/middle
+        // name, all different fields, and no length-based heuristic can
+        // reliably tell those apart. An exact alias sidesteps the ambiguity
+        // entirely by winning in pass 1, before fuzzy matching ever runs.
+        'instructor_name'  => ['instructor name', 'faculty name', 'teacher name', 'faculty', 'instructor'],
         'student_name'     => ['student name', 'name of student'],
         'name'             => ['name', 'full name'],
         // Sheets that split the name across two columns instead of one
@@ -203,10 +242,28 @@ function detectColumnMap(array $headerRow): array
 
     // Pass 2 — fuzzy: does the header contain an alias phrase, or vice versa?
     // ("employee no" contains "employee", "prog/course" is contained by
-    // "program/course" once slashes are treated loosely, etc.)
+    // "program/course" once slashes are treated loosely, etc.) — but the two
+    // directions are NOT equally strong evidence, so they can't share one
+    // "longer wins" scoring rule:
+    //   - header CONTAINS alias: the header spells out the whole alias
+    //     phrase plus some extra qualifier ("employee no" ⊃ "employee id"-ish)
+    //     — a longer matched alias here means a more specific, more certain
+    //     match, so longer should win.
+    //   - alias CONTAINS header: the header is only a short fragment/prefix
+    //     of a longer alias phrase ("faculty" ⊂ "faculty name" AND ⊂
+    //     "faculty middle name") — here a LONGER alias is actually a WORSE
+    //     match, since it means more words had to be invented beyond what
+    //     the header actually said. "faculty" naming the instructor's whole
+    //     name is a one-word extension ("faculty name"); reading it as
+    //     "faculty middle name" invents an entire extra concept the header
+    //     never mentioned. The shortest alias in this direction is the most
+    //     conservative, least-invented reading, so it should win here.
+    // A header-contains-alias match is also always more reliable than an
+    // alias-contains-header one, so it must outrank every fragment match
+    // regardless of length — scored in a clearly separate, higher band.
     foreach ($unmatched as $colIdx => $norm) {
         $bestField = null;
-        $bestLen   = 0;
+        $bestScore = -1;
         foreach ($aliases as $field => $names) {
             if (isset($map[$field])) continue;
             foreach ($names as $alias) {
@@ -217,11 +274,12 @@ function detectColumnMap(array $headerRow): array
                 // fine via the exact pass (pass 1) when a header really is
                 // just "Name"/"Dept" — this only blocks the loose fuzzy net.
                 if (strlen($alias) < 5) continue;
-                if (str_contains($norm, $alias) || str_contains($alias, $norm)) {
-                    if (strlen($alias) > $bestLen) {
-                        $bestField = $field;
-                        $bestLen   = strlen($alias);
-                    }
+                $score = null;
+                if (str_contains($norm, $alias))      $score = 10_000 + strlen($alias);       // strong: longer = better
+                elseif (str_contains($alias, $norm))   $score = 1_000 - strlen($alias);        // weak: shorter = better
+                if ($score !== null && $score > $bestScore) {
+                    $bestField = $field;
+                    $bestScore = $score;
                 }
             }
         }
@@ -477,6 +535,10 @@ function handleImport(): void
     // per-row below without losing everything already processed — only a
     // truly fatal failure (e.g. the DB connection itself dying) rolls the
     // whole import back, since nothing safe could have committed anyway.
+    $total = count($rows);
+    $step  = progressStep($total);
+    startProgressStream();
+
     db()->beginTransaction();
     try {
         foreach ($rows as $i => $rawRow) {
@@ -490,6 +552,9 @@ function handleImport(): void
             } catch (Throwable $e) {
                 $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
             }
+
+            $done = $i + 1;
+            if ($done % $step === 0 || $done === $total) emitProgress($done, $total);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -644,6 +709,19 @@ function resolveSubjectForClassList(string $value): ?array
     $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_code) = ?", [$key])
         ?: db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_name) = ?", [$key]);
 
+    // A real registrar export commonly puts "CODE - Full Subject Title" in
+    // one combined Subject column (e.g. "ITE 310 - CAPSTONES PROJECT AND
+    // RESEARCH 2") rather than a bare code — neither exact match above
+    // catches that. Only tried once the exact matches fail, and only when
+    // there's an actual " - " separator (never for a code that legitimately
+    // contains a hyphen with no spaces around it, e.g. "GEN-001").
+    if (!$row && str_contains($value, ' - ')) {
+        $codePart = trim(strstr($value, ' - ', true));
+        if ($codePart !== '') {
+            $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_code) = ?", [strtolower($codePart)]);
+        }
+    }
+
     return $cache[$key] = $row ? ['id' => (int)$row['subject_id'], 'code' => $row['subject_code']] : null;
 }
 
@@ -701,7 +779,17 @@ function handleClassListImport(): void
 {
     $parsed = readAndMapUpload();
     if ($parsed === null) return; // error already echoed
-    ['colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows] = $parsed;
+    ['colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows, 'header' => $header] = $parsed;
+
+    // True only when the column landed in 'instructor_email' by default
+    // (detectColumnMap()'s tie-break for a bare, unlabeled "Email" column —
+    // see fieldAliases()'s comment on 'instructor_email') rather than from an
+    // explicitly-labeled "Instructor Email"/"Faculty Email"/"Employee Email"
+    // header. Only the ambiguous default case is safe to reinterpret as the
+    // student's further down — an explicit label is a deliberate, unambiguous
+    // instructor column and must never be reassigned to the student.
+    $instrEmailColAmbiguous = isset($colMap['instructor_email'])
+        && normalizeHeader((string)($header[$colMap['instructor_email']] ?? '')) === 'email';
 
     $hasStudentCol = isset($colMap['student_id']) || isset($colMap['generic_id'])
         || isset($colMap['student_name']) || isset($colMap['name'])
@@ -722,12 +810,17 @@ function handleClassListImport(): void
 
     $summary = [
         'created_students'    => 0, 'updated_students'   => 0,
+        'created_instructors' => 0, 'updated_instructors' => 0,
         'enrolled_students'   => 0, 'already_enrolled'   => 0,
         'rows_processed'      => 0, 'rows_skipped_blank' => 0,
         'matched_columns'     => array_keys($colMap),
         'header_row'          => $headerRowIdx + 1,
         'notes' => [], 'warnings' => [], 'errors' => [],
     ];
+
+    $total = count($rows);
+    $step  = progressStep($total);
+    startProgressStream();
 
     db()->beginTransaction();
     try {
@@ -746,8 +839,21 @@ function handleClassListImport(): void
             // still has one bare "Email" column, which detectColumnMap()
             // assigns to instructor_email by default (first email column
             // seen) — reclaim it as the student's when nothing else has it.
-            if (!empty($d['instructor_email']) && empty($d['student_email'])) {
+            // This is the common case: a real registrar class-list export's
+            // single "Email" column is virtually always each STUDENT's own
+            // address (one distinct value per row — 50 different students in
+            // the same section means 50 different emails, not one shared
+            // instructor address repeated), never a per-row instructor.
+            // Explicitly unset instructor_email once reclaimed so the
+            // instructor-backfill step further down never mistakes 50
+            // different students for 50 different instructors — this column
+            // only stays classified as an instructor's email for a file that
+            // has an actually-separate, explicitly-labeled Instructor/Faculty
+            // Email column (which detectColumnMap() maps distinctly and never
+            // touches here), not this bare-single-"Email" fallback case.
+            if (!empty($d['instructor_email']) && empty($d['student_email']) && $instrEmailColAmbiguous) {
                 $d['student_email'] = $d['instructor_email'];
+                unset($d['instructor_email']);
             }
 
             try {
@@ -771,12 +877,61 @@ function handleClassListImport(): void
                     throw new Exception("no existing class found for subject \"{$subject['code']}\"" . ($sectionId ? " + that section" : '') . " — skipped (Class List never creates classes)");
                 }
 
+                // findExistingOffering() falls back to "any open offering for
+                // this subject" when the section itself isn't already linked
+                // to one — e.g. an offering created straight through the
+                // Curriculum/Subject Offerings pages, never through Class
+                // Density, so section_subject was never populated for it.
+                // That's fine for enrollStudent() below (student_subject
+                // carries its own section_id regardless), but leaving the
+                // link missing means this section then doesn't show up
+                // anywhere that reads section_subject — the dean's Faculty
+                // Assignments per-section instructor view, an instructor's
+                // "my sections" list, etc. Both the section and the offering
+                // already exist here, so creating the link between them
+                // isn't "Class List creating a class" — it's linking two
+                // things that already exist, same auto-link linkOffering()
+                // already does for Class Density.
+                if ($sectionId) {
+                    $linked = db()->fetchOne(
+                        "SELECT 1 FROM section_subject WHERE section_id = ? AND subject_offered_id = ?",
+                        [$sectionId, $offeredId]
+                    );
+                    if (!$linked) {
+                        pdo()->prepare(
+                            "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at) VALUES (?, ?, 'active', NOW())"
+                        )->execute([$sectionId, $offeredId]);
+                    }
+                }
+
+                $campusId     = resolveCampus($d['campus'] ?? '');
+                $departmentId = resolveDepartment($d['department'] ?? '');
+
+                // Instructor — if the row also names one (Employee ID or
+                // Email), resolve/create that account and backfill it onto
+                // the offering, but ONLY when the offering doesn't already
+                // have one. Never overwrites an instructor Class Density or
+                // the dean's Faculty Assignments page already deliberately
+                // set — this only completes an offering that was left
+                // teacher-less, the same "link two already-existing things"
+                // reasoning as the section_subject auto-link above, not
+                // Class List "creating a class".
+                ['id' => $instrEmpId, 'name' => $instrName, 'email' => $instrEmail, 'middle' => $instrMiddle] = personIdentityFromRow($d, 'instructor');
+                if ($instrEmpId !== '' || $instrEmail !== '') {
+                    $current = db()->fetchOne("SELECT user_teacher_id FROM subject_offered WHERE subject_offered_id = ?", [$offeredId]);
+                    if ($current && empty($current['user_teacher_id'])) {
+                        $instrRes = upsertPerson('instructor', $instrEmpId, $instrEmail, $instrName, $departmentId, $programId, $instrMiddle, $campusId);
+                        pdo()->prepare("UPDATE subject_offered SET user_teacher_id = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+                            ->execute([$instrRes['users_id'], $offeredId]);
+                        if ($instrRes['created']) { $summary['created_instructors']++; $summary['notes'][] = "Row $rowNum: created instructor account — {$instrRes['note']}"; }
+                        else                      { $summary['updated_instructors']++; }
+                    }
+                }
+
                 ['id' => $stuId, 'name' => $stuName, 'email' => $stuEmail, 'middle' => $stuMiddle] = personIdentityFromRow($d, 'student');
                 if ($stuId === '' && $stuEmail === '') {
                     throw new Exception('no Student ID, ID, or email — can\'t identify this student');
                 }
-                $campusId     = resolveCampus($d['campus'] ?? '');
-                $departmentId = resolveDepartment($d['department'] ?? '');
                 $res = upsertPerson('student', $stuId, $stuEmail, $stuName, $departmentId, $programId, $stuMiddle, $campusId);
                 if ($res['created']) { $summary['created_students']++; $summary['notes'][] = "Row $rowNum: created student account — {$res['note']}"; }
                 else                 { $summary['updated_students']++; }
@@ -790,6 +945,9 @@ function handleClassListImport(): void
             } catch (Throwable $e) {
                 $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
             }
+
+            $done = $i + 1;
+            if ($done % $step === 0 || $done === $total) emitProgress($done, $total);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -838,6 +996,10 @@ function handleFacultyListImport(): void
         'notes' => [], 'warnings' => [], 'errors' => [],
     ];
 
+    $total = count($rows);
+    $step  = progressStep($total);
+    startProgressStream();
+
     db()->beginTransaction();
     try {
         foreach ($rows as $i => $rawRow) {
@@ -869,6 +1031,9 @@ function handleFacultyListImport(): void
             } catch (Throwable $e) {
                 $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
             }
+
+            $done = $i + 1;
+            if ($done % $step === 0 || $done === $total) emitProgress($done, $total);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -1247,27 +1412,25 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         throw new Exception("can't create $role \"$idValue\" — email \"$finalEmail\" is already used by another account");
     }
 
-    // No password is set here on purpose — leaving it NULL means their very
-    // first login needs nothing but their Employee ID / Student ID (same
-    // "true first login, no password required yet" path AuthAPI.php already
-    // has for admin-created dean accounts). AuthAPI then walks them through
-    // setting a real password — and a real @phinmaed.com email too, if this
-    // row didn't have one — before they reach their dashboard. Nothing to
-    // hand out or for them to already know, so must_change_password isn't
-    // needed here either; the NULL password alone gates that first login.
+    // Default temp password: their last name in ALL CAPS. must_change_password
+    // forces the "set a real password" gate on first login — same modal the
+    // true-first-login (NULL password) path uses, see handleSetFirstPassword()
+    // and the must_change_password branch in AuthAPI's login handler.
+    $tempPassword = strtoupper($lastName);
     pdo()->prepare(
         "INSERT INTO users (first_name, middle_name, last_name, email, password, role, status,
              department_id, program_id, campus_id, employee_id, student_id, must_change_password, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, ?, ?, ?, ?, 0, NOW(), NOW())"
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, 1, NOW(), NOW())"
     )->execute([
-        $firstName, $middleName !== '' ? $middleName : null, $lastName, $finalEmail, $role,
+        $firstName, $middleName !== '' ? $middleName : null, $lastName, $finalEmail,
+        password_hash($tempPassword, PASSWORD_DEFAULT), $role,
         $departmentId, $programId, $campusId,
         $role === 'instructor' ? $idValue : null,
         $role === 'student'    ? $idValue : null,
     ]);
     $newId = (int)pdo()->lastInsertId();
 
-    return ['users_id' => $newId, 'created' => true, 'note' => "login ID \"$idValue\" — no password yet, logs in with ID only and is asked to set one"];
+    return ['users_id' => $newId, 'created' => true, 'note' => "login ID \"$idValue\" — default password \"$tempPassword\" (last name, all caps), asked to set a real one on first login"];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

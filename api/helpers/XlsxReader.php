@@ -78,34 +78,48 @@ class XlsxReader
         }
         if ($xml === false) return []; // no shared strings part — fine, workbook may use inline strings only
 
-        $doc = self::loadXml($xml, $errorDetail);
-        if (!$doc) return [];
+        $dom = self::loadDom($xml, $errorDetail);
+        if (!$dom) return [];
 
+        // Concatenating every descendant <t> in document order handles both
+        // shapes at once: a plain string is exactly one <t> (a direct child
+        // of <si>), rich text is several <t>s nested one level deeper inside
+        // <r> (one per run) — either way, walking descendants and joining
+        // their text is the right result without needing to branch on which
+        // shape a given <si> happens to be.
         $strings = [];
-        foreach ($doc->si as $si) {
-            if (isset($si->t)) {
-                // Plain string
-                $strings[] = (string)$si->t;
-            } else {
-                // Rich text — concatenate every run's text
-                $text = '';
-                foreach ($si->r as $r) {
-                    $text .= (string)$r->t;
-                }
-                $strings[] = $text;
+        foreach ($dom->getElementsByTagName('si') as $si) {
+            $text = '';
+            foreach ($si->getElementsByTagName('t') as $t) {
+                $text .= $t->textContent;
             }
+            $strings[] = $text;
         }
         return $strings;
     }
 
     /**
-     * Parses an XML string, tolerating a leading UTF-8 BOM (some tools
-     * prepend one before the XML declaration, which trips up libxml with
-     * "Start tag expected" even though the document is otherwise valid).
-     * On failure, $errorDetail is filled with libxml's actual complaint
-     * instead of a bare true/false, so real parse failures are diagnosable.
+     * Parses an XML string into a DOMDocument, tolerating a leading UTF-8 BOM
+     * (some tools prepend one before the XML declaration, which trips up
+     * libxml with "Start tag expected" even though the document is otherwise
+     * valid). On failure, $errorDetail is filled with libxml's actual
+     * complaint instead of a bare true/false, so real parse failures are
+     * diagnosable.
+     *
+     * DOMDocument, not SimpleXML: a worksheet part whose elements carry an
+     * explicit namespace prefix (e.g. some non-Excel exporters emit
+     * <x:worksheet>/<x:row>/<x:c> instead of Excel's own unprefixed-default-
+     * namespace convention) parses fine as a DOM tree, but SimpleXML can
+     * fail outright on the exact same bytes — both simplexml_load_string()
+     * and simplexml_import_dom() on an already-successfully-parsed
+     * DOMDocument were observed returning false, silently, with zero libxml
+     * errors, on a real prefixed worksheet. DOMDocument's own parse of that
+     * same content succeeds every time, and callers here walk it by
+     * ->localName (see extractRowCells()), which doesn't care whether a
+     * prefix is present at all — sidestepping the bug entirely rather than
+     * working around it.
      */
-    private static function loadXml(string $xml, ?string &$errorDetail = null): ?SimpleXMLElement
+    private static function loadDom(string $xml, ?string &$errorDetail = null): ?DOMDocument
     {
         if (substr($xml, 0, 3) === "\xEF\xBB\xBF") {
             $xml = substr($xml, 3);
@@ -113,16 +127,42 @@ class XlsxReader
 
         $prevErrState = libxml_use_internal_errors(true);
         libxml_clear_errors();
-        $doc = simplexml_load_string($xml);
+        $dom = new DOMDocument();
+        $ok = @$dom->loadXML($xml, LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_PARSEHUGE);
         $errors = libxml_get_errors();
+
+        if (!$ok) {
+            // Some real-world exporters (older Excel versions, WPS Office,
+            // third-party report generators) drop a handful of bytes XML 1.0
+            // doesn't actually allow — stray control characters inside cell
+            // text, or the odd malformed tag — that a strict one-shot parse
+            // rejects outright even though the sheet is otherwise fine.
+            // Retry tolerantly instead of failing the whole import over one
+            // bad byte in a 150KB file: strip the illegal control characters,
+            // then fall back to libxml's own recovery mode (best-effort
+            // parsing that skips what it can't fix) if a straight reparse
+            // still doesn't work.
+            libxml_clear_errors();
+            $sanitized = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $xml);
+            $dom = new DOMDocument();
+            $ok = @$dom->loadXML($sanitized, LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_PARSEHUGE);
+            if (!$ok) {
+                libxml_clear_errors();
+                $dom = new DOMDocument();
+                $ok = @$dom->loadXML($sanitized, LIBXML_RECOVER | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_PARSEHUGE)
+                    && $dom->documentElement;
+            }
+            $errors = libxml_get_errors();
+        }
+
         libxml_use_internal_errors($prevErrState);
 
-        if (!$doc) {
+        if (!$ok || !$dom->documentElement) {
             $errorDetail = $errors ? trim($errors[0]->message) : ('empty or non-XML content, ' . strlen($xml) . ' bytes');
             return null;
         }
         $errorDetail = null;
-        return $doc;
+        return $dom;
     }
 
     /** Case/separator-tolerant lookup for a zip entry (some tools write '\' separators or odd casing). */
@@ -137,8 +177,69 @@ class XlsxReader
         return null;
     }
 
+    /**
+     * Resolves the zip path of the first non-hidden sheet, in the workbook's
+     * own tab order — or null if workbook.xml/its rels can't be read, so the
+     * caller can fall back to the tolerant filename-based scan instead.
+     */
+    private static function firstVisibleSheetPathFromWorkbook(ZipArchive $zip): ?string
+    {
+        $workbookXml = $zip->getFromName('xl/workbook.xml');
+        $relsXml     = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        if ($workbookXml === false || $relsXml === false) return null;
+
+        $wb = self::loadDom($workbookXml);
+        $rl = self::loadDom($relsXml);
+        if (!$wb || !$rl) return null;
+
+        // r:id -> target part path, from the rels file (targets are relative to "xl/").
+        $targets = [];
+        foreach ($rl->getElementsByTagName('Relationship') as $rel) {
+            $id = $rel->getAttribute('Id');
+            $target = $rel->getAttribute('Target');
+            if ($id === '' || $target === '') continue;
+            $targets[$id] = 'xl/' . ltrim(str_replace('\\', '/', $target), '/');
+        }
+        if (!$targets) return null;
+
+        // <sheets><sheet name="..." sheetId=".." state="hidden|veryHidden" r:id="rIdX"/>...
+        // Document order here IS tab order; state is absent for a normal visible tab.
+        foreach ($wb->getElementsByTagName('sheet') as $sheet) {
+            $state = strtolower($sheet->getAttribute('state'));
+            if ($state === 'hidden' || $state === 'veryhidden') continue;
+            // r:id is namespaced — getAttribute('r:id') only works when the
+            // prefix is literally "r" (always true for genuine Excel/OOXML
+            // output), which covers every real-world file this matters for.
+            $rid = $sheet->getAttribute('r:id');
+            if ($rid !== '' && isset($targets[$rid])) {
+                return $targets[$rid];
+            }
+        }
+        return null;
+    }
+
     private static function firstSheetPath(ZipArchive $zip): string
     {
+        // The correct notion of "first sheet" is whichever TAB is first and
+        // visible in Excel's own tab order — NOT whichever worksheetN.xml
+        // happens to be numbered lowest. Those two can disagree: Excel
+        // doesn't rename/renumber a sheet's internal XML file when tabs are
+        // reordered or hidden, so a workbook can easily have an internal
+        // "sheet1.xml" that's actually a hidden reference/scratch tab, while
+        // the real, visible "Sheet1" the user sees and expects to be read
+        // lives in "sheet2.xml" or beyond. Resolve the real order via
+        // xl/workbook.xml's <sheets> list (document order = tab order,
+        // state="hidden"/"veryHidden" = not shown) and follow each sheet's
+        // r:id to its actual part through xl/_rels/workbook.xml.rels, the
+        // same two-step lookup Excel itself does.
+        $resolved = self::firstVisibleSheetPathFromWorkbook($zip);
+        if ($resolved !== null && $zip->locateName($resolved) !== false) {
+            return $resolved;
+        }
+
+        // Fallback below only for a workbook.xml/rels that's missing, malformed,
+        // or resolves to nothing real — same tolerant scan as before.
+
         // Fast path: the common case.
         if ($zip->locateName('xl/worksheets/sheet1.xml') !== false) {
             return 'xl/worksheets/sheet1.xml';
@@ -183,36 +284,28 @@ class XlsxReader
         );
     }
 
-    /** Buffered path — the whole worksheet part parsed as one SimpleXML document. */
+    /**
+     * Buffered path — the whole worksheet part parsed as one DOM document,
+     * then walked exactly like the streaming path below (same
+     * extractRowCells() helper), so both paths agree on every quirk
+     * (namespace prefixes, inline strings, the apostrophe-prefix cleanup)
+     * instead of maintaining two slightly different implementations.
+     */
     private static function parseSheetXml(string $xml, array $sharedStrings): array
     {
-        $doc = self::loadXml($xml, $errorDetail);
-        if (!$doc) {
+        $dom = self::loadDom($xml, $errorDetail);
+        if (!$dom) {
             throw new Exception('Could not parse the worksheet XML' . ($errorDetail ? " ($errorDetail)" : ''));
         }
-        if (!isset($doc->sheetData)) {
+        $sheetDataList = $dom->getElementsByTagName('sheetData');
+        if ($sheetDataList->length === 0) {
             throw new Exception('The worksheet is missing its data section (<sheetData>) — this file format isn\'t supported yet.');
         }
 
         $rows = [];
-        foreach ($doc->sheetData->row as $row) {
-            $cells = [];
-            foreach ($row->c as $c) {
-                $ref = (string)$c['r']; // e.g. "C7"
-                $colIndex = self::columnLetterToIndex($ref);
-                $type = (string)$c['t'];
-
-                if ($type === 's') {
-                    $idx = (int)$c->v;
-                    $value = $sharedStrings[$idx] ?? '';
-                } elseif ($type === 'inlineStr') {
-                    $value = (string)($c->is->t ?? '');
-                } else {
-                    // Plain number, formula result, or boolean — all fine as raw text
-                    $value = (string)$c->v;
-                }
-                $cells[$colIndex] = self::cleanCellText($value);
-            }
+        foreach ($sheetDataList->item(0)->childNodes as $rowNode) {
+            if (!($rowNode instanceof DOMElement) || $rowNode->localName !== 'row') continue;
+            $cells = self::extractRowCells($rowNode, $sharedStrings);
             if (!$cells) continue; // fully blank row
             $maxCol = max(array_keys($cells));
             $ordered = [];

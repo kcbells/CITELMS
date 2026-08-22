@@ -34,8 +34,19 @@ function esc(str) {
  * upload's `load` event is guaranteed to fire exactly once, right when the
  * browser has finished sending the request body, regardless of how (or
  * whether) intermediate progress ticks landed.
+ *
+ * The response body itself can also be a stream, not one final blob — the
+ * server (see startProgressStream()/emitProgress() in BulkImportAPI.php)
+ * writes newline-delimited JSON: zero or more {"type":"progress",...} lines
+ * while it works through the rows, then exactly one final line with the
+ * normal {success, message, data} shape. `xhr.onprogress` (the *download*
+ * one, on `xhr` itself — distinct from `xhr.upload.onprogress` above) fires
+ * as those bytes arrive, so `onRowProgress` can be driven off real row
+ * counts instead of a fake animation. Endpoints that don't stream (preview,
+ * or an error echoed before the loop starts) just arrive as a single line,
+ * which resolves exactly like before.
  */
-function postFormWithProgress(endpoint, formData, { onProgress, onUploadDone } = {}) {
+function postFormWithProgress(endpoint, formData, { onProgress, onUploadDone, onRowProgress } = {}) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', API_URL + endpoint);
@@ -49,9 +60,34 @@ function postFormWithProgress(endpoint, formData, { onProgress, onUploadDone } =
             }
         };
         xhr.upload.onload = () => { onUploadDone?.(); };
-        xhr.onload = () => {
+
+        let linesConsumed = 0;
+        let finalResult = null;
+        const consumeLines = (allComplete) => {
             let body = xhr.responseText || '';
             if (body.charCodeAt(0) === 0xFEFF) body = body.slice(1); // strip BOM
+            const parts = body.split('\n');
+            // Unless this is the final call, the last element is either '' (body
+            // ended exactly on a newline) or a still-arriving partial line — either
+            // way, don't treat it as complete yet.
+            const complete = allComplete ? parts.filter(l => l.trim() !== '') : parts.slice(0, -1);
+            for (let i = linesConsumed; i < complete.length; i++) {
+                const line = complete[i].trim();
+                if (!line) continue;
+                let obj;
+                try { obj = JSON.parse(line); } catch { continue; }
+                if (obj.type === 'progress') onRowProgress?.(obj.done, obj.total);
+                else finalResult = obj;
+            }
+            linesConsumed = complete.length;
+        };
+
+        xhr.onprogress = () => { if (onRowProgress) consumeLines(false); };
+        xhr.onload = () => {
+            consumeLines(true);
+            if (finalResult) { resolve(finalResult); return; }
+            let body = xhr.responseText || '';
+            if (body.charCodeAt(0) === 0xFEFF) body = body.slice(1);
             try {
                 resolve(body ? JSON.parse(body) : {});
             } catch {
@@ -94,6 +130,7 @@ function openImportProgressModal(fileName) {
 
     return {
         setProgress(p, label) {
+            fill.classList.remove('bi-progress-indeterminate');
             fill.style.width = `${Math.max(0, Math.min(100, p))}%`;
             pct.textContent = `${p}%`;
             if (label) phase.textContent = label;
@@ -102,6 +139,15 @@ function openImportProgressModal(fileName) {
             fill.classList.add('bi-progress-indeterminate');
             phase.textContent = label;
             pct.textContent = '';
+        },
+        // Real per-row counts, once the server starts streaming progress —
+        // replaces the "still working, no idea how far" indeterminate bar
+        // with an actual "1,240 / 10,000 rows" readout.
+        setRowProgress(done, total) {
+            fill.classList.remove('bi-progress-indeterminate');
+            fill.style.width = `${total ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0}%`;
+            phase.textContent = `Importing rows… ${done.toLocaleString()} / ${total.toLocaleString()}`;
+            pct.textContent = total ? `${Math.round((done / total) * 100)}%` : '';
         },
         close() {
             overlay.remove();
@@ -296,17 +342,25 @@ export function mountBulkImportUI(host, opts = {}) {
             const res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, fd, {
                 onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
                 // The file itself is fully sent — from here on the server is
-                // parsing rows and writing to the database, which can take a
-                // while on a big file and has no percentage we can observe.
-                // Switch to an animated "still working" bar instead of
-                // leaving the admin staring at a stalled/incomplete upload %.
+                // parsing rows and writing to the database. Start on an
+                // animated "still working" bar in case the file is small
+                // enough that the first real row-progress line takes a
+                // moment; setRowProgress (below) takes over the instant the
+                // server's first {"type":"progress"} line arrives, swapping
+                // this for an actual "1,240 / 10,000 rows" count.
                 onUploadDone: () => modal.setIndeterminate('Processing rows…'),
+                onRowProgress: (done, total) => modal.setRowProgress(done, total),
             });
 
             // Bypassing Api.postForm() for the progress events above means its
             // usual auto-invalidation doesn't run — do it ourselves so stale
-            // Users/Dashboard data doesn't linger after a bulk write.
+            // Users/Dashboard data doesn't linger after a bulk write. Every
+            // import here creates/updates accounts (instructors, students, or
+            // both), so the admin Users page's cached ?action=list must be
+            // purged too — otherwise "just uploaded, but the new accounts
+            // aren't in the Users table yet" for up to the cache's 45s TTL.
             Api.invalidate('BulkImportAPI');
+            Api.invalidate('UsersAPI');
             Api.invalidate('DashboardAPI');
 
             if (!res.success) {

@@ -484,6 +484,17 @@ function handleUpdate() {
     $validBatch = ['1st Year','2nd Year','3rd Year','4th Year'];
     $batch      = in_array($data['batch'] ?? '', $validBatch) ? $data['batch'] : null;
 
+    // Optional — only present when the caller is toggling Raw Score <-> Global
+    // Gradebook for this class (see the Subject Offered page's grading-type
+    // control). Left untouched (not included in the UPDATE at all) when
+    // absent, same as every other status-only update this action already
+    // handles, so nothing here can silently flip an offering's grading mode
+    // as a side effect of an unrelated Open/Close/Archive click.
+    $gradingType = $data['grading_type'] ?? null;
+    if ($gradingType !== null && !in_array($gradingType, ['raw_score', 'global'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid grading_type']); return;
+    }
+
     // Instructors can only archive/open their own offerings
     if (Auth::role() === 'instructor') {
         $owns = db()->fetchOne(
@@ -498,11 +509,20 @@ function handleUpdate() {
         if (!in_array($status, ['open', 'archived'], true)) {
             echo json_encode(['success' => false, 'message' => 'Instructors may only archive or unarchive subjects']); return;
         }
+        if ($gradingType !== null) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Only admins and deans can change the grading type']); return;
+        }
     }
 
     try {
-        pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, updated_at = NOW() WHERE subject_offered_id = ?")
-            ->execute([$status, $batch, $id]);
+        if ($gradingType !== null) {
+            pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, grading_type = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+                ->execute([$status, $batch, $gradingType, $id]);
+        } else {
+            pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, updated_at = NOW() WHERE subject_offered_id = ?")
+                ->execute([$status, $batch, $id]);
+        }
         echo json_encode(['success' => true, 'message' => 'Offering updated']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to update']);
@@ -1394,7 +1414,7 @@ function handleOfferedList() {
         "SELECT s.subject_id, s.subject_code, s.subject_name, s.units,
                 s.year_level, s.semester AS subject_semester, s.status,
                 p.program_code, p.program_name, p.program_id,
-                so.subject_offered_id, so.status AS offering_status
+                so.subject_offered_id, so.status AS offering_status, so.grading_type
          FROM subject_offered so
          JOIN subject s ON s.subject_id = so.subject_id
          LEFT JOIN program p ON p.program_id = s.program_id
