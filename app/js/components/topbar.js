@@ -25,7 +25,6 @@ export function renderTopbar(container) {
         <!-- Left Side -->
         <div class="topbar-left">
             <button class="topbar-btn mobile-menu-btn" id="sidebar-toggle" title="Toggle Menu">${icon('menu')}</button>
-            <h1 class="page-title">Home</h1>
         </div>
 
         <!-- Right Side -->

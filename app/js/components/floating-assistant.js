@@ -423,8 +423,18 @@ function makeDraggable() {
     }
 
     function onDown(e) {
-        // Allow clicks on buttons/inputs inside the header (minimize, etc.) to work normally
-        if (e.target.closest('button, textarea, input, a') && e.target !== fab) return;
+        // Let a genuinely OTHER interactive descendant (the header's minimize
+        // button) work normally instead of starting a drag. This used to
+        // compare against `fab` specifically, but e.target.closest('button')
+        // for a click on the fab's own inner <img>/<span> always resolves to
+        // the fab itself (its nearest <button> ancestor) — so that check was
+        // true for every ordinary click on the icon, silently disabling
+        // dragging from the fab face entirely and leaving it draggable only
+        // from a sliver of the button not covered by the image. Comparing
+        // against e.currentTarget (whichever element this listener is bound
+        // to — the fab or the header) is correct for both cases.
+        const interactive = e.target.closest('button, textarea, input, a');
+        if (interactive && interactive !== e.currentTarget) return;
         const pos  = currentPos();
         startX     = e.touches ? e.touches[0].clientX : e.clientX;
         startY     = e.touches ? e.touches[0].clientY : e.clientY;

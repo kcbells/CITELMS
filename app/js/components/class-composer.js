@@ -54,9 +54,9 @@ function injectStyles() {
     .cc-bar {
         display:flex; align-items:center; gap:12px;
         padding:12px 16px; background:#fff;
-        border:1px solid #E8EAED; border-radius:14px;
+        border:2px solid #111; border-radius:14px;
         margin-bottom:20px;
-        box-shadow:0 1px 3px rgba(0,0,0,.06);
+        box-shadow:none;
     }
     .cc-bar-pill {
         flex:1; padding:10px 14px;

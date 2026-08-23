@@ -45,6 +45,9 @@ $_sectPerms = [
     'remove-class'              => 'sections.edit',
     'unenroll'                  => 'sections.edit',
     'delete'                    => 'sections.delete',
+    'pending-joins'             => 'sections.view',
+    'approve-join'              => 'sections.edit',
+    'reject-join'               => 'sections.edit',
 ];
 // Dean has intrinsic access to sections (scoped by dept).
 // Program Head has intrinsic access too, but further scoped to their own
@@ -58,7 +61,8 @@ $isInstrSect    = Auth::role() === 'instructor';
 $instrActions = ['create','update','delete','add-subject','remove-subject','unenroll',
                  'instructor-list','instructor-avail-subjects','instructor-assigned-subjects',
                  'instructor-programs','instructor-classes','create-for-subject','students',
-                 'preview-import-students','bulk-import-students'];
+                 'preview-import-students','bulk-import-students',
+                 'pending-joins','approve-join','reject-join'];
 $instrBypassed = $isInstrSect && in_array($action, $instrActions);
 
 if (!$isDeanSect && !$isProgHeadSect && !$instrBypassed && isset($_sectPerms[$action]) && !Auth::can($_sectPerms[$action])) {
@@ -86,6 +90,9 @@ switch ($action) {
     case 'instructors':                handleInstructors();               break;
     case 'students':                   handleStudents();                  break;
     case 'unenroll':                   handleUnenroll();                  break;
+    case 'pending-joins':              handlePendingJoins();              break;
+    case 'approve-join':               handleApproveJoin();               break;
+    case 'reject-join':                handleRejectJoin();                break;
     case 'semesters':                  handleSemesters();                 break;
     case 'programs':                   handlePrograms();                  break;
     case 'departments':                handleDepartments();               break;
@@ -1748,6 +1755,135 @@ function handleUnenroll() {
         error_log('Unenroll: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to unenroll']);
     }
+}
+
+// ── QR/code join approval — see class_join_requests, and enrollBySubjectCode()/
+// enrollByLegacyCode() in EnrollmentAPI.php, which write the pending rows
+// this reads/decides on instead of enrolling a student directly. ──────────
+
+/** GET ?action=pending-joins&subject_offered_id=&section_id= — one class card's queue. */
+function handlePendingJoins() {
+    $offeredId = (int)($_GET['subject_offered_id'] ?? 0);
+    $sectionId = (int)($_GET['section_id'] ?? 0);
+    if (!$offeredId || !$sectionId) {
+        echo json_encode(['success' => false, 'message' => 'subject_offered_id and section_id required']);
+        return;
+    }
+
+    $ownerRow = db()->fetchOne(
+        "SELECT so.user_teacher_id, s.program_id, s.year_level
+         FROM subject_offered so JOIN subject s ON s.subject_id = so.subject_id
+         WHERE so.subject_offered_id = ?",
+        [$offeredId]
+    );
+    if (!$ownerRow || !sectionOffered_userCanManage($ownerRow)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $rows = db()->fetchAll(
+        "SELECT r.request_id, r.user_student_id, r.requested_at,
+                u.first_name, u.last_name, u.student_id, u.email
+         FROM class_join_requests r
+         JOIN users u ON u.users_id = r.user_student_id
+         WHERE r.subject_offered_id = ? AND r.section_id = ? AND r.status = 'pending'
+         ORDER BY r.requested_at ASC",
+        [$offeredId, $sectionId]
+    );
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+/** POST ?action=approve-join {request_id} — enrolls the student for real, then marks the request approved. */
+function handleApproveJoin() {
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $requestId = (int)($data['request_id'] ?? 0);
+    if (!$requestId) { echo json_encode(['success' => false, 'message' => 'request_id required']); return; }
+
+    $req = db()->fetchOne(
+        "SELECT r.*, so.user_teacher_id, s.program_id, s.year_level, sec.max_students
+         FROM class_join_requests r
+         JOIN subject_offered so ON so.subject_offered_id = r.subject_offered_id
+         JOIN subject s ON s.subject_id = so.subject_id
+         JOIN section sec ON sec.section_id = r.section_id
+         WHERE r.request_id = ?",
+        [$requestId]
+    );
+    if (!$req) { echo json_encode(['success' => false, 'message' => 'Request not found']); return; }
+    if ($req['status'] !== 'pending') { echo json_encode(['success' => false, 'message' => 'This request was already decided']); return; }
+    if (!sectionOffered_userCanManage($req)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    // Guards against a race with some other enrollment path (e.g. the
+    // student was bulk-imported into the same class while their request
+    // sat pending) rather than trusting the request alone.
+    $already = db()->fetchOne(
+        "SELECT 1 FROM student_subject WHERE user_student_id = ? AND subject_offered_id = ? AND status = 'enrolled'",
+        [$req['user_student_id'], $req['subject_offered_id']]
+    );
+    if ($already) {
+        pdo()->prepare("UPDATE class_join_requests SET status = 'approved', decided_at = NOW(), decided_by = ? WHERE request_id = ?")
+            ->execute([Auth::id(), $requestId]);
+        echo json_encode(['success' => true, 'message' => 'Student was already enrolled — request marked approved']);
+        return;
+    }
+
+    if ($req['max_students'] > 0) {
+        $count = (int)(db()->fetchOne(
+            "SELECT COUNT(*) n FROM student_subject WHERE section_id = ? AND status = 'enrolled'",
+            [$req['section_id']]
+        )['n'] ?? 0);
+        if ($count >= $req['max_students']) {
+            echo json_encode(['success' => false, 'message' => 'Section is full — cannot approve this request']);
+            return;
+        }
+    }
+
+    try {
+        $pdo = pdo();
+        $pdo->beginTransaction();
+        $pdo->prepare(
+            "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
+             VALUES (?, ?, ?, 'enrolled', NOW())"
+        )->execute([$req['user_student_id'], $req['subject_offered_id'], $req['section_id']]);
+        $pdo->prepare("UPDATE class_join_requests SET status = 'approved', decided_at = NOW(), decided_by = ? WHERE request_id = ?")
+            ->execute([Auth::id(), $requestId]);
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'Student approved and enrolled']);
+    } catch (Exception $e) {
+        if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+        error_log('approve-join: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to approve']);
+    }
+}
+
+/** POST ?action=reject-join {request_id} — declines without ever touching student_subject. */
+function handleRejectJoin() {
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $requestId = (int)($data['request_id'] ?? 0);
+    if (!$requestId) { echo json_encode(['success' => false, 'message' => 'request_id required']); return; }
+
+    $req = db()->fetchOne(
+        "SELECT r.*, so.user_teacher_id, s.program_id, s.year_level
+         FROM class_join_requests r
+         JOIN subject_offered so ON so.subject_offered_id = r.subject_offered_id
+         JOIN subject s ON s.subject_id = so.subject_id
+         WHERE r.request_id = ?",
+        [$requestId]
+    );
+    if (!$req) { echo json_encode(['success' => false, 'message' => 'Request not found']); return; }
+    if (!sectionOffered_userCanManage($req)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    pdo()->prepare("UPDATE class_join_requests SET status = 'rejected', decided_at = NOW(), decided_by = ? WHERE request_id = ?")
+        ->execute([Auth::id(), $requestId]);
+    echo json_encode(['success' => true, 'message' => 'Request rejected']);
 }
 
 // Ownership check for section-level update/delete: admin always allowed; dean must own

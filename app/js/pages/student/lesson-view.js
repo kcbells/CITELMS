@@ -402,6 +402,13 @@ function bindLessonNav(container, hooks = {}) {
 }
 
 function bindLessonAiHighlight(container, lesson, lessonId) {
+    // This runs fresh on every lesson render, but nothing was ever calling
+    // container._aliHighlightCleanup on the PREVIOUS render's container (it
+    // was only ever assigned, never invoked) — so each lesson view left
+    // behind a permanent, never-removed document-level mousedown listener.
+    // Tearing down the last one here, before adding a new one, keeps
+    // exactly one alive at a time regardless of who's supposed to call it.
+    window.__aliHighlightCleanup?.();
     let toolbar = null;
 
     const hideToolbar = () => {
@@ -465,7 +472,7 @@ function bindLessonAiHighlight(container, lesson, lessonId) {
     });
 
     document.addEventListener('mousedown', onDocDown);
-    container._aliHighlightCleanup = () => {
+    window.__aliHighlightCleanup = () => {
         hideToolbar();
         document.removeEventListener('mousedown', onDocDown);
     };

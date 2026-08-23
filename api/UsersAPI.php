@@ -480,7 +480,7 @@ function handleUpdate() {
     $id   = (int)($data['users_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'User ID required']); return; }
 
-    $current = db()->fetchOne("SELECT role, status, campus_id, program_id FROM users WHERE users_id = ?", [$id]);
+    $current = db()->fetchOne("SELECT role, status, campus_id, program_id, department_id FROM users WHERE users_id = ?", [$id]);
     if (!$current) { echo json_encode(['success' => false, 'message' => 'User not found']); return; }
 
     $isAdmin = Auth::hasRole('admin');
@@ -506,18 +506,43 @@ function handleUpdate() {
     $suffix     = Sanitize::text($data['suffix']      ?? '') ?: null;
     $email      = trim($data['email']       ?? '');
     $password     = $data['password']               ?? '';
-    $departmentId = ($data['department_id'] ?? null) ?: null;
+    // The Edit Faculty modal has no Department field of its own (only
+    // Program) — a request that omits department_id entirely means "leave
+    // it as-is", not "clear it". Only an explicit key in the payload should
+    // actually change it; the auto-derive from program_id further below
+    // still overrides this whenever a program IS selected.
+    $departmentId = array_key_exists('department_id', $data) ? ($data['department_id'] ?: null) : $current['department_id'];
     $programId    = ($data['program_id']    ?? null) ?: null;
     $employeeId   = trim($data['employee_id']        ?? '');
     $studentId    = trim($data['student_id']         ?? '');
     $yearLevel    = ($data['year_level']    ?? null) ?: null;
+    // Program Head supervision scope (e.g. "handles 1st-2nd year of BSN") —
+    // mirrors handleCreate()'s parsing so editing a faculty member can set
+    // this the same way creating one does.
+    $yearLevelFrom = ($data['year_level_from'] ?? null) !== null && $data['year_level_from'] !== ''
+        ? max(1, min(4, (int)$data['year_level_from'])) : null;
+    $yearLevelTo   = ($data['year_level_to']   ?? null) !== null && $data['year_level_to']   !== ''
+        ? max(1, min(4, (int)$data['year_level_to']))   : null;
 
     $allowedRoles    = ['admin', 'dean', 'program_head', 'instructor', 'student'];
     $allowedStatuses = ['active', 'inactive', 'suspended'];
-    $role     = $isAdmin && in_array($data['role']   ?? '', $allowedRoles)    ? $data['role']   : $current['role'];
     $status   = in_array($data['status'] ?? '', $allowedStatuses) ? $data['status'] : $current['status'];
     $campusId = $isAdmin ? ($data['campus_id'] ?: $current['campus_id']) : $current['campus_id'];
-    if (!$isAdmin) $role = $current['role'];
+
+    if ($isAdmin) {
+        $role = in_array($data['role'] ?? '', $allowedRoles) ? $data['role'] : $current['role'];
+    } elseif ($isDean && in_array($current['role'], ['instructor', 'program_head'], true)) {
+        // A dean may reassign a faculty member between Instructor and Program
+        // Head (the same two roles they're allowed to create), but never
+        // promote/demote into admin, dean, or student — matches handleCreate().
+        $requestedRole = $data['role'] ?? $current['role'];
+        $role = in_array($requestedRole, ['instructor', 'program_head'], true) ? $requestedRole : $current['role'];
+    } else {
+        $role = $current['role'];
+    }
+    // Year-level scope only means anything for a program head — drop it if
+    // this edit is (re)assigning the account to plain instructor.
+    if ($role !== 'program_head') { $yearLevelFrom = null; $yearLevelTo = null; }
 
     if (!$firstName || !$lastName || !$email) {
         echo json_encode(['success' => false, 'message' => 'First name, last name, and email are required']); return;
@@ -549,15 +574,17 @@ function handleUpdate() {
         if ($password) {
             pdo()->prepare(
                 "UPDATE users SET first_name=?, middle_name=?, last_name=?, suffix=?, email=?, password=?, role=?, status=?,
-                 campus_id=?, department_id=?, program_id=?, employee_id=?, student_id=?, year_level=?, updated_at=NOW()
+                 campus_id=?, department_id=?, program_id=?, employee_id=?, student_id=?, year_level=?,
+                 year_level_from=?, year_level_to=?, updated_at=NOW()
                  WHERE users_id=?"
-            )->execute([$firstName, $middleName, $lastName, $suffix, $email, password_hash($password, PASSWORD_DEFAULT), $role, $status, $campusId, $departmentId, $programId, $employeeId ?: null, $studentId ?: null, $yearLevel, $id]);
+            )->execute([$firstName, $middleName, $lastName, $suffix, $email, password_hash($password, PASSWORD_DEFAULT), $role, $status, $campusId, $departmentId, $programId, $employeeId ?: null, $studentId ?: null, $yearLevel, $yearLevelFrom, $yearLevelTo, $id]);
         } else {
             pdo()->prepare(
                 "UPDATE users SET first_name=?, middle_name=?, last_name=?, suffix=?, email=?, role=?, status=?,
-                 campus_id=?, department_id=?, program_id=?, employee_id=?, student_id=?, year_level=?, updated_at=NOW()
+                 campus_id=?, department_id=?, program_id=?, employee_id=?, student_id=?, year_level=?,
+                 year_level_from=?, year_level_to=?, updated_at=NOW()
                  WHERE users_id=?"
-            )->execute([$firstName, $middleName, $lastName, $suffix, $email, $role, $status, $campusId, $departmentId, $programId, $employeeId ?: null, $studentId ?: null, $yearLevel, $id]);
+            )->execute([$firstName, $middleName, $lastName, $suffix, $email, $role, $status, $campusId, $departmentId, $programId, $employeeId ?: null, $studentId ?: null, $yearLevel, $yearLevelFrom, $yearLevelTo, $id]);
         }
 
         // Save multi-campus scope if this is a dean update by admin

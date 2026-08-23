@@ -5,7 +5,7 @@
 import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { subjectColor } from '../../utils/subject-colors.js';
-import { curriculumTableCss, esc } from '../../utils/classroom-ui.js';
+import { curriculumTableCss, esc, rotateOverlayHtml, rotateOverlayCss } from '../../utils/classroom-ui.js';
 import {
     buildPeriodGroups, isItemMissing, gradingPeriodTableCss,
 } from '../../utils/gradebook-periods.js';
@@ -29,10 +29,10 @@ export async function render(container) {
     });
 }
 
-export async function mountInstructorGradebook(host, { subjectId } = {}) {
+export async function mountInstructorGradebook(host, { subjectId, sectionId } = {}) {
     await renderGradebook(host, {
         subjectId: subjectId || '',
-        sectionId: '',
+        sectionId: sectionId || '',
         embedded: true,
         lockSubject: !!subjectId,
     });
@@ -229,7 +229,8 @@ async function renderClassRecord(container, opts) {
     }
 
     container.innerHTML = `
-        <style>${pageCss()}${curriculumTableCss()}</style>
+        <style>${pageCss()}${curriculumTableCss()}${rotateOverlayCss()}</style>
+        ${rotateOverlayHtml()}
         <div class="gb-page ${opts.embedded ? 'gb-embedded' : ''}">
             <button type="button" class="gb-back" id="gb-back-sections">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>

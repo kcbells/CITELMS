@@ -102,7 +102,7 @@ const menus = {
             { icon: 'calendar', text: 'Calendar', page: 'calendar', permission: null },
         ]},
         { items: [
-            { icon: 'users', text: 'Oversee Sections', page: 'sections', permission: null },
+            { icon: 'chart', text: 'Reports', page: 'sections', permission: null },
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: null },
@@ -322,12 +322,23 @@ export function renderSidebar(container) {
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
     });
 
-    // Dropdown group toggles
+    // Dropdown group toggles — one open at a time: opening a group closes
+    // any other currently-open group (e.g. a role with both "My Subjects"
+    // and "Curriculum" dropdowns can't have both expanded at once).
     container.querySelectorAll('.nav-group-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const group = btn.closest('.nav-group');
-            const open = group.classList.toggle('open');
-            localStorage.setItem(groupOpenKey(role, btn.dataset.groupKey), open ? '1' : '0');
+            const wasOpen = group.classList.contains('open');
+
+            container.querySelectorAll('.nav-group.open').forEach(other => {
+                if (other === group) return;
+                other.classList.remove('open');
+                const otherKey = other.querySelector('.nav-group-toggle')?.dataset.groupKey;
+                if (otherKey) localStorage.setItem(groupOpenKey(role, otherKey), '0');
+            });
+
+            group.classList.toggle('open', !wasOpen);
+            localStorage.setItem(groupOpenKey(role, btn.dataset.groupKey), !wasOpen ? '1' : '0');
         });
     });
 

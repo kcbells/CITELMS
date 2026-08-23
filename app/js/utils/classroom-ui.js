@@ -154,6 +154,56 @@ export function curriculumTableCss() {
     `;
 }
 
+/**
+ * "Rotate your device" prompt for the wide gradebook-style tables — real
+ * OS-level orientation locking (screen.orientation.lock()) only works
+ * inside fullscreen/installed-PWA contexts on the browsers that support it
+ * at all (not Safari on iOS, ever), so it can't reliably force landscape
+ * from a normal browser tab. This instead detects the actual problem case —
+ * a narrow AND portrait viewport, i.e. a phone held upright — via a CSS
+ * media query alone (re-evaluates automatically on rotation, no JS/resize
+ * listener needed) and covers the page with a full-screen prompt until the
+ * phone is turned sideways, rather than leaving the table squeezed down to
+ * one barely-usable column the way a phone-portrait grid otherwise renders.
+ * Include rotateOverlayHtml() once near the top of a page's root render,
+ * and rotateOverlayCss() inside that page's own <style> block.
+ */
+export function rotateOverlayHtml() {
+    return `
+    <div class="gb-rotate-overlay" role="alert">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5" class="gb-rotate-icon">
+            <rect x="6" y="2" width="12" height="20" rx="2"/>
+            <line x1="6" y1="18" x2="18" y2="18"/>
+        </svg>
+        <p class="gb-rotate-title">Rotate your device</p>
+        <p class="gb-rotate-sub">This gradebook has a lot of columns — turn your phone sideways (landscape) for the full table.</p>
+    </div>`;
+}
+
+export function rotateOverlayCss() {
+    return `
+        .gb-rotate-overlay {
+            display:none; position:fixed; inset:0; z-index:99999;
+            background:${G}; color:#fff;
+            flex-direction:column; align-items:center; justify-content:center;
+            gap:14px; text-align:center; padding:32px;
+        }
+        .gb-rotate-icon { animation:gbRotateSway 1.6s ease-in-out infinite; }
+        @keyframes gbRotateSway {
+            0%, 100% { transform:rotate(0deg); }
+            50%      { transform:rotate(-90deg); }
+        }
+        .gb-rotate-title { font-size:18px; font-weight:800; margin:0; }
+        .gb-rotate-sub   { font-size:13px; color:#D7E9DC; max-width:280px; margin:0; line-height:1.5; }
+        @media (max-width:900px) and (orientation:portrait) {
+            .gb-rotate-overlay { display:flex; }
+        }
+        @media (prefers-reduced-motion:reduce) {
+            .gb-rotate-icon { animation:none; }
+        }
+    `;
+}
+
 /** Single private comment row with optional reply action */
 export function renderPrivateCommentRow(c, { instructorMode = false, canReply = true } = {}) {
     const date = c.created_at
@@ -445,11 +495,15 @@ export function classroomCss(accent) {
         .sc-crumb-sep { color:#9CA3AF; font-weight:400; }
         .sc-crumb-current { color:#111; }
 
+        /* Solid per-subject accent color (the same one used on the My
+           Classes cards), not a gradient — the caller's inline background
+           style on the element carries that. Border stays flat black
+           regardless of which accent color lands on a given subject. */
         .sc-hero {
             display:flex; align-items:flex-end; justify-content:space-between;
             gap:24px; flex-wrap:wrap;
             padding:28px 32px; border-radius:16px; margin-bottom:20px;
-            background:#fff !important; color:#111; box-shadow:none; border:2px solid #111;
+            color:#fff; box-shadow:none; border:2px solid #111;
             position:relative; overflow:hidden;
         }
         .sc-hero::before {
@@ -460,16 +514,16 @@ export function classroomCss(accent) {
         .sc-hero-main { position:relative; flex:1; min-width:240px; }
         .sc-hero-code {
             font-size:12px; font-weight:700; font-family:ui-monospace, monospace;
-            color:#6B7280; letter-spacing:.5px;
+            color:rgba(255,255,255,.85); letter-spacing:.5px;
         }
         .sc-hero-title {
             font-size:26px; font-weight:800; margin:8px 0 14px;
-            letter-spacing:-.4px; line-height:1.25; color:#111;
+            letter-spacing:-.4px; line-height:1.25; color:#fff;
         }
         .sc-hero-chips { display:flex; flex-wrap:wrap; gap:8px; }
         .sc-chip {
-            font-size:12px; font-weight:600; color:#111;
-            background:#fff; border:1px solid #111;
+            font-size:12px; font-weight:600; color:#fff;
+            background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.6);
             padding:5px 12px; border-radius:20px;
         }
         .sc-hero-stats {
@@ -493,11 +547,17 @@ export function classroomCss(accent) {
             position:sticky; top:88px;
         }
         .sc-rail-card {
-            background:#fff; border:none;
+            background:#fff; border:2px solid #111;
             border-radius:14px; padding:20px;
             box-shadow:none;
         }
         .sc-rail-icon { font-size:28px; margin-bottom:8px; }
+        /* Icon sits beside "Online Class" instead of stacked above it — the
+           icon's own bottom margin only made sense for the old stacked
+           layout, so it's zeroed here now that it shares a row. */
+        .sc-rail-video-hdr { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+        .sc-rail-video-hdr .sc-rail-icon { margin-bottom:0; color:${G}; }
+        .sc-rail-video-hdr .sc-rail-title { margin:0; }
         .sc-rail-title { font-size:15px; font-weight:700; color:#111; margin:0 0 6px; }
         .sc-rail-desc { font-size:12px; color:#6B7280; line-height:1.45; margin:0 0 14px; }
         .sc-rail-muted { font-size:12px; color:#9CA3AF; margin:0; }
@@ -870,9 +930,9 @@ export function classroomCss(accent) {
 
         .gc-cw-stream { display:flex; flex-direction:column; gap:16px; padding-top:4px; }
         .gc-post-card {
-            border:1px solid #E5E7EB; border-radius:12px; background:#fff;
+            border:2px solid #111; border-radius:12px; background:#fff;
             overflow:visible;
-            box-shadow:0 2px 8px rgba(0,0,0,.06), 0 0 0 3px rgba(255,255,255,.8), 0 0 0 4px #E9ECEF;
+            box-shadow:none;
         }
         .gc-post-card__row {
             display:flex; align-items:stretch; position:relative;

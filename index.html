@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -432,6 +432,11 @@
         .modal-hdr { background:#fff; border-radius:16px 16px 0 0; padding:20px 28px; display:flex; align-items:center; gap:14px; flex-shrink:0; border-bottom:1.5px solid var(--gray-200); }
         .modal-hdr img { width:44px; height:44px; object-fit:contain; flex-shrink:0; }
         .modal-hdr-text { flex:1; }
+        /* Only present on the sign-in card's header (see modal-hdr-text
+           above) — the college's brand panel text was hidden entirely when
+           the sign-in layout became a centered card over the full photo
+           background, so this is what still names the platform on-screen. */
+        .si-kicker { display:block; font-size:10.5px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--gold-dark); margin-bottom:3px; }
         .modal-hdr-text h2 { font-size:17px; font-weight:800; color:var(--green); line-height:1.2; margin-bottom:2px; }
         .modal-hdr-text p  { font-size:12px; color:var(--gray-500); }
         .modal-close { width:34px; height:34px; border-radius:50%; border:none; background:var(--gray-100); color:var(--gray-600); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s; font-family:inherit; }
@@ -508,15 +513,22 @@
         .si-pw-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:#9ca3af; padding:4px; display:flex; transition:color .15s; }
         .si-pw-toggle:hover { color:var(--green); }
         .si-hint { font-size:12px; color:#6b7280; margin-top:5px; }
-        .si-options { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
-        .si-remember { display:flex; align-items:center; gap:8px; font-size:13px; color:#6b7280; cursor:pointer; }
-        .si-remember input { width:15px; height:15px; accent-color:var(--green); cursor:pointer; }
-        .si-forgot { font-size:13px; font-weight:600; color:var(--green); text-decoration:none; }
+        /* flex-wrap + nowrap-per-item so "Remember me" and "Forgot password?"
+           drop to their own line as whole phrases on a narrow screen instead
+           of each individually breaking mid-word (the actual mobile bug). */
+        .si-options { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px 16px; margin-bottom:18px; }
+        .si-remember { display:flex; align-items:center; gap:8px; font-size:13px; color:#6b7280; cursor:pointer; white-space:nowrap; }
+        .si-remember input { width:15px; height:15px; accent-color:var(--green); cursor:pointer; flex-shrink:0; }
+        .si-forgot { font-size:13px; font-weight:600; color:var(--green); text-decoration:none; white-space:nowrap; }
         .si-forgot:hover { text-decoration:underline; }
         .si-captcha-row { display:flex; gap:10px; align-items:center; }
-        .si-captcha-box { flex:1; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 16px;
+        .si-captcha-box { flex:1; min-width:0; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:10px 12px;
             display:flex; align-items:center; justify-content:center; gap:8px;
-            font-family:'Courier New',monospace; font-size:22px; font-weight:700; color:var(--green); letter-spacing:2px; user-select:none; }
+            font-family:'Courier New',monospace; font-size:22px; font-weight:700; color:var(--green); letter-spacing:2px; user-select:none; white-space:nowrap; }
+        /* The equation text itself must never wrap — it has real spaces
+           ("4  +  3  ="), so a narrow flex box was breaking it across two
+           lines at those spaces. */
+        #si-captcha-eq { white-space:nowrap; }
         .si-captcha-inline-input {
             width:52px; min-width:0; text-align:center; font-family:'Courier New',monospace;
             font-size:22px; font-weight:700; color:var(--green);
@@ -540,58 +552,75 @@
         .fp-success-box h3 { font-size:18px; font-weight:700; color:#111827; margin:0 0 8px; }
         .fp-success-box p { font-size:14px; color:#6b7280; margin:0 0 24px; }
 
-        /* â”€â”€ SIGN-IN LANDING â”€â”€ the app now opens straight into this split-
-           screen sign-in instead of the marketing homepage. Same modal
-           element/JS as before (#signin-backdrop, openSignIn/closeSignIn) â€”
-           only the chrome is different here, via ID selectors that outrank
-           the shared .modal-backdrop rules above. */
-        #signin-backdrop.open { background:#eef1ef; backdrop-filter:none; padding:0; align-items:stretch; justify-content:stretch; }
-        #signin-backdrop .si-brand-panel {
-            position:relative; flex:1 1 42%; max-width:620px; display:flex; flex-direction:column;
-            align-items:center; justify-content:center; text-align:center; overflow:hidden; padding:48px; color:#fff;
+        /* â”€â”€ SIGN-IN LANDING â”€â”€ the app now opens straight into this
+           centered sign-in screen instead of the marketing homepage. Same
+           modal element/JS as before (#signin-backdrop, openSignIn/
+           closeSignIn) â€” only the chrome is different here, via ID
+           selectors that outrank the shared .modal-backdrop rules above.
+           Layout: the campus photo is a full-bleed background behind
+           everything, and a single white card floats centered on top of it
+           â€” one layout that already works identically at any width, so
+           mobile only needs to trim the card's own padding, not rebuild
+           the whole page. */
+        #signin-backdrop.open {
+            /* position:fixed (not relative) — this must stay pinned over the
+               whole viewport like the base .modal-backdrop rule; overriding
+               it to relative here let the page's own content (the marketing
+               footer) scroll in above it, which is the bug this fixes. */
+            position:fixed; inset:0; overflow:hidden; backdrop-filter:none; background:#0c2415;
+            padding:24px; align-items:center; justify-content:center;
         }
+        #signin-backdrop .si-brand-panel { position:absolute; inset:0; z-index:0; }
         #signin-backdrop .si-brand-bg { position:absolute; inset:0; background:#0f2e1a url('assets/images/campus-building.jpg') center/cover; }
-        #signin-backdrop .si-brand-overlay { position:absolute; inset:0; background:rgba(6,20,10,.74); }
-        #signin-backdrop .si-brand-content { position:relative; z-index:1; }
-        #signin-backdrop .si-brand-seal { width:112px; height:112px; object-fit:contain; margin:0 auto 22px; filter:drop-shadow(0 8px 24px rgba(0,0,0,.4)); }
-        #signin-backdrop .si-brand-kicker { font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--gold); margin-bottom:12px; }
-        #signin-backdrop .si-brand-college { font-size:28px; font-weight:900; line-height:1.2; margin-bottom:10px; }
-        #signin-backdrop .si-brand-tagline { font-size:12.5px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:rgba(255,255,255,.75); }
-        #signin-backdrop .si-brand-footer { position:absolute; left:0; right:0; bottom:32px; z-index:1; font-size:12px; color:rgba(255,255,255,.62); text-align:center; }
-        #signin-backdrop .si-brand-footer .si-brand-motto { font-style:italic; margin-bottom:4px; }
-        #signin-backdrop .si-form-side { flex:1 1 58%; display:flex; align-items:center; justify-content:center; padding:32px; overflow-y:auto; }
-        /* No card â€” the form sits directly on the plain background, no
-           white box/shadow/border around it. */
-        #signin-backdrop .si-form-side .reg-modal { background:transparent; box-shadow:none; border-radius:0; animation:none; }
-        #signin-backdrop .si-form-side .modal-hdr { background:transparent; border-bottom:none; border-radius:0; }
-        /* Bigger card: scale up the header, body padding and fields beyond
-           the compact modal defaults used elsewhere on the site. */
-        #signin-backdrop .si-form-side .modal-hdr { padding:48px 60px 30px; }
-        #signin-backdrop .si-form-side .modal-hdr img { width:72px; height:72px; }
-        #signin-backdrop .si-form-side .modal-hdr-text h2 { font-size:32px; }
-        #signin-backdrop .si-form-side .modal-hdr-text p { font-size:17px; }
-        #signin-backdrop .si-form-side .modal-body { padding:8px 60px 56px; }
-        #signin-backdrop .si-form-side .si-label { font-size:16px; }
-        #signin-backdrop .si-form-side .si-input { padding:19px 19px 19px 52px; font-size:18px; border-radius:12px; }
-        #signin-backdrop .si-form-side .si-icon svg { width:21px; height:21px; }
-        #signin-backdrop .si-form-side .si-icon { left:17px; }
-        #signin-backdrop .si-form-side .si-pw-toggle { right:15px; }
-        #signin-backdrop .si-form-side .si-pw-toggle svg { width:21px; height:21px; }
-        #signin-backdrop .si-form-side .si-hint { font-size:14px; }
-        #signin-backdrop .si-form-side .si-group { margin-bottom:26px; }
-        #signin-backdrop .si-form-side .si-remember, #signin-backdrop .si-form-side .si-forgot { font-size:15px; }
-        #signin-backdrop .si-form-side .si-captcha-box { padding:17px 22px; }
+        #signin-backdrop .si-brand-overlay { position:absolute; inset:0; background:linear-gradient(165deg, rgba(8,28,15,.62) 0%, rgba(6,20,10,.82) 100%); }
+        /* The card's own header already carries the seal + college name, so
+           the old full-panel brand text (which only had room to exist
+           alongside the form, not behind it) is dropped rather than
+           floated awkwardly over a card that would mostly cover it. */
+        #signin-backdrop .si-brand-content, #signin-backdrop .si-brand-footer { display:none; }
+
+        #signin-backdrop .si-form-side { position:relative; z-index:1; width:100%; max-width:440px; padding:0; }
+        #signin-backdrop .si-form-side .reg-modal {
+            max-width:none; background:#fff; border-radius:18px;
+            box-shadow:0 24px 64px rgba(0,0,0,.35); animation:modalSlide .25s cubic-bezier(.4,0,.2,1);
+        }
+        #signin-backdrop .si-form-side .modal-hdr { border-bottom:none; padding:32px 32px 8px; }
+        #signin-backdrop .si-form-side .modal-hdr img { width:48px; height:48px; }
+        #signin-backdrop .si-form-side .modal-hdr-text h2 { font-size:21px; }
+        #signin-backdrop .si-form-side .modal-hdr-text p { font-size:13px; }
+        #signin-backdrop .si-form-side .modal-body { padding:8px 32px 32px; max-height:calc(100vh - 130px); }
+        #signin-backdrop .si-form-side .si-label { font-size:13px; }
+        #signin-backdrop .si-form-side .si-input { padding:12px 14px 12px 40px; font-size:14.5px; border-radius:9px; }
+        #signin-backdrop .si-form-side .si-icon { left:13px; }
+        #signin-backdrop .si-form-side .si-pw-toggle { right:11px; }
+        #signin-backdrop .si-form-side .si-hint { font-size:12px; }
+        #signin-backdrop .si-form-side .si-group { margin-bottom:16px; }
+        #signin-backdrop .si-form-side .si-captcha-box { padding:11px 14px; }
         #signin-backdrop .si-form-side .si-captcha-box span,
-        #signin-backdrop .si-form-side .si-captcha-inline-input { font-size:28px; }
-        #signin-backdrop .si-form-side .si-captcha-reload { width:58px; height:58px; }
-        #signin-backdrop .si-form-side .si-captcha-reload svg { width:20px; height:20px; }
-        #signin-backdrop .si-form-side .si-btn { padding:20px; font-size:19px; border-radius:12px; }
+        #signin-backdrop .si-form-side .si-captcha-inline-input { font-size:20px; }
+        #signin-backdrop .si-form-side .si-captcha-reload { width:44px; height:44px; }
+        #signin-backdrop .si-form-side .si-btn { padding:14px; font-size:15px; border-radius:9px; }
         #signin-backdrop .modal-close { display:none; }
-        @media (max-width: 860px) {
-            #signin-backdrop.open { flex-direction:column; overflow-y:auto; }
-            #signin-backdrop .si-brand-panel { flex:0 0 auto; min-height:200px; padding:32px; }
-            #signin-backdrop .si-brand-footer { display:none; }
-            #signin-backdrop .si-form-side { padding:24px 20px 40px; }
+
+        /* â”€â”€ MOBILE SIGN-IN â”€â”€ same centered-card-over-photo layout â€” it
+           already scales down naturally, so mobile only needs its own
+           tighter card padding/backdrop inset and a smaller captcha row on
+           very narrow phones, not a rebuilt layout. */
+        @media (max-width: 520px) {
+            #signin-backdrop.open { padding:16px; }
+            #signin-backdrop .si-form-side .modal-hdr { padding:26px 22px 6px; }
+            #signin-backdrop .si-form-side .modal-hdr img { width:40px; height:40px; }
+            #signin-backdrop .si-form-side .modal-hdr-text h2 { font-size:19px; }
+            #signin-backdrop .si-form-side .modal-body { padding:6px 22px 26px; }
+        }
+        @media (max-width: 360px) {
+            /* Extra-narrow phones: trim the captcha row a little further so
+               the equation, answer box, and refresh button all still fit
+               comfortably on one line. */
+            #signin-backdrop .si-form-side .si-captcha-box { padding:9px 8px; gap:5px; }
+            #signin-backdrop .si-form-side .si-captcha-box span,
+            #signin-backdrop .si-form-side .si-captcha-inline-input { font-size:16px; }
+            #signin-backdrop .si-form-side .si-captcha-inline-input { width:36px; }
         }
 
         /* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -1254,6 +1283,7 @@
         <div class="modal-hdr">
             <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
+                <span class="si-kicker">Learning Management System</span>
                 <h2>Welcome Back!</h2>
                 <p>Sign in to continue to your dashboard</p>
             </div>
@@ -2340,143 +2370,7 @@
     loadFooterCampuses();
 </script>
 
-<!-- VISITOR ASSISTANT -->
-<style>
-    /* Chatbot button */
-    #vc-btn { position:fixed; bottom:28px; right:28px; width:56px; height:56px; border-radius:50%; background:var(--green); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 24px rgba(27,77,46,.4); z-index:9000; transition:transform .2s,box-shadow .2s; }
-    #vc-btn:hover { transform:scale(1.08); box-shadow:0 10px 32px rgba(27,77,46,.5); }
-    #vc-btn .vc-close { display:none; }
-    #vc-btn.open .vc-open { display:none; }
-    #vc-btn.open .vc-close { display:block; }
-    /* Chatbot panel */
-    #vc-panel { position:fixed; bottom:98px; right:28px; width:340px; background:#fff; border-radius:20px; box-shadow:0 16px 56px rgba(0,0,0,.18); z-index:8999; display:none; flex-direction:column; overflow:hidden; border:1.5px solid #e2ece7; max-height:500px; }
-    #vc-panel.open { display:flex; animation:vcIn .25s ease; }
-    @keyframes vcIn { from { opacity:0; transform:translateY(12px) scale(.97); } to { opacity:1; transform:none; } }
-    .vc-head { background:var(--green); padding:18px 20px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
-    .vc-head-avatar { width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
-    .vc-head-info { flex:1; }
-    .vc-head-info h5 { color:#fff; font-size:14px; font-weight:800; margin:0 0 2px; }
-    .vc-head-info span { color:rgba(255,255,255,.7); font-size:11px; }
-    .vc-online { width:8px; height:8px; border-radius:50%; background:#4ade80; flex-shrink:0; box-shadow:0 0 0 2px rgba(74,222,128,.3); }
-    .vc-msgs { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
-    .vc-msg { max-width:82%; padding:10px 14px; border-radius:14px; font-size:13px; line-height:1.55; }
-    .vc-msg.bot { background:#f0f4f2; color:#1f2937; border-bottom-left-radius:4px; align-self:flex-start; }
-    .vc-msg.user { background:var(--green); color:#fff; border-bottom-right-radius:4px; align-self:flex-end; }
-        .vc-chips { padding:0 16px 10px; display:flex; flex-wrap:wrap; gap:6px; flex-shrink:0; max-height:130px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#c5d5ce transparent; }
-    .vc-chip { background:#f0f4f2; border:1.5px solid #d4e2d9; border-radius:20px; padding:6px 12px; font-size:12px; font-weight:600; color:var(--green-dark); cursor:pointer; transition:background .15s,border-color .15s; }
-    .vc-chip:hover { background:var(--green); color:#fff; border-color:var(--green); }
-    .vc-input-row { display:flex; gap:8px; padding:12px 14px; border-top:1px solid #e8f0ec; flex-shrink:0; }
-    #vc-input { flex:1; border:1.5px solid #d4e2d9; border-radius:10px; padding:9px 13px; font-size:13px; outline:none; transition:border-color .15s; font-family:inherit; }
-    #vc-input:focus { border-color:var(--green); }
-    #vc-send { width:36px; height:36px; border-radius:10px; background:var(--green); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s; flex-shrink:0; }
-    #vc-send:hover { background:var(--green-dark); }
-</style>
-
-<!-- Chat button -->
-<button id="vc-btn" aria-label="Ask a question" onclick="vcToggle()">
-    <svg class="vc-open" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <svg class="vc-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-</button>
-
-<!-- Chat panel -->
-<div id="vc-panel">
-    <div class="vc-head">
-        <div class="vc-head-avatar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
-        <div class="vc-head-info">
-            <h5>Phinmaed Learning Assistant</h5>
-            <span>Ask me anything about Phinmaed Learning</span>
-        </div>
-        <div class="vc-online"></div>
-    </div>
-    <div class="vc-msgs" id="vc-msgs">
-        <div class="vc-msg bot">Hello! I am the Phinmaed Learning Assistant. How can I help you today?</div>
-    </div>
-    <div class="vc-chips" id="vc-chips">
-        <button class="vc-chip" onclick="vcAsk('How can I create an account?')">How can I create an account?</button>
-        <button class="vc-chip" onclick="vcAsk('What are the requirements to register?')">What are the requirements to register?</button>
-        <button class="vc-chip" onclick="vcAsk('Is Phinmaed Learning free to use?')">Is Phinmaed Learning free?</button>
-        <button class="vc-chip" onclick="vcAsk('What devices can I use Phinmaed Learning on?')">What devices can I use?</button>
-        <button class="vc-chip" onclick="vcAsk('How do I enroll in a class?')">How do I enroll in a class?</button>
-        <button class="vc-chip" onclick="vcAsk('I forgot my password, what do I do?')">Forgot my password</button>
-        <button class="vc-chip" onclick="vcAsk('How do I view my grades?')">How do I view my grades?</button>
-        <button class="vc-chip" onclick="vcAsk('How do I contact my instructor?')">How do I contact my instructor?</button>
-        <button class="vc-chip" onclick="vcAsk('What colleges and programs are offered?')">What colleges are offered?</button>
-        <button class="vc-chip" onclick="vcAsk('Where are the COC campuses located?')">Campus locations?</button>
-        <button class="vc-chip" onclick="vcAsk('Who can use Phinmaed Learning?')">Who can use Phinmaed Learning?</button>
-        <button class="vc-chip" onclick="vcAsk('How do I contact COC for help?')">Contact COC support</button>
-    </div>
-
-    <div class="vc-input-row">
-        <input id="vc-input" type="text" placeholder="Type your question..." onkeydown="if(event.key==='Enter')vcSend()">
-        <button id="vc-send" onclick="vcSend()" aria-label="Send">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-    </div>
-</div>
-
 <script>
-    const vcQA = [
-        { k:['how can i create','create an account','sign up','register','registration','how to join','new account','make an account'], a:'Click the "Register Here" button at the top of this page. You will see two options:\n\n• Already enrolled at COC — fill in your student ID and details to activate your LMS account.\n• New applicant / not yet enrolled — submit a pre-registration form and our admissions team will contact you within 2 to 3 business days.' },
-        { k:['requirement','requirements','need to register','what do i need','documents','needed'], a:'To register on Phinmaed Learning you will need:\n\n• A valid COC student ID number (for enrolled students)\n• Your full name, email address, and date of birth\n• Your campus and college/program\n\nNew applicants only need a valid email address and basic personal information to pre-register.' },
-        { k:['free','cost','pay','fee','subscription','price'], a:'Yes, Phinmaed Learning is completely free for all enrolled PHINMA COC students, instructors, and staff. There are no subscription fees or hidden charges. Access is provided as part of your enrollment at COC.' },
-        { k:['device','devices','mobile','phone','tablet','laptop','computer','app','browser','android','ios'], a:'Phinmaed Learning is fully web-based and works on any device with a modern browser — laptop, desktop, smartphone, or tablet. No app download is required. Simply visit the LMS website and log in from any device.' },
-        { k:['enroll','enrollment','how do i enroll','join class','section','subject','class'], a:'To enroll in a class:\n\n1. Log in to your Phinmaed Learning account\n2. Go to the Enrollment section\n3. Select your semester, program, and section\n4. Enter the enrollment code given by your instructor or registrar\n5. Submit your enrollment\n\nContact your registrar if you do not have your enrollment code.' },
-        { k:['forgot','password','reset password','cannot login','lost password','change password'], a:'If you forgot your password:\n\n1. Go to the Phinmaed Learning Sign In page\n2. Click "Forgot Password"\n3. Enter your registered email address\n4. Check your email for a password reset link\n\nIf you still cannot access your account, contact your campus registrar or email info.coc@phinmaed.com.' },
-        { k:['view grades','check grades','my grades','grade','gradebook','gwa','result','scores'], a:'To view your grades:\n\n1. Log in to Phinmaed Learning\n2. Open the class where you want to check your grade\n3. Click on "Gradebook" or "My Grades"\n\nYour instructor updates grades after each quiz or activity. Contact your instructor directly if you notice any missing or incorrect grade.' },
-        { k:['contact instructor','message instructor','talk to teacher','reach instructor','communicate','messaging'], a:'Phinmaed Learning has a built-in messaging system. To contact your instructor:\n\n1. Log in and open your class\n2. Click on the "Messages" or chat icon\n3. Type your message and send\n\nYou can also see class announcements posted by your instructor in the Announcements section.' },
-        { k:['college','colleges','programs','courses','offered','bsit','bsn','architecture','engineering','education','criminology','cit','cea','coe','cahs','cma','sccj'], a:'COC has six colleges:\n\n• CIT — College of Information Technology (BSIT)\n• CEA — College of Engineering and Architecture (BS Architecture, Civil, Computer, Electrical, Mechanical Engineering)\n• COE — College of Education (BEEd, BSEd English/Filipino/Math, BECE)\n• CAHS — College of Allied Health Sciences (Medical Technology, Nursing, Pharmacy, Psychology)\n• CMA — College of Management and Accountancy (Accountancy, BSBA, Hospitality, Tourism)\n• SCCJ — School of Criminology and Criminal Justice (BS Criminology)' },
-        { k:['campus','location','where','address','carmen','iligan','puerto','cdo','cagayan'], a:'COC has three campuses:\n\n• Carmen Campus — Max Suniel St., Carmen, Cagayan de Oro 9000 · 0917-376-5105\n• Iligan Campus — Pedro Permites Rd., Brgy. Pala-o, Iligan City · 0927-120-9941\n• Puerto Campus — Purok 6, Puerto, Cagayan de Oro 9000 · 0916-131-8980' },
-        { k:['who can use','who uses','users','for students','for teachers','for faculty','for admin','roles','access'], a:'Phinmaed Learning is designed for three types of users:\n\n• Students — access lessons, take quizzes, view grades, enroll in classes, and message instructors\n• Instructors / Faculty — manage lessons, create quizzes, update grades, and communicate with students\n• Administrators / Dean — oversee enrollment, manage users, generate reports, and manage the academic system' },
-        { k:['what is','lms','learning management','platform','coc lms','about coc lms'], a:'Phinmaed Learning stands for Learning Management System. It is the official digital academic platform of PHINMA Cagayan de Oro College. It brings together everything needed for teaching and learning — online lessons, quizzes, grades, enrollment, messaging, and an AI assistant — all in one place.' },
-        { k:['quiz','assessment','exam','test','anti-cheat','timer'], a:'Phinmaed Learning supports auto-graded quizzes with countdown timers and anti-cheat measures such as tab-switch detection. Your instructor sets the quiz schedule and duration. Results are available immediately after submission.' },
-        { k:['ai','artificial intelligence','ai assistant','smart assistant'], a:'Phinmaed Learning includes an AI Learning Assistant available once you are logged in. You can ask it academic questions, get explanations on lessons, and receive personalized study guidance — anytime, anywhere.' },
-        { k:['contact','email','phone','number','reach','help','support','hotline'], a:'For assistance, contact COC through:\n\n• Email: info.coc@phinmaed.com\n• Carmen Campus: 0917-376-5105 · (088) 858-5867\n• Iligan Campus: 0927-120-9941\n• Puerto Campus: 0916-131-8980' },
-    ];
-
-    function vcToggle() {
-        const btn = document.getElementById('vc-btn');
-        const panel = document.getElementById('vc-panel');
-        btn.classList.toggle('open');
-        panel.classList.toggle('open');
-        if (panel.classList.contains('open')) document.getElementById('vc-input').focus();
-    }
-
-    function vcAsk(q) {
-        vcAddMsg(q, 'user');
-        document.getElementById('vc-chips').style.display = 'none';
-        setTimeout(() => vcRespond(q), 400);
-    }
-
-    function vcSend() {
-        const inp = document.getElementById('vc-input');
-        const q = inp.value.trim();
-        if (!q) return;
-        inp.value = '';
-        vcAddMsg(q, 'user');
-        document.getElementById('vc-chips').style.display = 'none';
-        setTimeout(() => vcRespond(q), 400);
-    }
-
-    function vcRespond(q) {
-        const lower = q.toLowerCase();
-        let answer = 'I am not sure about that. For detailed assistance, please contact us at info.coc@phinmaed.com or call your nearest COC campus.';
-        for (const item of vcQA) {
-            if (item.k.some(kw => lower.includes(kw))) { answer = item.a; break; }
-        }
-        vcAddMsg(answer, 'bot');
-    }
-
-    function vcAddMsg(text, who) {
-        const msgs = document.getElementById('vc-msgs');
-        const div = document.createElement('div');
-        div.className = 'vc-msg ' + who;
-        div.textContent = text;
-        msgs.appendChild(div);
-        msgs.scrollTop = msgs.scrollHeight;
-    }
-
     /* PWA — register here too (not just app/home.html) so offline caching
        is active from the very first visit, before the user even logs in. */
     if ('serviceWorker' in navigator) {

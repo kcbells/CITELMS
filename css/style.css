@@ -358,15 +358,27 @@ img {
 .nav-group.open > .nav-group-toggle .nav-group-caret {
     transform: rotate(180deg);
 }
+/* Smooth open/close instead of an instant display:none/flex snap — display
+   can't be transitioned, so this animates max-height + opacity instead. The
+   600px cap is generous on purpose: the "My Subjects" list fills in
+   asynchronously after the toggle click, so an exact scrollHeight measured
+   at click time would be wrong for that first open; a static cap avoids
+   needing to re-measure whenever the dynamic content changes. */
 .nav-sub {
-    display: none;
+    display: flex;
     flex-direction: column;
-    margin: 0 0 4px 20px;
+    margin: 0 0 0 20px;
     padding-left: 8px;
     border-left: 1.5px solid #e5e7eb;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height .3s cubic-bezier(.4,0,.2,1), opacity .22s ease, margin .3s ease;
 }
 .nav-group.open .nav-sub {
-    display: flex;
+    max-height: 600px;
+    opacity: 1;
+    margin: 0 0 4px 20px;
 }
 .nav-sub-dynamic {
     display: flex;

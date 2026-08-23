@@ -224,10 +224,6 @@ async function loadCurrentPage() {
         }
     });
 
-    // Update topbar title
-    const topbarTitle = document.querySelector('.page-title');
-    if (topbarTitle) topbarTitle.textContent = pageTitle;
-
     const pageKey  = `${route.role}/${route.page}`;
 
     // Confirm before leaving an in-progress quiz (sidebar / hash navigation)

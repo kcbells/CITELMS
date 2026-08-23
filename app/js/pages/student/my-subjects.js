@@ -38,12 +38,14 @@ export async function render(container) {
 
     container.innerHTML = `<div class="ms-loading"><div class="ms-spin"></div></div>`;
 
-    const [res, annRes] = await Promise.all([
+    const [res, annRes, pendingRes] = await Promise.all([
         Api.get('/EnrollmentAPI.php?action=my-subjects'),
         Api.get('/AnnouncementsAPI.php?action=student-list'),
+        Api.get('/EnrollmentAPI.php?action=my-pending'),
     ]);
 
     const allSubjects = res.success ? res.data : [];
+    const pendingJoins = pendingRes.success ? (pendingRes.data || []) : [];
     const activeSubjects   = allSubjects.filter(s => s.offering_status !== 'archived');
     const archivedSubjects = allSubjects.filter(s => s.offering_status === 'archived');
     const subjects = view === 'archived' ? archivedSubjects : activeSubjects;
@@ -72,6 +74,7 @@ export async function render(container) {
         <style>${styles()}</style>
         <div class="ms-page" id="ms-page-root">
             ${buildShell(activeSubjects.length, archivedSubjects.length, view)}
+            ${view === 'active' && pendingJoins.length > 0 ? renderPendingBanner(pendingJoins) : ''}
             <div id="ms-panel-subjects">
         ${subjects.length === 0 ? (view === 'archived' ? emptyArchivedHtml : emptyActiveHtml) : `
                 <div class="ms-grid" id="ms-grid">
@@ -93,9 +96,54 @@ export async function render(container) {
     refreshHandler = () => render(container);
     window.addEventListener('student-subjects-refresh', refreshHandler);
 
+    bindPendingBanner(container);
+
     if (subjects.length === 0) return;
 
     bindCardMenus(container);
+}
+
+/* ── Pending join requests — waiting on instructor approval ────── */
+
+function renderPendingBanner(pendingJoins) {
+    return `
+    <div class="ms-pending-banner">
+        <div class="ms-pending-hdr">
+            ${icon('clock', inl)}
+            <span>Waiting for instructor approval (${pendingJoins.length})</span>
+        </div>
+        <div class="ms-pending-list">
+            ${pendingJoins.map(p => `
+                <div class="ms-pending-row" data-pending-id="${p.request_id}">
+                    <div>
+                        <strong>${esc(p.subject_code)}</strong> — ${esc(p.subject_name)}
+                        <span class="ms-pending-sub">${esc(p.section_name)}</span>
+                    </div>
+                    <button type="button" class="ms-pending-cancel" data-cancel-pending="${p.request_id}">Cancel</button>
+                </div>
+            `).join('')}
+        </div>
+    </div>`;
+}
+
+function bindPendingBanner(container) {
+    container.querySelectorAll('[data-cancel-pending]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const requestId = parseInt(btn.dataset.cancelPending, 10);
+            const ok = await notify.confirm('Cancel this join request? You can request to join again later if you change your mind.', { confirmText: 'Cancel Request' });
+            if (!ok) return;
+            const res = await Api.post('/EnrollmentAPI.php?action=cancel-pending', { request_id: requestId });
+            if (res.success) {
+                container.querySelector(`[data-pending-id="${requestId}"]`)?.remove();
+                const remaining = container.querySelectorAll('[data-pending-id]').length;
+                if (remaining === 0) container.querySelector('.ms-pending-banner')?.remove();
+                else container.querySelector('.ms-pending-hdr span').textContent = `Waiting for instructor approval (${remaining})`;
+                notify.success('Join request cancelled');
+            } else {
+                notify.error(res.message || 'Failed to cancel request');
+            }
+        });
+    });
 }
 
 /* ── Card kebab menu: Unenroll ────────────────────────────────── */
@@ -260,6 +308,18 @@ function styles() {
         .ms-tab-icon { display:flex; align-items:center; }
         .ms-tab.active .ms-tab-icon svg { stroke:${G}; }
 
+
+        .ms-pending-banner { background:#FFFBEB; border:1px solid #FDE68A; border-radius:14px; padding:14px 18px; margin-bottom:20px; }
+        .ms-pending-hdr { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#92400E; margin-bottom:10px; }
+        .ms-pending-list { display:flex; flex-direction:column; gap:8px; }
+        .ms-pending-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
+            background:#fff; border:1px solid #FDE68A; border-radius:10px; padding:10px 14px; }
+        .ms-pending-row strong { color:#111; font-size:13px; }
+        .ms-pending-row > div { font-size:13px; color:#374151; }
+        .ms-pending-sub { display:block; font-size:11.5px; color:#9CA3AF; margin-top:2px; }
+        .ms-pending-cancel { background:#fff; color:#B45309; border:1px solid #FDE68A; padding:6px 12px;
+            border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; flex-shrink:0; }
+        .ms-pending-cancel:hover { background:#FEF3C7; }
 
         .ms-grid {
             display:grid;

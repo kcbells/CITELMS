@@ -6,7 +6,7 @@
 import { Api } from '../../api.js';
 import { subjectColor } from '../../utils/subject-colors.js';
 import { icon } from '../../utils/icons.js';
-import { curriculumTableCss } from '../../utils/classroom-ui.js';
+import { curriculumTableCss, rotateOverlayHtml, rotateOverlayCss } from '../../utils/classroom-ui.js';
 import { gradingPeriodTableCss } from '../../utils/gradebook-periods.js';
 import {
     rubricToPercent, socGrade, letsPracticeGrade, projectOverallGrade, checkinAverage,
@@ -366,7 +366,8 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
     function renderShell() {
         const schedule = [section.schedule, section.room].filter(Boolean).join(' · ');
         host.innerHTML = `
-        <style>${css()}${curriculumTableCss()}${gradingPeriodTableCss()}${tableCss()}</style>
+        <style>${css()}${curriculumTableCss()}${gradingPeriodTableCss()}${tableCss()}${rotateOverlayCss()}</style>
+        ${rotateOverlayHtml()}
         <div class="gb-record-head">
             <div class="gb-record-titlerow">
                 <div>

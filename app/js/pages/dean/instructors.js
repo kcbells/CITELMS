@@ -45,13 +45,15 @@ export async function render(container) {
             .di-filters input { min-width:260px; }
             .di-filters select { min-width:180px; }
 
-            .di-table-wrap { background:#fff; border:1px solid #E5E7EB; border-radius:14px; overflow:hidden; }
+            .di-table-wrap { background:#fff; border:2px solid #111; border-radius:14px; overflow:hidden; }
             .di-table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
-            .di-table th { background:#F9FAFB; color:#374151; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:12px 16px; border-bottom:1px solid #E5E7EB; text-align:left; }
+            .di-table th { background:#F9FAFB; color:#374151; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:12px 16px; border-bottom:2px solid #111; border-right:1px solid #111; text-align:left; }
+            .di-table th:last-child { border-right:none; }
             .di-table tbody tr { border-bottom:1px solid #F3F4F6; transition:background .15s; }
             .di-table tbody tr:last-child { border-bottom:none; }
             .di-table tbody tr:hover { background:#F9FAFB; }
-            .di-table td { padding:12px 16px; vertical-align:middle; font-size:13px; color:#374151; }
+            .di-table td { padding:12px 16px; vertical-align:middle; font-size:13px; color:#374151; border-right:1px solid #E5E7EB; }
+            .di-table td:last-child { border-right:none; }
 
             .di-user { display:flex; align-items:center; gap:12px; }
             .di-user-clickable { cursor:pointer; border-radius:8px; padding:4px 6px; margin:-4px -6px; transition:background .15s; }
@@ -197,7 +199,7 @@ export async function render(container) {
             <select id="di-filter-status">
                 <option value="">All Status</option>
                 <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="inactive">Not Active</option>
             </select>
         </div>
 
@@ -492,7 +494,11 @@ export async function render(container) {
     }
 
     function openEditModal(inst) {
-        const roleLabel = inst.role === 'program_head' ? 'Program Head' : 'Instructor';
+        let selectedRole = inst.role === 'program_head' ? 'program_head' : 'instructor';
+        const checkedYears = new Set();
+        if (inst.year_level_from && inst.year_level_to) {
+            for (let y = inst.year_level_from; y <= inst.year_level_to; y++) checkedYears.add(y);
+        }
         const progOptions = programsList.map(p =>
             `<option value="${p.program_id}" ${String(p.program_id) === String(inst.program_id) ? 'selected' : ''}>${esc(p.program_code)} — ${esc(p.program_name)}</option>`
         ).join('');
@@ -512,9 +518,17 @@ export async function render(container) {
                 <div class="di-modal-body">
                     <div class="di-alert" id="die-modal-msg"></div>
 
-                    <div class="di-form-group">
-                        <label class="di-form-label">Role</label>
-                        <input type="text" class="di-form-input no-icon di-readonly-field" value="${esc(roleLabel)}" readonly tabindex="-1">
+                    <div class="fac-role-row" id="die-role-row">
+                        <button type="button" class="fac-role-pill ${selectedRole === 'instructor' ? 'active' : ''}" data-role="instructor">Instructor</button>
+                        <button type="button" class="fac-role-pill ${selectedRole === 'program_head' ? 'active' : ''}" data-role="program_head">Program Head</button>
+                    </div>
+
+                    <div class="fac-scope-box" id="die-scope-box" style="display:${selectedRole === 'program_head' ? 'block' : 'none'};">
+                        <div class="fac-scope-lbl">Handles Year Level(s)</div>
+                        <div class="fac-scope-hint">e.g. 1st &amp; 2nd year of this program</div>
+                        <div class="fac-year-row" id="die-year-row">
+                            ${[1,2,3,4].map(y => `<button type="button" class="fac-year-pill ${checkedYears.has(y) ? 'checked' : ''}" data-year="${y}">${y}${ordinal(y)}</button>`).join('')}
+                        </div>
                     </div>
 
                     <div class="di-form-grid">
@@ -588,6 +602,19 @@ export async function render(container) {
             hide.style.display = visible ? 'none' : '';
         });
 
+        // Role pills — same instructor / program head toggle as Add Faculty
+        const dieScopeBox = overlay.querySelector('#die-scope-box');
+        overlay.querySelectorAll('#die-role-row .fac-role-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                selectedRole = pill.dataset.role;
+                overlay.querySelectorAll('#die-role-row .fac-role-pill').forEach(p => p.classList.toggle('active', p === pill));
+                dieScopeBox.style.display = selectedRole === 'program_head' ? 'block' : 'none';
+            });
+        });
+        overlay.querySelectorAll('#die-year-row .fac-year-pill').forEach(pill => {
+            pill.addEventListener('click', () => pill.classList.toggle('checked'));
+        });
+
         const closeModal = () => overlay.remove();
         overlay.querySelector('#die-close-modal').addEventListener('click', closeModal);
         overlay.querySelector('#die-cancel-modal').addEventListener('click', closeModal);
@@ -614,6 +641,10 @@ export async function render(container) {
                 if (e) { msg.textContent = e; msg.className = 'di-alert di-alert-error'; return; }
             }
 
+            const checkedYears = [...overlay.querySelectorAll('#die-year-row .fac-year-pill.checked')].map(p => parseInt(p.dataset.year));
+            const yearFrom = checkedYears.length ? Math.min(...checkedYears) : null;
+            const yearTo   = checkedYears.length ? Math.max(...checkedYears) : null;
+
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving…';
 
@@ -625,6 +656,9 @@ export async function render(container) {
                 employee_id:   empid,
                 program_id:    prog || null,
                 status:        inst.status,
+                role:            selectedRole,
+                year_level_from: selectedRole === 'program_head' ? yearFrom : null,
+                year_level_to:   selectedRole === 'program_head' ? yearTo   : null,
                 ...(pw ? { password: pw } : {}),
             });
 
@@ -809,6 +843,10 @@ function renderRows(list) {
         const deptLabel = i.department_name
             ? `<div style="font-size:11px;color:#737373;margin-top:2px;">${esc(i.department_name)}</div>` : '';
         const isActive  = i.status === 'active';
+        // "Active" here means the account has actually been used — they've
+        // logged in and set their own password — not the enable/disable
+        // status field (that's what the Activate/Deactivate button controls).
+        const hasLoggedIn = !(i.never_logged_in == 1 || i.on_temp_password == 1);
         const roleLabel = i.role === 'program_head' ? 'Program Head' : 'Instructor';
         return `<tr>
             <td>
@@ -823,11 +861,7 @@ function renderRows(list) {
             <td><span class="di-empid">${esc(i.employee_id || '—')}</span></td>
             <td><span class="di-role-badge ${i.role}">${esc(roleLabel)}</span></td>
             <td>${progLabel}${deptLabel}</td>
-            <td><span class="badge badge-${i.status}">${i.status}</span> ${
-                (i.never_logged_in == 1 || i.on_temp_password == 1)
-                    ? `<span class="badge badge-pending" title="Hasn't logged in and set a real password yet">Not activated</span>`
-                    : `<span class="badge badge-active" title="Has logged in and set their own password">Active</span>`
-            }</td>
+            <td><span class="badge ${hasLoggedIn ? 'badge-active' : 'badge-inactive'}" title="${hasLoggedIn ? 'Has logged in and set their own password' : 'Hasn’t logged in and set a real password yet'}">${hasLoggedIn ? 'Active' : 'Not Active'}</span></td>
             <td>
                 <div class="di-actions">
                     <button class="btn-row btn-row-edit di-edit-btn" data-id="${i.users_id}">Edit</button>

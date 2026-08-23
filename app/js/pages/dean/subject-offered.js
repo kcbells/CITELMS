@@ -150,13 +150,13 @@ function statusCell(subjectId, semNum) {
     // expects a status — omitting it would default to 'open' and could
     // silently reopen a subject the dean deliberately closed.
     const gradingToggle = offered ? `
-        <button type="button" class="so-grading-toggle so-grading-${offered.grading_type}"
-                data-grading-toggle="${offered.subject_offered_id}"
-                data-current-status="${esc(status)}"
-                data-current-grading="${offered.grading_type}"
-                title="${offered.grading_type === 'global' ? 'Global Gradebook — click to switch to Raw Score' : 'Raw Score — click to switch to Global Gradebook'}">
-            ${offered.grading_type === 'global' ? 'Global' : 'Raw Score'}
-        </button>` : '';
+        <label class="so-grading-toggle" title="Check for Global Gradebook, uncheck for Raw Score grading">
+            <input type="checkbox" data-grading-toggle="${offered.subject_offered_id}"
+                   data-current-status="${esc(status)}"
+                   data-current-grading="${offered.grading_type}"
+                   ${offered.grading_type === 'global' ? 'checked' : ''}>
+            Global
+        </label>` : '';
 
     return `<td class="so-status">${badge}</td><td class="so-action">${action}${offTermTag}${gradingToggle}</td>`;
 }
@@ -309,10 +309,10 @@ function renderChecklist(area, container) {
             toggleOffering(container, parseInt(btn.dataset.reopen), 'open');
         });
     });
-    area.querySelectorAll('[data-grading-toggle]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const newType = btn.dataset.currentGrading === 'global' ? 'raw_score' : 'global';
-            toggleGradingType(container, parseInt(btn.dataset.gradingToggle), btn.dataset.currentStatus, newType);
+    area.querySelectorAll('[data-grading-toggle]').forEach(box => {
+        box.addEventListener('change', () => {
+            const newType = box.checked ? 'global' : 'raw_score';
+            toggleGradingType(container, parseInt(box.dataset.gradingToggle), box.dataset.currentStatus, newType, box);
         });
     });
 }
@@ -367,13 +367,16 @@ async function toggleOffering(container, subjectOfferedId, status) {
     else notify.error(res.message || 'Failed to update subject status');
 }
 
-async function toggleGradingType(container, subjectOfferedId, currentStatus, gradingType) {
+async function toggleGradingType(container, subjectOfferedId, currentStatus, gradingType, box) {
     const label = gradingType === 'global' ? 'Global Gradebook' : 'Raw Score';
     const confirmed = await notify.confirm(
         `Switch this class to ${label} grading? This changes how grades are recorded and shown for every student already enrolled.`,
         { confirmText: 'Switch' }
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+        if (box) box.checked = !box.checked; // undo the checkbox's own state flip
+        return;
+    }
 
     const res = await Api.post('/SubjectOfferingsAPI.php?action=update', {
         subject_offered_id: subjectOfferedId,
@@ -385,6 +388,7 @@ async function toggleGradingType(container, subjectOfferedId, currentStatus, gra
         await loadSubjects(container);
     } else {
         notify.error(res.message || 'Failed to change grading type');
+        if (box) box.checked = !box.checked;
     }
 }
 
@@ -470,12 +474,10 @@ function css() { return `
 .so-btn-close { background:#FEE2E2; color:#b91c1c; }
 .so-btn-close:hover { background:#FECACA; }
 .so-offterm-tag { display:block; margin-top:3px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#b45309; cursor:help; }
-.so-grading-toggle { display:block; margin:5px auto 0; border:1px solid transparent; border-radius:6px; padding:3px 9px;
-    font-size:10px; font-weight:700; letter-spacing:.2px; cursor:pointer; white-space:nowrap; font-family:inherit; }
-.so-grading-raw_score { background:#F3F4F6; color:#4B5563; border-color:#E5E7EB; }
-.so-grading-raw_score:hover { background:#E5E7EB; }
-.so-grading-global { background:#EDE9FE; color:#6D28D9; border-color:#DDD6FE; }
-.so-grading-global:hover { background:#DDD6FE; }
+.so-grading-toggle { display:flex; align-items:center; justify-content:center; gap:5px; margin:5px auto 0;
+    font-size:10.5px; font-weight:700; letter-spacing:.2px; color:#4B5563; cursor:pointer; white-space:nowrap;
+    font-family:inherit; user-select:none; }
+.so-grading-toggle input { width:14px; height:14px; margin:0; accent-color:#6D28D9; cursor:pointer; }
 
 @media(max-width:900px) {
     .cr-summer-table { width:100%; }

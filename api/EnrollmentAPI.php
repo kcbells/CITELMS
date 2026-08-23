@@ -27,10 +27,12 @@ if (!Auth::can('enrollment.view')) {
 }
 
 switch ($action) {
-    case 'enroll':      enrollByCode();   break;
-    case 'preview':     previewCode();    break;
-    case 'my-subjects': getMySubjects();  break;
-    case 'drop':        dropSubject();    break;
+    case 'enroll':          enrollByCode();      break;
+    case 'preview':         previewCode();       break;
+    case 'my-subjects':     getMySubjects();     break;
+    case 'drop':            dropSubject();       break;
+    case 'my-pending':      getMyPendingJoins(); break;
+    case 'cancel-pending':  cancelPendingJoin(); break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -346,31 +348,77 @@ function enrollBySubjectCode($userId, $subjectCode, $sectionId) {
         return;
     }
 
+    if (hasPendingJoinRequest($userId, $match['subject_id'], $match['section_id'])) {
+        echo json_encode(['success' => false, 'message' => 'You already requested to join ' . $match['subject_code'] . ' — waiting for the instructor to approve.']);
+        return;
+    }
+
+    // Joining by QR/code no longer enrolls immediately — it creates a
+    // pending request the instructor must approve first (see
+    // handlePendingJoins/handleApproveJoin/handleRejectJoin in
+    // SectionsAPI.php). Nothing is written to student_subject here at all,
+    // so this request is invisible to every existing roster/gradebook query
+    // until an instructor actually approves it.
     try {
-        $pdo = pdo();
-        $pdo->beginTransaction();
-
-        $pdo->prepare(
-            "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
-             VALUES (?, ?, ?, 'enrolled', NOW())"
-        )->execute([$userId, $match['subject_offered_id'], $match['section_id']]);
-
-        $pdo->commit();
+        pdo()->prepare(
+            "INSERT INTO class_join_requests (user_student_id, subject_id, section_id, subject_offered_id, status, requested_at)
+             VALUES (?, ?, ?, ?, 'pending', NOW())"
+        )->execute([$userId, $match['subject_id'], $match['section_id'], $match['subject_offered_id']]);
 
         echo json_encode([
             'success' => true,
-            'message' => 'Joined ' . $match['subject_code'] . ' — ' . $match['section_name'] . '.',
-            'enrolled' => 1,
+            'message' => 'Requested to join ' . $match['subject_code'] . ' — ' . $match['section_name'] . '. Waiting for the instructor to approve.',
+            'pending' => 1,
             'section_id' => $match['section_id'],
             'subject_id' => $match['subject_id'],
         ]);
     } catch (PDOException $e) {
-        if (isset($pdo) && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        error_log('Enrollment error: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Enrollment failed. Please try again.']);
+        error_log('Join request error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Could not send join request. Please try again.']);
     }
+}
+
+/** True if this student already has an undecided request for this exact subject+section. */
+function hasPendingJoinRequest($userId, $subjectId, $sectionId): bool {
+    return (bool)db()->fetchOne(
+        "SELECT 1 FROM class_join_requests
+         WHERE user_student_id = ? AND subject_id = ? AND section_id = ? AND status = 'pending'",
+        [$userId, $subjectId, $sectionId]
+    );
+}
+
+/** GET ?action=my-pending — the student's own still-undecided join requests, so "My Subjects" can show a waiting state instead of the request silently vanishing after the one-time toast. */
+function getMyPendingJoins() {
+    $userId = Auth::id();
+    $rows = db()->fetchAll(
+        "SELECT r.request_id, r.requested_at, s.subject_code, s.subject_name, sec.section_name
+         FROM class_join_requests r
+         JOIN subject s ON s.subject_id = r.subject_id
+         JOIN section sec ON sec.section_id = r.section_id
+         WHERE r.user_student_id = ? AND r.status = 'pending'
+         ORDER BY r.requested_at DESC",
+        [$userId]
+    );
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+/** POST ?action=cancel-pending {request_id} — student withdraws their own not-yet-decided request. */
+function cancelPendingJoin() {
+    $userId = Auth::id();
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $requestId = (int)($data['request_id'] ?? 0);
+    if (!$requestId) { echo json_encode(['success' => false, 'message' => 'request_id required']); return; }
+
+    $req = db()->fetchOne(
+        "SELECT request_id FROM class_join_requests WHERE request_id = ? AND user_student_id = ? AND status = 'pending'",
+        [$requestId, $userId]
+    );
+    if (!$req) { echo json_encode(['success' => false, 'message' => 'Request not found or already decided']); return; }
+
+    // Deleted rather than marked — the student withdrew it themselves, there's
+    // nothing an instructor needs to see or act on for this one anymore.
+    pdo()->prepare("DELETE FROM class_join_requests WHERE request_id = ?")->execute([$requestId]);
+    echo json_encode(['success' => true, 'message' => 'Join request cancelled']);
 }
 
 function enrollByLegacyCode($userId, $code) {
@@ -429,35 +477,39 @@ function enrollByLegacyCode($userId, $code) {
         $pdo = pdo();
         $pdo->beginTransaction();
 
-        $enrolled = 0;
-        $skipped  = 0;
+        // Same approval gate as enrollBySubjectCode() — a request per
+        // not-yet-enrolled, not-already-pending subject in this section,
+        // nothing written to student_subject until an instructor approves.
+        $requested = 0;
+        $skipped   = 0;
 
         foreach ($subjects as $subj) {
-            if (isSubjectAlreadyEnrolled($userId, $subj['subject_id'])) {
+            if (isSubjectAlreadyEnrolled($userId, $subj['subject_id'])
+                || hasPendingJoinRequest($userId, $subj['subject_id'], $section['section_id'])) {
                 $skipped++;
                 continue;
             }
 
             $pdo->prepare(
-                "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
-                 VALUES (?, ?, ?, 'enrolled', NOW())"
-            )->execute([$userId, $subj['subject_offered_id'], $section['section_id']]);
-            $enrolled++;
+                "INSERT INTO class_join_requests (user_student_id, subject_id, section_id, subject_offered_id, status, requested_at)
+                 VALUES (?, ?, ?, ?, 'pending', NOW())"
+            )->execute([$userId, $subj['subject_id'], $section['section_id'], $subj['subject_offered_id']]);
+            $requested++;
         }
 
-        if ($enrolled === 0) {
+        if ($requested === 0) {
             $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => 'You are already enrolled in all subjects of this section.']);
+            echo json_encode(['success' => false, 'message' => 'You already have a request or enrollment for every subject in this section.']);
             return;
         }
 
         $pdo->commit();
 
         $msg = $skipped > 0
-            ? "Added {$enrolled} new subject" . ($enrolled !== 1 ? 's' : '') . ' to your enrollment.'
-            : "Enrolled in {$section['section_name']} — {$enrolled} subject" . ($enrolled !== 1 ? 's' : '') . '.';
+            ? "Requested {$requested} new subject" . ($requested !== 1 ? 's' : '') . ' — waiting for instructor approval.'
+            : "Requested to join {$section['section_name']} — {$requested} subject" . ($requested !== 1 ? 's' : '') . '. Waiting for instructor approval.';
 
-        echo json_encode(['success' => true, 'message' => $msg, 'enrolled' => $enrolled]);
+        echo json_encode(['success' => true, 'message' => $msg, 'pending' => $requested]);
     } catch (PDOException $e) {
         if ($pdo && $pdo->inTransaction()) {
             $pdo->rollBack();

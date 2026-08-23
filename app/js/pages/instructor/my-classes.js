@@ -119,20 +119,34 @@ function renderSubjectSections(container, subject) {
                     ${subject.program_code ? `<span class="mc-subj-prog">${esc(subject.program_code)}</span>` : ''}
                 </div>
                 <div class="mc-subj-hero-meta">
-                    <p>${sections.length} section${sections.length !== 1 ? 's' : ''}</p>
-                    <div class="mc-hero-actions">
-                        <button type="button" class="mc-btn-outline-dark" id="mc-add-lesson">
-                            ${icon('document', inl)} Add Lesson
-                        </button>
-                        <button type="button" class="mc-btn-outline-dark" id="mc-post-announce">
-                            ${icon('announce', inl)} Post Announcement
-                        </button>
-                        <button type="button" class="mc-btn-outline-dark" id="mc-create-quiz">
-                            ${icon('quiz', inl)} Create Quiz
-                        </button>
-                        <button type="button" class="mc-btn-primary" id="mc-add-section">
-                            ${icon('plus', inl)} Add Section
-                        </button>
+                    <div class="mc-subj-hero-meta-row">
+                        <p>${sections.length} section${sections.length !== 1 ? 's' : ''}</p>
+                        <div class="mc-fab-wrap">
+                            <div class="mc-fab-menu" id="mc-fab-menu" hidden>
+                                <button type="button" class="mc-fab-item" id="mc-add-lesson">
+                                    <span class="mc-fab-item-icon">${icon('document', inl)}</span>
+                                    <span class="mc-fab-item-label">Add Lesson</span>
+                                </button>
+                                <button type="button" class="mc-fab-item" id="mc-post-announce">
+                                    <span class="mc-fab-item-icon">${icon('announce', inl)}</span>
+                                    <span class="mc-fab-item-label">Post Announcement</span>
+                                </button>
+                                <button type="button" class="mc-fab-item" id="mc-create-quiz">
+                                    <span class="mc-fab-item-icon">${icon('quiz', inl)}</span>
+                                    <span class="mc-fab-item-label">Create Quiz</span>
+                                </button>
+                                <button type="button" class="mc-fab-item" id="mc-add-section">
+                                    <span class="mc-fab-item-icon">${icon('plus', inl)}</span>
+                                    <span class="mc-fab-item-label">Add Section</span>
+                                </button>
+                            </div>
+                            <button type="button" class="mc-fab-toggle" id="mc-fab-toggle" aria-expanded="false" aria-label="Class actions">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -150,9 +164,40 @@ function renderSubjectSections(container, subject) {
         </div>
     `;
 
-    container.querySelector('#mc-add-section')?.addEventListener('click', () => openCreateSectionModal(container, subject));
+    const fabToggle = container.querySelector('#mc-fab-toggle');
+    const fabMenu   = container.querySelector('#mc-fab-menu');
+    const closeFab  = () => {
+        if (!fabMenu || fabMenu.hidden) return;
+        fabMenu.hidden = true;
+        fabToggle?.classList.remove('open');
+        fabToggle?.setAttribute('aria-expanded', 'false');
+    };
+    fabToggle?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = !fabMenu.hidden;
+        if (isOpen) { closeFab(); return; }
+        // .mc-fab-menu is position:fixed and 0x0 — anchor its origin to the
+        // toggle button's actual on-screen center right before showing it,
+        // so the arc always radiates from the real button regardless of
+        // scroll position or where this card sits on the page.
+        const r = fabToggle.getBoundingClientRect();
+        fabMenu.style.left = `${r.left + r.width / 2}px`;
+        fabMenu.style.top = `${r.top + r.height / 2}px`;
+        fabMenu.hidden = false;
+        fabToggle.classList.add('open');
+        fabToggle.setAttribute('aria-expanded', 'true');
+    });
+    fabMenu?.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', closeFab);
+    // Fixed positioning is anchored by a one-time snapshot on open, so if
+    // the page scrolls while the menu is open that snapshot goes stale —
+    // just close it rather than let it drift away from the button.
+    window.addEventListener('scroll', closeFab, true);
+
+    container.querySelector('#mc-add-section')?.addEventListener('click', () => { closeFab(); openCreateSectionModal(container, subject); });
     container.querySelector('#mc-add-section-inline')?.addEventListener('click', () => openCreateSectionModal(container, subject));
     container.querySelector('#mc-add-lesson')?.addEventListener('click', () => {
+        closeFab();
         openLessonModal({
             presetSubjectId: subject.subject_id,
             lockSubject: true,
@@ -161,6 +206,7 @@ function renderSubjectSections(container, subject) {
         });
     });
     container.querySelector('#mc-post-announce')?.addEventListener('click', () => {
+        closeFab();
         openAnnouncementModal({
             presetSubjectId: subject.subject_id,
             lockSubject: true,
@@ -169,6 +215,7 @@ function renderSubjectSections(container, subject) {
         });
     });
     container.querySelector('#mc-create-quiz')?.addEventListener('click', () => {
+        closeFab();
         openQuizPicker(subject, sections);
     });
     container.querySelectorAll('[data-copy]').forEach(el => {
@@ -184,7 +231,7 @@ function renderSubjectSections(container, subject) {
         const url = el.dataset.qrUrl;
         if (!url) return;
         try {
-            await renderQrInto(el, url, 132);
+            await renderQrInto(el, url, 160);
         } catch (_) {
             el.innerHTML = '<span class="mc-class-code-hint">QR unavailable</span>';
         }
@@ -203,17 +250,16 @@ function renderSubjectSections(container, subject) {
         });
     });
 
-    container.querySelectorAll('[data-remove-sec]').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const ok = await showMcConfirm('Remove this subject from this section? Students enrolled here will no longer see it in this section.');
-            if (!ok) return;
-            const res = await Api.post('/SectionsAPI.php?action=remove-subject', {
-                section_subject_id: parseInt(btn.dataset.removeSec, 10)
-            });
-            if (res.success) render(container, { subject_id: subject.subject_id });
-            else showMcPopup(res.message || 'Failed to remove section.', { title: 'Error', type: 'error' });
-        });
+    // Pending-join-request counts — lazy, after the cards themselves are up,
+    // so a slow count fetch never blocks the actual class list from showing.
+    container.querySelectorAll('[data-pending-badge]').forEach(async (badge) => {
+        const [offeredId, sectionId] = (badge.dataset.pendingBadge || '').split('|');
+        if (!offeredId || !sectionId) return;
+        try {
+            const res = await Api.get(`/SectionsAPI.php?action=pending-joins&subject_offered_id=${offeredId}&section_id=${sectionId}`);
+            const n = res.success ? (res.data || []).length : 0;
+            if (n > 0) { badge.textContent = String(n); badge.hidden = false; }
+        } catch (_) { /* badge just stays hidden */ }
     });
 }
 
@@ -252,7 +298,6 @@ function subjectCard(s) {
 }
 
 function sectionCard(subject, sec) {
-    const pct = sec.max_students > 0 ? Math.round((Number(sec.student_count) / Number(sec.max_students)) * 100) : 0;
     const openUrl = `#instructor/subject?subject_id=${subject.subject_id}&section_id=${sec.section_id}`;
     const classCode = sec.enrollment_code || '';
     const joinUrl = buildStudentJoinUrlByEnrollmentCode(classCode);
@@ -279,11 +324,17 @@ function sectionCard(subject, sec) {
                 ${sec.room ? `<div>${icon('pin', inl)} ${esc(sec.room)}</div>` : ''}
                 <div>${icon('users', inl)} ${Number(sec.student_count || 0)} / ${Number(sec.max_students || 40)} students</div>
                 </div>
-            <div class="mc-sec-bar"><div class="mc-sec-fill" style="width:${pct}%"></div></div>
             <div class="mc-sec-actions">
                 <a href="${openUrl}" class="mc-btn-primary mc-btn-sm">Open Class</a>
-                <button type="button" class="mc-btn-ghost mc-btn-sm" data-manage="${sec.section_id}" data-sname="${esc(sec.section_name)}" data-subject-code="${esc(subject.subject_code)}" data-enrollment-code="${esc(classCode)}" data-offered="${sec.subject_offered_id || subject.subject_offered_id || ''}">Add Student</button>
-                <button type="button" class="mc-btn-ghost mc-btn-sm mc-btn-danger" data-remove-sec="${sec.section_subject_id}">Remove</button>
+                <button type="button" class="mc-btn-manage-people" data-manage="${sec.section_id}" data-sname="${esc(sec.section_name)}" data-subject-code="${esc(subject.subject_code)}" data-enrollment-code="${esc(classCode)}" data-offered="${sec.subject_offered_id || subject.subject_offered_id || ''}" title="Add students, approve QR/code join requests">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <line x1="19" y1="8" x2="19" y2="14"/>
+                        <line x1="16" y1="11" x2="22" y2="11"/>
+                    </svg>
+                    <span class="mc-manage-people-badge" data-pending-badge="${sec.subject_offered_id || subject.subject_offered_id || ''}|${sec.section_id}" hidden>0</span>
+                </button>
             </div>
         </article>
     `;
@@ -393,9 +444,13 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
     const { sectionId, sectionName, subjectCode, enrollmentCode, subjectOfferedId } = sectionInfo;
     const code = enrollmentCode || subjectCode || subject.subject_code || '';
     const joinUrl = enrollmentCode ? buildStudentJoinUrlByEnrollmentCode(enrollmentCode) : buildStudentJoinUrl(code, sectionId);
-    const res = await Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId);
-    const rows = res.success ? res.data : [];
     const offeredId = String(subjectOfferedId || subject.subject_offered_id || '');
+    const [res, pendingRes] = await Promise.all([
+        Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId),
+        Api.get(`/SectionsAPI.php?action=pending-joins&subject_offered_id=${offeredId}&section_id=${sectionId}`),
+    ]);
+    const rows = res.success ? res.data : [];
+    let pending = pendingRes.success ? (pendingRes.data || []) : [];
 
     const byStudent = new Map();
     for (const row of rows) {
@@ -433,11 +488,12 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
                 </div>
 
                 <div class="mc-stu-tabs">
-                    <button type="button" class="mc-stu-tab active" data-stu-tab="enrolled">Enrolled (${students.length})</button>
+                    <button type="button" class="mc-stu-tab${pending.length ? '' : ' active'}" data-stu-tab="enrolled">Enrolled (${students.length})</button>
+                    <button type="button" class="mc-stu-tab${pending.length ? ' active' : ''}" data-stu-tab="pending">Pending (${pending.length})</button>
                     <button type="button" class="mc-stu-tab" data-stu-tab="add">Add Students</button>
                 </div>
 
-                <div id="mc-stu-panel-enrolled">
+                <div id="mc-stu-panel-enrolled"${pending.length ? ' hidden' : ''}>
                     ${students.length === 0
                         ? '<p class="mc-empty-text">No students yet. Share the class code or import a list below.</p>'
                         : students.map(st => `
@@ -451,6 +507,26 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
                                 `).join('')}
                             </div>
                         `).join('')}
+                </div>
+
+                <div id="mc-stu-panel-pending"${pending.length ? '' : ' hidden'}>
+                    <p class="mc-import-hint">Students who scanned the QR code or entered the class code — nothing enrolls until you approve them here.</p>
+                    <div id="mc-pending-list">
+                        ${pending.length === 0
+                            ? '<p class="mc-empty-text">No pending join requests right now.</p>'
+                            : pending.map(p => `
+                                <div class="mc-student-row" data-pending-row="${p.request_id}">
+                                    <div>
+                                        <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
+                                        <span class="mc-student-id">${esc(p.student_id || p.email || '')}</span>
+                                    </div>
+                                    <div class="mc-pending-actions">
+                                        <button type="button" class="mc-btn-approve-sm" data-approve="${p.request_id}">Approve</button>
+                                        <button type="button" class="mc-btn-danger-sm" data-reject="${p.request_id}">Reject</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                    </div>
                 </div>
 
                 <div id="mc-stu-panel-add" hidden>
@@ -503,10 +579,49 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
         tab.addEventListener('click', () => {
             overlay.querySelectorAll('.mc-stu-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            const isAdd = tab.dataset.stuTab === 'add';
-            overlay.querySelector('#mc-stu-panel-enrolled').hidden = isAdd;
-            overlay.querySelector('#mc-stu-panel-add').hidden = !isAdd;
+            const which = tab.dataset.stuTab;
+            overlay.querySelector('#mc-stu-panel-enrolled').hidden = which !== 'enrolled';
+            overlay.querySelector('#mc-stu-panel-pending').hidden  = which !== 'pending';
+            overlay.querySelector('#mc-stu-panel-add').hidden      = which !== 'add';
         });
+    });
+
+    // Approve/Reject — decrements the tab count + card badge in place rather
+    // than reloading the whole modal, so approving several requests in a row
+    // stays snappy.
+    function updatePendingTabCount() {
+        overlay.querySelector('[data-stu-tab="pending"]').textContent = `Pending (${pending.length})`;
+        if (pending.length === 0) {
+            overlay.querySelector('#mc-pending-list').innerHTML = '<p class="mc-empty-text">No pending join requests right now.</p>';
+        }
+        const cardBadge = container.querySelector(`[data-pending-badge="${offeredId}|${sectionId}"]`);
+        if (cardBadge) {
+            if (pending.length > 0) { cardBadge.textContent = String(pending.length); cardBadge.hidden = false; }
+            else cardBadge.hidden = true;
+        }
+    }
+
+    overlay.querySelector('#mc-pending-list')?.addEventListener('click', async (e) => {
+        const approveBtn = e.target.closest('[data-approve]');
+        const rejectBtn  = e.target.closest('[data-reject]');
+        if (!approveBtn && !rejectBtn) return;
+        const btn = approveBtn || rejectBtn;
+        const requestId = parseInt(btn.dataset.approve || btn.dataset.reject, 10);
+        const action = approveBtn ? 'approve-join' : 'reject-join';
+        btn.disabled = true;
+
+        const resDecide = await Api.post(`/SectionsAPI.php?action=${action}`, { request_id: requestId });
+        if (!resDecide.success) {
+            showMcPopup(resDecide.message || 'Failed to update this request.', { title: 'Error', type: 'error' });
+            btn.disabled = false;
+            return;
+        }
+        pending = pending.filter(p => p.request_id !== requestId);
+        overlay.querySelector(`[data-pending-row="${requestId}"]`)?.remove();
+        updatePendingTabCount();
+        if (approveBtn) {
+            showMcPopup('Student approved and enrolled.', { title: 'Approved', type: 'success' });
+        }
     });
 
     const fileInput = overlay.querySelector('#mc-import-file');
@@ -786,7 +901,7 @@ function styles() {
         .mc-crumb-sep { color:#9CA3AF; font-weight:400; }
         .mc-crumb-current { color:#111; }
 
-        .mc-subj-hero { display:flex; gap:0; border:none; border-radius:14px; overflow:hidden; margin-bottom:24px;
+        .mc-subj-hero { display:flex; gap:0; border:2px solid #111; border-radius:14px; overflow:hidden; margin-bottom:24px;
             background:#fff; }
         .mc-subj-hero-band { padding:24px 28px; color:#fff; min-width:240px; position:relative; overflow:hidden; }
         .mc-subj-code { font-size:11px; font-weight:700; font-family:monospace; opacity:.9; }
@@ -794,10 +909,69 @@ function styles() {
         .mc-subj-prog { font-size:12px; opacity:.85; }
         .mc-subj-hero-meta { flex:1; padding:24px 28px; display:flex; flex-direction:column; justify-content:center; gap:12px; }
         .mc-subj-hero-meta p { margin:0; color:#6B7280; font-size:14px; }
-        .mc-hero-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-        .mc-btn-outline-dark { display:inline-flex; align-items:center; gap:6px; padding:10px 16px; background:#fff;
-            color:#374151; border:1px solid #111; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; }
-        .mc-btn-outline-dark:hover { background:#F9FAFB; }
+        /* Row pairs the "N sections" text with the + button right beside
+           it, so the button reads as "add a section here" rather than a
+           generic floating action disconnected from that count. */
+        .mc-subj-hero-meta-row { display:flex; align-items:center; gap:10px; }
+        /* Single "+" FAB replacing the old 4-button row (Add Lesson / Post
+           Announcement / Create Quiz / Add Section) — clicking it radiates
+           the four actions out in an arc around the button itself (each one
+           starts stacked at dead center, scaled to nothing, then springs
+           out to its own point on the arc) instead of a permanently-visible
+           row or a plain stacked list above it. */
+        .mc-fab-wrap { position:relative; display:inline-flex; flex-shrink:0; }
+        .mc-fab-toggle { width:32px; height:32px; border-radius:50%; border:none; background:${G}; color:#fff;
+            display:flex; align-items:center; justify-content:center; cursor:pointer;
+            box-shadow:0 3px 10px rgba(0,70,27,.3); transition:background .15s, transform .2s; position:relative; z-index:21; }
+        .mc-fab-toggle:hover { background:${G2}; }
+        .mc-fab-toggle svg { transition:transform .2s; }
+        .mc-fab-toggle.open { background:#111; }
+        .mc-fab-toggle.open svg { transform:rotate(45deg); }
+
+        /* position:fixed (not absolute) and a zero-size box whose top-left
+           corner is set via JS to the toggle button's real on-screen center
+           (see the click handler below). This is deliberate: .mc-subj-hero
+           has overflow:hidden for its rounded corners, and the arc below
+           radiates up to ~89px above the button — plain absolute
+           positioning gets silently clipped by that boundary, chopping and
+           scrambling the icons. Fixed positioning is anchored to the
+           viewport instead, so it escapes that clip entirely regardless of
+           where the button sits on the page. */
+        .mc-fab-menu { position:fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:9999; }
+        .mc-fab-menu[hidden] { display:none; }
+        .mc-fab-item { position:absolute; top:0; left:0; display:flex; flex-direction:column; align-items:center;
+            gap:5px; background:none; border:none; cursor:pointer; padding:0; pointer-events:auto;
+            opacity:0; transform:translate(-50%,-50%) scale(.3);
+            transition:transform .26s cubic-bezier(.34,1.56,.64,1), opacity .18s; }
+        /* Arc above-and-around the button — angles swept from upper-left to
+           upper-right so nothing lands underneath where the button itself
+           (or the page content below the header) would block it. Each
+           item's own final point = center + (radius * sin/cos of its own
+           angle on that arc), pre-computed since not every target browser
+           supports CSS trig functions (sin()/cos()) yet.
+           The x-gap between the two inner points (2 and 3) and between
+           each inner/outer pair (1-2, 3-4) must all exceed the label
+           chip's own width (~64px, fixed below) or adjacent labels run
+           into each other and merge into unreadable text — that was the
+           actual cause of the "Post Announce Create Qui" collision. */
+        .mc-fab-menu:not([hidden]) .mc-fab-item { opacity:1; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(1) { transform:translate(calc(-50% - 104px), calc(-50% - 28px)) scale(1); transition-delay:.02s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(2) { transform:translate(calc(-50% - 52px), calc(-50% - 96px)) scale(1); transition-delay:.06s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(3) { transform:translate(calc(-50% + 52px), calc(-50% - 96px)) scale(1); transition-delay:.10s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(4) { transform:translate(calc(-50% + 104px), calc(-50% - 28px)) scale(1); transition-delay:.14s; }
+        .mc-fab-item-icon { width:40px; height:40px; border-radius:50%; background:#fff; border:1px solid #111;
+            display:flex; align-items:center; justify-content:center; color:${G};
+            box-shadow:0 3px 10px rgba(0,0,0,.25); transition:background .15s, transform .15s; }
+        .mc-fab-item:hover .mc-fab-item-icon { background:${GL}; transform:scale(1.08); }
+        /* Fixed width + wrapping (not nowrap) keeps every chip the same
+           compact footprint regardless of label length, so the spacing
+           above is guaranteed enough no matter what these buttons get
+           renamed to later. */
+        .mc-fab-item-label { font-size:9.5px; font-weight:700; color:#111; text-align:center; line-height:1.2;
+            width:64px; white-space:normal; text-shadow:0 1px 3px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
+        @media(prefers-reduced-motion:reduce) {
+            .mc-fab-item, .mc-fab-toggle svg, .mc-fab-toggle { transition:none; }
+        }
 
         .mc-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding:14px 16px;
             background:#F3F4F6; border:none; border-radius:12px; }
@@ -831,22 +1005,22 @@ function styles() {
         .mc-archive-divider::before,.mc-archive-divider::after { content:''; flex:1; height:1px; background:${BORDER}; }
         .mc-archive-divider-label { font-size:12px; font-weight:700; color:#6B7280; white-space:nowrap; }
 
-        .mc-sec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; }
-        .mc-sec-card { border:1px solid #111; border-radius:14px; padding:18px; background:#fff;
+        .mc-sec-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; }
+        .mc-sec-card { border:1px solid #111; border-radius:10px; padding:9px; background:#fff;
             box-shadow:none; transition:background .15s; }
         .mc-sec-card:hover { background:#F9FAFB; }
-        .mc-sec-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px; }
-        .mc-sec-name { font-size:17px; font-weight:700; color:#111; margin:0 0 4px; }
-        .mc-class-code-box { margin-top:8px; }
-        .mc-class-code-label { display:block; font-size:10px; font-weight:700; text-transform:uppercase;
-            letter-spacing:.5px; color:#6B7280; margin-bottom:4px; }
-        .mc-class-code-hint { display:block; font-size:11px; color:#9CA3AF; margin-top:4px; }
-        .mc-qr-box { margin-top:8px; text-align:center; }
+        .mc-sec-head { display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:6px; }
+        .mc-sec-name { font-size:13px; font-weight:700; color:#111; margin:0 0 2px; }
+        .mc-class-code-box { margin-top:4px; }
+        .mc-class-code-label { display:block; font-size:8px; font-weight:700; text-transform:uppercase;
+            letter-spacing:.3px; color:#6B7280; margin-bottom:2px; }
+        .mc-class-code-hint { display:block; font-size:9px; color:#9CA3AF; margin-top:2px; }
+        .mc-qr-box { margin-top:4px; text-align:center; }
         .mc-qr-box canvas,
-        .mc-qr-box img.enr-qr-canvas { border-radius:8px; border:1px solid #e5e7eb; }
-        .mc-enroll-code { font-family:monospace; font-size:13px; font-weight:800; color:${G};
-            background:#fff; padding:6px 12px; border-radius:8px; border:1px dashed #111;
-            cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+        .mc-qr-box img.enr-qr-canvas { border-radius:6px; border:1px solid #e5e7eb; width:120px; height:120px; }
+        .mc-enroll-code { font-family:monospace; font-size:10px; font-weight:800; color:${G};
+            background:#fff; padding:3px 7px; border-radius:5px; border:1px dashed #111;
+            cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
         .mc-enroll-code.lg { font-size:18px; padding:10px 16px; letter-spacing:1px; }
         .mc-enroll-code:hover { background:#F9FAFB; }
         .mc-modal-sub { font-size:12px; color:#6B7280; margin:4px 0 0; }
@@ -879,23 +1053,44 @@ function styles() {
         .mc-preview-table td:first-child { font-weight:700; color:${G}; white-space:nowrap; }
         .mc-preview-warn { font-size:12px; color:#B45309; margin:8px 0 0; }
         .mc-modal-students { max-width:640px; }
-        .mc-sec-badge { font-size:10px; font-weight:700; text-transform:uppercase; padding:4px 8px; border-radius:6px;
+        .mc-sec-badge { font-size:8px; font-weight:700; text-transform:uppercase; padding:2px 6px; border-radius:4px;
             background:${GL}; color:${G}; }
-        .mc-sec-meta { font-size:13px; color:#6B7280; display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
-        .mc-sec-meta div { display:flex; align-items:center; gap:6px; }
-        .mc-sec-bar { height:5px; background:#f0f0f0; border-radius:3px; overflow:hidden; margin-bottom:14px; }
-        .mc-sec-fill { height:100%; background:${G}; }
-        .mc-sec-actions { display:flex; flex-wrap:wrap; gap:8px; }
+        .mc-sec-meta { font-size:10px; color:#6B7280; display:flex; flex-direction:column; gap:3px; margin-bottom:6px; }
+        .mc-sec-meta div { display:flex; align-items:center; gap:4px; }
+        .mc-sec-actions { display:flex; flex-wrap:wrap; gap:5px; }
 
         .mc-btn-primary { background:${G}; color:#fff; border:none; padding:10px 18px; border-radius:10px;
             font-size:13px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
         .mc-btn-primary:hover { background:${G2}; }
-        .mc-btn-sm { padding:8px 14px; font-size:12px; }
+        .mc-btn-sm { padding:5px 9px; font-size:10px; }
         .mc-btn-ghost { background:#fff; color:#374151; border:1px solid ${BORDER}; padding:8px 14px; border-radius:10px;
             font-size:12px; font-weight:600; cursor:pointer; }
         .mc-btn-danger { color:#B91C1C; border-color:#FECACA; }
         .mc-btn-danger-sm { font-size:11px; font-weight:700; color:#B91C1C; background:#FEE2E2; border:none;
             padding:6px 10px; border-radius:6px; cursor:pointer; }
+        .mc-btn-approve-sm { font-size:11px; font-weight:700; color:${G}; background:${GL}; border:none;
+            padding:6px 10px; border-radius:6px; cursor:pointer; }
+        .mc-pending-actions { display:flex; gap:6px; }
+
+        /* Card action icon — replaces the old separate "Add Student" text
+           button + "Remove" button: one icon opens the modal where both
+           adding a student AND approving/rejecting QR-code join requests
+           happen (see openManageStudentsModal()'s Pending tab). The badge
+           only appears once a pending-count fetch finds requests waiting —
+           see the [data-pending-badge] handler in renderSubjectSections(). */
+        .mc-btn-manage-people { position:relative; display:inline-flex; align-items:center; justify-content:center;
+            width:34px; height:34px; border-radius:10px; border:1px solid ${BORDER}; background:#fff;
+            color:#374151; cursor:pointer; flex-shrink:0; }
+        .mc-btn-manage-people:hover { background:#F9FAFB; border-color:${G}; color:${G}; }
+        .mc-manage-people-badge { position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; padding:0 4px;
+            border-radius:9px; background:#DC2626; color:#fff; font-size:10px; font-weight:800;
+            display:flex; align-items:center; justify-content:center; line-height:1; }
+        /* display:flex above has the same specificity as the browser's own
+           [hidden]{display:none} default and loads after it, so it was
+           silently winning — the badge showed "0" on every card regardless
+           of the hidden attribute JS sets when there's nothing pending.
+           This re-asserts hidden wins. */
+        .mc-manage-people-badge[hidden] { display:none; }
 
         .mc-empty-state, .mc-empty-inline { text-align:center; padding:48px 24px; border:2px dashed ${BORDER};
             border-radius:16px; background:#FAFAFA; }
@@ -965,6 +1160,21 @@ function styles() {
             .mc-subj-hero { flex-direction:column; }
             .mc-field-row { grid-template-columns:1fr; }
             .mc-hero { padding:22px 20px; }
+        }
+
+        /* Narrow/mobile — the section card grid collapses to one column
+           here, so the aggressive desktop-density spacing (needed there to
+           fit many cards per row) just reads as cramped with nothing else
+           to compete with for space. Give the card room back at this width. */
+        @media(max-width:480px) {
+            .mc-sec-grid { grid-template-columns:1fr; gap:14px; }
+            .mc-sec-card { padding:16px; }
+            .mc-sec-name { font-size:16px; }
+            .mc-qr-box canvas,
+            .mc-qr-box img.enr-qr-canvas { width:150px; height:150px; }
+            .mc-enroll-code { font-size:13px; padding:6px 12px; }
+            .mc-sec-meta { font-size:12px; gap:5px; }
+            .mc-btn-manage-people { width:40px; height:40px; }
         }
     `;
 }

@@ -107,6 +107,21 @@ export async function render(container, params) {
         return;
     }
 
+    // `subjectFromClasses` (DashboardAPI's per-subject summary) reports
+    // section_name/schedule/room as a GROUP_CONCAT of every section under
+    // this subject — correct for a "My Classes" card that has no single
+    // section selected, but wrong here once a specific section IS selected
+    // (effectiveSectionId): without this override the breadcrumb and info
+    // chips showed every section's code strung together instead of just
+    // the one the user actually clicked into. activeSection is always the
+    // one true source for a single selected section's own details.
+    if (activeSection) {
+        subject.section_name = activeSection.section_name || '';
+        subject.schedule = activeSection.schedule || '';
+        subject.room = activeSection.room || '';
+        subject.student_count = activeSection.student_count ?? subject.student_count;
+    }
+
     const classroom = classRes.success ? (classRes.data || {}) : {};
     const classroomTeacher = classroom.teacher || {};
     const allLessonsForSubject = (lessonsRes.success ? lessonsRes.data : []).filter(l => String(l.subject_id) === String(subjectId));
@@ -277,7 +292,11 @@ export async function render(container, params) {
 
         if (state.tab === 'gradebook' && !state.selectedWork) {
             const host = container.querySelector('#sc-gradebook-host');
-            if (host) mountInstructorGradebook(host, { subjectId });
+            // Pass the section already selected on this page through, so the
+            // Gradebook tab jumps straight to that section's class record
+            // instead of showing the full pick-a-section list again — the
+            // user already picked their section via the breadcrumb/card.
+            if (host) mountInstructorGradebook(host, { subjectId, sectionId: effectiveSectionId });
         }
 
         if (state.tab === 'integrity' && !state.selectedWork) {
@@ -446,8 +465,10 @@ export async function render(container, params) {
         return `
             <aside class="sc-rail" id="sc-rail">
                 <div class="sc-rail-card sc-rail-video">
-                    <div class="sc-rail-icon">${icon('video', { size: 22 })}</div>
-                    <h3 class="sc-rail-title">Online Class</h3>
+                    <div class="sc-rail-video-hdr">
+                        <div class="sc-rail-icon">${icon('video', { size: 22 })}</div>
+                        <h3 class="sc-rail-title">Online Class</h3>
+                    </div>
                     <p class="sc-rail-desc">Start the live class — you join instantly as host with full controls.</p>
                     <div class="sc-rail-live">
                         <span class="sc-live-dot"></span> No login required · LMS hosted
@@ -2424,7 +2445,7 @@ function instructorExtraCss() {
         }
         .sc-cw-aside { position:sticky; top:16px; }
         .sc-class-code-card {
-            background:#fff; border:1px solid #DADCE0; border-radius:12px;
+            background:#fff; border:2px solid #111; border-radius:12px;
             padding:18px 16px; text-align:center;
         }
         .sc-class-code-card--empty { padding:20px 16px; }
@@ -2456,6 +2477,7 @@ function instructorExtraCss() {
         .sc-class-qr-wrap {
             display:flex; justify-content:center; margin-bottom:14px;
             padding:8px; background:#FAFAFA; border-radius:10px;
+            border:2px solid #111;
         }
         .sc-class-qr-wrap canvas,
         .sc-class-qr-wrap img.enr-qr-canvas { display:block; border-radius:6px; }
