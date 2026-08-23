@@ -412,9 +412,13 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
             </div>
         </div>`;
 
-    if (!students.length && !allItems.length) {
-        return `${headHtml}${emptyBox('No students or assessments yet for this section.')}`;
-    }
+    // Previously this whole view got replaced by a plain "no students or
+    // assessments" message whenever a section had zero of both — but the
+    // class record itself (header, stats, and an empty-but-structured
+    // table) should stay visible regardless, not disappear just because no
+    // one has enrolled or no quiz/lesson has been published yet.
+    // renderTableHeaders() and the empty `students` map below already
+    // degrade gracefully to a placeholder "—" column / zero rows.
 
     const { periodRow, itemRow } = renderTableHeaders(allItems);
 
@@ -482,7 +486,7 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
                         <tr>${periodRow}</tr>
                         <tr>${itemRow}</tr>
                     </thead>
-                    <tbody>${rows}</tbody>
+                    <tbody>${rows || `<tr><td colspan="${3 + Math.max(allItems.length, 1) + 2}" class="gc-cur-empty">No students enrolled in this section yet.</td></tr>`}</tbody>
                     ${allItems.length ? `
                     <tfoot>
                         <tr class="gb-record-avg-row">

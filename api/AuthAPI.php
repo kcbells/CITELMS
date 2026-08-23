@@ -117,6 +117,14 @@ switch ($action) {
         handleVerifyForgotOtp();
         break;
 
+    case 'tutorial-status':
+        handleTutorialStatus();
+        break;
+
+    case 'mark-tutorial-seen':
+        handleMarkTutorialSeen();
+        break;
+
     default:
         jsonResponse(false, 'Invalid action', null, 400);
 }
@@ -1407,4 +1415,53 @@ function logActivity($userId, $activityType, $description) {
     } catch (Exception $e) {
         error_log('Activity log error: ' . $e->getMessage());
     }
+}
+
+/**
+ * Migration guard for the onboarding tour's "seen it" flag — same
+ * check-then-ALTER pattern used elsewhere in this codebase (see
+ * UsersAPI.php's ensureNameColumns()) rather than a separate migration
+ * script, so older installs pick it up automatically on first use.
+ */
+function ensureTutorialColumn(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $cols = array_column(pdo()->query("SHOW COLUMNS FROM users")->fetchAll(\PDO::FETCH_ASSOC), 'Field');
+        if (!in_array('tutorial_seen', $cols)) {
+            pdo()->exec("ALTER TABLE users ADD COLUMN tutorial_seen TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    } catch (\Exception $e) {
+        error_log('ensureTutorialColumn: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Whether the logged-in user has completed (or skipped) the first-login
+ * guided tour. Stored in the database (not localStorage) so it follows the
+ * account across devices/browsers instead of re-showing on a new one.
+ */
+function handleTutorialStatus() {
+    if (!Auth::check()) {
+        jsonResponse(false, 'Unauthorized', null, 401);
+    }
+    ensureTutorialColumn();
+    $row = db()->fetchOne("SELECT tutorial_seen FROM users WHERE users_id = ?", [Auth::id()]);
+    jsonResponse(true, 'ok', [
+        'tutorial_seen' => !empty($row['tutorial_seen']),
+    ]);
+}
+
+/** Marks the tour as seen — called when the user finishes it OR skips it. */
+function handleMarkTutorialSeen() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(false, 'Method not allowed', null, 405);
+    }
+    if (!Auth::check()) {
+        jsonResponse(false, 'Unauthorized', null, 401);
+    }
+    ensureTutorialColumn();
+    db()->execute("UPDATE users SET tutorial_seen = 1 WHERE users_id = ?", [Auth::id()]);
+    jsonResponse(true, 'Tutorial marked as seen');
 }

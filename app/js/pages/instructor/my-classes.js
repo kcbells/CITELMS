@@ -194,6 +194,27 @@ function renderSubjectSections(container, subject) {
     // just close it rather than let it drift away from the button.
     window.addEventListener('scroll', closeFab, true);
 
+    // Item labels are hidden by default (icon-only) and only reveal on
+    // hover/focus — but touch devices have no real :hover, so a tap would
+    // otherwise never show the name before the click already fires. This
+    // briefly flags the label visible on touch, same technique used for
+    // Content Bank's icon-only section buttons. mc-fab-dim on the menu also
+    // fades every OTHER item out while one is touched (desktop hover gets
+    // the same effect for free via the plain :hover CSS rule — see above),
+    // so the touched one stands alone instead of sitting shoulder-to-shoulder
+    // with three other icons.
+    fabMenu?.querySelectorAll('.mc-fab-item').forEach(item => {
+        item.addEventListener('touchstart', () => {
+            fabMenu.querySelectorAll('.mc-fab-item.mc-tip-show').forEach(el => el.classList.remove('mc-tip-show'));
+            item.classList.add('mc-tip-show');
+            fabMenu.classList.add('mc-fab-dim');
+            setTimeout(() => {
+                item.classList.remove('mc-tip-show');
+                fabMenu.classList.remove('mc-fab-dim');
+            }, 1200);
+        }, { passive: true });
+    });
+
     container.querySelector('#mc-add-section')?.addEventListener('click', () => { closeFab(); openCreateSectionModal(container, subject); });
     container.querySelector('#mc-add-section-inline')?.addEventListener('click', () => openCreateSectionModal(container, subject));
     container.querySelector('#mc-add-lesson')?.addEventListener('click', () => {
@@ -939,8 +960,14 @@ function styles() {
            where the button sits on the page. */
         .mc-fab-menu { position:fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:9999; }
         .mc-fab-menu[hidden] { display:none; }
-        .mc-fab-item { position:absolute; top:0; left:0; display:flex; flex-direction:column; align-items:center;
-            gap:5px; background:none; border:none; cursor:pointer; padding:0; pointer-events:auto;
+        /* Label goes ABOVE the icon (column-reverse), not to its side — the
+           two top-arc items (Post Announcement, Create Quiz) sit only 64px
+           apart, and a side-positioned nowrap label was wider than that gap,
+           so "Post Announcement" rendered hidden directly behind the next
+           icon over. Stacking vertically instead never competes with a
+           horizontal neighbor's space the same way. */
+        .mc-fab-item { position:absolute; top:0; left:0; display:flex; flex-direction:column-reverse; align-items:center;
+            gap:6px; background:none; border:none; cursor:pointer; padding:0; pointer-events:auto;
             opacity:0; transform:translate(-50%,-50%) scale(.3);
             transition:transform .26s cubic-bezier(.34,1.56,.64,1), opacity .18s; }
         /* Arc above-and-around the button — angles swept from upper-left to
@@ -949,26 +976,47 @@ function styles() {
            item's own final point = center + (radius * sin/cos of its own
            angle on that arc), pre-computed since not every target browser
            supports CSS trig functions (sin()/cos()) yet.
-           The x-gap between the two inner points (2 and 3) and between
-           each inner/outer pair (1-2, 3-4) must all exceed the label
-           chip's own width (~64px, fixed below) or adjacent labels run
-           into each other and merge into unreadable text — that was the
-           actual cause of the "Post Announce Create Qui" collision. */
+           This used to need a much wider spread so the always-visible label
+           chips wouldn't run into each other — now that labels are
+           icon-only-by-default (hidden until hover/focus/tap), only the
+           40px icon circles themselves need clearance, so the arc pulls in
+           much tighter around the button. */
         .mc-fab-menu:not([hidden]) .mc-fab-item { opacity:1; }
-        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(1) { transform:translate(calc(-50% - 104px), calc(-50% - 28px)) scale(1); transition-delay:.02s; }
-        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(2) { transform:translate(calc(-50% - 52px), calc(-50% - 96px)) scale(1); transition-delay:.06s; }
-        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(3) { transform:translate(calc(-50% + 52px), calc(-50% - 96px)) scale(1); transition-delay:.10s; }
-        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(4) { transform:translate(calc(-50% + 104px), calc(-50% - 28px)) scale(1); transition-delay:.14s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(1) { transform:translate(calc(-50% - 62px), calc(-50% - 20px)) scale(1); transition-delay:.02s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(2) { transform:translate(calc(-50% - 32px), calc(-50% - 58px)) scale(1); transition-delay:.06s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(3) { transform:translate(calc(-50% + 32px), calc(-50% - 58px)) scale(1); transition-delay:.10s; }
+        .mc-fab-menu:not([hidden]) .mc-fab-item:nth-child(4) { transform:translate(calc(-50% + 62px), calc(-50% - 20px)) scale(1); transition-delay:.14s; }
         .mc-fab-item-icon { width:40px; height:40px; border-radius:50%; background:#fff; border:1px solid #111;
             display:flex; align-items:center; justify-content:center; color:${G};
             box-shadow:0 3px 10px rgba(0,0,0,.25); transition:background .15s, transform .15s; }
         .mc-fab-item:hover .mc-fab-item-icon { background:${GL}; transform:scale(1.08); }
-        /* Fixed width + wrapping (not nowrap) keeps every chip the same
-           compact footprint regardless of label length, so the spacing
-           above is guaranteed enough no matter what these buttons get
-           renamed to later. */
-        .mc-fab-item-label { font-size:9.5px; font-weight:700; color:#111; text-align:center; line-height:1.2;
-            width:64px; white-space:normal; text-shadow:0 1px 3px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7); }
+        /* Icon-only by default — the name shows as plain text above the
+           icon (no background box), only on hover/keyboard-focus, or
+           briefly on tap (mc-tip-show, toggled in JS below) since touch
+           devices have no real :hover. A white text-shadow halo keeps it
+           legible against whatever's behind it instead of a solid tag. A
+           fixed width + wrapping (not nowrap) keeps every label's
+           footprint compact and consistent, which is what keeps it clear
+           of the neighboring item. */
+        .mc-fab-item-label {
+            font-size:9.5px; font-weight:700; color:#111; line-height:1.2; text-align:center;
+            width:60px; white-space:normal;
+            text-shadow:0 1px 3px rgba(255,255,255,.9), 0 0 6px rgba(255,255,255,.7);
+            opacity:0; pointer-events:none; transition:opacity .15s;
+        }
+        .mc-fab-item:hover .mc-fab-item-label,
+        .mc-fab-item:focus-visible .mc-fab-item-label,
+        .mc-fab-item.mc-tip-show .mc-fab-item-label { opacity:1; }
+        /* Touching/hovering one item fades the rest of the menu out, so the
+           one you're actually on stands alone instead of competing with
+           three other icons right next to it. Desktop hover needs no JS —
+           :hover bubbles to .mc-fab-menu itself, so ":not(:hover)" already
+           picks out exactly the other items. Touch has no real hover, so
+           mc-fab-dim/mc-tip-show (toggled in JS below) does the same job. */
+        .mc-fab-menu:hover .mc-fab-item:not(:hover),
+        .mc-fab-menu.mc-fab-dim .mc-fab-item:not(.mc-tip-show) {
+            opacity:.15;
+        }
         @media(prefers-reduced-motion:reduce) {
             .mc-fab-item, .mc-fab-toggle svg, .mc-fab-toggle { transition:none; }
         }

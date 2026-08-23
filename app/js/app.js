@@ -10,6 +10,7 @@ import { renderTopbar } from './components/topbar.js';
 import { mountStudentEnrollFab, unmountStudentEnrollFab, openJoinPanel, openJoinPanelWithSubject } from './components/student-enroll-fab.js';
 import { mountFloatingMessenger, unmountFloatingMessenger, openFloatingChat } from './components/floating-messenger.js';
 import { mountFloatingAssistant, unmountFloatingAssistant } from './components/floating-assistant.js';
+import { maybeStartTour } from './components/onboarding-tour.js';
 import {
     isQuizProctored,
     clearQuizProctoring,
@@ -398,6 +399,11 @@ async function boot() {
 
     // Listen for hash changes (navigation)
     window.addEventListener('hashchange', loadCurrentPage);
+
+    // First-ever login only (checked server-side, see AuthAPI's
+    // tutorial_seen column) — runs after the real sidebar/topbar/page are
+    // all on screen so it has real elements to point at, not placeholders.
+    maybeStartTour();
 }
 
 // Start the app
