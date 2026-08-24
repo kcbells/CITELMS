@@ -368,7 +368,7 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
         });
 
         host.querySelector('#ggb-export').addEventListener('click', () =>
-            exportCsv(subject, section, students, grades, project)
+            openExportPreview(subject, section, students, grades, project, retries)
         );
 
         const guideOverlay = host.querySelector('#ggb-guide-overlay');
@@ -866,7 +866,14 @@ function computeStudentGrades(sid, grades, project) {
         final: toLegacy('Final'),
         masteryStatus: report.masteryStatus,
         remarks: report.remarks,
+        modules: report.modules, // per-module {soc, letsPractice, reflection, wrapUpQuiz} percentages — used by the Grading Summary Sheet export
     };
+}
+
+/** Average of the non-null values only — mirrors grading-engine.js's private averageNonNull(), needed here for the per-module component averages the export sheets show but computeStudentReport() doesn't expose directly. */
+function avgNonNull(values) {
+    const v = values.filter(x => x !== null && x !== undefined);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 
 // ── For SIS Table ─────────────────────────────────────────────────────────
@@ -999,43 +1006,593 @@ function attachRetriesEvents(area, offeredId, retries) {
     });
 }
 
-// ── CSV Export ────────────────────────────────────────────────────────────
+// ── XLSX Export (multi-sheet workbook + preview) ────────────────────────────
+// Mirrors the "global excel" reference file's own 6 tabs — Guide, Grading
+// Input Sheet, Grading Summary Sheet, FOR END OF SEM RETRIES Grading,
+// For-SIS, Tab for Retries — column-for-column. Clicking Export opens a
+// preview modal built from the exact same sheet data first; the modal's
+// Download button is what actually writes the .xlsx file, so what's
+// previewed is what gets downloaded.
+//
+// Uses xlsx-js-style (a community fork of SheetJS) instead of stock SheetJS
+// Community Edition — stock SheetJS silently drops cell fill/font colors on
+// write (that's a Pro-only feature there); this fork restores it for free,
+// which is what lets buildFills()/applyFills() below actually color the
+// downloaded file instead of just the in-app preview.
 
-function exportCsv(subject, section, students, grades, project) {
-    const hdrs = ['#', 'Student ID', 'Name'];
+let _sheetJsLoaded = false;
+
+async function loadSheetJS() {
+    if (_sheetJsLoaded || window.XLSX) { _sheetJsLoaded = true; return; }
+    await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js';
+        s.onload  = () => { _sheetJsLoaded = true; res(); };
+        s.onerror = () => rej(new Error('Failed to load the Excel export library. Check your internet connection.'));
+        document.head.appendChild(s);
+    });
+}
+
+// Real numbers (not the "—" display string) so the exported columns stay
+// sortable/summable in Excel; blank cell for anything unset.
+function xNum(v) {
+    return (v === null || v === undefined || Number.isNaN(Number(v))) ? '' : Math.round(Number(v) * 100) / 100;
+}
+
+// ── Header color palette ────────────────────────────────────────────────
+// Same green/blue logic as the reference file: green for anything under
+// Effortful Learning, blue for anything under Mastery, with darker green
+// "title" bands per period — reusing this app's own dark-green brand shade
+// (G/G2 above) so P1/P2/Final read as progressively distinct, matching the
+// same period-shading already used on-screen (gradebook-periods.js).
+const X_TITLE    = { bg: '00461B', fg: 'FFFFFF', bold: true };  // P1 / Module N / block titles
+const X_TITLE_P2 = { bg: '006428', fg: 'FFFFFF', bold: true };
+const X_TITLE_P3 = { bg: '1B5E20', fg: 'FFFFFF', bold: true };  // P3 / Final
+const X_EL       = { bg: 'E2EFDA', fg: '1B5E20', bold: false }; // Effortful Learning band
+const X_MASTERY  = { bg: 'DDEBF7', fg: '1F4E78', bold: false }; // Mastery band
+const X_FIELD    = { bg: 'FFFFFF', fg: '000000', bold: true };  // field-name row (matches the reference's plain white leaf-header row)
+const X_INFO     = { bg: 'FFFFFF', fg: '000000', bold: true };  // #, Student ID/Number, Name
+const X_TITLE_MASTERY = { bg: '1F4E78', fg: 'FFFFFF', bold: true }; // dark-blue title, for Mastery-themed block titles (e.g. Wrap Up)
+const X_SUBTITLE = { bg: 'F2F2F2', fg: '595959', bold: false };     // "Weighted per Component Grade" sub-label row
+
+/** Pushes one colored rectangle (same {s,e} shape as an XLSX merge) onto a sheet's `fills` list. */
+function fill(fills, r0, c0, r1, c1, style) {
+    fills.push({ s: { r: r0, c: c0 }, e: { r: r1, c: c1 }, style });
+}
+
+/** The style (or null) covering cell (r,c) — later-pushed rectangles win over earlier/broader ones, so a single-cell override always beats the block-level fill it sits inside. Used by both the .xlsx writer and the HTML preview so they stay visually identical. */
+function styleAt(fills, r, c) {
+    for (let i = fills.length - 1; i >= 0; i--) {
+        const f = fills[i];
+        if (r >= f.s.r && r <= f.e.r && c >= f.s.c && c <= f.e.c) return f.style;
+    }
+    return null;
+}
+
+// A student's Project data is entered per-period (P1/P2/Final each with up
+// to 4 check-ins + a final output) — but the reference workbook's "Final
+// Project/Output/Task" block treats the whole course as ONE project with 4
+// check-in slots labelled P1 / P2 / P3.1 / P3.2 feeding a single Overall
+// Grade (this matches projectOverallGrade()'s own doc-comment: "up to 4
+// check-in grades (P1, P2, P3.1, P3.2)"). We map our per-period data onto
+// that single-block shape using each period's first check-in (P3 gets two,
+// since Final is the longer period) and the Final period's output as "the"
+// course output — this is ONLY for that one display block. The Grading
+// Summary Sheet's actual per-period Mastery/Grade columns keep using each
+// period's OWN project data, exactly as computeStudentGrades() already
+// computes it, so the exported grades never disagree with what's on screen.
+function courseProjectSlots(sid, project) {
+    const p1  = project[sid]?.P1    || {};
+    const p2  = project[sid]?.P2    || {};
+    const fin = project[sid]?.Final || {};
+    const checkins = [p1.checkin1 ?? null, p2.checkin1 ?? null, fin.checkin1 ?? null, fin.checkin2 ?? null];
+    const finalOutput = fin.final_output ?? null;
+    return {
+        checkins,
+        finalOutput,
+        checkinAvg: avgNonNull(checkins),
+        overall: projectOverallGrade(checkins, finalOutput),
+    };
+}
+
+/** Average of a period's per-module component values (0–100 %), e.g. periodComponentAvg(modules, PERIOD_MODULES.P1, 'soc'). */
+function periodComponentAvg(modules, range, key) {
+    return avgNonNull(range.map(m => modules[m]?.[key] ?? null));
+}
+
+// ── 1. Guide ─────────────────────────────────────────────────────────────
+// The reference "Guide" sheet's rubric tables are embedded pictures, not
+// cell data — the only real data in it is the File Information block and
+// the Recommended Timeline, which is a fixed 17-week template shared across
+// sections (not derived from any one class's data), so it's reproduced verbatim.
+const RECOMMENDED_TIMELINE = [
+    ['Week 1',  'July 6 – July 12',   'Introduction to the Course. Expectations, etc. Can already start with Module 1'],
+    ['Week 2',  'July 13 – July 19',  'Module 1'],
+    ['Week 3',  'July 20 – July 26',  'Module 2'],
+    ['Week 4',  'July 27 – Aug 2',    'Module 3'],
+    ['Week 5',  'Aug 3 – Aug 9',      'Module 4'],
+    ['Week 6',  'Aug 10 – Aug 16',    'P1 Closing Week - Module 5 / P1 covers Modules 1-4'],
+    ['Week 7',  'Aug 17 – Aug 23',    'Module 6'],
+    ['Week 8',  'Aug 24 – Aug 30',    'Module 7'],
+    ['Week 9',  'Aug 31 – Sept 6',    'Module 8'],
+    ['Week 10', 'Sept 7 – Sept 13',   'Module 9'],
+    ['Week 11', 'Sept 14 – Sept 20',  'P2 Closing Week - Module 10 / P2 covers Modules 5-9'],
+    ['Week 12', 'Sept 21 – Sept 27',  'Module 11'],
+    ['Week 13', 'Sept 28 – Oct 4',    'Module 12'],
+    ['Week 14', 'Oct 5 – Oct 11',     'Module 13'],
+    ['Week 15', 'Oct 12 – Oct 18',    'Module 14'],
+    ['Week 16', 'Oct 19 – Oct 25',    'Catch up week'],
+    ['Week 17', 'Oct 26 – Nov 1',     'Retries — P3 covers Modules 10-14'],
+];
+
+function buildGuideSheet(subject, section) {
+    return {
+        name: 'Guide',
+        headerRows: 1,
+        cols: [{ wch: 22 }, { wch: 44 }, { wch: 2 }, { wch: 8 }, { wch: 20 }, { wch: 56 }],
+        merges: [],
+        fills: [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 1 }, style: X_TITLE },
+            { s: { r: 0, c: 3 }, e: { r: 0, c: 5 }, style: X_TITLE_P2 },
+            { s: { r: 1, c: 3 }, e: { r: 1, c: 5 }, style: X_FIELD },
+        ],
+        aoa: [
+            ['File Information', '', '', 'Recommended Timeline', '', ''],
+            ['Name of Teacher', '', '', 'Week', 'Dates', 'Note / Activity'],
+            ['School and Campus', '', '', ...RECOMMENDED_TIMELINE[0]],
+            ['Department', '', '', ...RECOMMENDED_TIMELINE[1]],
+            ['Subject Name', subject.subject_name || '', '', ...RECOMMENDED_TIMELINE[2]],
+            ['Modality or Class Set-up', section.schedule || '', '', ...RECOMMENDED_TIMELINE[3]],
+            ['', '', '', ...RECOMMENDED_TIMELINE[4]],
+            ...RECOMMENDED_TIMELINE.slice(5).map(row => ['', '', '', ...row]),
+        ],
+    };
+}
+
+// ── 2. Grading Input Sheet ──────────────────────────────────────────────
+// Module 1–14 raw entry columns, plus the course-wide Project block at the
+// end (see courseProjectSlots() above for how that block is derived).
+function buildGradingInputSheet(students, grades, project) {
+    // 4 header rows, matching the reference exactly: Module N | Effortful
+    // Learning / Mastery | Start of Class / Let's Practice / Reflection /
+    // Wrap Up Quiz | individual field names.
+    const HR = 4;
+    const hdr = Array.from({ length: HR }, () => []);
+    const merges = [];
+    const fills = [];
+
+    const infoCol = (label) => {
+        const c = hdr[0].length;
+        merges.push({ s: { r: 0, c }, e: { r: HR - 1, c } });
+        fill(fills, 0, c, HR - 1, c, X_INFO);
+        hdr[0].push(label);
+        for (let r = 1; r < HR; r++) hdr[r].push('');
+    };
+    infoCol('#');
+    infoCol('Student ID');
+    infoCol('Name of Student');
+
     for (let m = 1; m <= 14; m++) {
-        hdrs.push(`M${m} SOC1`, `M${m} SOC2`, `M${m} LP`, `M${m} LP Opt`, `M${m} Reflection`, `M${m} WUQ`);
+        const c = hdr[0].length;
+        merges.push({ s: { r: 0, c }, e: { r: 0, c: c + 5 } });
+        fill(fills, 0, c, 0, c + 5, X_TITLE);
+        hdr[0].push(`Module ${m}`, '', '', '', '', '');
+        merges.push({ s: { r: 1, c }, e: { r: 1, c: c + 4 } });
+        fill(fills, 1, c, 1, c + 4, X_EL);
+        fill(fills, 1, c + 5, 1, c + 5, X_MASTERY);
+        hdr[1].push('Effortful Learning', '', '', '', '', 'Mastery');
+        merges.push({ s: { r: 2, c }, e: { r: 2, c: c + 1 } });
+        merges.push({ s: { r: 2, c: c + 2 }, e: { r: 2, c: c + 3 } });
+        merges.push({ s: { r: 2, c: c + 4 }, e: { r: 3, c: c + 4 } });
+        merges.push({ s: { r: 2, c: c + 5 }, e: { r: 3, c: c + 5 } });
+        fill(fills, 2, c, 3, c + 4, X_EL);
+        fill(fills, 2, c + 5, 3, c + 5, X_MASTERY);
+        hdr[2].push('Start of Class (5%)', '', "Let's Practice (35%)", '', 'Reflection (15%)', 'Wrap Up Quiz (15%)');
+        hdr[3].push('SOC 1', 'SOC 2', "Let's Practice", "Let's Practice (optional)", '', '');
+        fill(fills, 3, c, 3, c + 3, X_FIELD);
     }
-    for (const per of PERIODS) {
-        hdrs.push(`${per} CI1`, `${per} CI2`, `${per} CI3`, `${per} CI4`, `${per} Final Output`, `${per} Project`);
-    }
-    hdrs.push('P1 EL','P1 Mastery','P1 Grade','P2 EL','P2 Mastery','P2 Grade','Final EL','Final Mastery','Final Grade','Mastery Status','Remarks');
 
-    const body = students.map((st, i) => {
+    {
+        const c = hdr[0].length;
+        merges.push({ s: { r: 0, c }, e: { r: 1, c: c + 6 } });
+        fill(fills, 0, c, 1, c + 6, X_TITLE_P3);
+        hdr[0].push('Final Project/Output/Task (30%)', '', '', '', '', '', '');
+        hdr[1].push('', '', '', '', '', '', '');
+        merges.push({ s: { r: 2, c }, e: { r: 2, c: c + 3 } });
+        fill(fills, 2, c, 3, c + 6, X_MASTERY);
+        hdr[2].push('Check-in Grades (minimum of 1, max of 4)', '', '', '', '', '', '');
+        hdr[3].push('P1 Check-in Grade', 'P2 Check-in Grade', 'P3.1 Check-in Grade', 'P3.2 Check-in Grade', 'Check-in Grades Average', 'Final Output/Presentation Grade', 'Project Overall Grade');
+    }
+
+    const rows = students.map((st, i) => {
         const sid = st.user_student_id;
         const row = [i + 1, st.student_id || '', st.name];
         for (let m = 1; m <= 14; m++) {
             const mg = grades[sid]?.[m] || {};
-            row.push(mg.soc1 === 'A' ? 'A' : 'P', mg.soc2 === 'A' ? 'A' : 'P', mg.lets_practice ?? '', mg.lets_practice_optional ?? '', mg.reflection ?? '', mg.wrap_up_quiz ?? '');
+            row.push(
+                mg.soc1 === 'A' ? 'A' : 'P', mg.soc2 === 'A' ? 'A' : 'P',
+                xNum(mg.lets_practice), xNum(mg.lets_practice_optional),
+                xNum(mg.reflection), xNum(mg.wrap_up_quiz),
+            );
         }
-        for (const per of PERIODS) {
-            const pg      = project[sid]?.[per] || {};
-            const overall = projectOverallGrade([pg.checkin1??null,pg.checkin2??null,pg.checkin3??null,pg.checkin4??null], pg.final_output??null);
-            row.push(pg.checkin1??'',pg.checkin2??'',pg.checkin3??'',pg.checkin4??'',pg.final_output??'',fmt(overall));
-        }
-        const { p1, p2, final, masteryStatus, remarks } = computeStudentGrades(sid, grades, project);
-        row.push(fmt(p1.el),fmt(p1.mastery),fmt(p1.grade),fmt(p2.el),fmt(p2.mastery),fmt(p2.grade),fmt(final.el),fmt(final.mastery),fmt(final.grade),masteryStatus||'',remarks||'');
+        const proj = courseProjectSlots(sid, project);
+        row.push(xNum(proj.checkins[0]), xNum(proj.checkins[1]), xNum(proj.checkins[2]), xNum(proj.checkins[3]), xNum(proj.checkinAvg), xNum(proj.finalOutput), xNum(proj.overall));
         return row;
     });
 
-    const csv  = [hdrs, ...body].map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
-    const blob = new Blob(['﻿'+csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `global-gradebook_${subject.subject_code}_${section.section_name}.csv`.replace(/[^\w.-]+/g,'_');
-    a.click();
-    URL.revokeObjectURL(url);
+    return {
+        name: 'Grading Input Sheet',
+        headerRows: HR,
+        cols: [{ wch: 4 }, { wch: 12 }, { wch: 22 }, ...Array(84).fill({ wch: 10 }), ...Array(7).fill({ wch: 12 })],
+        merges,
+        fills,
+        aoa: [...hdr, ...rows],
+    };
+}
+
+// ── 3 & 4. Grading Summary Sheet / FOR END OF SEM RETRIES Grading ────────
+// Same structure in the reference file (the retries sheet is a second copy
+// used during the retry period) — built by the same function under both names.
+function buildGradingSummarySheet(sheetName, students, grades, project) {
+    // 4 header rows, matching the reference: row0 = block title, rows1-2 =
+    // "Weighted per Component Grade" sub-label (Grade Computation blocks) or
+    // blank (the per-module component blocks merge their title across all 3
+    // top rows instead), row3 = the individual field names.
+    const HR = 4;
+    const hdr = Array.from({ length: HR }, () => []);
+    const merges = [];
+    const fills = [];
+
+    const infoCol = (label) => {
+        const c = hdr[0].length;
+        merges.push({ s: { r: 0, c }, e: { r: HR - 1, c } });
+        fill(fills, 0, c, HR - 1, c, X_INFO);
+        hdr[0].push(label);
+        for (let r = 1; r < HR; r++) hdr[r].push('');
+    };
+    infoCol('#');
+    infoCol('Student Number');
+    infoCol('Name of Student');
+
+    // "Grade Computation" blocks (P1/P2/P3): title on row0, "Weighted per
+    // Component Grade" spanning rows1-2, field names on row3 — each field
+    // colored by what it feeds into (EL green / Mastery blue / final grade).
+    const gradeCompBlock = (title, titleStyle, fields, kinds) => {
+        const c = hdr[0].length;
+        const span = fields.length;
+        merges.push({ s: { r: 0, c }, e: { r: 0, c: c + span - 1 } });
+        fill(fills, 0, c, 0, c + span - 1, titleStyle);
+        hdr[0].push(title, ...Array(span - 1).fill(''));
+        merges.push({ s: { r: 1, c }, e: { r: 2, c: c + span - 1 } });
+        fill(fills, 1, c, 2, c + span - 1, X_SUBTITLE);
+        hdr[1].push('Weighted per Component Grade', ...Array(span - 1).fill(''));
+        hdr[2].push(...Array(span).fill(''));
+        hdr[3].push(...fields);
+        kinds.forEach((k, i) => {
+            const style = k === 'el' ? X_EL : k === 'mastery' ? X_MASTERY : X_FIELD;
+            fill(fills, 3, c + i, 3, c + i, style);
+        });
+    };
+    gradeCompBlock('P1 Grade Computation', X_TITLE,
+        ['SOC (5%)', "Let's Practice (35%)", 'Reflection (15%)', 'EL Grade (CS 55%)', 'Wrap Up (15%)', 'Project (30%)', 'Mastery Grade (PE 45%)', 'P1 Grade (Modules 1-4)'],
+        ['el', 'el', 'el', 'el', 'mastery', 'mastery', 'mastery', 'grade']);
+    gradeCompBlock('P2 Grade Computation', X_TITLE_P2,
+        ['SOC (5%)', "Let's Practice (35%)", 'Reflection (15%)', 'EL Grade (CS 55%)', 'Wrap Up (15%)', 'Project (30%)', 'Mastery Grade (PE 45%)', 'P2 Grade (Modules 1-9)'],
+        ['el', 'el', 'el', 'el', 'mastery', 'mastery', 'mastery', 'grade']);
+    gradeCompBlock('P3 Grade Computation', X_TITLE_P3,
+        ['SOC (5%)', "Let's Practice (35%)", 'Reflection (15%)', 'EL Grade (CS 55%)', 'Wrap Up (15%)', 'Project (30%)', 'Mastery Grade (CFE 45%)', 'MASTERY Passing check', 'P3/Final Grade (Modules 1-14)', 'Remarks'],
+        ['el', 'el', 'el', 'el', 'mastery', 'mastery', 'mastery', 'mastery', 'grade', 'grade']);
+
+    // Per-module component blocks (SOC/LP/Reflection/WrapUp): title spans
+    // all 3 top rows, row3 = Module 1-14 + the 3 period averages (17 cols).
+    // SOC/LP/Reflection are Effortful Learning components (green); Wrap Up
+    // feeds Mastery (blue).
+    const componentBlock = (title, theme) => {
+        const c = hdr[0].length;
+        const span = 17;
+        merges.push({ s: { r: 0, c }, e: { r: 2, c: c + span - 1 } });
+        fill(fills, 0, c, 2, c + span - 1, theme === 'mastery' ? X_TITLE_MASTERY : X_TITLE);
+        hdr[0].push(title, ...Array(span - 1).fill(''));
+        hdr[1].push(...Array(span).fill(''));
+        hdr[2].push(...Array(span).fill(''));
+        const fields = [];
+        for (let m = 1; m <= 14; m++) fields.push(`Module ${m}`);
+        fields.push('P1 Component Grade (M1-4)', 'P2 Component Grade (M1-9)', 'Final Component Grade (M1-14)');
+        hdr[3].push(...fields);
+        fill(fills, 3, c, 3, c + span - 1, theme === 'mastery' ? X_MASTERY : X_EL);
+    };
+    componentBlock('SOC 1 and 2', 'el');
+    componentBlock("Let's Practice", 'el');
+    componentBlock('Reflection', 'el');
+    componentBlock('Wrap Up', 'mastery');
+
+    // Final Project/Output/Task block (7 cols) — same shape as Grading Input Sheet's.
+    {
+        const c = hdr[0].length;
+        merges.push({ s: { r: 0, c }, e: { r: 1, c: c + 6 } });
+        fill(fills, 0, c, 1, c + 6, X_TITLE_P3);
+        hdr[0].push('Final Project/Output/Task (30%)', '', '', '', '', '', '');
+        hdr[1].push('', '', '', '', '', '', '');
+        merges.push({ s: { r: 2, c }, e: { r: 2, c: c + 3 } });
+        fill(fills, 2, c, 3, c + 6, X_MASTERY);
+        hdr[2].push('Check-in Grades (minimum of 1, max of 4)', '', '', '', '', '', '');
+        hdr[3].push('P1 Check-in Grade', 'P2 Check-in Grade', 'P3.1 Check-in Grade', 'P3.2 Check-in Grade', 'Check-in Grades Average', 'Final Output/Presentation Grade', 'Overall Grade');
+    }
+
+    const rows = students.map((st, i) => {
+        const sid = st.user_student_id;
+        const { p1, p2, final, masteryStatus, remarks, modules } = computeStudentGrades(sid, grades, project);
+        const row = [i + 1, st.student_id || '', st.name];
+
+        // Weighted-points breakdown per period — computeStudentGrades() only
+        // exposes the already-blended EL/Mastery/Grade, not each raw
+        // component's contribution, so those are recomputed here from the
+        // same per-module percentages (modules[m].soc / .letsPractice / etc).
+        const compRow = (per, periodResult) => {
+            const range   = PERIOD_MODULES[per];
+            const socAvg  = periodComponentAvg(modules, range, 'soc');
+            const lpAvg   = periodComponentAvg(modules, range, 'letsPractice');
+            const reflAvg = periodComponentAvg(modules, range, 'reflection');
+            const pg      = project[sid]?.[per] || {};
+            const projOverall = projectOverallGrade(
+                [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null],
+                pg.final_output ?? null
+            );
+            const wuqAvg = periodComponentAvg(modules, range, 'wrapUpQuiz');
+            return [
+                xNum(socAvg  !== null ? socAvg  / 100 * 5  : null),
+                xNum(lpAvg   !== null ? lpAvg   / 100 * 35 : null),
+                xNum(reflAvg !== null ? reflAvg / 100 * 15 : null),
+                xNum(periodResult.el),
+                xNum(wuqAvg  !== null ? wuqAvg  / 100 * 15 : null),
+                xNum(projOverall !== null ? projOverall / 100 * 30 : null),
+                xNum(periodResult.mastery),
+                xNum(periodResult.grade),
+            ];
+        };
+        row.push(...compRow('P1', p1));
+        row.push(...compRow('P2', p2));
+        row.push(...compRow('Final', final));
+        row.push(masteryStatus || '', remarks || '');
+
+        const moduleBlock = (key) => {
+            for (let m = 1; m <= 14; m++) row.push(xNum(modules[m]?.[key] ?? null));
+            row.push(
+                xNum(periodComponentAvg(modules, PERIOD_MODULES.P1, key)),
+                xNum(periodComponentAvg(modules, PERIOD_MODULES.P2, key)),
+                xNum(periodComponentAvg(modules, PERIOD_MODULES.Final, key)),
+            );
+        };
+        moduleBlock('soc');
+        moduleBlock('letsPractice');
+        moduleBlock('reflection');
+        moduleBlock('wrapUpQuiz');
+
+        const proj = courseProjectSlots(sid, project);
+        row.push(xNum(proj.checkins[0]), xNum(proj.checkins[1]), xNum(proj.checkins[2]), xNum(proj.checkins[3]), xNum(proj.checkinAvg), xNum(proj.finalOutput), xNum(proj.overall));
+        return row;
+    });
+
+    return {
+        name: sheetName,
+        headerRows: HR,
+        cols: [{ wch: 4 }, { wch: 14 }, { wch: 22 }, ...Array(101).fill({ wch: 10 })],
+        merges,
+        fills,
+        aoa: [...hdr, ...rows],
+    };
+}
+
+// ── 5. For-SIS ─────────────────────────────────────────────────────────
+// CS (Effortful/EL) and PE (Mastery) reported SEPARATELY per period — the
+// SIS record wants the breakdown, not one blended number.
+function buildForSisSheet(students, grades, project) {
+    // 4 header rows, matching the reference: "Student Information"/"P1"/"P2"/
+    // "P3" each span rows0-2, then row3 has the real per-column field names.
+    const HR = 4;
+    const hdr = Array.from({ length: HR }, () => []);
+    const merges = [];
+    const fills = [];
+    const block = (title, fields, titleStyle, leafStyle) => {
+        const c = hdr[0].length;
+        const span = fields.length;
+        merges.push({ s: { r: 0, c }, e: { r: 2, c: c + span - 1 } });
+        fill(fills, 0, c, 2, c + span - 1, titleStyle);
+        hdr[0].push(title, ...Array(span - 1).fill(''));
+        hdr[1].push(...Array(span).fill(''));
+        hdr[2].push(...Array(span).fill(''));
+        hdr[3].push(...fields);
+        fill(fills, 3, c, 3, c + span - 1, leafStyle);
+    };
+    block('Student Information', ['#', 'Student Number', 'Name of Student'], X_INFO, X_FIELD);
+    block('P1', ['CS (Effortful)', 'PE (Mastery)'], X_TITLE, X_EL);
+    block('P2', ['CS (Effortful)', 'PE (Mastery)'], X_TITLE_P2, X_EL);
+    block('P3', ['CS (Final Effortful Grade)', 'CFE (Final Mastery Grade)'], X_TITLE_P3, X_EL);
+    // "PE (Mastery)" leaf cells get the blue Mastery treatment even though
+    // their block title stays period-green — recolor just those 2 cells.
+    fill(fills, 3, 4, 3, 4, X_MASTERY);
+    fill(fills, 3, 6, 3, 6, X_MASTERY);
+
+    const rows = students.map((st, i) => {
+        const sid = st.user_student_id;
+        const { p1, p2, final } = computeStudentGrades(sid, grades, project);
+        return [i + 1, st.student_id || '', st.name, xNum(p1.el), xNum(p1.mastery), xNum(p2.el), xNum(p2.mastery), xNum(final.el), xNum(final.mastery)];
+    });
+    return {
+        name: 'For-SIS',
+        headerRows: HR,
+        cols: [{ wch: 4 }, { wch: 14 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 18 }],
+        merges,
+        fills,
+        aoa: [...hdr, ...rows],
+    };
+}
+
+// ── 6. Tab for Retries ────────────────────────────────────────────────
+function buildTabForRetriesSheet(students, grades, project, retries) {
+    const incStudents = students.filter(st => {
+        const { remarks } = computeStudentGrades(st.user_student_id, grades, project);
+        return remarks && remarks.startsWith('INC');
+    });
+    const rows = incStudents.map((st, i) => {
+        const sid = st.user_student_id;
+        const { remarks } = computeStudentGrades(sid, grades, project);
+        const map = RETRY_REMARK_MAP[remarks] || { label: remarks || '' };
+        const r = retries[sid] || {};
+        return [
+            i + 1, st.student_id || '', st.name, map.label || '',
+            r.modules_for_retry || '', r.specific_activities || '',
+            r.schedule_of_retry || '', r.status || '', r.notes || '',
+        ];
+    });
+    return {
+        name: 'Tab for Retries',
+        headerRows: 1,
+        cols: [{ wch: 4 }, { wch: 14 }, { wch: 24 }, { wch: 18 }, { wch: 24 }, { wch: 22 }, { wch: 20 }, { wch: 14 }, { wch: 24 }],
+        merges: [],
+        fills: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 }, style: X_TITLE }],
+        aoa: [
+            ['#', 'Student Number', 'Name of Student', 'Remarks', 'Modules with Components for Retry', 'Specific Activities', 'Schedule of Retry', 'Status', 'Remarks/Notes'],
+            ...rows,
+        ],
+    };
+}
+
+/** Builds the 6 sheets (as {name, aoa, merges, cols, headerRows}) shared by both the preview modal and the actual .xlsx download — matching the "global excel" reference file's own 6 tabs (Guide, Grading Input Sheet, Grading Summary Sheet, FOR END OF SEM RETRIES Grading, For-SIS, Tab for Retries). */
+function buildExportSheets(subject, section, students, grades, project, retries) {
+    return [
+        buildGuideSheet(subject, section),
+        buildGradingInputSheet(students, grades, project),
+        buildGradingSummarySheet('Grading Summary Sheet', students, grades, project),
+        buildGradingSummarySheet('FOR END OF SEM RETRIES Grading', students, grades, project),
+        buildForSisSheet(students, grades, project),
+        buildTabForRetriesSheet(students, grades, project, retries),
+    ];
+}
+
+/** Renders one sheet's {aoa, merges, headerRows} as a read-only HTML table, respecting merged cells (rowspan/colspan) — used by the preview modal. */
+function xlsxAoaToHtml({ aoa, merges = [], headerRows = 1, fills = [] }) {
+    const covered = new Set();
+    const spanAt  = new Map();
+    merges.forEach(m => {
+        const rs = m.e.r - m.s.r + 1, cs = m.e.c - m.s.c + 1;
+        if (rs > 1 || cs > 1) spanAt.set(`${m.s.r},${m.s.c}`, { rowSpan: rs, colSpan: cs });
+        for (let r = m.s.r; r <= m.e.r; r++) {
+            for (let c = m.s.c; c <= m.e.c; c++) {
+                if (r === m.s.r && c === m.s.c) continue;
+                covered.add(`${r},${c}`);
+            }
+        }
+    });
+    const rowsHtml = aoa.map((row, r) => {
+        const tag   = r < headerRows ? 'th' : 'td';
+        const cells = row.map((cell, c) => {
+            const key = `${r},${c}`;
+            if (covered.has(key)) return '';
+            const span  = spanAt.get(key);
+            const attrs = span ? ` rowspan="${span.rowSpan}" colspan="${span.colSpan}"` : '';
+            const st    = styleAt(fills, r, c);
+            const style = st ? ` style="background:#${st.bg};color:#${st.fg};${st.bold ? 'font-weight:700' : ''}"` : '';
+            return `<${tag}${attrs}${style}>${esc(cell ?? '')}</${tag}>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+    }).join('');
+    return `<table class="ggb-xprev-table">${rowsHtml}</table>`;
+}
+
+function exportPreviewModalHtml(sheets) {
+    return `
+    <div class="ggb-xprev-overlay" id="ggb-xprev-overlay">
+        <div class="ggb-xprev-modal" role="dialog" aria-label="Export Preview">
+            <div class="ggb-xprev-hdr">
+                <div>
+                    <h3 class="ggb-xprev-title">Export Preview</h3>
+                    <p class="ggb-xprev-sub">${sheets.length} sheets — review before downloading</p>
+                </div>
+                <button class="ggb-guide-close" id="ggb-xprev-close" aria-label="Close">${icon('close', { size: 14 })}</button>
+            </div>
+            <div class="ggb-xprev-tabs">
+                ${sheets.map((s, i) => `<button class="ggb-xprev-tab${i === 0 ? ' active' : ''}" data-xtab="${i}">${esc(s.name)}</button>`).join('')}
+            </div>
+            <div class="ggb-xprev-body">
+                ${sheets.map((s, i) => `<div class="ggb-xprev-pane${i === 0 ? '' : ' ggb-xprev-hidden'}" id="ggb-xprev-pane-${i}">${xlsxAoaToHtml(s)}</div>`).join('')}
+            </div>
+            <div class="ggb-xprev-ftr">
+                <span class="ggb-xprev-hint">This matches exactly what will be in the downloaded .xlsx file.</span>
+                <button class="gb-export-btn" id="ggb-xprev-download">${icon('download', { size: 13, className: 'ui-icon-inline' })} Download .xlsx</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function openExportPreview(subject, section, students, grades, project, retries) {
+    const sheets = buildExportSheets(subject, section, students, grades, project, retries);
+
+    // Mount on <body> for the same z-index-stacking reason as the guide modal above.
+    document.querySelectorAll('#ggb-xprev-overlay').forEach(el => el.remove());
+    document.body.insertAdjacentHTML('beforeend', exportPreviewModalHtml(sheets));
+    const overlay = document.getElementById('ggb-xprev-overlay');
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#ggb-xprev-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelectorAll('.ggb-xprev-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const i = tab.dataset.xtab;
+            overlay.querySelectorAll('.ggb-xprev-tab').forEach(b => b.classList.toggle('active', b === tab));
+            overlay.querySelectorAll('.ggb-xprev-pane').forEach(p => p.classList.toggle('ggb-xprev-hidden', p.id !== `ggb-xprev-pane-${i}`));
+        });
+    });
+
+    const dlBtn = overlay.querySelector('#ggb-xprev-download');
+    dlBtn.addEventListener('click', async () => {
+        const orig = dlBtn.innerHTML;
+        dlBtn.disabled = true;
+        dlBtn.innerHTML = 'Preparing…';
+        try {
+            await downloadWorkbook(sheets, subject, section);
+            close();
+        } catch (err) {
+            console.error('export xlsx:', err);
+            dlBtn.disabled  = false;
+            dlBtn.innerHTML = orig;
+            showSaveError(null, err.message || 'Export failed');
+        }
+    });
+}
+
+/** Paints a sheet's `fills` rectangles onto its worksheet cells — needs xlsx-js-style (loadSheetJS()), stock SheetJS drops `.s` on write. */
+function applyFills(ws, fills) {
+    (fills || []).forEach(f => {
+        for (let r = f.s.r; r <= f.e.r; r++) {
+            for (let c = f.s.c; c <= f.e.c; c++) {
+                const ref = window.XLSX.utils.encode_cell({ r, c });
+                if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+                ws[ref].s = {
+                    fill: { patternType: 'solid', fgColor: { rgb: f.style.bg } },
+                    font: { bold: !!f.style.bold, color: { rgb: f.style.fg } },
+                    alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+                };
+            }
+        }
+    });
+}
+
+async function downloadWorkbook(sheets, subject, section) {
+    await loadSheetJS();
+    const wb = window.XLSX.utils.book_new();
+    sheets.forEach(s => {
+        const ws = window.XLSX.utils.aoa_to_sheet(s.aoa);
+        if (s.merges?.length) ws['!merges'] = s.merges;
+        if (s.cols)           ws['!cols']   = s.cols;
+        applyFills(ws, s.fills);
+        // Excel sheet names: max 31 chars, no : \ / ? * [ ]
+        const safeName = s.name.replace(/[:\\/?*[\]]/g, '').slice(0, 31);
+        window.XLSX.utils.book_append_sheet(wb, ws, safeName);
+    });
+    const filename = `global-gradebook_${subject.subject_code}_${section.section_name}.xlsx`.replace(/[^\w.-]+/g, '_');
+    window.XLSX.writeFile(wb, filename);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1571,6 +2128,49 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 /* Compact WUQ table */
 .ggb-ov-body .ggb-guide-table th { padding:4px 7px; font-size:9.5px; }
 .ggb-ov-body .ggb-guide-table td { padding:3px 7px; font-size:11px; }
+
+/* ── Export Preview Modal ── */
+.ggb-xprev-overlay {
+    position:fixed; inset:0; z-index:950;
+    background:rgba(0,0,0,.5); display:flex;
+    align-items:center; justify-content:center; padding:16px;
+}
+.ggb-xprev-modal {
+    background:#fff; border-radius:14px;
+    width:100%; max-width:1180px; height:88vh;
+    display:flex; flex-direction:column;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);
+    overflow:hidden;
+}
+.ggb-xprev-hdr {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:18px 22px 12px; border-bottom:1px solid ${BORDER}; flex-shrink:0;
+}
+.ggb-xprev-title { font-size:16px; font-weight:800; color:#111; margin:0 0 3px; }
+.ggb-xprev-sub { font-size:12px; color:#6B7280; margin:0; }
+.ggb-xprev-tabs {
+    display:flex; gap:4px; padding:0 22px; border-bottom:1px solid ${BORDER};
+    overflow-x:auto; flex-shrink:0;
+}
+.ggb-xprev-tab {
+    padding:9px 14px; border:none; background:none; cursor:pointer;
+    font-size:12.5px; font-weight:600; color:#6B7280; white-space:nowrap;
+    border-bottom:2.5px solid transparent;
+}
+.ggb-xprev-tab:hover { color:${G}; }
+.ggb-xprev-tab.active { color:${G}; border-bottom-color:${G}; }
+.ggb-xprev-body { flex:1; overflow:auto; padding:16px 22px; }
+.ggb-xprev-pane.ggb-xprev-hidden { display:none; }
+.ggb-xprev-table { border-collapse:collapse; font-size:11.5px; white-space:nowrap; }
+.ggb-xprev-table th, .ggb-xprev-table td { border:1px solid ${BORDER}; padding:5px 8px; text-align:center; }
+.ggb-xprev-table th { background:${GL}; color:${G}; font-weight:700; }
+.ggb-xprev-table td:nth-child(3) { text-align:left; }
+.ggb-xprev-ftr {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 22px; border-top:1px solid ${BORDER}; flex-shrink:0; gap:12px;
+}
+.ggb-xprev-hint { font-size:11.5px; color:#9CA3AF; }
+.ggb-xprev-ftr .gb-export-btn:disabled { opacity:.6; cursor:default; }
 
 `; }
 
