@@ -237,6 +237,7 @@ function handleInstructorDashboard() {
     $recentActivity = [];
     $quizPerformance = [];
     $atRiskStudents = [];
+    $nonEngaging = [];
     if ($sIds) {
         $avgRow = db()->fetchOne(
             "SELECT ROUND(AVG(sqa.percentage), 1) as avg_score
@@ -339,6 +340,27 @@ function handleInstructorDashboard() {
             $sIds
         );
 
+        // Enrolled under this instructor but no completed quiz activity in any of their subjects
+        $nonEngaging = db()->fetchAll(
+            "SELECT u.users_id, u.first_name, u.last_name,
+                COUNT(DISTINCT ss.subject_offered_id) as enrolled_subjects
+             FROM users u
+             JOIN student_subject ss ON ss.user_student_id = u.users_id AND ss.status = 'enrolled'
+             JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
+             WHERE so.user_teacher_id = ? AND so.status = 'open' AND u.role = 'student'
+               AND NOT EXISTS (
+                   SELECT 1 FROM student_quiz_attempts sqa2
+                   JOIN quiz q2 ON sqa2.quiz_id = q2.quiz_id
+                   WHERE sqa2.user_student_id = u.users_id
+                     AND q2.subject_id IN ($sPlaceholders)
+                     AND sqa2.status = 'completed'
+               )
+             GROUP BY u.users_id, u.first_name, u.last_name
+             ORDER BY enrolled_subjects DESC
+             LIMIT 5",
+            array_merge([$userId], $sIds)
+        );
+
     }
 
     echo json_encode([
@@ -356,6 +378,7 @@ function handleInstructorDashboard() {
             'recent_activity' => $recentActivity,
             'quiz_performance' => $quizPerformance,
             'at_risk_students' => $atRiskStudents,
+            'non_engaging' => $nonEngaging,
         ]
     ]);
 }
@@ -672,7 +695,7 @@ function handleDeanDashboard() {
          JOIN program p ON p.program_id = s.program_id
          LEFT JOIN quiz q ON q.subject_id = s.subject_id
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
-         WHERE s.program_id IN ($progPh) AND u.role = 'student' AND u.status = 'active'
+         WHERE s.program_id IN ($progPh) AND u.role = 'student'
          GROUP BY u.users_id, p.program_id
          HAVING COUNT(DISTINCT sqa.attempt_id) > 0 AND AVG(sqa.percentage) < 60
          ORDER BY AVG(sqa.percentage) ASC
@@ -690,7 +713,7 @@ function handleDeanDashboard() {
          JOIN subject_offered so ON ss.subject_offered_id = so.subject_offered_id
          JOIN subject s ON so.subject_id = s.subject_id
          JOIN program p ON p.program_id = s.program_id
-         WHERE s.program_id IN ($progPh) AND u.role = 'student' AND u.status = 'active'
+         WHERE s.program_id IN ($progPh) AND u.role = 'student'
            AND NOT EXISTS (
                SELECT 1 FROM student_quiz_attempts sqa2
                JOIN quiz q2 ON sqa2.quiz_id = q2.quiz_id

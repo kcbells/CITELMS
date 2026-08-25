@@ -90,6 +90,64 @@ export async function render(container) {
 
         @media(max-width:800px) { .dn-meta { grid-template-columns:1fr 1fr; } }
 
+        /* ── Students Needing Attention ── */
+        .attn-panel {
+            background:#fff; border:1px solid #ECECEC; border-radius:16px;
+            padding:22px 24px 18px; box-shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+        }
+        .attn-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:6px; flex-wrap:wrap; }
+        .attn-title-wrap { display:flex; align-items:center; gap:12px; }
+        .attn-icon {
+            width:36px; height:36px; border-radius:10px; flex-shrink:0;
+            background:linear-gradient(135deg,#EF4444,#B91C1C); color:#fff;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 4px 10px rgba(220,38,38,.28);
+        }
+        .attn-title { font-size:14.5px; font-weight:800; color:#111827; margin:0; letter-spacing:-.1px; }
+        .attn-sub { font-size:11.5px; color:#9CA3AF; margin:2px 0 0; }
+        .attn-count {
+            font-size:11px; font-weight:700; color:#DC2626; background:#FEE2E2;
+            min-width:20px; text-align:center; padding:2px 7px; border-radius:999px; margin-left:2px;
+        }
+        .attn-link {
+            display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:700;
+            color:${G}; text-decoration:none; padding:7px 12px; border-radius:9px; transition:background .15s;
+            white-space:nowrap;
+        }
+        .attn-link:hover { background:${GL}; }
+        .attn-link svg { flex-shrink:0; }
+
+        .attn-list { display:flex; flex-direction:column; margin-top:8px; }
+        .attn-row {
+            display:flex; align-items:center; gap:13px; padding:11px 6px;
+            border-radius:10px; transition:background .15s;
+        }
+        .attn-row:hover { background:#FAFAFA; }
+        .attn-row + .attn-row { border-top:1px solid #F3F4F6; }
+        .attn-avatar {
+            width:36px; height:36px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+            background:${G}; color:#fff;
+        }
+        .attn-avatar--risk { color:#FF8A8A; }
+        .attn-avatar--inactive { color:#FFCE7A; }
+        .attn-info { flex:1; min-width:0; display:flex; flex-direction:column; }
+        .attn-name { font-size:13px; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .attn-prog { font-size:11px; font-weight:600; color:#9CA3AF; }
+        .attn-meta { font-size:11.5px; color:#9CA3AF; margin-top:1px; }
+        .attn-badge {
+            display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+            padding:5px 11px; border-radius:999px; white-space:nowrap; border:1px solid transparent;
+        }
+        .attn-badge svg { flex-shrink:0; }
+        .attn-badge--risk { background:#FEF2F2; color:#DC2626; border-color:#FEE2E2; }
+        .attn-badge--inactive { background:#FFFBEB; color:#B45309; border-color:#FEF3C7; }
+        .attn-more {
+            display:block; text-align:center; font-size:12px; font-weight:600; color:${G};
+            text-decoration:none; margin-top:10px; padding-top:12px; border-top:1px solid #F3F4F6;
+        }
+        .attn-more:hover { text-decoration:underline; }
+
         /* ── Google Classroom-style subject cards ── */
         .gc-home-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:22px; }
         .gc-home-card {
@@ -171,6 +229,8 @@ export async function render(container) {
         ? '<div class="dn-empty" style="margin-top:8px;">Not currently assigned to teach any subject.</div>'
         : `<div class="gc-home-grid">${myClasses.map(c => deanSubjCard(c, user)).join('')}</div>`
     }
+
+    ${renderAttentionPanel(atRiskStudents, nonEngaging)}
     `;
 
     container.style.background = '#fff';
@@ -184,6 +244,58 @@ function esc(str) {
     const d = document.createElement('div');
     d.textContent = str ?? '';
     return d.innerHTML;
+}
+
+/**
+ * "Students Needing Attention" — home-dashboard preview of the same flags
+ * shown in full on the Reports page (at-risk quiz average / no quiz activity).
+ */
+function renderAttentionPanel(atRiskStudents, nonEngaging) {
+    const flagged = [
+        ...atRiskStudents.map(s => ({ ...s, _reason: 'risk' })),
+        ...nonEngaging.map(s => ({ ...s, _reason: 'inactive' })),
+    ];
+    if (!flagged.length) return '';
+
+    const preview = flagged
+        .sort((a, b) => {
+            if (a._reason !== b._reason) return a._reason === 'risk' ? -1 : 1;
+            return (parseFloat(a.avg_score) || 0) - (parseFloat(b.avg_score) || 0);
+        })
+        .slice(0, 5);
+    const remaining = flagged.length - preview.length;
+
+    return `
+    <div class="attn-panel" style="margin-top:24px;">
+        <div class="attn-head">
+            <div class="attn-title-wrap">
+                <div class="attn-icon">${icon('alert', { size: 17 })}</div>
+                <div>
+                    <h3 class="attn-title">Students Needing Attention</h3>
+                    <p class="attn-sub">Low quiz average or no activity across your department</p>
+                </div>
+                <span class="attn-count">${flagged.length}</span>
+            </div>
+            <a class="attn-link" href="#dean/reports">View full report ${icon('arrowRight', { size: 13 })}</a>
+        </div>
+        <div class="attn-list">
+            ${preview.map(s => `
+                <div class="attn-row">
+                    <div class="attn-avatar attn-avatar--${s._reason}">${esc(((s.first_name || '?')[0] + (s.last_name || '?')[0]).toUpperCase())}</div>
+                    <div class="attn-info">
+                        <span class="attn-name">${esc(s.first_name)} ${esc(s.last_name)} <span class="attn-prog">${esc(s.program_code || '')}</span></span>
+                        <span class="attn-meta">${s._reason === 'risk'
+                            ? `${Number(s.avg_score).toFixed(1)}% avg across ${s.attempts} attempt${s.attempts == 1 ? '' : 's'}`
+                            : `No quiz activity across ${s.enrolled_subjects} enrolled subject${s.enrolled_subjects == 1 ? '' : 's'}`}</span>
+                    </div>
+                    <span class="attn-badge attn-badge--${s._reason}">
+                        ${s._reason === 'risk' ? icon('alert', { size: 12 }) : icon('clock', { size: 12 })}
+                        ${s._reason === 'risk' ? 'At Risk' : 'Not engaging'}
+                    </span>
+                </div>`).join('')}
+        </div>
+        ${remaining > 0 ? `<a class="attn-more" href="#dean/reports">+${remaining} more student${remaining === 1 ? '' : 's'} on the full report →</a>` : ''}
+    </div>`;
 }
 
 function deanSubjCard(c, user) {

@@ -25,6 +25,15 @@ export async function render(container) {
     const data = res.success ? (res.data || {}) : {};
     const stats = data.stats || {};
     const classes = data.classes || [];
+    const atRiskStudents = data.at_risk_students || [];
+    const nonEngaging = data.non_engaging || [];
+    const flagged = [
+        ...atRiskStudents.map(s => ({ ...s, _reason: 'risk' })),
+        ...nonEngaging.map(s => ({ ...s, _reason: 'inactive' })),
+    ].sort((a, b) => {
+        if (a._reason !== b._reason) return a._reason === 'risk' ? -1 : 1;
+        return (parseFloat(a.avg_score) || 0) - (parseFloat(b.avg_score) || 0);
+    });
     const announcements = annRes.success ? (annRes.data || []) : [];
     const annBySubject = groupAnnouncements(announcements, classes);
 
@@ -79,6 +88,38 @@ export async function render(container) {
                        <p style="margin-top:16px;text-align:center;"><a href="#instructor/my-classes" style="font-size:13px;font-weight:700;color:${G};">Manage all subjects & sections →</a></p>`
                 }
             </div>
+
+            ${flagged.length ? `
+            <div class="attn-panel" style="margin-top:24px;">
+                <div class="attn-head">
+                    <div class="attn-title-wrap">
+                        <div class="attn-icon">${icon('alert', { size: 17 })}</div>
+                        <div>
+                            <h3 class="attn-title">Students Needing Attention</h3>
+                            <p class="attn-sub">Low quiz average or no activity in your classes</p>
+                        </div>
+                        <span class="attn-count">${flagged.length}</span>
+                    </div>
+                    <a class="attn-link" href="#instructor/students">View all ${icon('arrowRight', { size: 13 })}</a>
+                </div>
+                <div class="attn-list">
+                    ${flagged.slice(0, 5).map(s => `
+                        <div class="attn-row">
+                            <div class="attn-avatar attn-avatar--${s._reason}">${esc(((s.first_name||'?')[0] + (s.last_name||'?')[0]).toUpperCase())}</div>
+                            <div class="attn-info">
+                                <span class="attn-name">${esc(s.first_name)} ${esc(s.last_name)}</span>
+                                <span class="attn-meta">${s._reason === 'risk'
+                                    ? `${s.quiz_count} quiz${s.quiz_count == 1 ? '' : 'zes'} taken`
+                                    : `No quiz activity across ${s.enrolled_subjects} enrolled subject${s.enrolled_subjects == 1 ? '' : 's'}`}</span>
+                            </div>
+                            <span class="attn-badge attn-badge--${s._reason}">
+                                ${s._reason === 'risk' ? icon('alert', { size: 12 }) : icon('clock', { size: 12 })}
+                                ${s._reason === 'risk' ? `${Number(s.avg_score).toFixed(1)}% avg` : 'Not engaging'}
+                            </span>
+                        </div>`).join('')}
+                </div>
+                ${flagged.length > 5 ? `<a class="attn-more" href="#instructor/students">+${flagged.length - 5} more student${flagged.length - 5 === 1 ? '' : 's'} flagged →</a>` : ''}
+            </div>` : ''}
         </div>
     `;
 
@@ -188,6 +229,63 @@ function styles() {
         }
         .sd-subj-ann-msg strong { color:#111827; font-weight:600; }
         .sd-empty { padding:32px; text-align:center; color:#9CA3AF; font-size:13px; }
+
+        /* ── Students Needing Attention ── */
+        .attn-panel {
+            background:#fff; border:1px solid #ECECEC; border-radius:16px;
+            padding:22px 24px 18px; box-shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+        }
+        .attn-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:6px; flex-wrap:wrap; }
+        .attn-title-wrap { display:flex; align-items:center; gap:12px; }
+        .attn-icon {
+            width:36px; height:36px; border-radius:10px; flex-shrink:0;
+            background:linear-gradient(135deg,#EF4444,#B91C1C); color:#fff;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 4px 10px rgba(220,38,38,.28);
+        }
+        .attn-title { font-size:14.5px; font-weight:800; color:#111827; margin:0; letter-spacing:-.1px; }
+        .attn-sub { font-size:11.5px; color:#9CA3AF; margin:2px 0 0; }
+        .attn-count {
+            font-size:11px; font-weight:700; color:#DC2626; background:#FEE2E2;
+            min-width:20px; text-align:center; padding:2px 7px; border-radius:999px; margin-left:2px;
+        }
+        .attn-link {
+            display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:700;
+            color:${G}; text-decoration:none; padding:7px 12px; border-radius:9px; transition:background .15s;
+            white-space:nowrap;
+        }
+        .attn-link:hover { background:#E8F5EC; }
+        .attn-link svg { flex-shrink:0; }
+
+        .attn-list { display:flex; flex-direction:column; margin-top:8px; }
+        .attn-row {
+            display:flex; align-items:center; gap:13px; padding:11px 6px;
+            border-radius:10px; transition:background .15s;
+        }
+        .attn-row:hover { background:#FAFAFA; }
+        .attn-row + .attn-row { border-top:1px solid #F3F4F6; }
+        .attn-avatar {
+            width:36px; height:36px; border-radius:50%; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+            background:${G}; color:#fff;
+        }
+        .attn-avatar--risk { color:#FF8A8A; }
+        .attn-avatar--inactive { color:#FFCE7A; }
+        .attn-info { flex:1; min-width:0; display:flex; flex-direction:column; }
+        .attn-name { font-size:13px; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .attn-meta { font-size:11.5px; color:#9CA3AF; margin-top:1px; }
+        .attn-badge {
+            display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+            padding:5px 11px; border-radius:999px; white-space:nowrap; border:1px solid transparent;
+        }
+        .attn-badge svg { flex-shrink:0; }
+        .attn-badge--risk { background:#FEF2F2; color:#DC2626; border-color:#FEE2E2; }
+        .attn-badge--inactive { background:#FFFBEB; color:#B45309; border-color:#FEF3C7; }
+        .attn-more {
+            display:block; text-align:center; font-size:12px; font-weight:600; color:${G};
+            text-decoration:none; margin-top:10px; padding-top:12px; border-top:1px solid #F3F4F6;
+        }
+        .attn-more:hover { text-decoration:underline; }
 
         @media(max-width:800px){
             .sd-academic { grid-template-columns:1fr; }

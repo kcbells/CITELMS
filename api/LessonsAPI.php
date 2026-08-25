@@ -779,6 +779,10 @@ function getStudentsForOffering() {
              JOIN lessons l ON sp.lessons_id = l.lessons_id
              WHERE sp.user_student_id = u.users_id AND l.subject_id = ? AND sp.status = 'completed') as completed_lessons,
             (SELECT COUNT(*) FROM lessons l WHERE l.subject_id = ? AND l.status = 'published') as total_lessons,
+            (SELECT COUNT(*) FROM quiz q WHERE q.subject_id = ? AND q.status = 'published') as total_quizzes,
+            (SELECT COUNT(*) FROM student_quiz_attempts qa
+             JOIN quiz q ON qa.quiz_id = q.quiz_id
+             WHERE qa.user_student_id = u.users_id AND q.subject_id = ? AND qa.status = 'completed') as quizzes_taken,
             (SELECT ROUND(AVG(qa.percentage),1) FROM student_quiz_attempts qa
              JOIN quiz q ON qa.quiz_id = q.quiz_id
              WHERE qa.user_student_id = u.users_id AND q.subject_id = ? AND qa.status = 'completed') as avg_score
@@ -791,7 +795,7 @@ function getStudentsForOffering() {
          GROUP BY u.users_id, u.first_name, u.last_name, u.email, u.student_id,
                   ss.enrollment_date, ss.status
          ORDER BY u.last_name, u.first_name",
-        [$subjectId, $subjectId, $subjectId, $subjectId, $teacherId]
+        [$subjectId, $subjectId, $subjectId, $subjectId, $subjectId, $subjectId, $teacherId]
     );
 
     foreach ($students as &$s) {
