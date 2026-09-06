@@ -733,7 +733,7 @@ async function openEditSubjModal(container, btn, currentFilters = {}) {
         if (r.success) {
             renderList(container, currentFilters.semId || '', currentFilters.progId || '', currentFilters.deptId || '');
         } else {
-            alert(r.message || 'Failed to save');
+            await notify.alert(r.message || 'Failed to save', { title: 'Save Failed', type: 'error' });
         }
     });
 }

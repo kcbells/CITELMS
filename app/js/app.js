@@ -101,7 +101,7 @@ const PAGE_ALIASES = {
     'instructor/faculty-assignments': 'admin/faculty-assignments',
     'instructor/sections':          'instructor/my-classes',
     'instructor/quizzes':           'instructor/my-classes',
-    'instructor/reports':           'dean/reports',
+    'instructor/reports':           'dean/sections',
     'instructor/users':             'admin/users',
     'instructor/rbac':              'admin/rbac',
     'instructor/settings':          'admin/settings',

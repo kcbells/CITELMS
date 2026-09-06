@@ -64,19 +64,51 @@ function deanScope(): array {
 }
 
 /**
+ * Is the current dean CAS (College of Arts and Sciences)? CAS teaches the
+ * 1st/2nd-year general-education subjects embedded in EVERY other
+ * department's curriculum — it owns no programs of its own via
+ * department_program, so it gets a campus-wide program scope instead (see
+ * deanProgramIds() below) plus a year-level<=2 cap wherever subjects are
+ * listed with a year_level column (see casYearLevelClause()). Mirrors the
+ * identically-named helper in CurriculumAPI.php — kept local since these
+ * two API files don't share a require chain.
+ */
+function isDeanCAS(): bool {
+    if (Auth::role() !== 'dean') return false;
+    static $cas = null;
+    if ($cas === null) {
+        $deptId = deanScope()['department_id'];
+        $code = $deptId ? db()->fetchOne("SELECT department_code FROM department WHERE department_id = ?", [$deptId])['department_code'] ?? '' : '';
+        $cas = strtoupper($code) === 'CAS';
+    }
+    return $cas;
+}
+
+/** Appended to a SQL WHERE clause to hide Year 3/4 subjects from a CAS dean. */
+function casYearLevelClause(string $col): string {
+    return isDeanCAS() ? " AND $col <= 2" : '';
+}
+
+/**
  * All program_ids the dean manages — a department can oversee several programs
  * (e.g. College of Education: BEEd, BSEdEng, BECEd, BSEdFil, BSEdMath), so this
  * must NOT be narrowed to the dean's own single users.program_id column, or
  * every program besides their "primary" one silently disappears from views
  * like Faculty Assignments even though Curriculum management already lets
  * them manage all of them (see CurriculumAPI.php's deanCanAccessProgram()).
+ *
+ * CAS is the one exception: it manages general-education subjects across
+ * EVERY program campus-wide, not a department_program-linked set.
  */
 function deanProgramIds(): array {
     static $ids = null;
     if ($ids === null) {
         $scope = deanScope();
         $ids = [];
-        if ($scope['department_id']) {
+        if (isDeanCAS()) {
+            $rows = db()->fetchAll("SELECT program_id FROM program WHERE status = 'active'");
+            $ids = array_map(fn($r) => (int)$r['program_id'], $rows);
+        } elseif ($scope['department_id']) {
             $rows = db()->fetchAll(
                 "SELECT program_id FROM department_program WHERE department_id = ?",
                 [$scope['department_id']]
@@ -1308,13 +1340,14 @@ function handleInstructors() {
 
 function handleSubjects() {
     $programId = (int)($_GET['program_id'] ?? 0);
+    $yearCap = casYearLevelClause('year_level'); // hides Year 3/4 from a CAS dean; '' for everyone else
     if ($programId) {
         $subjects = db()->fetchAll(
-            "SELECT subject_id, subject_code, subject_name, units FROM subject WHERE status = 'active' AND program_id = ? ORDER BY subject_code",
+            "SELECT subject_id, subject_code, subject_name, units FROM subject WHERE status = 'active' AND program_id = ?{$yearCap} ORDER BY subject_code",
             [$programId]
         );
     } else {
-        $subjects = db()->fetchAll("SELECT subject_id, subject_code, subject_name, units FROM subject WHERE status = 'active' ORDER BY subject_code");
+        $subjects = db()->fetchAll("SELECT subject_id, subject_code, subject_name, units FROM subject WHERE status = 'active'{$yearCap} ORDER BY subject_code");
     }
     echo json_encode(['success' => true, 'data' => $subjects]);
 }
@@ -1337,7 +1370,16 @@ function handleDepartments() {
 }
 
 function handlePrograms() {
-    if (Auth::role() === 'dean') {
+    if (Auth::role() === 'dean' && isDeanCAS()) {
+        // CAS: every active program campus-wide — see deanProgramIds().
+        $ids = deanProgramIds();
+        $programs = $ids ? db()->fetchAll(
+            "SELECT program_id, program_code, program_name, department_id
+             FROM program WHERE status = 'active' AND program_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")
+             ORDER BY program_code",
+            $ids
+        ) : [];
+    } elseif (Auth::role() === 'dean') {
         // Dean: return only their own program
         $scope = deanScope();
         $programs = $scope['program_id'] ? db()->fetchAll(

@@ -54,12 +54,14 @@ $action = $_GET['action'] ?? '';
 // The dean's own "Manage Faculty" page gets a scoped bulk-upload of just
 // instructor accounts into their own department — everything else here
 // (full Class Density, Class List, mark-as-Global) stays admin-only.
-$_bulkDeanAllowed = ['faculty-list-import', 'preview'];
+$_bulkDeanAllowed = ['faculty-list-import', 'preview', 'undo_import'];
 if (Auth::role() !== 'admin' && !(Auth::role() === 'dean' && in_array($action, $_bulkDeanAllowed, true))) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Only admin accounts can run a bulk import']);
     exit;
 }
+
+ensureImportBatchTables();
 
 try {
     switch ($action) {
@@ -76,6 +78,8 @@ try {
         // Name, First Name, Employee ID, Email), scoped to the dean's own
         // department. Never touches subjects/sections/students.
         case 'faculty-list-import': handleFacultyListImport(); break;
+        // Undo the most recent import run — see "Import batch tracking" below.
+        case 'undo_import': handleUndoImport(); break;
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -117,6 +121,71 @@ function emitProgress(int $done, int $total): void
 {
     echo json_encode(['type' => 'progress', 'done' => $done, 'total' => $total]) . "\n";
     @flush();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Import batch tracking — every row NEWLY CREATED by an import run (never a
+// row that already existed and just got a blank field filled in) is recorded
+// here, so "Undo this import" can remove exactly and only what that specific
+// run added. A manually-created account, subject, section, or enrollment is
+// never touched by this — it was never written to import_batch_records in
+// the first place, since only the "created" branch of each upsert/find-or-
+// create function below calls trackBatchRow().
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ensureImportBatchTables(): void
+{
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo = pdo();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS import_batches (
+            batch_id     INT AUTO_INCREMENT PRIMARY KEY,
+            import_type  VARCHAR(30) NOT NULL,
+            created_by   INT NULL,
+            file_name    VARCHAR(255) NULL,
+            created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            undone_at    TIMESTAMP NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS import_batch_records (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            batch_id    INT NOT NULL,
+            table_name  VARCHAR(40) NOT NULL,
+            record_id   INT NOT NULL,
+            INDEX idx_ibr_batch (batch_id),
+            INDEX idx_ibr_lookup (table_name, record_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        error_log('BulkImportAPI ensureImportBatchTables: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Starts a new batch for the current import run, stashes its id as the
+ * "current" one (see trackBatchRow()), and returns it. Using a stashed
+ * current-batch id rather than threading a $batchId parameter through
+ * processRow()/upsertPerson()/findOrCreateSubject()/findOrCreateSection()/
+ * linkOffering()/enrollStudent() keeps this additive — none of their
+ * signatures (or their many existing call sites) need to change.
+ */
+function startImportBatch(string $importType): int
+{
+    $fileName = $_FILES['file']['name'] ?? null;
+    pdo()->prepare("INSERT INTO import_batches (import_type, created_by, file_name) VALUES (?, ?, ?)")
+         ->execute([$importType, Auth::id(), $fileName]);
+    $id = (int)pdo()->lastInsertId();
+    $GLOBALS['__importBatchId'] = $id;
+    return $id;
+}
+
+/** Call at every "created a brand-new row" branch — never on an update to an existing row. */
+function trackBatchRow(string $table, int $recordId): void
+{
+    $batchId = $GLOBALS['__importBatchId'] ?? null;
+    if (!$batchId || !$recordId) return;
+    pdo()->prepare("INSERT INTO import_batch_records (batch_id, table_name, record_id) VALUES (?, ?, ?)")
+         ->execute([$batchId, $table, $recordId]);
 }
 
 /** How many rows between progress emits — caps it at ~200 updates over the whole file so the flush overhead never outweighs the row work itself. */
@@ -508,9 +577,19 @@ function handleImport(): void
     $parsed = readAndMapUpload();
     if ($parsed === null) return; // error already echoed
 
-    ['colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows] = $parsed;
+    ['header' => $header, 'colMap' => $colMap, 'headerRowIdx' => $headerRowIdx, 'dataRows' => $rows] = $parsed;
 
+    // True only when the column landed in 'instructor_email' by default (the
+    // ambiguous bare-"Email" tie-break — see fieldAliases()'s comment on
+    // 'instructor_email'), never for an explicitly-labeled Instructor/Faculty/
+    // Employee Email header — same distinction handleClassListImport() draws,
+    // applied here too so Class Density gets the same per-row email reclaim.
+    $instrEmailColAmbiguous = isset($colMap['instructor_email'])
+        && normalizeHeader((string)($header[$colMap['instructor_email']] ?? '')) === 'email';
+
+    $batchId = startImportBatch('class_density');
     $summary = [
+        'batch_id'            => $batchId,
         'created_instructors' => 0, 'updated_instructors' => 0,
         'created_students'    => 0, 'updated_students'    => 0,
         'created_subjects'    => 0, 'updated_subjects'    => 0,
@@ -547,7 +626,7 @@ function handleImport(): void
 
             $data = extractRowData($rawRow, $colMap);
             try {
-                processRow($data, $rowNum, $summary);
+                processRow($data, $rowNum, $summary, $instrEmailColAmbiguous);
                 $summary['rows_processed']++;
             } catch (Throwable $e) {
                 $summary['errors'][] = "Row $rowNum: " . $e->getMessage();
@@ -808,7 +887,9 @@ function handleClassListImport(): void
         return;
     }
 
+    $batchId = startImportBatch('class_list');
     $summary = [
+        'batch_id'            => $batchId,
         'created_students'    => 0, 'updated_students'   => 0,
         'created_instructors' => 0, 'updated_instructors' => 0,
         'enrolled_students'   => 0, 'already_enrolled'   => 0,
@@ -901,6 +982,7 @@ function handleClassListImport(): void
                         pdo()->prepare(
                             "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at) VALUES (?, ?, 'active', NOW())"
                         )->execute([$sectionId, $offeredId]);
+                        trackBatchRow('section_subject', (int)pdo()->lastInsertId());
                     }
                 }
 
@@ -988,7 +1070,9 @@ function handleFacultyListImport(): void
         return;
     }
 
+    $batchId = startImportBatch('faculty_list');
     $summary = [
+        'batch_id'            => $batchId,
         'created_instructors' => 0, 'updated_instructors' => 0,
         'rows_processed'      => 0, 'rows_skipped_blank'  => 0,
         'matched_columns'     => array_keys($colMap),
@@ -1045,10 +1129,142 @@ function handleFacultyListImport(): void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Undo an import batch — removes only the rows THAT SPECIFIC RUN created
+// (never a row that already existed and was merely updated, and never a
+// manually-created account/subject/section/enrollment, since those were
+// never recorded in import_batch_records to begin with).
+//
+// Deletes in child-before-parent order, and before removing a "parent" row
+// (subject_offered, subject, section, users) it checks whether anything
+// OUTSIDE this batch still references it — a student someone else enrolled
+// manually after the import, an instructor now teaching a second subject via
+// a later action, etc. If so, that row is left alone and reported as "kept —
+// still in use" instead of silently orphaning something else.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** POST ?action=undo_import — body: { batch_id } */
+function handleUndoImport(): void
+{
+    $data    = json_decode(file_get_contents('php://input'), true) ?? [];
+    $batchId = (int)($data['batch_id'] ?? 0);
+    if (!$batchId) {
+        echo json_encode(['success' => false, 'message' => 'batch_id required']);
+        return;
+    }
+
+    $batch = db()->fetchOne("SELECT * FROM import_batches WHERE batch_id = ?", [$batchId]);
+    if (!$batch) {
+        echo json_encode(['success' => false, 'message' => 'Import batch not found']);
+        return;
+    }
+    if ($batch['undone_at']) {
+        echo json_encode(['success' => false, 'message' => 'This import was already undone']);
+        return;
+    }
+    // A dean may only undo their OWN faculty-list runs — everything else
+    // (Class Density, Class List) stays admin-only, matching who's allowed
+    // to run those imports in the first place.
+    if (Auth::role() === 'dean') {
+        if ($batch['import_type'] !== 'faculty_list' || (int)$batch['created_by'] !== (int)Auth::id()) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'You can only undo your own faculty list imports']);
+            return;
+        }
+    } elseif (Auth::role() !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $rows = db()->fetchAll("SELECT table_name, record_id FROM import_batch_records WHERE batch_id = ?", [$batchId]);
+    $byTable = [];
+    foreach ($rows as $r) $byTable[$r['table_name']][] = (int)$r['record_id'];
+
+    $removed = []; $kept = [];
+
+    db()->beginTransaction();
+    try {
+        // Leaves first (nothing else ever references these two).
+        deleteBatchRows('student_subject', 'student_subject_id', $byTable['student_subject'] ?? [], $removed, $kept);
+        deleteBatchRows('section_subject', 'section_subject_id', $byTable['section_subject'] ?? [], $removed, $kept);
+
+        // subject_offered — skip if any student_subject/section_subject row
+        // (necessarily NOT part of this batch, since this batch's own were
+        // just deleted above) still points at it.
+        foreach ($byTable['subject_offered'] ?? [] as $id) {
+            $stillUsed = db()->fetchOne(
+                "SELECT 1 FROM student_subject WHERE subject_offered_id = ?
+                 UNION SELECT 1 FROM section_subject WHERE subject_offered_id = ? LIMIT 1",
+                [$id, $id]
+            );
+            if ($stillUsed) { $kept[] = "subject_offered #$id (still has enrollments/sections)"; continue; }
+            pdo()->prepare("DELETE FROM subject_offered WHERE subject_offered_id = ?")->execute([$id]);
+            $removed[] = "subject_offered #$id";
+        }
+
+        // subject — skip if any remaining subject_offered still references it.
+        foreach ($byTable['subject'] ?? [] as $id) {
+            $stillUsed = db()->fetchOne("SELECT 1 FROM subject_offered WHERE subject_id = ? LIMIT 1", [$id]);
+            if ($stillUsed) { $kept[] = "subject #$id (still has class offerings)"; continue; }
+            pdo()->prepare("DELETE FROM subject WHERE subject_id = ?")->execute([$id]);
+            $removed[] = "subject #$id";
+        }
+
+        // section — skip if any remaining section_subject/student_subject still references it.
+        foreach ($byTable['section'] ?? [] as $id) {
+            $stillUsed = db()->fetchOne(
+                "SELECT 1 FROM section_subject WHERE section_id = ?
+                 UNION SELECT 1 FROM student_subject WHERE section_id = ? LIMIT 1",
+                [$id, $id]
+            );
+            if ($stillUsed) { $kept[] = "section #$id (still has classes/enrollments)"; continue; }
+            pdo()->prepare("DELETE FROM section WHERE section_id = ?")->execute([$id]);
+            $removed[] = "section #$id";
+        }
+
+        // users — skip if any remaining subject_offered/student_subject still references this account.
+        foreach ($byTable['users'] ?? [] as $id) {
+            $stillUsed = db()->fetchOne(
+                "SELECT 1 FROM subject_offered WHERE user_teacher_id = ?
+                 UNION SELECT 1 FROM student_subject WHERE user_student_id = ? LIMIT 1",
+                [$id, $id]
+            );
+            if ($stillUsed) { $kept[] = "account #$id (still assigned/enrolled elsewhere)"; continue; }
+            pdo()->prepare("DELETE FROM users WHERE users_id = ?")->execute([$id]);
+            $removed[] = "account #$id";
+        }
+
+        pdo()->prepare("UPDATE import_batches SET undone_at = NOW() WHERE batch_id = ?")->execute([$batchId]);
+        db()->commit();
+    } catch (Throwable $e) {
+        db()->rollback();
+        error_log('BulkImportAPI undo_import: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Undo failed: ' . $e->getMessage()]);
+        return;
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Import undone', 'data' => [
+        'removed_count' => count($removed), 'kept_count' => count($kept),
+        'removed' => $removed, 'kept' => $kept,
+    ]]);
+}
+
+/** Deletes every tracked row for one simple (no-dependents) table, given its own PK column name. */
+function deleteBatchRows(string $table, string $pkColumn, array $ids, array &$removed, array &$kept): void
+{
+    foreach ($ids as $id) {
+        $exists = db()->fetchOne("SELECT 1 FROM `$table` WHERE `$pkColumn` = ?", [$id]);
+        if (!$exists) continue; // already gone (e.g. cascaded away some other way)
+        pdo()->prepare("DELETE FROM `$table` WHERE `$pkColumn` = ?")->execute([$id]);
+        $removed[] = "$table #$id";
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Per-row processing
 // ─────────────────────────────────────────────────────────────────────────────
 
-function processRow(array $d, int $rowNum, array &$summary): void
+function processRow(array $d, int $rowNum, array &$summary, bool $instrEmailColAmbiguous = false): void
 {
     // A bare "ID" column doesn't say whether a given row's value is an
     // instructor's or a student's — decide per row: any letter in it (e.g.
@@ -1061,6 +1277,26 @@ function processRow(array $d, int $rowNum, array &$summary): void
             $d['employee_id'] = $genericId;
         } else {
             $d['student_id'] = $genericId;
+        }
+    }
+
+    // A bare, unlabeled "Email" column (detectColumnMap()'s default tie-break
+    // — see fieldAliases()'s comment on 'instructor_email') gets assigned to
+    // instructor_email by default, which is flat wrong for a row that's
+    // actually only a student (no instructor identity of its own at all).
+    // Same reclaim rule handleClassListImport() already uses, applied per
+    // row here since a Class Density row CAN legitimately carry both an
+    // instructor and a student — only reclaim when THIS row has no other
+    // instructor identifier and DOES have a student one, so a genuinely
+    // mixed instructor+student row is never touched.
+    if ($instrEmailColAmbiguous && !empty($d['instructor_email']) && empty($d['student_email'])) {
+        $hasOtherInstructorId = !empty($d['employee_id']) || !empty($d['instructor_name'])
+            || !empty($d['instructor_first_name']) || !empty($d['instructor_last_name']);
+        $hasStudentId = !empty($d['student_id']) || !empty($d['student_name'])
+            || !empty($d['student_first_name']) || !empty($d['student_last_name']);
+        if (!$hasOtherInstructorId && $hasStudentId) {
+            $d['student_email'] = $d['instructor_email'];
+            unset($d['instructor_email']);
         }
     }
 
@@ -1139,15 +1375,29 @@ function processRow(array $d, int $rowNum, array &$summary): void
 // Lookups (department/program match existing rows only — never auto-created)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Case- and whitespace-insensitive lookup key — collapses "COC  -  CITE",
+ * "Coc-Cite", "coc- cite" etc. down to the same key so a sheet's inconsistent
+ * spacing/casing around a department/program/campus name still matches the
+ * real row instead of silently coming up empty over pure formatting noise.
+ * Doesn't touch punctuation (a hyphen is still a hyphen) — only case and
+ * repeated/irregular whitespace, so it can't accidentally merge two
+ * genuinely different names.
+ */
+function normalizeLookupKey(string $s): string
+{
+    return preg_replace('/\s+/', ' ', strtolower(trim($s)));
+}
+
 function resolveDepartment(string $name): ?int
 {
     static $cache = [];
     $name = trim($name);
     if ($name === '') return null;
-    $key = strtolower($name);
+    $key = normalizeLookupKey($name);
     if (array_key_exists($key, $cache)) return $cache[$key];
     $row = db()->fetchOne(
-        "SELECT department_id FROM department WHERE LOWER(department_name) = ? OR LOWER(department_code) = ? LIMIT 1",
+        "SELECT department_id FROM department WHERE LOWER(TRIM(department_name)) = ? OR LOWER(TRIM(department_code)) = ? LIMIT 1",
         [$key, $key]
     );
     return $cache[$key] = $row ? (int)$row['department_id'] : null;
@@ -1158,10 +1408,10 @@ function resolveProgram(string $name): ?int
     static $cache = [];
     $name = trim($name);
     if ($name === '') return null;
-    $key = strtolower($name);
+    $key = normalizeLookupKey($name);
     if (array_key_exists($key, $cache)) return $cache[$key];
     $row = db()->fetchOne(
-        "SELECT program_id FROM program WHERE LOWER(program_name) = ? OR LOWER(program_code) = ? LIMIT 1",
+        "SELECT program_id FROM program WHERE LOWER(TRIM(program_name)) = ? OR LOWER(TRIM(program_code)) = ? LIMIT 1",
         [$key, $key]
     );
     return $cache[$key] = $row ? (int)$row['program_id'] : null;
@@ -1173,10 +1423,10 @@ function resolveCampus(string $name): ?int
     static $cache = [];
     $name = trim($name);
     if ($name === '') return null;
-    $key = strtolower($name);
+    $key = normalizeLookupKey($name);
     if (array_key_exists($key, $cache)) return $cache[$key];
     $row = db()->fetchOne(
-        "SELECT campus_id FROM campus WHERE LOWER(campus_name) = ? OR LOWER(campus_code) = ? LIMIT 1",
+        "SELECT campus_id FROM campus WHERE LOWER(TRIM(campus_name)) = ? OR LOWER(TRIM(campus_code)) = ? LIMIT 1",
         [$key, $key]
     );
     return $cache[$key] = $row ? (int)$row['campus_id'] : null;
@@ -1247,7 +1497,12 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
 {
     $code = trim($d['subject_code'] ?? '');
     if ($code === '') return null;
-    $existing = db()->fetchOne("SELECT * FROM subject WHERE subject_code = ?", [$code]);
+    // Case-insensitive on purpose — "ite300" from a sheet must match an
+    // existing "ITE300" subject, or a duplicate gets silently created every
+    // time someone's casing doesn't happen to match exactly (the single
+    // biggest real accuracy gap found in this file: resolveSubjectForClassList()
+    // already did this correctly for Class List, findOrCreateSubject() didn't).
+    $existing = db()->fetchOne("SELECT * FROM subject WHERE LOWER(subject_code) = LOWER(?)", [$code]);
 
     $name      = trim($d['subject_name'] ?? '');
     $type      = trim($d['subject_type'] ?? '') ?: null;
@@ -1288,7 +1543,9 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
              lecture_hours, lab_hours, lecture_units, lab_units, units, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())"
     )->execute([$programId, $code, $name, $type, $lectHrs ?? 0, $labHrs ?? 0, $lectUnits, $labUnits, $units ?? 3]);
-    return ['subject_id' => (int)pdo()->lastInsertId(), 'created' => true, 'updated' => false];
+    $newSubjectId = (int)pdo()->lastInsertId();
+    trackBatchRow('subject', $newSubjectId);
+    return ['subject_id' => $newSubjectId, 'created' => true, 'updated' => false];
 }
 
 function findOrCreateSection(string $name, ?int $programId, ?int $capacity): ?array
@@ -1296,12 +1553,14 @@ function findOrCreateSection(string $name, ?int $programId, ?int $capacity): ?ar
     $name = trim($name);
     if ($name === '') return null;
 
+    // Case-insensitive for the same reason as findOrCreateSubject() above —
+    // "coc-fab-bsit3-01" from a sheet must match an existing "COC-FAB-BSIT3-01".
     $existing = $programId
         ? db()->fetchOne(
-            "SELECT * FROM section WHERE section_name = ? AND (program_id = ? OR program_id IS NULL)
+            "SELECT * FROM section WHERE LOWER(section_name) = LOWER(?) AND (program_id = ? OR program_id IS NULL)
              ORDER BY (program_id IS NOT NULL) DESC LIMIT 1",
             [$name, $programId])
-        : db()->fetchOne("SELECT * FROM section WHERE section_name = ? LIMIT 1", [$name]);
+        : db()->fetchOne("SELECT * FROM section WHERE LOWER(section_name) = LOWER(?) LIMIT 1", [$name]);
 
     if ($existing) {
         if ($capacity && (int)$existing['max_students'] !== $capacity) {
@@ -1323,7 +1582,9 @@ function findOrCreateSection(string $name, ?int $programId, ?int $capacity): ?ar
         "INSERT INTO section (section_name, program_id, semester_id, enrollment_code, max_students, status)
          VALUES (?, ?, ?, ?, ?, 'active')"
     )->execute([$name, $programId, $semesterId, $code, $capacity ?: 40]);
-    return ['section_id' => (int)pdo()->lastInsertId(), 'created' => true];
+    $newSectionId = (int)pdo()->lastInsertId();
+    trackBatchRow('section', $newSectionId);
+    return ['section_id' => $newSectionId, 'created' => true];
 }
 
 function generateSectionEnrollmentCode(): string
@@ -1358,12 +1619,16 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     $email    = trim($email);
     $middleName = trim($middleName);
 
+    // Case-insensitive lookups — an email typed/exported with different
+    // casing ("Juan.Cruz@x.com" vs "juan.cruz@x.com") or an ID with a stray
+    // capital letter must still match the existing account, or a duplicate
+    // gets silently created instead of updating the real one.
     $user = null;
     if ($idValue !== '') {
-        $user = db()->fetchOne("SELECT * FROM users WHERE `$idColumn` = ?", [$idValue]);
+        $user = db()->fetchOne("SELECT * FROM users WHERE LOWER(`$idColumn`) = LOWER(?)", [$idValue]);
     }
     if (!$user && $email !== '') {
-        $user = db()->fetchOne("SELECT * FROM users WHERE email = ?", [$email]);
+        $user = db()->fetchOne("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [$email]);
     }
 
     if ($user) {
@@ -1380,7 +1645,7 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         $sets = []; $params = [];
         if ($idValue !== '' && empty($user[$idColumn]))                          { $sets[] = "`$idColumn` = ?";     $params[] = $idValue; }
         if ($email !== '' && strcasecmp($email, $user['email'] ?? '') !== 0 && !$hasRealEmail) {
-            $emailTaken = db()->fetchOne("SELECT 1 FROM users WHERE email = ? AND users_id != ?", [$email, $user['users_id']]);
+            $emailTaken = db()->fetchOne("SELECT 1 FROM users WHERE LOWER(email) = LOWER(?) AND users_id != ?", [$email, $user['users_id']]);
             if ($emailTaken) {
                 throw new Exception("can't add email \"$email\" to $role \"$idValue\" — it's already used by another account");
             }
@@ -1408,7 +1673,7 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     // exists so the UNIQUE(email) constraint doesn't block account creation
     // when a row genuinely has none.
     $finalEmail = $email !== '' ? $email : ($idValue . '@pending.local');
-    if (db()->fetchOne("SELECT 1 FROM users WHERE email = ?", [$finalEmail])) {
+    if (db()->fetchOne("SELECT 1 FROM users WHERE LOWER(email) = LOWER(?)", [$finalEmail])) {
         throw new Exception("can't create $role \"$idValue\" — email \"$finalEmail\" is already used by another account");
     }
 
@@ -1429,6 +1694,7 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         $role === 'student'    ? $idValue : null,
     ]);
     $newId = (int)pdo()->lastInsertId();
+    trackBatchRow('users', $newId);
 
     return ['users_id' => $newId, 'created' => true, 'note' => "login ID \"$idValue\" — default password \"$tempPassword\" (last name, all caps), asked to set a real one on first login"];
 }
@@ -1479,6 +1745,7 @@ function linkOffering(int $subjectId, ?int $sectionId, ?int $teacherId): ?int
              VALUES (?, ?, ?, 'open', NOW(), NOW())"
         )->execute([$subjectId, $semesterId, $teacherId]);
         $offeredId = (int)pdo()->lastInsertId();
+        trackBatchRow('subject_offered', $offeredId);
     }
 
     if ($sectionId) {
@@ -1486,6 +1753,7 @@ function linkOffering(int $subjectId, ?int $sectionId, ?int $teacherId): ?int
         if (!$exists) {
             pdo()->prepare("INSERT INTO section_subject (section_id, subject_offered_id, status, created_at) VALUES (?, ?, 'active', NOW())")
                  ->execute([$sectionId, $offeredId]);
+            trackBatchRow('section_subject', (int)pdo()->lastInsertId());
         }
     }
 
@@ -1503,5 +1771,6 @@ function enrollStudent(int $studentUserId, int $offeredId, ?int $sectionId): boo
         "INSERT INTO student_subject (user_student_id, subject_offered_id, section_id, status, enrollment_date)
          VALUES (?, ?, ?, 'enrolled', NOW())"
     )->execute([$studentUserId, $offeredId, $sectionId]);
+    trackBatchRow('student_subject', (int)pdo()->lastInsertId());
     return true;
 }

@@ -77,13 +77,10 @@ const menus = {
             ]},
         ]},
         { items: [
-            { icon: 'users', text: 'Sections', page: 'sections', permission: null },
+            { icon: 'chart', text: 'Reports', page: 'sections', permission: null },
         ]},
         { items: [
             { icon: 'user', text: 'Manage Faculty', page: 'instructors', permission: null },
-        ]},
-        { items: [
-            { icon: 'chart', text: 'Reports', page: 'reports', permission: null },
         ]},
         { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },
@@ -125,6 +122,9 @@ const menus = {
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: 'grades.view' },
+        ]},
+        { items: [
+            { icon: 'chart', text: 'Reports', page: 'reports', permission: 'reports.view' },
         ]},
         { items: [
             { icon: 'messages', text: 'Messages', page: 'messages', permission: null, badge: true },

@@ -135,6 +135,39 @@ class StudentListParser {
         return $text;
     }
 
+    /**
+     * Same extraction/truncation behavior as extractReadableText(), but for a
+     * file that already lives on disk (e.g. a Teaching Guide/SAS document
+     * saved by ModuleDocumentsAPI.php) instead of a fresh $_FILES upload —
+     * is_uploaded_file() would reject that path, so this skips the
+     * upload-specific checks and reuses the same private type dispatcher.
+     */
+    public static function extractReadableTextFromPath(string $path, string $originalName = ''): string {
+        if (!is_file($path)) {
+            throw new InvalidArgumentException('File not found');
+        }
+        if (filesize($path) > 10 * 1024 * 1024) {
+            throw new InvalidArgumentException('File too large (max 10MB)');
+        }
+
+        $name = strtolower($originalName !== '' ? $originalName : basename($path));
+        $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $mime = self::detectMime($path);
+
+        $text = self::extractTextByType($path, $ext, $mime);
+        $text = trim(preg_replace("/\r\n?/", "\n", $text) ?? $text);
+
+        if ($text === '') {
+            throw new InvalidArgumentException('No readable text found in this file.');
+        }
+
+        if (mb_strlen($text) > 8000) {
+            $text = mb_substr($text, 0, 8000);
+        }
+
+        return $text;
+    }
+
     private static function uploadErrorMessage($code) {
         return match ((int)$code) {
             UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'File is too large',

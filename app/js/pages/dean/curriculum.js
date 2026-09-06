@@ -3,6 +3,7 @@
  * Program cards · curriculum version tabs · add program · upload curriculum docs
  */
 import { Api } from '../../api.js';
+import { notify } from '../../utils/notify.js';
 
 let _programs   = [];
 let _activeProg = null;
@@ -159,7 +160,7 @@ function renderVersionBar(container) {
                 renderVersionBar(container);
                 await reloadSubjects(container);
             } else {
-                alert(r.message || 'Failed to delete version');
+                await notify.alert(r.message || 'Failed to delete version', { title: 'Delete Failed', type: 'error' });
                 btn.disabled = false;
             }
         });
@@ -422,7 +423,7 @@ function bindElectiveEvents(el) {
             track_name: name, program_id: _activeProg.program_id, department_id: _activeProg.department_id,
         });
         if (res.success) await loadElectives(null, el);
-        else alert(res.message || 'Failed to add track');
+        else await notify.alert(res.message || 'Failed to add track', { title: 'Add Failed', type: 'error' });
     });
     el.querySelectorAll('.el-del-track').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -720,7 +721,7 @@ function openAddVersionModal(container) {
     });
 
     setTimeout(() => bd.querySelector('#av-label')?.focus(), 60);
-    bd.querySelector('#av-tpl-btn').addEventListener('click', () => downloadCurriculumTemplate().catch(e => alert('Could not generate template: ' + e.message)));
+    bd.querySelector('#av-tpl-btn').addEventListener('click', () => downloadCurriculumTemplate().catch(e => notify.alert('Could not generate template: ' + e.message, { title: 'Template Error', type: 'error' })));
 }
 
 // ── Curriculum template download (CHED two-column XLSX format) ────────────
@@ -1061,7 +1062,7 @@ async function openImportModal(container, opts = {}) {
         progEl.style.display = 'none';
     });
 
-    bd.querySelector('#pim-tpl-btn').addEventListener('click', () => downloadCurriculumTemplate().catch(e => alert('Could not generate template: ' + e.message)));
+    bd.querySelector('#pim-tpl-btn').addEventListener('click', () => downloadCurriculumTemplate().catch(e => notify.alert('Could not generate template: ' + e.message, { title: 'Template Error', type: 'error' })));
 
     const setProgress = msg => {
         const el = bd.querySelector('#pim-progress-text');

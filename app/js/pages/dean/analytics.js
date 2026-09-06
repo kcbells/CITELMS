@@ -64,7 +64,7 @@ export async function render(container) {
                     <span style="color:#6B0F1A;font-weight:700">${s.avg_score}%</span>
                 </div>`).join('')}
         </div>` : ''}
-        <p style="font-size:13px;color:#6B7280"><a href="#dean/reports" style="color:${G};font-weight:700">View full department reports →</a></p>`;
+        <p style="font-size:13px;color:#6B7280"><a href="#dean/sections" style="color:${G};font-weight:700">View full struggling-students report →</a></p>`;
 }
 
 function esc(str) {

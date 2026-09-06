@@ -485,7 +485,7 @@ async function runAiGrade(overlay, answerId, maxPts) {
         btn.innerHTML = `${icon('robot', inl)} Retry AI grade`;
         if (hint) {
             const msgEl = hint.querySelector('span');
-            if (msgEl) msgEl.textContent = res.message || 'AI grading failed. Check Groq API key in Settings.';
+            if (msgEl) msgEl.textContent = res.message || 'AI grading failed. Check Hugging Face API key in Settings.';
             hint.style.background = '#FEE2E2';
             hint.style.border     = '1px dashed #FCA5A5';
             hint.style.color      = '#b91c1c';

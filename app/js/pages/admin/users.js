@@ -245,13 +245,25 @@ async function renderList(container, filters = {}) {
     container.querySelector('#btn-export-pdf').addEventListener('click', () => exportUsers('pdf', filters));
 
     // Event: Filters
+    // renderList() rebuilds the whole container (including a brand-new
+    // #filter-search element) every time it runs, which happens on every
+    // debounce fire here — so the OLD input loses focus underneath the
+    // user's cursor, and unless it's explicitly restored below, they have
+    // to click back into the box before typing each next character (looked
+    // like search only accepted "one letter at a time").
     let debounce;
     container.querySelector('#filter-search').addEventListener('input', (e) => {
         clearTimeout(debounce);
-        debounce = setTimeout(() => {
+        debounce = setTimeout(async () => {
             filters.search = e.target.value;
             filters.page = 1;
-            renderList(container, filters);
+            await renderList(container, filters);
+            const freshInput = container.querySelector('#filter-search');
+            if (freshInput) {
+                freshInput.focus();
+                const pos = freshInput.value.length;
+                freshInput.setSelectionRange(pos, pos);
+            }
         }, 400);
     });
     container.querySelector('#filter-role').addEventListener('change', (e) => {

@@ -186,12 +186,16 @@ function handleAdminReport() {
 }
 
 /**
- * Struggling Students — for a program head's "Reports" page,
- * scoped to their own program and the year level(s) their account is
- * assigned to handle (users.year_level_from/to). A dean sees every program
- * in their department instead, with no year-level narrowing.
+ * Class Performance / Struggling Students — for a program head's "Reports"
+ * page, scoped to their own program and the year level(s) their account is
+ * assigned to handle (users.year_level_from/to, set by their dean). A dean
+ * sees every program in their department instead, with no year-level
+ * narrowing. An instructor sees only the subjects they're assigned to teach
+ * (subject_offered.user_teacher_id), across every section of those subjects.
  *
- * "Struggling" combines two signals per subject a student is enrolled in:
+ * Organized as Subject → Section → students, so a viewer can see the whole
+ * roster shape (who's enrolled, per section) not just a flat problem list.
+ * Per student per subject, one of two signals decides their status:
  *   - grade average: for Global Gradebook offerings, the average wrap-up
  *     quiz score across their entered modules (the closest single number
  *     to an overall grade without re-deriving the full EL/Mastery weighted
@@ -199,16 +203,20 @@ function handleAdminReport() {
  *     stored "grade" — the class record IS built from quiz scores — so
  *     that signal simply isn't available and quiz average carries it alone.
  *   - quiz average: completed attempt percentage across that subject's quizzes.
- * A subject counts as struggling for a student when whichever of those two
- * is available (grade average takes priority when both exist) is below its
- * cutoff — 80 for a Global Gradebook grade average, 60 for a quiz average —
- * and only when there's actually at least one attempt/entry behind it —
- * a student with zero data isn't "struggling", they're just not counted
- * here (non-engagement was deliberately left out of this report's scope).
+ * Status per student per subject:
+ *   - 'lacking'  — enrolled but zero quiz attempts AND zero module grade
+ *                  entries. Previously silently dropped from this report;
+ *                  now surfaced as its own remark instead of vanishing.
+ *   - 'critical' — has data, but score is more than 20 points under cutoff
+ *                  (cutoff: 80 for a Global Gradebook grade average, 60 for
+ *                  a quiz average) — i.e. below 60/40 respectively.
+ *   - 'at_risk'  — has data, below cutoff but not by more than 20 points.
+ *   - 'good'     — at or above cutoff — counted in the section's totals but
+ *                  not included in the per-student flagged list.
  */
 function handleStrugglingStudents() {
     $role = Auth::role();
-    if (!in_array($role, ['program_head', 'dean', 'admin'], true)) {
+    if (!in_array($role, ['program_head', 'dean', 'admin', 'instructor'], true)) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Not available for this role']);
         return;
@@ -217,14 +225,17 @@ function handleStrugglingStudents() {
     $programIds = [];
     $yearFrom = null;
     $yearTo   = null;
+    $teacherId = null;
 
-    if ($role === 'program_head') {
+    if ($role === 'instructor') {
+        $teacherId = (int)Auth::id();
+    } elseif ($role === 'program_head') {
         $me = db()->fetchOne(
             "SELECT program_id, year_level_from, year_level_to FROM users WHERE users_id = ?",
             [Auth::id()]
         );
         if (empty($me['program_id'])) {
-            echo json_encode(['success' => true, 'data' => ['students' => [], 'by_subject' => [], 'unscoped' => true]]);
+            echo json_encode(['success' => true, 'data' => ['subjects' => [], 'totals' => null, 'unscoped' => true]]);
             return;
         }
         $programIds = [(int)$me['program_id']];
@@ -242,26 +253,34 @@ function handleStrugglingStudents() {
         if ($requested) $programIds = [$requested];
     }
 
-    if ($role !== 'admin' && !$programIds) {
-        echo json_encode(['success' => true, 'data' => ['students' => [], 'by_subject' => [], 'unscoped' => true]]);
+    if ($role !== 'admin' && $role !== 'instructor' && !$programIds) {
+        echo json_encode(['success' => true, 'data' => ['subjects' => [], 'totals' => null, 'unscoped' => true]]);
         return;
     }
 
     $where  = ["u.role = 'student'", "u.status = 'active'"];
     $params = [];
+    if ($teacherId !== null) {
+        $where[] = "so.user_teacher_id = ?";
+        $params[] = $teacherId;
+    }
     if ($programIds) {
         $ph = implode(',', array_fill(0, count($programIds), '?'));
         $where[] = "s.program_id IN ($ph)";
         $params = array_merge($params, $programIds);
     }
-    if ($yearFrom !== null) { $where[] = "u.year_level >= ?"; $params[] = $yearFrom; }
-    if ($yearTo   !== null) { $where[] = "u.year_level <= ?"; $params[] = $yearTo; }
+    // A student with no year_level set isn't provably outside a program
+    // head's scope — treat it as "unknown, include" rather than silently
+    // dropping them from oversight.
+    if ($yearFrom !== null) { $where[] = "(u.year_level IS NULL OR u.year_level >= ?)"; $params[] = $yearFrom; }
+    if ($yearTo   !== null) { $where[] = "(u.year_level IS NULL OR u.year_level <= ?)"; $params[] = $yearTo; }
     $whereSql = implode(' AND ', $where);
 
     $rows = db()->fetchAll(
         "SELECT
             u.users_id, u.first_name, u.last_name, u.student_id, u.year_level,
-            s.subject_id, s.subject_code, s.subject_name, so.grading_type,
+            s.subject_id, s.subject_code, s.subject_name, so.subject_offered_id, so.grading_type,
+            ss.section_id, sec.section_name,
             ROUND(AVG(CASE WHEN sqa.status = 'completed' THEN sqa.percentage END), 1) AS quiz_avg,
             COUNT(DISTINCT CASE WHEN sqa.status = 'completed' THEN sqa.attempt_id END) AS quiz_attempts,
             ROUND(AVG(gmg.wrap_up_quiz), 1) AS module_avg,
@@ -270,82 +289,104 @@ function handleStrugglingStudents() {
          JOIN student_subject ss  ON ss.user_student_id = u.users_id AND ss.status = 'enrolled'
          JOIN subject_offered so  ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s           ON s.subject_id = so.subject_id
+         LEFT JOIN section sec               ON sec.section_id = ss.section_id
          LEFT JOIN quiz q                    ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
          LEFT JOIN global_module_grades gmg  ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id AND gmg.wrap_up_quiz IS NOT NULL
          WHERE $whereSql
-         GROUP BY u.users_id, s.subject_id, so.subject_offered_id",
+         GROUP BY u.users_id, s.subject_id, so.subject_offered_id, ss.section_id",
         $params
     );
 
-    $byStudent = [];
-    $bySubject = [];
+    // subjects[subject_id] -> { ...meta, sections[section_id] -> { ...meta, students[] } }
+    $subjects = [];
+    $totals = ['enrolled' => 0, 'submitted' => 0, 'lacking' => 0, 'flagged' => 0];
+
     foreach ($rows as $r) {
         $hasModule = (int)$r['module_entries'] > 0;
         $hasQuiz   = (int)$r['quiz_attempts'] > 0;
-        if (!$hasModule && !$hasQuiz) continue; // no data at all — not "struggling", just untouched
+        $hasData   = $hasModule || $hasQuiz;
 
-        $score  = $hasModule ? (float)$r['module_avg'] : (float)$r['quiz_avg'];
-        $source = $hasModule ? 'grade' : 'quiz';
-        // Global Gradebook subjects use an 80% cutoff (its mastery-based
-        // grading norm runs higher than a plain quiz score), quiz-only
-        // subjects (Raw Score offerings, no separate stored grade) keep 60%.
-        $threshold = $hasModule ? 80 : 60;
-        if ($score >= $threshold) continue;
+        $score = null; $source = null; $status = 'lacking';
+        if ($hasData) {
+            $score  = $hasModule ? (float)$r['module_avg'] : (float)$r['quiz_avg'];
+            $source = $hasModule ? 'grade' : 'quiz';
+            // Global Gradebook subjects use an 80% cutoff (its mastery-based
+            // grading norm runs higher than a plain quiz score), quiz-only
+            // subjects (Raw Score offerings, no separate stored grade) keep 60%.
+            $cutoff = $hasModule ? 80 : 60;
+            if ($score >= $cutoff) $status = 'good';
+            elseif ($score >= $cutoff - 20) $status = 'at_risk';
+            else $status = 'critical';
+        }
 
-        $sid = (int)$r['users_id'];
-        if (!isset($byStudent[$sid])) {
-            $byStudent[$sid] = [
-                'users_id'   => $sid,
+        $subjId = (int)$r['subject_id'];
+        if (!isset($subjects[$subjId])) {
+            $subjects[$subjId] = [
+                'subject_id'   => $subjId,
+                'subject_code' => $r['subject_code'],
+                'subject_name' => $r['subject_name'],
+                'grading_type' => $r['grading_type'],
+                'sections'     => [],
+            ];
+        }
+        $secId = $r['section_id'] !== null ? (int)$r['section_id'] : 0;
+        if (!isset($subjects[$subjId]['sections'][$secId])) {
+            $subjects[$subjId]['sections'][$secId] = [
+                'section_id'      => $secId ?: null,
+                'section_name'    => $r['section_name'] ?? 'No section',
+                'enrolled_count'  => 0,
+                'submitted_count' => 0,
+                'lacking_count'   => 0,
+                'students'        => [],
+            ];
+        }
+        $sec = &$subjects[$subjId]['sections'][$secId];
+        $sec['enrolled_count']++;
+        $totals['enrolled']++;
+        if ($hasData) { $sec['submitted_count']++; $totals['submitted']++; }
+        else { $sec['lacking_count']++; $totals['lacking']++; }
+
+        if ($status !== 'good') {
+            $sec['students'][] = [
+                'users_id'   => (int)$r['users_id'],
                 'name'       => trim($r['first_name'] . ' ' . $r['last_name']),
                 'student_id' => $r['student_id'],
                 'year_level' => $r['year_level'] !== null ? (int)$r['year_level'] : null,
-                'subjects'   => [],
+                'score'      => $score,
+                'source'     => $source,
+                'status'     => $status, // 'critical' | 'at_risk' | 'lacking'
             ];
+            $totals['flagged']++;
         }
-        $byStudent[$sid]['subjects'][] = [
-            'subject_code' => $r['subject_code'],
-            'subject_name' => $r['subject_name'],
-            'score'        => $score,
-            'source'       => $source, // 'grade' (Global Gradebook module avg) or 'quiz'
-        ];
-
-        $code = $r['subject_code'];
-        if (!isset($bySubject[$code])) {
-            $bySubject[$code] = ['subject_code' => $code, 'subject_name' => $r['subject_name'], 'count' => 0, 'score_sum' => 0];
-        }
-        $bySubject[$code]['count']++;
-        $bySubject[$code]['score_sum'] += $score;
+        unset($sec);
     }
 
-    // Worst-first within each student, and worst-average-first across students
-    foreach ($byStudent as &$stu) {
-        usort($stu['subjects'], fn($a, $b) => $a['score'] <=> $b['score']);
+    // Sort: worst-first within each section (critical > at_risk > lacking, then by score), sections/subjects alphabetically.
+    $statusRank = ['critical' => 0, 'at_risk' => 1, 'lacking' => 2];
+    $subjectsOut = [];
+    foreach ($subjects as $subj) {
+        $sections = array_values($subj['sections']);
+        foreach ($sections as &$sec) {
+            usort($sec['students'], function ($a, $b) use ($statusRank) {
+                $r = $statusRank[$a['status']] <=> $statusRank[$b['status']];
+                if ($r !== 0) return $r;
+                return ($a['score'] ?? -1) <=> ($b['score'] ?? -1);
+            });
+        }
+        unset($sec);
+        usort($sections, fn($a, $b) => strcmp($a['section_name'], $b['section_name']));
+        $subj['sections'] = $sections;
+        $subjectsOut[] = $subj;
     }
-    unset($stu);
-    $students = array_values($byStudent);
-    usort($students, function ($a, $b) {
-        $avgA = array_sum(array_column($a['subjects'], 'score')) / count($a['subjects']);
-        $avgB = array_sum(array_column($b['subjects'], 'score')) / count($b['subjects']);
-        return $avgA <=> $avgB;
-    });
-
-    $bySubjectOut = array_values(array_map(function ($s) {
-        return [
-            'subject_code' => $s['subject_code'],
-            'subject_name' => $s['subject_name'],
-            'count'        => $s['count'],
-            'avg_score'    => round($s['score_sum'] / $s['count'], 1),
-        ];
-    }, $bySubject));
-    usort($bySubjectOut, fn($a, $b) => $b['count'] <=> $a['count']);
+    usort($subjectsOut, fn($a, $b) => strcmp($a['subject_code'], $b['subject_code']));
 
     echo json_encode([
         'success' => true,
         'data' => [
-            'students'  => $students,
-            'by_subject'=> $bySubjectOut,
-            'scope'     => [
+            'subjects' => $subjectsOut,
+            'totals'   => $totals,
+            'scope'    => [
                 'year_from' => $yearFrom,
                 'year_to'   => $yearTo,
             ],

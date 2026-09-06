@@ -13,8 +13,8 @@ import {
     computeStudentReport, formatGrade, PERIOD_MODULES, PERIODS,
 } from '../../utils/grading-engine.js';
 import { openModuleDocumentsModal } from '../../components/module-documents-modal.js';
-import { notify } from '../../utils/notify.js';
 import { Auth } from '../../auth.js';
+import { openGradingWorkbookExport } from './gradebook-xlsx-export.js';
 
 const G      = '#00461B';
 const G2     = '#006428';
@@ -420,9 +420,14 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
             });
         });
 
-        host.querySelector('#ggb-export').addEventListener('click', () =>
-            openExportPreviewModal(subject, section, students, grades, project)
-        );
+        host.querySelector('#ggb-export').addEventListener('click', () => {
+            const me = Auth.user() || {};
+            openGradingWorkbookExport(subject, section, students, grades, project, retries, {
+                teacherName: me.name || '',
+                campusLabel: students[0]?.campus_name || '',
+                departmentLabel: students[0]?.department_code || '',
+            });
+        });
         host.querySelector('#ggb-export-sis').addEventListener('click', () =>
             exportSisCsvs(subject, section, students, grades, project)
         );
@@ -1088,7 +1093,7 @@ function renderSummaryTable(students, grades, project, subjectCode = '', section
     <p class="ggb-proj-note">EL = Effortful Learning (SOC 5% + LP 35% + Reflection 15%). Mastery = WUQ 15% + Project 30%. Grade = EL × 55% + Mastery × 45%. Mastery threshold: 80.</p>`;
 }
 
-function computeStudentGrades(sid, grades, project) {
+export function computeStudentGrades(sid, grades, project) {
     const report = computeStudentReport({
         getModuleInput: (m) => {
             const mg = grades[sid]?.[m] || {};
@@ -1276,377 +1281,6 @@ function attachRetriesEvents(area, offeredId, retries) {
             focusNextRowDown(area, sel);
         });
     });
-}
-
-// ── Excel Export ──────────────────────────────────────────────────────────
-// Was a CSV download — now a real .xlsx workbook (via the vendored SheetJS
-// build already used elsewhere in the app for reading uploads, e.g.
-// dean/curriculum.js) with a GUIDE sheet in front of the actual grade data,
-// and a preview shown before the file is actually written to disk.
-
-/** Builds the "#, Student ID, Name, ...grades..." rows shared by the
- *  preview table and the real workbook — same columns the old CSV had. */
-function buildGradeDataAoa(students, grades, project) {
-    const hdrs = ['#', 'Student ID', 'Name'];
-    for (let m = 1; m <= 14; m++) {
-        hdrs.push(`M${m} SOC1`, `M${m} SOC2`, `M${m} LP`, `M${m} LP Opt`, `M${m} Reflection`, `M${m} WUQ`);
-    }
-    // One project for the whole term, not one per period.
-    hdrs.push('P1 Check-in Grade', 'P2 Check-in Grade', 'P3.1 Check-in Grade', 'P3.2 Check-in Grade',
-        'Check-in Grades Average', 'Final Output/Presentation Grade', 'Project Overall Grade');
-    hdrs.push('P1 EL','P1 Mastery','P1 Grade','P2 EL','P2 Mastery','P2 Grade','Final EL','Final Mastery','Final Grade','Mastery Status','Remarks');
-
-    const body = students.map((st, i) => {
-        const sid = st.user_student_id;
-        const row = [i + 1, st.student_id || '', st.name];
-        for (let m = 1; m <= 14; m++) {
-            const mg = grades[sid]?.[m] || {};
-            row.push(mg.soc1 || '', mg.soc2 || '', mg.lets_practice ?? '', mg.lets_practice_optional ?? '', mg.reflection ?? '', mg.wrap_up_quiz ?? '');
-        }
-        const pg       = project[sid] || {};
-        const checkins = [pg.checkin1 ?? null, pg.checkin2 ?? null, pg.checkin3 ?? null, pg.checkin4 ?? null];
-        const avg      = checkinAverage(checkins);
-        const overall  = projectOverallGrade(checkins, pg.final_output ?? null);
-        row.push(pg.checkin1??'',pg.checkin2??'',pg.checkin3??'',pg.checkin4??'',fmt(avg),pg.final_output??'',fmt(overall));
-
-        const { p1, p2, final, masteryStatus, remarks } = computeStudentGrades(sid, grades, project);
-        row.push(fmt(p1.el),fmt(p1.mastery),fmt(p1.grade),fmt(p2.el),fmt(p2.mastery),fmt(p2.grade),fmt(final.el),fmt(final.mastery),fmt(final.grade),masteryStatus||'',remarks||'');
-        return row;
-    });
-
-    return [hdrs, ...body];
-}
-
-/** The GUIDE sheet's content, matching the reference template's actual
- *  layout: a "File Information" block sits in columns A–B, and the two 0-3
- *  Effort Level rubric tables sit BESIDE it starting at column C — not
- *  stacked underneath. Each table's "Effort Level" column also isn't a
- *  plain label; in the reference it's the bold label and its one-line
- *  description stacked inside the SAME wrapped cell (e.g. "No Effort" then
- *  "No visible attempt or engagement." on the next line).
- *  Returns two separate row grids (one per origin) plus the absolute
- *  merge ranges / title / header cell coordinates needed to place and
- *  style both blocks on one sheet via sheet_add_aoa(). */
-function buildGuideAoa(subject, section) {
-    const teacherName = Auth.user()?.name || '';
-    const RUBRIC_COL = 2; // column C — where the rubric tables start, beside File Information
-
-    // ── Left block: File Information (columns A–B) ─────────────────────
-    const fileInfoAoa = [
-        ['File Information'],
-        ['Name of Teacher', teacherName],
-        ['School and Campus', ''],
-        ['Department', ''],
-        ['Subject Name', subject?.subject_name || subject?.subject_code || ''],
-        ['Section', section?.section_name || ''],
-        ['Modality or Class Set-up', ''],
-    ];
-
-    // Bold label + its description on two lines, ONE cell — matches the
-    // reference sheet's "Effort Level" column exactly (Excel renders \n as
-    // a real line break once wrapText is on, set in styleGuideSheet()).
-    const el = (label, desc) => `${label}\n${desc}`;
-
-    const t1Header = ['Score', 'Effort Level', 'Individual Work Examples',
-        'Group Work Examples (3–5 students)', 'Submitted Task Examples (e.g., digital work, drafts, prototypes)'];
-    const t1Rows = [
-        ['0\n(0%)',   el('No Effort', 'No visible attempt or engagement.'),
-            'Leaves task blank; no work or explanation.',
-            'No contribution to group output; silent during discussion.',
-            'No file submitted, or uploads a blank/near-blank file; clearly off-task file with no attempt to follow task.'],
-        ['1\n(60%)',  el('Little Effort', 'Minimal or superficial attempt.'),
-            'Writes vague or incomplete answers.',
-            'Minimal contribution; limited or copied work.',
-            'Very short or mostly copied work; only a small portion of the instructions addressed; major parts of instructions missing.'],
-        ['2\n(80%)',  el('Good Effort', 'Reasonable attempt showing engagement, even with errors.'),
-            'Attempts the task, shows process or reasoning.',
-            'Actively participates, contributes ideas, records feedback.',
-            'Draft or output addresses most parts of the task; visible thinking or process (e.g., annotations, rough draft).'],
-        ['3\n(100%)', el('Stronger Effort', 'Substantive attempt showing revision/improvement or deep engagement.'),
-            'Revises or improves work after feedback/input.',
-            'Leads or defends ideas, revises/improves group output, builds on feedback/input.',
-            'Substantive draft or product that clearly incorporates feedback/input; revised or expanded beyond first attempt.'],
-    ];
-
-    const t2Header = ['Score', 'Effort Level', 'Description', 'Examples of Student Responses / Behaviors'];
-    const t2Rows = [
-        ['0\n(0%)',   el('No Effort', 'No response or off-topic.'), 'No evidence of reflection.', 'Blank, off-topic, or "I don\'t know."'],
-        ['1\n(60%)',  el('Little Effort', 'Minimal or vague response.'), 'Generic statement without explanation.', '"It was hard." / "We answered the questions."'],
-        ['2\n(80%)',  el('Good Effort', 'Specific recall and explanation in their own words.'), 'Shows understanding and processing of learning.', '"I learned how to identify context clues…"'],
-        ['3\n(100%)', el('Stronger Effort', 'Connects learning to prior knowledge or real-world use.'), 'Shows reasoning, collaboration, or deeper insight.', '"I realized using context clues is like how I analyzed tone last week…"'],
-    ];
-
-    // ── Right block: the two rubric tables, stacked, at column C ────────
-    // In the reference sheet, "Let's Learn: ..." and "0-3 Rubrics for
-    // Grading ..." are NOT filled colored bars — they're plain bold text
-    // in two different colors sitting directly above the table. Only
-    // "File Information" itself is an actual filled bar. Keeping these as
-    // two separate style buckets (fileInfoTitleCells vs eyebrowCells /
-    // headingCells) is what makes the sheet look like the picture instead
-    // of a row of big dark boxes.
-    const rubricAoa       = [];
-    const merges          = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }]; // File Information bar (A1:B1)
-    const headerCells     = []; // absolute {r,c} — bold/fill as a table header row
-    const fileInfoTitleCells = [{ r: 0, c: 0 }]; // absolute {r,c} — bold/fill as a solid bar
-    const eyebrowCells    = []; // "Let's Learn: ..." line — plain bold, dark purple text
-    const headingCells    = []; // "0-3 Rubrics for ..." line — plain bold, green text
-
-    const pushTitleLine = (text, colSpan, bucket) => {
-        const r = rubricAoa.length;
-        bucket.push({ r, c: RUBRIC_COL });
-        merges.push({ s: { r, c: RUBRIC_COL }, e: { r, c: RUBRIC_COL + colSpan - 1 } });
-        rubricAoa.push([text]);
-    };
-    const pushHeader = (hdr) => {
-        const r = rubricAoa.length;
-        hdr.forEach((_, i) => headerCells.push({ r, c: RUBRIC_COL + i }));
-        rubricAoa.push(hdr);
-    };
-    const pushBlank = () => rubricAoa.push([]);
-
-    pushTitleLine("Let's Learn: How Assessment Design Impacts Learning", t1Header.length, eyebrowCells);
-    pushTitleLine("0-3 Rubrics for Grading Let's Practice Tasks", t1Header.length, headingCells);
-    pushBlank();
-    pushHeader(t1Header);
-    t1Rows.forEach(r => rubricAoa.push(r));
-    pushBlank();
-    pushBlank();
-
-    pushTitleLine("Let's Learn: How Assessment Design Impacts Learning", t2Header.length, eyebrowCells);
-    pushTitleLine('0-3 Rubrics for Grading Reflection', t2Header.length, headingCells);
-    pushBlank();
-    pushHeader(t2Header);
-    t2Rows.forEach(r => rubricAoa.push(r));
-
-    return {
-        fileInfoAoa, rubricAoa, rubricOrigin: { r: 0, c: RUBRIC_COL }, merges,
-        headerCells, fileInfoTitleCells, eyebrowCells, headingCells,
-    };
-}
-
-/** Applies bold/fill/wrap styling to the cells computed by buildGuideAoa()
- *  — best-effort: SheetJS's community build (the one vendored here) writes
- *  cell fill colors inconsistently across viewers, so the actual
- *  merged-cell LAYOUT is what's guaranteed correct; the purple/green
- *  coloring and text wrapping are a bonus where the reader supports them. */
-function styleGuideSheet(ws, XLSX, { fileInfoTitleCells, eyebrowCells, headingCells, headerCells }) {
-    const setStyle = (r, c, style) => {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-        ws[addr].s = { ...(ws[addr].s || {}), ...style };
-    };
-    // Wrap text everywhere on the sheet so the two-line "Effort Level"
-    // cells and the long example paragraphs actually display as intended
-    // instead of one unreadable overflowing line.
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let r = 0; r <= range.e.r; r++) {
-        for (let c = 0; c <= range.e.c; c++) {
-            setStyle(r, c, { alignment: { wrapText: true, vertical: 'top' } });
-        }
-    }
-    // Only "File Information" is an actual filled bar.
-    fileInfoTitleCells.forEach(({ r, c }) => setStyle(r, c, {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '2E1A47' } },
-        alignment: { wrapText: true, vertical: 'center' },
-    }));
-    // The two rubric heading lines are plain colored TEXT — no fill — same
-    // as the reference sheet, not a big colored box.
-    eyebrowCells.forEach(({ r, c }) => setStyle(r, c, {
-        font: { bold: true, color: { rgb: '2E1A47' } },
-    }));
-    headingCells.forEach(({ r, c }) => setStyle(r, c, {
-        font: { bold: true, sz: 13, color: { rgb: '1B7A3D' } },
-    }));
-    headerCells.forEach(({ r, c }) => setStyle(r, c, {
-        font: { bold: true, color: { rgb: '1B4D2E' } },
-        fill: { fgColor: { rgb: 'E8F5EC' } },
-    }));
-}
-
-/** Filename: "{Subject Name} {Section Name}.xlsx" — only strips characters
- *  that are actually illegal in a filename (\/:*?"<>|), unlike the old CSV
- *  export which stripped every non-word character including the spaces
- *  and hyphens a subject/section name normally has. */
-function exportFileName(subject, section) {
-    const raw = `${subject.subject_name || subject.subject_code} ${section.section_name}`.trim();
-    return `${raw.replace(/[\\/:*?"<>|]+/g, '')}.xlsx`;
-}
-
-let xlsxLoadPromise = null;
-/** Loads the vendored SheetJS build (same one dean/curriculum.js uses for
- *  reading curriculum uploads) so window.XLSX can also WRITE a workbook —
- *  local file, not a CDN, so it works offline like the rest of this PWA. */
-function loadXlsxLib() {
-    if (window.XLSX) return Promise.resolve(window.XLSX);
-    if (xlsxLoadPromise) return xlsxLoadPromise;
-    xlsxLoadPromise = new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = new URL('../../vendor/xlsx.full.min.js', import.meta.url).href;
-        s.onload  = () => resolve(window.XLSX);
-        s.onerror = () => { xlsxLoadPromise = null; reject(new Error('Could not load the Excel export library.')); };
-        document.head.appendChild(s);
-    });
-    return xlsxLoadPromise;
-}
-
-function aoaToHtmlTable(aoa, { maxRows = null, titleRows = [], eyebrowRows = [], headingRows = [], headerRows = [] } = {}) {
-    const rows = maxRows ? aoa.slice(0, maxRows) : aoa;
-    const titleSet   = new Set(titleRows);
-    const eyebrowSet = new Set(eyebrowRows);
-    const headingSet = new Set(headingRows);
-    const headerSet  = new Set(headerRows);
-    return `<table class="ggb-xprev-table">${rows.map((r, i) => {
-        const cls = titleSet.has(i)   ? ' class="ggb-xprev-title-row"'
-                  : eyebrowSet.has(i) ? ' class="ggb-xprev-eyebrow-row"'
-                  : headingSet.has(i) ? ' class="ggb-xprev-heading-row"'
-                  : headerSet.has(i)  ? ' class="ggb-xprev-head-row"' : '';
-        return `<tr${cls}>${(r.length ? r : ['']).map(c => `<td>${esc(String(c ?? ''))}</td>`).join('')}</tr>`;
-    }).join('')}</table>`;
-}
-
-/** Shows the two sheets that will actually be written (GUIDE first, then
- *  the real grade data), with the exact filename, before anything is
- *  downloaded — Cancel backs out, Download writes the workbook. */
-function openExportPreviewModal(subject, section, students, grades, project) {
-    injectExportPreviewStyles();
-    const filename  = exportFileName(subject, section);
-    const guide     = buildGuideAoa(subject, section);
-    const dataAoa   = buildGradeDataAoa(students, grades, project);
-    const dataPreviewRows = 12; // full sheet is written either way — this is just the on-screen preview
-
-    const overlay = document.createElement('div');
-    overlay.className = 'ggb-xprev-overlay';
-    overlay.innerHTML = `
-        <div class="ggb-xprev-modal">
-            <div class="ggb-xprev-hdr">
-                <div>
-                    <h3>Export Preview</h3>
-                    <p>Saves as <strong>${esc(filename)}</strong> — 2 sheets: <strong>GUIDE</strong>, then the class grade data.</p>
-                </div>
-                <button type="button" class="ggb-xprev-close" id="ggb-xprev-close" aria-label="Close">&times;</button>
-            </div>
-            <div class="ggb-xprev-tabs">
-                <button type="button" class="ggb-xprev-tab active" data-sheet="guide">GUIDE</button>
-                <button type="button" class="ggb-xprev-tab" data-sheet="data">Grade Data (${students.length} student${students.length !== 1 ? 's' : ''})</button>
-            </div>
-            <div class="ggb-xprev-body">
-                <div class="ggb-xprev-pane active" id="ggb-xprev-pane-guide">
-                    <p class="ggb-xprev-subhdr">File Information</p>
-                    ${aoaToHtmlTable(guide.fileInfoAoa, { titleRows: [0] })}
-                    <p class="ggb-xprev-subhdr">Rubrics (sit beside File Information, starting column C, in the real file)</p>
-                    ${aoaToHtmlTable(guide.rubricAoa, {
-                        eyebrowRows: guide.eyebrowCells.map(x => x.r),
-                        headingRows: guide.headingCells.map(x => x.r),
-                        headerRows: guide.headerCells.map(x => x.r),
-                    })}
-                </div>
-                <div class="ggb-xprev-pane" id="ggb-xprev-pane-data">
-                    ${aoaToHtmlTable(dataAoa, { maxRows: dataPreviewRows + 1 })}
-                    ${dataAoa.length - 1 > dataPreviewRows ? `<p class="ggb-xprev-more">+ ${dataAoa.length - 1 - dataPreviewRows} more row(s) in the actual file…</p>` : ''}
-                </div>
-            </div>
-            <div class="ggb-xprev-ft">
-                <button type="button" class="ggb-xprev-btn ggb-xprev-btn-cancel" id="ggb-xprev-cancel">Cancel</button>
-                <button type="button" class="ggb-xprev-btn ggb-xprev-btn-download" id="ggb-xprev-download">
-                    ${icon('download', { size: 14, className: 'ui-icon-inline' })} Download Excel
-                </button>
-            </div>
-        </div>`;
-    document.body.appendChild(overlay);
-
-    const close = () => overlay.remove();
-    overlay.querySelector('#ggb-xprev-close').addEventListener('click', close);
-    overlay.querySelector('#ggb-xprev-cancel').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-    overlay.querySelectorAll('.ggb-xprev-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            overlay.querySelectorAll('.ggb-xprev-tab').forEach(t => t.classList.toggle('active', t === tab));
-            overlay.querySelectorAll('.ggb-xprev-pane').forEach(p => p.classList.remove('active'));
-            overlay.querySelector(`#ggb-xprev-pane-${tab.dataset.sheet}`).classList.add('active');
-        });
-    });
-
-    const downloadBtn = overlay.querySelector('#ggb-xprev-download');
-    downloadBtn.addEventListener('click', async () => {
-        downloadBtn.disabled = true;
-        const original = downloadBtn.innerHTML;
-        downloadBtn.textContent = 'Preparing…';
-        try {
-            const XLSX = await loadXlsxLib();
-            const wb = XLSX.utils.book_new();
-
-            // Two blocks placed on the SAME sheet at two different origins —
-            // File Information at A1, the rubric tables beside it starting
-            // at guide.rubricOrigin (column C) — matching the reference
-            // template's actual side-by-side layout, not a stacked one.
-            const guideWs = XLSX.utils.aoa_to_sheet(guide.fileInfoAoa);
-            XLSX.utils.sheet_add_aoa(guideWs, guide.rubricAoa, { origin: guide.rubricOrigin });
-            guideWs['!merges'] = guide.merges;
-            guideWs['!cols'] = [{ wch: 24 }, { wch: 18 }, { wch: 12 }, { wch: 26 }, { wch: 32 }, { wch: 32 }, { wch: 32 }];
-            styleGuideSheet(guideWs, XLSX, guide);
-            XLSX.utils.book_append_sheet(wb, guideWs, 'GUIDE');
-
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataAoa), 'Grade Data');
-
-            XLSX.writeFile(wb, filename, { cellStyles: true });
-            close();
-        } catch (err) {
-            downloadBtn.disabled = false;
-            downloadBtn.innerHTML = original;
-            notify.error(err.message || 'Could not generate the Excel file.');
-        }
-    });
-}
-
-let _exportPreviewStylesInjected = false;
-/** The preview modal renders straight onto document.body (not inside the
- *  gradebook's own <style>-carrying container), so it needs its own
- *  one-time global stylesheet rather than relying on tableCss(). */
-function injectExportPreviewStyles() {
-    if (_exportPreviewStylesInjected) return;
-    _exportPreviewStylesInjected = true;
-    const style = document.createElement('style');
-    style.id = 'ggb-xprev-styles';
-    style.textContent = `
-        .ggb-xprev-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10000;
-            display:flex; align-items:center; justify-content:center; padding:20px; }
-        .ggb-xprev-modal { background:#fff; border-radius:16px; width:100%; max-width:820px;
-            max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.35); }
-        .ggb-xprev-hdr { display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
-            padding:20px 22px 14px; border-bottom:2px solid #111; flex-shrink:0; }
-        .ggb-xprev-hdr h3 { margin:0 0 4px; font-size:17px; font-weight:800; color:#111827; }
-        .ggb-xprev-hdr p { margin:0; font-size:12.5px; color:#6B7280; }
-        .ggb-xprev-close { background:none; border:none; font-size:22px; color:#9CA3AF; cursor:pointer; line-height:1; flex-shrink:0; }
-        .ggb-xprev-close:hover { color:#374151; }
-        .ggb-xprev-tabs { display:flex; gap:6px; padding:12px 22px 0; flex-shrink:0; }
-        .ggb-xprev-tab { padding:8px 14px; border-radius:8px 8px 0 0; border:1.5px solid #111; border-bottom:none;
-            background:#F3F4F6; color:#374151; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; }
-        .ggb-xprev-tab.active { background:#fff; color:${G}; }
-        .ggb-xprev-body { flex:1; overflow:auto; padding:16px 22px; border-top:1.5px solid #111; }
-        .ggb-xprev-pane { display:none; }
-        .ggb-xprev-pane.active { display:block; }
-        .ggb-xprev-subhdr { margin:16px 0 6px; font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:.4px; }
-        .ggb-xprev-subhdr:first-child { margin-top:0; }
-        .ggb-xprev-table { border-collapse:collapse; font-size:11.5px; margin-bottom:4px; }
-        .ggb-xprev-table td { border:1px solid #D1D5DB; padding:5px 8px; white-space:pre-line; max-width:220px; }
-        .ggb-xprev-table tr:first-child td { background:${GL}; font-weight:700; color:${G}; }
-        .ggb-xprev-table tr.ggb-xprev-title-row td { background:#2E1A47; color:#fff; font-weight:800; font-size:12.5px; }
-        .ggb-xprev-table tr.ggb-xprev-eyebrow-row td { background:none; border:none; color:#2E1A47; font-weight:700; font-size:11.5px; padding:6px 8px 0; }
-        .ggb-xprev-table tr.ggb-xprev-heading-row td { background:none; border:none; color:#1B7A3D; font-weight:800; font-size:14px; padding:2px 8px 8px; }
-        .ggb-xprev-table tr.ggb-xprev-head-row td { background:${GL}; color:${G}; font-weight:700; }
-        .ggb-xprev-more { margin:10px 0 0; font-size:12px; color:#9CA3AF; font-style:italic; }
-        .ggb-xprev-ft { display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:2px solid #111; flex-shrink:0; }
-        .ggb-xprev-btn { display:inline-flex; align-items:center; gap:6px; padding:10px 18px; border-radius:8px;
-            font-size:13px; font-weight:700; cursor:pointer; border:1.5px solid #111; font-family:inherit; }
-        .ggb-xprev-btn-cancel { background:#fff; color:#374151; }
-        .ggb-xprev-btn-cancel:hover { background:#F3F4F6; }
-        .ggb-xprev-btn-download { background:${G}; color:#fff; border-color:${G}; }
-        .ggb-xprev-btn-download:hover { background:${G2}; }
-        .ggb-xprev-btn-download:disabled { opacity:.6; cursor:not-allowed; }
-    `;
-    document.head.appendChild(style);
 }
 
 /** "2026-2027" + "First Semester" -> "SY26-27SEMI" (SEM + roman numeral). */
@@ -2258,6 +1892,7 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 /* Compact WUQ table */
 .ggb-ov-body .ggb-guide-table th { padding:4px 7px; font-size:9.5px; }
 .ggb-ov-body .ggb-guide-table td { padding:3px 7px; font-size:11px; }
+
 
 `; }
 

@@ -1,11 +1,12 @@
 <?php
 /**
- * CIT-LMS AI Assistant API — free Groq-powered study helper for all roles.
+ * CIT-LMS AI Assistant API — free Hugging Face-powered study helper for all roles.
  */
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/GroqCurl.php';
+require_once __DIR__ . '/helpers/AiProvider.php';
 require_once __DIR__ . '/helpers/QuizProctorHelper.php';
 require_once __DIR__ . '/helpers/AssistantContextHelper.php';
 
@@ -33,11 +34,7 @@ switch ($action) {
 }
 
 function assistantStatus() {
-    $envKey = getenv('GROQ_API_KEY') ?: '';
-    $keySetting = $envKey !== ''
-        ? ['setting_value' => $envKey]
-        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
-    $hasKey = !empty($keySetting['setting_value']);
+    $hasKey = getAiApiKey() !== '';
     echo json_encode([
         'success' => true,
         'data' => [
@@ -84,15 +81,11 @@ function chat() {
         return;
     }
 
-    $envKey = getenv('GROQ_API_KEY') ?: '';
-    $keySetting = $envKey !== ''
-        ? ['setting_value' => $envKey]
-        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
-    $apiKey = trim($keySetting['setting_value'] ?? '');
+    $apiKey = trim(getAiApiKey());
     if ($apiKey === '') {
         echo json_encode([
             'success' => false,
-            'message' => 'Ali is not configured yet. Ask your administrator to add a free Groq API key in Settings.',
+            'message' => 'Ali is not configured yet. Ask your administrator to add a free Hugging Face API key in Settings.',
         ]);
         return;
     }
@@ -122,62 +115,13 @@ function chat() {
 
     $messages[] = ['role' => 'user', 'content' => $message];
 
-    $model = 'llama-3.3-70b-versatile';
-    $modelSetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'ai_model'");
-    if ($modelSetting && !empty($modelSetting['setting_value'])) {
-        $model = $modelSetting['setting_value'];
-    }
-
-    $payload = [
-        'model'       => $model,
-        'messages'    => $messages,
-        'max_tokens'  => 1536,
-        'temperature' => 0.25,
-    ];
-
-    $ch = curl_init('https://api.groq.com/openai/v1/chat/completions');
-    $curlOpts = [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-        ],
-        CURLOPT_TIMEOUT => 60,
-    ];
-    $curlOpts = applyGroqCurlSsl($curlOpts);
-    curl_setopt_array($ch, $curlOpts);
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error    = curl_error($ch);
-    curl_close($ch);
-
-    if ($error) {
-        echo json_encode(['success' => false, 'message' => 'Connection error: ' . $error]);
+    $result = callAiChatCompletionWithMessages($messages, 1536, 0.25, $apiKey);
+    if (!$result['success']) {
+        echo json_encode(['success' => false, 'message' => $result['error'] ?? 'AI request failed. Please try again.']);
         return;
     }
 
-    $data = json_decode($response, true);
-
-    if ($httpCode === 401) {
-        echo json_encode(['success' => false, 'message' => 'Invalid Groq API key. Please update it in Admin Settings.']);
-        return;
-    }
-
-    if ($httpCode === 429) {
-        echo json_encode(['success' => false, 'message' => 'AI is busy right now. Please wait a moment and try again.']);
-        return;
-    }
-
-    if ($httpCode < 200 || $httpCode >= 300) {
-        $errMsg = $data['error']['message'] ?? ('Groq API error (HTTP ' . $httpCode . ')');
-        echo json_encode(['success' => false, 'message' => $errMsg]);
-        return;
-    }
-
-    $reply = trim($data['choices'][0]['message']['content'] ?? '');
+    $reply = trim($result['text'] ?? '');
     if ($reply === '') {
         echo json_encode(['success' => false, 'message' => 'No response from AI. Please try again.']);
         return;

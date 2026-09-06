@@ -34,9 +34,131 @@ switch ($action) {
     case 'set-current-period':
         handleSetCurrentPeriod();
         break;
+    case 'get-score-overrides':
+        handleGetScoreOverrides();
+        break;
+    case 'save-score-override':
+        handleSaveScoreOverride();
+        break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+/**
+ * Raw-Score class record — manual override for a quiz cell, same spirit as
+ * the Global Gradebook's directly-editable module cells. The computed
+ * "best attempt" score stays the default; an override here just changes
+ * what's DISPLAYED (and counted in the row total) for that one student on
+ * that one quiz, without touching student_quiz_attempts/answers at all —
+ * so it never interferes with the student's own attempt history or with
+ * AI/manual answer-level grading.
+ */
+function ensureQuizScoreOverridesTable(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec("CREATE TABLE IF NOT EXISTS `quiz_score_overrides` (
+            `override_id`   INT NOT NULL AUTO_INCREMENT,
+            `quiz_id`       INT NOT NULL,
+            `user_student_id` INT NOT NULL,
+            `earned_points` DECIMAL(6,2) NOT NULL,
+            `updated_by`    INT NULL,
+            `updated_at`    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`override_id`),
+            UNIQUE KEY `uq_qso` (`quiz_id`, `user_student_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    } catch (Exception $e) {
+        error_log('ensureQuizScoreOverridesTable: ' . $e->getMessage());
+    }
+}
+
+/**
+ * GET ?action=get-score-overrides&quiz_ids=1,2,3
+ * Returns { [quiz_id]: { [user_student_id]: earned_points } } for the
+ * requested quizzes — the caller already knows which quizzes are in view.
+ */
+function handleGetScoreOverrides(): void {
+    ensureQuizScoreOverridesTable();
+    $ids = array_values(array_filter(array_map('intval', explode(',', $_GET['quiz_ids'] ?? ''))));
+    if (!$ids) {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+    // Only return overrides for quizzes the requester can actually manage —
+    // this is a read of other students' scores, not public class-record data.
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $quizzes = db()->fetchAll("SELECT quiz_id, subject_id FROM quiz WHERE quiz_id IN ($placeholders)", $ids);
+    $role = Auth::role();
+    $userId = (int)Auth::id();
+    $allowedIds = array_values(array_map(
+        fn($q) => (int)$q['quiz_id'],
+        array_filter($quizzes, fn($q) => canManageQuizSubject((int)$q['subject_id'], $userId, $role))
+    ));
+    if (!$allowedIds) {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+    $placeholders = implode(',', array_fill(0, count($allowedIds), '?'));
+    $rows = db()->fetchAll(
+        "SELECT quiz_id, user_student_id, earned_points FROM quiz_score_overrides WHERE quiz_id IN ($placeholders)",
+        $allowedIds
+    );
+    $out = [];
+    foreach ($rows as $r) {
+        $out[(int)$r['quiz_id']][(int)$r['user_student_id']] = (float)$r['earned_points'];
+    }
+    echo json_encode(['success' => true, 'data' => $out]);
+}
+
+/**
+ * POST ?action=save-score-override
+ * Body: { quiz_id, user_student_id, earned_points }  — earned_points null/''
+ * clears the override, reverting the cell to the computed best-attempt score.
+ * Only whoever can manage the quiz's subject (teacher of record, or a
+ * dean/program_head in scope) may set one.
+ */
+function handleSaveScoreOverride(): void {
+    ensureQuizScoreOverridesTable();
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $quizId = (int)($data['quiz_id'] ?? 0);
+    $studentId = (int)($data['user_student_id'] ?? 0);
+    if (!$quizId || !$studentId) {
+        echo json_encode(['success' => false, 'message' => 'quiz_id and user_student_id required']);
+        return;
+    }
+
+    $quiz = db()->fetchOne("SELECT subject_id, total_points FROM quiz WHERE quiz_id = ?", [$quizId]);
+    if (!$quiz) {
+        echo json_encode(['success' => false, 'message' => 'Quiz not found']);
+        return;
+    }
+    if (!canManageQuizSubject((int)$quiz['subject_id'], (int)Auth::id(), Auth::role())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
+
+    $raw = $data['earned_points'] ?? null;
+    try {
+        if ($raw === null || $raw === '') {
+            pdo()->prepare("DELETE FROM quiz_score_overrides WHERE quiz_id = ? AND user_student_id = ?")
+                ->execute([$quizId, $studentId]);
+            echo json_encode(['success' => true, 'data' => ['cleared' => true]]);
+            return;
+        }
+        $points = max(0, min((float)$quiz['total_points'] ?: 999999, (float)$raw));
+        pdo()->prepare(
+            "INSERT INTO quiz_score_overrides (quiz_id, user_student_id, earned_points, updated_by)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE earned_points = VALUES(earned_points), updated_by = VALUES(updated_by)"
+        )->execute([$quizId, $studentId, $points, Auth::id()]);
+        echo json_encode(['success' => true, 'data' => ['earned_points' => $points]]);
+    } catch (Exception $e) {
+        error_log('save-score-override: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to save override']);
+    }
 }
 
 /**

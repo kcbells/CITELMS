@@ -36,6 +36,7 @@ require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
 ob_clean();
 
 ensureTabSwitchColumn();
+ensureQuizModuleLinkColumns();
 
 header('Content-Type: application/json');
 
@@ -549,9 +550,10 @@ function getQuizScores() {
         return;
     }
 
-    // Verify the quiz belongs to this instructor
-    $quiz = db()->fetchOne("SELECT user_teacher_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
-    if (!$quiz || (int)$quiz['user_teacher_id'] !== Auth::id()) {
+    // Verify the requester can manage this quiz's subject — literal teacher of
+    // record, or a dean/program_head whose scope covers it (canManageQuizSubject).
+    $quiz = db()->fetchOne("SELECT subject_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
+    if (!$quiz || !canManageQuizSubject((int)$quiz['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
@@ -583,11 +585,16 @@ function getQuizScores() {
  */
 function getPendingGrading() {
     Auth::requireRole(['instructor', 'program_head', 'dean']);
-    $userId = Auth::id();
     $subjectId = $_GET['subject_id'] ?? '';
 
+    $scopeIds = gradingScopeSubjectIds();
+    if (!$scopeIds) {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+    $placeholders = implode(',', array_fill(0, count($scopeIds), '?'));
+    $params = $scopeIds;
     $where = '';
-    $params = [$userId];
     if ($subjectId) {
         $where = 'AND q.subject_id = ?';
         $params[] = $subjectId;
@@ -615,10 +622,7 @@ function getPendingGrading() {
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
          JOIN subject s ON q.subject_id = s.subject_id
          JOIN users u ON sqa.user_student_id = u.users_id
-         WHERE q.subject_id IN (
-             SELECT DISTINCT so.subject_id FROM subject_offered so
-             WHERE so.user_teacher_id = ?
-         ) $where
+         WHERE q.subject_id IN ($placeholders) $where
          AND sqa.status = 'completed'
          AND (SELECT COUNT(*) FROM student_quiz_answers a
               JOIN questions q2 ON a.questions_id = q2.questions_id
@@ -639,11 +643,16 @@ function getPendingGrading() {
  */
 function getFlaggedAttempts() {
     Auth::requireRole(['instructor', 'program_head', 'dean']);
-    $userId = Auth::id();
     $subjectId = $_GET['subject_id'] ?? '';
 
+    $scopeIds = gradingScopeSubjectIds();
+    if (!$scopeIds) {
+        echo json_encode(['success' => true, 'data' => []]);
+        return;
+    }
+    $placeholders = implode(',', array_fill(0, count($scopeIds), '?'));
+    $params = $scopeIds;
     $where = '';
-    $params = [$userId];
     if ($subjectId) {
         $where = 'AND q.subject_id = ?';
         $params[] = $subjectId;
@@ -663,10 +672,7 @@ function getFlaggedAttempts() {
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
          JOIN subject s ON q.subject_id = s.subject_id
          JOIN users u ON sqa.user_student_id = u.users_id
-         WHERE q.subject_id IN (
-             SELECT DISTINCT so.subject_id FROM subject_offered so
-             WHERE so.user_teacher_id = ?
-         ) $where
+         WHERE q.subject_id IN ($placeholders) $where
          AND sqa.status = 'completed'
          AND (COALESCE(sqa.tab_switch_count, 0) > 0
               OR COALESCE(sqa.paste_count, 0) > 0
@@ -691,7 +697,7 @@ function getAttemptAnswers() {
     }
 
     $attempt = db()->fetchOne(
-        "SELECT sqa.*, q.quiz_title, q.passing_rate, q.user_teacher_id, s.subject_code,
+        "SELECT sqa.*, q.quiz_title, q.passing_rate, q.user_teacher_id, q.subject_id, s.subject_code,
                 u.first_name, u.last_name, u.student_id
          FROM student_quiz_attempts sqa
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
@@ -704,8 +710,8 @@ function getAttemptAnswers() {
         echo json_encode(['success' => false, 'message' => 'Attempt not found']);
         return;
     }
-    // Verify this attempt belongs to a quiz owned by this instructor
-    if ((int)$attempt['user_teacher_id'] !== Auth::id()) {
+    // Verify the requester can manage this quiz's subject (teacher of record, or dean/program_head in scope)
+    if (!canManageQuizSubject((int)$attempt['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
@@ -761,16 +767,16 @@ function gradeAnswer() {
         return;
     }
 
-    // Verify the answer belongs to a quiz owned by this instructor
+    // Verify the requester can manage the subject this answer's quiz belongs to
     $ownerCheck = db()->fetchOne(
-        "SELECT sqa.attempt_id, sqa.quiz_id, q.user_teacher_id, q.passing_rate, sqa.total_points
+        "SELECT sqa.attempt_id, sqa.quiz_id, q.user_teacher_id, q.subject_id, q.passing_rate, sqa.total_points
          FROM student_quiz_answers a
          JOIN student_quiz_attempts sqa ON a.attempt_id = sqa.attempt_id
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
          WHERE a.student_quiz_answer_id = ? LIMIT 1",
         [$answerId]
     );
-    if (!$ownerCheck || (int)$ownerCheck['user_teacher_id'] !== Auth::id()) {
+    if (!$ownerCheck || !canManageQuizSubject((int)$ownerCheck['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
@@ -839,7 +845,8 @@ function finalizeGrading() {
         $earnedPoints = (float)($totals['earned'] ?? 0);
 
         $attempt = db()->fetchOne(
-            "SELECT sqa.*, q.passing_rate, q.user_teacher_id, sqa.user_student_id, sqa.quiz_id
+            "SELECT sqa.*, q.passing_rate, q.user_teacher_id, q.subject_id, q.module_number, q.gradebook_component,
+                    sqa.user_student_id, sqa.quiz_id
              FROM student_quiz_attempts sqa
              JOIN quiz q ON sqa.quiz_id = q.quiz_id
              WHERE sqa.attempt_id = ?",
@@ -849,7 +856,7 @@ function finalizeGrading() {
             echo json_encode(['success' => false, 'message' => 'Attempt not found']);
             return;
         }
-        if ((int)$attempt['user_teacher_id'] !== Auth::id()) {
+        if (!canManageQuizSubject((int)$attempt['subject_id'], (int)Auth::id(), Auth::role())) {
             http_response_code(403);
             echo json_encode(['success' => false, 'message' => 'Permission denied']);
             return;
@@ -865,13 +872,103 @@ function finalizeGrading() {
              WHERE attempt_id = ?"
         )->execute([$earnedPoints, round($percentage, 2), $passed ? 1 : 0, $attemptId]);
 
+        $gradebookSync = null;
+        if (!empty($attempt['module_number']) && !empty($attempt['gradebook_component'])) {
+            $gradebookSync = syncModuleGradeFromQuiz(
+                (int)$attempt['subject_id'],
+                (int)$attempt['user_student_id'],
+                (int)$attempt['module_number'],
+                $attempt['gradebook_component'],
+                $percentage
+            );
+        }
+
         echo json_encode([
             'success' => true,
             'message' => 'Grading finalized',
-            'data' => ['percentage' => round($percentage, 1), 'passed' => $passed, 'earned_points' => $earnedPoints]
+            'data' => [
+                'percentage' => round($percentage, 1), 'passed' => $passed, 'earned_points' => $earnedPoints,
+                'gradebook_sync' => $gradebookSync,
+            ]
         ]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to finalize grading']);
+    }
+}
+
+/**
+ * After finalizing a module-linked quiz attempt (SAS Let's Practice /
+ * Reflection / Wrap Up Quiz), push the result into the same
+ * `global_module_grades` row the Global Gradebook's manual dropdowns write
+ * to — reusing that table's exact value domains (0-3 rubric int, or the
+ * fixed WUQ_OPTS percentage scale). The instructor can still override the
+ * synced value afterward from the normal gradebook UI; this only sets a
+ * default, it never locks the field.
+ *
+ * Rubric bucket thresholds (0%/60%/80%/100% -> 0/1/2/3) match the mapping
+ * already documented for teachers in global-gradebook.js's guideModalHtml().
+ * WUQ_OPTS is the fixed 8-value scale from the same file.
+ */
+function syncModuleGradeFromQuiz(int $subjectId, int $studentId, int $moduleNumber, string $component, float $percentage): ?array {
+    $offering = db()->fetchOne(
+        "SELECT ss.subject_offered_id FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE so.subject_id = ? AND ss.user_student_id = ? AND ss.status = 'enrolled' LIMIT 1",
+        [$subjectId, $studentId]
+    );
+    if (!$offering) return null;
+    $subjectOfferedId = (int)$offering['subject_offered_id'];
+
+    if ($component === 'wrap_up_quiz') {
+        $wuqOpts = [100.00, 85.71, 71.43, 57.14, 42.86, 28.57, 14.29, 0.00];
+        $value = $wuqOpts[0];
+        $best = null;
+        foreach ($wuqOpts as $opt) {
+            $diff = abs($opt - $percentage);
+            if ($best === null || $diff < $best) { $best = $diff; $value = $opt; }
+        }
+    } else {
+        // lets_practice / lets_practice_optional / reflection: 0/60/80/100 -> 0/1/2/3
+        $value = $percentage >= 100 ? 3 : ($percentage >= 80 ? 2 : ($percentage >= 60 ? 1 : 0));
+    }
+
+    try {
+        ensureGlobalModuleGradesTable();
+        pdo()->prepare(
+            "INSERT INTO global_module_grades (subject_offered_id, student_id, module_number, {$component})
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE {$component} = VALUES({$component})"
+        )->execute([$subjectOfferedId, $studentId, $moduleNumber, $value]);
+        return ['field' => $component, 'value' => $value, 'from_percentage' => round($percentage, 1)];
+    } catch (Exception $e) {
+        error_log('syncModuleGradeFromQuiz: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/** Same guarded CREATE TABLE as GlobalGradebookAPI.php — safe to call from here too. */
+function ensureGlobalModuleGradesTable(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        pdo()->exec("CREATE TABLE IF NOT EXISTS `global_module_grades` (
+            `grade_id` INT NOT NULL AUTO_INCREMENT,
+            `subject_offered_id` INT NOT NULL,
+            `student_id` INT NOT NULL,
+            `module_number` TINYINT NOT NULL,
+            `soc1` ENUM('P','A') NULL,
+            `soc2` ENUM('P','A') NULL,
+            `lets_practice` TINYINT NULL,
+            `lets_practice_optional` TINYINT NULL,
+            `reflection` TINYINT NULL,
+            `wrap_up_quiz` DECIMAL(6,2) NULL,
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`grade_id`),
+            UNIQUE KEY `uq_gmg` (`subject_offered_id`, `student_id`, `module_number`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    } catch (Exception $e) {
+        error_log('ensureGlobalModuleGradesTable: ' . $e->getMessage());
     }
 }
 
@@ -894,7 +991,7 @@ function aiGradeAnswerById() {
     // Fetch the answer row + question details + ownership check
     $row = db()->fetchOne(
         "SELECT a.student_quiz_answer_id, a.answer_text, q.points as max_points, a.grading_status,
-                q.question_text, q.question_type, qz.user_teacher_id,
+                q.question_text, q.question_type, qz.user_teacher_id, qz.subject_id,
                 (SELECT option_text FROM question_option
                  WHERE quiz_question_id = q.questions_id AND is_correct = 1 LIMIT 1) as expected_answer
          FROM student_quiz_answers a
@@ -910,7 +1007,7 @@ function aiGradeAnswerById() {
         return;
     }
 
-    if ((int)$row['user_teacher_id'] !== Auth::id()) {
+    if (!canManageQuizSubject((int)$row['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
@@ -931,7 +1028,7 @@ function aiGradeAnswerById() {
 
     if ($result['status'] === 'pending') {
         // AI call failed (no API key, network error, etc.)
-        echo json_encode(['success' => false, 'message' => 'AI grading unavailable. Check that a Groq API key is configured in Settings.']);
+        echo json_encode(['success' => false, 'message' => 'AI grading unavailable. Check that a Hugging Face API key is configured in Settings.']);
         return;
     }
 
@@ -972,9 +1069,9 @@ function aiGradeQuizPending() {
         return;
     }
 
-    // Verify quiz belongs to this instructor
-    $quizOwner = db()->fetchOne("SELECT user_teacher_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
-    if (!$quizOwner || (int)$quizOwner['user_teacher_id'] !== Auth::id()) {
+    // Verify the requester can manage this quiz's subject
+    $quizOwner = db()->fetchOne("SELECT subject_id FROM quiz WHERE quiz_id = ? LIMIT 1", [$quizId]);
+    if (!$quizOwner || !canManageQuizSubject((int)$quizOwner['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
@@ -1039,7 +1136,7 @@ function aiGradeQuizPending() {
             'success' => true,
             'message' => $graded > 0
                 ? "AI checked {$graded} answer(s)." . ($failed ? " {$failed} could not be graded." : '')
-                : 'AI grading unavailable. Check Groq API key in Settings.',
+                : 'AI grading unavailable. Check Hugging Face API key in Settings.',
             'graded' => $graded,
             'failed' => $failed,
         ]);
@@ -1063,14 +1160,14 @@ function aiGradeAttemptPending() {
         echo json_encode(['success' => false, 'message' => 'attempt_id required']); return;
     }
 
-    // Verify this attempt belongs to a quiz owned by this instructor
+    // Verify the requester can manage this attempt's quiz's subject
     $ownerCheck = db()->fetchOne(
-        "SELECT q.user_teacher_id FROM student_quiz_attempts sqa
+        "SELECT q.subject_id FROM student_quiz_attempts sqa
          JOIN quiz q ON sqa.quiz_id = q.quiz_id
          WHERE sqa.attempt_id = ? LIMIT 1",
         [$attemptId]
     );
-    if (!$ownerCheck || (int)$ownerCheck['user_teacher_id'] !== Auth::id()) {
+    if (!$ownerCheck || !canManageQuizSubject((int)$ownerCheck['subject_id'], (int)Auth::id(), Auth::role())) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']); return;
     }
@@ -1124,7 +1221,7 @@ function aiGradeAttemptPending() {
             'success' => true,
             'message' => $graded > 0
                 ? "AI graded {$graded} answer(s). Please confirm each grade below."
-                : 'AI grading failed. Check Groq API key in Settings.',
+                : 'AI grading failed. Check Hugging Face API key in Settings.',
             'results' => array_values($results),
             'graded'  => $graded,
         ]);
@@ -1211,18 +1308,9 @@ function recalculateAttemptScore(int $attemptId): void {
 function aiGradeAnswer($questionText, $expectedAnswer, $studentAnswer, $maxPoints, $questionType) {
     $fallback = ['score' => 0, 'feedback' => '', 'status' => 'pending'];
 
-    $envKey = getenv('GROQ_API_KEY') ?: '';
-    $keySetting = $envKey !== ''
-        ? ['setting_value' => $envKey]
-        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
-    if (!$keySetting || empty($keySetting['setting_value'])) return $fallback;
-    $apiKey = $keySetting['setting_value'];
-
-    $model = 'llama-3.3-70b-versatile';
-    $modelSetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'ai_model'");
-    if ($modelSetting && !empty($modelSetting['setting_value'])) {
-        $model = $modelSetting['setting_value'];
-    }
+    require_once __DIR__ . '/helpers/AiProvider.php';
+    $apiKey = getAiApiKey();
+    if (empty($apiKey)) return $fallback;
 
     $studentText = trim($studentAnswer);
 
@@ -1317,36 +1405,12 @@ Respond ONLY with valid JSON — no extra text, no markdown:
 {"score": <number 0 to {$maxPoints}>, "feedback": "<1-2 sentences>"}
 PROMPT;
 
-    $payload = [
-        'model'    => $model,
-        'messages' => [
-            [
-                'role'    => 'system',
-                'content' => 'You are an expert educational grader. You evaluate student answers fairly and accurately — rewarding genuine understanding regardless of how simply it is expressed. You think through the key concepts step by step before scoring. You respond ONLY with valid JSON: {"score": number, "feedback": "string"}. No markdown, no explanation outside the JSON.'
-            ],
-            ['role' => 'user', 'content' => $prompt]
-        ],
-        'max_tokens'  => 350,
-        'temperature' => 0.1
-    ];
-
-    require_once __DIR__ . '/helpers/GroqCurl.php';
-    $ch = curl_init("https://api.groq.com/openai/v1/chat/completions");
-    curl_setopt_array($ch, applyGroqCurlSsl([
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => ["Authorization: Bearer $apiKey", 'Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 25,
-    ]));
-    $response = curl_exec($ch);
-    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    unset($ch); // curl_close() deprecated in PHP 8.5 — let destructor handle it
-
-    if ($httpCode !== 200 || !$response) return $fallback;
-
-    $data    = json_decode($response, true);
-    $content = trim($data['choices'][0]['message']['content'] ?? '');
+    $result = callAiChatCompletion(
+        'You are an expert educational grader. You evaluate student answers fairly and accurately — rewarding genuine understanding regardless of how simply it is expressed. You think through the key concepts step by step before scoring. You respond ONLY with valid JSON: {"score": number, "feedback": "string"}. No markdown, no explanation outside the JSON.',
+        $prompt, 350, 0.1, $apiKey
+    );
+    if (!$result['success']) return $fallback;
+    $content = trim($result['text'] ?? '');
 
     // Strip markdown fences if model wraps the JSON
     $content = preg_replace('/^```(?:json)?\s*/i', '', $content);

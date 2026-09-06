@@ -167,60 +167,55 @@ export function mountBulkImportUI(host, opts = {}) {
     // result summary.
     const importAction = opts.importAction || 'import';
     host.innerHTML = `
-        <div class="bi-help">
-            <button type="button" class="bi-help-toggle" id="bi-help-toggle">
-                ${icon('document', { size: 14, className: 'ui-icon-inline' })}
-                <span>File format &amp; how accounts are created</span>
-                ${icon('chevronDown', { size: 14, className: 'ui-icon-inline bi-help-chevron' })}
-            </button>
-            <div class="bi-help-body" id="bi-help-body" hidden>
-                ${opts.helpHtml || `
-                <p>Upload one file — <strong>Excel (.xlsx), CSV/text (.csv, .txt), a Word document with a table (.docx),
-                    or a clear photo of a printed table (.jpg, .png)</strong>. The system reads the header row and matches
-                    whichever of these it finds — the rest are simply ignored:</p>
-                <p class="bi-cols">Employee ID &middot; Email &middot; Student ID &middot; Email &middot; Name &middot; Section &middot;
-                    Program/Course &middot; Department &middot; Subject Code &middot; Subject Name &middot; Subject Type &middot;
-                    Lect Hrs &middot; Lab Hrs &middot; Lect Units &middot; Lab Units &middot; Units &middot; Capacity</p>
-                <p>Accounts that don't exist yet are created automatically with <strong>Employee ID / Student ID as the login ID</strong>
-                    and <strong>no password yet</strong> — the first time they sign in, they log in with just that ID (no password needed),
-                    then are asked to set a real password, and their <strong>@phinmaed.com email</strong> too if the sheet didn't have one.</p>
-                <p>If a sheet has one shared <strong>"ID"</strong> column instead of separate Employee ID / Student ID columns,
-                    each row is sorted automatically: an ID with any <strong>letters</strong> in it (e.g. "T-2024-015") is treated
-                    as an instructor, a <strong>numbers-only</strong> ID (e.g. "21-0001") is treated as a student.</p>
-                <p>A <strong>photo</strong> is read with OCR (text recognition), which is never as reliable as a real file —
-                    double-check the preview below carefully before importing one, especially ID numbers.</p>
-                `}
+        <div class="bi-layout">
+            <aside class="bi-sticky-note">
+                <div class="bi-sticky-head">
+                    ${icon('document', { size: 13, className: 'ui-icon-inline' })}
+                    <span>File Format &amp; Accounts</span>
+                </div>
+                <div class="bi-sticky-body">
+                    ${opts.helpHtml || `
+                    <ul>
+                        <li><strong>Files:</strong> Excel, CSV/text, Word table, or a clear photo</li>
+                        <li><strong>Columns read:</strong> ID, Email, Name, Section, Program, Department, Subject info</li>
+                        <li><strong>New accounts:</strong> log in with their ID, set a password on first login</li>
+                        <li><strong>Shared "ID" column:</strong> letters &rarr; instructor, numbers-only &rarr; student</li>
+                        <li><strong>Photos</strong> use OCR — double-check the preview before importing</li>
+                    </ul>`}
+                </div>
+            </aside>
+
+            <div class="bi-main">
+                <div class="bi-dropzone" id="bi-dropzone">
+                    <!-- No "accept" filter — some Windows file pickers grey out or
+                         hide files whose reported type doesn't exactly match a
+                         narrow filter (a common surprise with .xlsx exported by
+                         non-Excel tools), so anything can be picked or dropped here.
+                         The server accepts .xlsx/.csv/.txt/.docx/.jpg/.jpeg/.png/
+                         .bmp/.gif — anything else gets a clear "unsupported file
+                         type" message instead of silently being unpickable. -->
+                    <input type="file" id="bi-file-input" hidden>
+                    <div id="bi-dropzone-empty">
+                        <div class="bi-dz-icon">${icon('cloudUpload', { size: 24, className: 'ui-icon-inline' })}</div>
+                        <p class="bi-dz-title"><strong>Click to choose a file</strong> or drag it here</p>
+                        <p class="bi-dz-hint">Excel, CSV/text, Word, or a photo &middot; up to 15MB</p>
+                    </div>
+                    <div id="bi-dropzone-file" style="display:none;">
+                        <div class="bi-dz-file-icon">${icon('document', { size: 18, className: 'ui-icon-inline' })}</div>
+                        <span id="bi-file-name"></span>
+                        <button type="button" class="bi-file-clear" id="bi-file-clear" title="Remove file">${icon('close', { size: 13, className: 'ui-icon-inline' })}</button>
+                    </div>
+                </div>
+
+                <div id="bi-preview"></div>
+
+                <div class="bi-run-row">
+                    <button class="bi-run-btn" id="bi-run" disabled>${icon('upload', { size: 14, className: 'ui-icon-inline' })} Upload &amp; Import</button>
+                </div>
+
+                <div id="bi-result"></div>
             </div>
         </div>
-
-        <div class="bi-dropzone" id="bi-dropzone">
-            <!-- No "accept" filter — some Windows file pickers grey out or
-                 hide files whose reported type doesn't exactly match a
-                 narrow filter (a common surprise with .xlsx exported by
-                 non-Excel tools), so anything can be picked or dropped here.
-                 The server accepts .xlsx/.csv/.txt/.docx/.jpg/.jpeg/.png/
-                 .bmp/.gif — anything else gets a clear "unsupported file
-                 type" message instead of silently being unpickable. -->
-            <input type="file" id="bi-file-input" hidden>
-            <div id="bi-dropzone-empty">
-                ${icon('cloudUpload', { size: 28, className: 'ui-icon-inline' })}
-                <p><strong>Click to choose a file</strong> or drag it here</p>
-                <p class="bi-dz-hint">Excel, CSV/text, Word, or a photo — up to 15MB</p>
-            </div>
-            <div id="bi-dropzone-file" style="display:none;">
-                ${icon('document', { size: 18, className: 'ui-icon-inline' })}
-                <span id="bi-file-name"></span>
-                <button type="button" class="bi-file-clear" id="bi-file-clear">&times;</button>
-            </div>
-        </div>
-
-        <div id="bi-preview"></div>
-
-        <div class="bi-run-row">
-            <button class="bi-run-btn" id="bi-run" disabled>${icon('upload', { size: 14, className: 'ui-icon-inline' })} Upload &amp; Import</button>
-        </div>
-
-        <div id="bi-result"></div>
         <style>${bulkImportCss()}</style>`;
 
     const dropzone   = host.querySelector('#bi-dropzone');
@@ -232,14 +227,6 @@ export function mountBulkImportUI(host, opts = {}) {
     const runBtn     = host.querySelector('#bi-run');
     const previewEl  = host.querySelector('#bi-preview');
     const resultEl   = host.querySelector('#bi-result');
-
-    const helpToggle = host.querySelector('#bi-help-toggle');
-    const helpBody   = host.querySelector('#bi-help-body');
-    helpToggle.addEventListener('click', () => {
-        const willOpen = helpBody.hidden;
-        helpBody.hidden = !willOpen;
-        helpToggle.classList.toggle('is-open', willOpen);
-    });
 
     let selectedFile = null;
     let previewOk = false;
@@ -369,6 +356,7 @@ export function mountBulkImportUI(host, opts = {}) {
             }
 
             resultEl.innerHTML = (opts.renderResult || renderImportResult)(res.data);
+            attachUndoButton(resultEl, res.data.batch_id);
             notify.success('Import finished.');
             opts.onImported?.(res.data);
         } catch (err) {
@@ -444,28 +432,90 @@ function renderImportResult(d) {
     `;
 }
 
+/** Appends an "Undo this import" control after a successful run — removes
+ *  only what THIS run created (see BulkImportAPI.php's handleUndoImport()
+ *  doc comment); anything it merely updated, or any manually-created
+ *  account/subject/section/enrollment, is never touched. */
+function attachUndoButton(resultEl, batchId) {
+    if (!batchId) return;
+    resultEl.insertAdjacentHTML('beforeend', `
+        <div class="bi-undo-row">
+            <button type="button" class="bi-undo-btn" id="bi-undo-btn">
+                ${icon('close', { size: 12, className: 'ui-icon-inline' })} Undo this import
+            </button>
+        </div>`);
+    const btn = resultEl.querySelector('#bi-undo-btn');
+    btn.addEventListener('click', async () => {
+        const ok = await notify.confirm(
+            'This removes only what this import just created — new accounts, subjects, sections, and enrollments. ' +
+            'Anything it merely updated (an existing account gaining a missing email, etc.) is left as-is, and a ' +
+            'record still in use elsewhere is kept and reported instead of being force-removed.',
+            { title: 'Undo this import?', confirmText: 'Undo Import', danger: true }
+        );
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = 'Undoing…';
+        const res = await Api.post('/BulkImportAPI.php?action=undo_import', { batch_id: batchId });
+        if (res.success) {
+            Api.invalidate('BulkImportAPI'); Api.invalidate('UsersAPI'); Api.invalidate('DashboardAPI');
+            const { removed_count, kept_count } = res.data;
+            notify.success(`Undone — removed ${removed_count} record${removed_count !== 1 ? 's' : ''}` +
+                (kept_count ? `, kept ${kept_count} still in use elsewhere.` : '.'));
+            resultEl.innerHTML = '';
+        } else {
+            notify.error(res.message || 'Undo failed.');
+            btn.disabled = false;
+            btn.innerHTML = `${icon('close', { size: 12, className: 'ui-icon-inline' })} Undo this import`;
+        }
+    });
+}
+
 export function bulkImportCss() {
     return `
-        .bi-help { background:#F8FDF9; border:1px solid #C5D9CB; border-radius:10px; margin-bottom:16px; overflow:hidden; }
-        .bi-help-toggle { display:flex; align-items:center; gap:8px; width:100%; background:none; border:none;
-            padding:12px 14px; font-size:12.5px; font-weight:700; color:#00461B; cursor:pointer; font-family:inherit; }
-        .bi-help-toggle:hover { background:rgba(0,70,27,.04); }
-        .bi-help-toggle svg:first-child { color:#00461B; flex-shrink:0; }
-        .bi-help-toggle span { flex:1; text-align:left; }
-        .bi-help-chevron { transition:transform .15s; flex-shrink:0; color:#5B8A6B; }
-        .bi-help-toggle.is-open .bi-help-chevron { transform:rotate(180deg); }
-        .bi-help-body { padding:0 14px 14px; border-top:1px solid #E1EFE4; margin-top:0; }
-        .bi-help-body p { font-size:12.5px; color:#374151; line-height:1.6; margin:12px 0 8px; }
-        .bi-help-body p:first-child { margin-top:12px; }
-        .bi-help-body p:last-child { margin-bottom:0; }
-        .bi-cols { color:#00461B !important; font-weight:600; }
-        .bi-dropzone { border:2px dashed #d1d5db; border-radius:12px; padding:24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s; }
-        .bi-dropzone:hover, .bi-dropzone.bi-drag-over { border-color:#00461B; background:#F8FDF9; }
-        .bi-dropzone svg { color:#00461B; margin-bottom:6px; }
-        .bi-dropzone p { margin:2px 0; font-size:13px; color:#374151; }
-        .bi-dz-hint { color:#9ca3af !important; font-size:11.5px !important; }
-        #bi-dropzone-file { display:flex; align-items:center; justify-content:center; gap:8px; font-size:13px; color:#00461B; font-weight:600; }
-        .bi-file-clear { background:none; border:none; font-size:18px; cursor:pointer; color:#9ca3af; line-height:1; padding:0 4px; }
+        /* ── Instructions card — black-bordered to match the dropzone below ── */
+        /* ── Layout: small note beside the upload flow ───────────────────── */
+        .bi-layout { display:flex; align-items:flex-start; gap:16px; }
+        .bi-main { flex:1 1 auto; min-width:0; }
+
+        /* ── Note — small, black border, white, black text ───────────────── */
+        .bi-sticky-note { flex:0 0 190px; width:190px; box-sizing:border-box;
+            background:#fff; border:1.5px solid #111; border-radius:8px; padding:12px 13px; }
+        .bi-sticky-head { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800;
+            color:#111; margin-bottom:8px; padding-bottom:7px; border-bottom:1px solid #111; }
+        .bi-sticky-head svg { color:#111; flex-shrink:0; }
+        .bi-sticky-body ul { margin:0; padding:0; list-style:none; }
+        .bi-sticky-body li { position:relative; font-size:10.5px; line-height:1.5; color:#111;
+            margin-bottom:8px; padding-left:12px; }
+        .bi-sticky-body li:last-child { margin-bottom:0; }
+        .bi-sticky-body li::before { content:''; position:absolute; left:0; top:5px; width:4px; height:4px;
+            border-radius:50%; background:#111; }
+        .bi-sticky-body strong { color:#111; }
+        .bi-cols { color:#111 !important; font-weight:700; }
+        @media (max-width: 640px) {
+            .bi-layout { flex-direction:column; }
+            .bi-sticky-note { width:100%; flex:1 1 auto; }
+        }
+
+        /* ── Dropzone ─────────────────────────────────────────────────── */
+        .bi-dropzone { border:2px dashed #111; border-radius:14px; padding:34px 24px; text-align:center;
+            cursor:pointer; background:#FAFAFA; transition:border-color .15s, border-style .15s, background .15s, box-shadow .15s; }
+        .bi-dropzone:hover { border-color:#00461B; background:#F8FDF9; }
+        .bi-dropzone.bi-drag-over { border-style:solid; border-color:#00461B; background:#F8FDF9;
+            box-shadow:0 0 0 4px rgba(0,70,27,.1); }
+        .bi-dz-icon { width:52px; height:52px; margin:0 auto 14px; display:flex; align-items:center; justify-content:center;
+            background:#111; border-radius:50%; transition:background .15s; }
+        .bi-dz-icon svg { color:#fff; }
+        .bi-dropzone:hover .bi-dz-icon, .bi-dropzone.bi-drag-over .bi-dz-icon { background:#00461B; }
+        .bi-dz-title { margin:0 0 4px; font-size:14.5px; color:#111; }
+        .bi-dz-title strong { font-weight:700; }
+        .bi-dz-hint { color:#6B7280 !important; font-size:12px !important; margin:0 !important; }
+        #bi-dropzone-file { display:flex; align-items:center; justify-content:center; gap:10px; }
+        .bi-dz-file-icon { width:34px; height:34px; border-radius:9px; background:#E8F5EC; color:#00461B;
+            display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        #bi-file-name { font-size:13.5px; color:#111; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px; }
+        .bi-file-clear { display:flex; align-items:center; justify-content:center; width:24px; height:24px;
+            background:#fff; border:1.5px solid #111; border-radius:50%; cursor:pointer; color:#111; padding:0; flex-shrink:0; transition:background .15s, color .15s; }
+        .bi-file-clear:hover { background:#111; color:#fff; }
         .bi-run-row { display:flex; justify-content:flex-end; margin-top:14px; }
         .bi-run-btn { display:inline-flex; align-items:center; gap:6px; background:#00461B; color:#fff; border:none;
             padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; font-family:inherit; }
@@ -512,6 +562,13 @@ export function bulkImportCss() {
         .bi-log-row:last-child { border-bottom:none; }
         .bi-log-row.warn { color:#B45309; }
         .bi-log-row.err { color:#B91C1C; }
+
+        .bi-undo-row { display:flex; justify-content:flex-end; margin-top:12px; }
+        .bi-undo-btn { display:inline-flex; align-items:center; gap:6px; background:#fff; border:1.5px solid #B91C1C;
+            color:#B91C1C; padding:8px 16px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer;
+            font-family:inherit; transition:background .15s, color .15s; }
+        .bi-undo-btn:hover:not(:disabled) { background:#B91C1C; color:#fff; }
+        .bi-undo-btn:disabled { opacity:.6; cursor:default; }
 
         .bi-preview-tablewrap { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; max-height:320px; overflow-y:auto; }
         .bi-preview-table { width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }

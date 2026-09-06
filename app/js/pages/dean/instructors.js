@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
 import { mountBulkImportUI, bulkImportCss } from '../../components/bulk-import-ui.js';
+import { notify } from '../../utils/notify.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -262,7 +263,7 @@ export async function render(container) {
                     users_id: uid, status: active ? 'inactive' : 'active'
                 });
                 if (res.success) { await reload(); }
-                else { alert(res.message || 'Failed'); btn.disabled = false; }
+                else { await notify.alert(res.message || 'Failed', { title: 'Action Failed', type: 'error' }); btn.disabled = false; }
             });
         });
         container.querySelectorAll('.di-edit-btn').forEach(btn => {
@@ -705,14 +706,17 @@ export async function render(container) {
         mountBulkImportUI(overlay.querySelector('#diu-import-host'), {
             importAction: 'faculty-list-import',
             helpHtml: `
-                <p>Upload one file — <strong>Excel (.xlsx), CSV/text (.csv, .txt), a Word document with a table (.docx),
-                    or a clear photo of a printed table (.jpg, .png)</strong> — listing your faculty. Needs
-                    <strong>Last Name, First Name</strong> (or a combined Name column), <strong>Employee ID</strong>,
-                    and ideally <strong>Email</strong>; anything else in the file is ignored.
-                    <a href="#" id="diu-template-link" style="color:#1B4D2E;font-weight:700;">Download a blank template</a>.</p>
-                <p>Every row becomes an instructor account in <strong>your own department</strong> — this never creates or
-                    changes subjects, sections, or students. Accounts that don't exist yet log in with just their
-                    Employee ID (no password needed) and are asked to set one on first login.</p>`,
+                <ul>
+                    <li>Accepted files: <strong>Excel (.xlsx)</strong>, <strong>CSV/text (.csv, .txt)</strong>,
+                        a <strong>Word table (.docx)</strong>, or a clear <strong>photo (.jpg, .png)</strong> — listing your faculty</li>
+                    <li>Needs <strong>Last Name, First Name</strong> (or a combined Name column), <strong>Employee ID</strong>,
+                        and ideally <strong>Email</strong>; anything else in the file is ignored —
+                        <a href="#" id="diu-template-link" style="color:#1B4D2E;font-weight:700;">download a blank template</a></li>
+                    <li>Every row becomes an instructor account in <strong>your own department</strong> — this never
+                        creates or changes subjects, sections, or students</li>
+                    <li>Accounts that don't exist yet log in with just their Employee ID (no password needed) and are
+                        asked to set one on first login</li>
+                </ul>`,
             renderResult: renderFacultyListResult,
             onImported: () => { reload(); },
         });

@@ -103,10 +103,38 @@ function deanDeptId(): int {
     return $cached;
 }
 
+// ─── Helper: is the current dean CAS (College of Arts and Sciences)? ──────
+// CAS teaches the 1st/2nd-year general-education subjects that sit inside
+// EVERY other department's curriculum (BSIT's, BSA's, BSCrim's, etc.) —
+// it doesn't own any programs of its own via department_program. So a CAS
+// dean gets a special scope: every active program is visible (not just
+// ones linked to their department), but only that program's Year 1/2
+// subjects — Year 3/4 (each department's own major subjects) must stay
+// invisible to CAS. Detected by department_code rather than a schema
+// change since 'CAS' is a fixed, already-seeded department.
+function isDeanCAS(): bool {
+    if (Auth::role() !== 'dean') return false;
+    static $cas = null;
+    if ($cas === null) {
+        $deptId = deanDeptId();
+        $code = $deptId ? db()->fetchOne("SELECT department_code FROM department WHERE department_id = ?", [$deptId])['department_code'] ?? '' : '';
+        $cas = strtoupper($code) === 'CAS';
+    }
+    return $cas;
+}
+
+/** Year levels 3 and 4 are hidden for CAS wherever this SQL snippet is appended. */
+function casYearLevelClause(string $col = 'c.year_level'): string {
+    return isDeanCAS() ? " AND $col <= 2" : '';
+}
+
 // ─── Helper: verify dean can access a program (dept-scoped) ───────────────
 
 function deanCanAccessProgram(int $programId): bool {
     if (Auth::role() !== 'dean') return true;
+    if (isDeanCAS()) {
+        return (bool)db()->fetchOne("SELECT 1 FROM program WHERE program_id = ? AND status = 'active'", [$programId]);
+    }
     $deptId = deanDeptId();
     if (!$deptId) return false;
     $link = db()->fetchOne(
@@ -120,7 +148,16 @@ function deanCanAccessProgram(int $programId): bool {
 
 function handlePrograms() {
     global $isDean;
-    if ($isDean) {
+    if ($isDean && isDeanCAS()) {
+        // CAS: every active program, campus-wide — they teach general
+        // education subjects into all of them, not just their own.
+        $programs = db()->fetchAll(
+            "SELECT p.program_id, p.program_name, p.program_code, p.department_id
+             FROM program p
+             WHERE p.status = 'active'
+             ORDER BY p.program_code"
+        );
+    } elseif ($isDean) {
         $deptId = deanDeptId();
         $programs = $deptId ? db()->fetchAll(
             "SELECT p.program_id, p.program_name, p.program_code, dp.department_id
@@ -170,7 +207,7 @@ function handleView() {
                 COALESCE(c.sem_num, s.semester, c.semester_id, 1) AS semester
          FROM curriculum c
          JOIN subject s ON s.subject_id = c.course_id
-         WHERE c.program_id = ? AND c.status = 'active' AND s.status = 'active'{$versionFilter}
+         WHERE c.program_id = ? AND c.status = 'active' AND s.status = 'active'{$versionFilter}" . casYearLevelClause() . "
          ORDER BY c.year_level, COALESCE(c.sem_num, s.semester, c.semester_id, 1), s.subject_code",
         [$programId]
     );
@@ -197,7 +234,7 @@ function handleAvailable() {
          LEFT JOIN curriculum c ON c.course_id = s.subject_id
                                 AND c.program_id = ?
                                 AND c.status = 'active'
-         WHERE s.program_id = ?
+         WHERE s.program_id = ?" . casYearLevelClause('s.year_level') . "
          ORDER BY s.year_level, s.subject_code",
         [$programId, $programId]
     );

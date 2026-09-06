@@ -1,5 +1,5 @@
 /**
- * Floating AI Assistant — free Groq-powered study helper (bottom-right, left of messenger).
+ * Floating AI Assistant — free Hugging Face-powered study helper (bottom-right, left of messenger).
  */
 import { Api, BASE_URL } from '../api.js';
 import { Auth } from '../auth.js';

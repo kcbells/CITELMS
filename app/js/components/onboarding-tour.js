@@ -59,7 +59,7 @@ function stepsFor(role) {
         ],
         dean: [
             { selector: '.nav-item[data-page="instructors"]', title: 'Manage Faculty', body: 'Add, edit, and oversee the instructors and program heads in your department.' },
-            { selector: '.nav-item[data-page="reports"]', title: 'Reports', body: 'Department-wide performance, at-risk students, and quiz results.' },
+            { selector: '.nav-item[data-page="sections"]', title: 'Reports', body: 'A live report of struggling students across every program in your department — which students, and exactly which subjects.' },
         ],
         admin: [
             { selector: '.nav-item[data-page="departments"]', title: 'Departments', body: 'Manage campuses, departments, and programs across the whole system.' },

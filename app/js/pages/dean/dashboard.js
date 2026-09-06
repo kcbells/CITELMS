@@ -188,7 +188,8 @@ function esc(str) {
 
 function deanSubjCard(c, user) {
     const color = subjectColor(c.subject_id);
-    const sectionNames = (c.sections || []).map(s => s.section_name).filter(Boolean).join(', ');
+    const sectionCount = (c.sections || []).filter(s => s.section_name).length;
+    const sectionLabel = sectionCount ? `${sectionCount} section${sectionCount !== 1 ? 's' : ''} handled` : '';
     const ownerName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.name || 'Dean';
 
     return `<div class="gc-home-card" data-subject-id="${c.subject_id}" data-offered-id="${c.subject_offered_id || ''}" data-subject-code="${esc(c.subject_code)}">
@@ -196,7 +197,7 @@ function deanSubjCard(c, user) {
             <div class="gc-home-banner" style="background:${color}">
                 ${programPatternSvg(c.program_code, c.subject_id, { width: 320, height: 110, opacity: 0.16 })}
                 <h3 class="gc-home-title">${esc(c.subject_name)}</h3>
-                ${sectionNames ? `<p class="gc-home-section">${esc(sectionNames)}</p>` : ''}
+                ${sectionLabel ? `<p class="gc-home-section">${esc(sectionLabel)}</p>` : ''}
                 <p class="gc-home-owner">${esc(ownerName)}</p>
             </div>
         </a>

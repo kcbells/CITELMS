@@ -1746,7 +1746,7 @@ export async function render(container, params) {
         aiBtn.addEventListener('click', async () => {
             const hasSubj = answers.some(a => ['essay','short_answer'].includes((a.question_type||'').toLowerCase()) && a.grading_status === 'pending');
             if (!hasSubj) {
-                alert('No pending subjective answers to grade in this submission.');
+                notify.info('No pending subjective answers to grade in this submission.');
                 return;
             }
             if (!confirm('AI will grade all pending essay/short answer questions for this student.\n\nYou will still need to confirm each grade before finalizing. Continue?')) return;
@@ -1762,10 +1762,10 @@ export async function render(container, params) {
                         return;
                     }
                 } else {
-                    alert(aiRes.message || 'AI grading failed. Check Groq API key in Settings.');
+                    await notify.alert(aiRes.message || 'AI grading failed. Check Hugging Face API key in Settings.', { title: 'AI Grading Failed', type: 'error' });
                 }
             } catch (_) {
-                alert('AI grading failed. Check Groq API key in Settings.');
+                await notify.alert('AI grading failed. Check Hugging Face API key in Settings.', { title: 'AI Grading Failed', type: 'error' });
             } finally {
                 aiBtn.disabled = false;
                 aiBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg> AI Check Subjective`;
@@ -1806,7 +1806,7 @@ export async function render(container, params) {
         const max    = parseFloat(btn.dataset.max ?? 1);
 
         if (isNaN(pts) || pts < 0 || pts > max) {
-            alert(`Points must be between 0 and ${max}`); return;
+            notify.error(`Points must be between 0 and ${max}`); return;
         }
 
         btn.disabled = true;
@@ -1833,7 +1833,7 @@ export async function render(container, params) {
             const fresh = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
             if (fresh.success) checkFinalizeState(overlay, fresh.data.answers, attemptId, () => overlay.remove());
         } else {
-            alert(res.message || 'Failed to save grade');
+            await notify.alert(res.message || 'Failed to save grade', { title: 'Save Failed', type: 'error' });
         }
     }
 
@@ -1863,7 +1863,7 @@ export async function render(container, params) {
             } else {
                 finBtn.disabled = false;
                 finBtn.textContent = '✓ Finalize & Save';
-                alert(res.message || 'Failed to finalize');
+                await notify.alert(res.message || 'Failed to finalize', { title: 'Finalize Failed', type: 'error' });
             }
         };
     }
@@ -2191,7 +2191,7 @@ export async function render(container, params) {
                     refreshBody();
                 }
             } catch (_) {
-                notify.error('AI checker failed. Check your Groq API key in Settings.');
+                notify.error('AI checker failed. Check your Hugging Face API key in Settings.');
             } finally {
                 if (btn) {
                     delete btn.dataset.loading;

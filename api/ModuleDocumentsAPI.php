@@ -57,14 +57,41 @@ try {
     error_log('ModuleDocuments migration guard: ' . $__e->getMessage());
     unset($__e);
 }
+ensurePublishColumns();
 
 switch ($action) {
-    case 'list':   handleList();   break;
-    case 'upload': handleUpload(); break;
-    case 'delete': handleDelete(); break;
+    case 'list':        handleList();        break;
+    case 'upload':      handleUpload();      break;
+    case 'delete':      handleDelete();      break;
+    case 'set_publish': handleSetPublish();  break;
+    case 'match_subject': handleMatchSubject(); break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+/**
+ * Publish gate — a document is hidden from students until the instructor/
+ * dean/program head who manages that subject explicitly publishes it, or
+ * schedules a future publish_at moment (checked against NOW() at read time,
+ * not a cron — see the WHERE clauses in handleList()/serveDocument()).
+ */
+function ensurePublishColumns(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo = pdo();
+        $has = fn($col) => (bool)$pdo->query("SHOW COLUMNS FROM subject_module_documents LIKE '$col'")->fetchAll();
+        if (!$has('is_published')) {
+            $pdo->exec("ALTER TABLE subject_module_documents ADD COLUMN is_published TINYINT(1) NOT NULL DEFAULT 0 AFTER uploaded_by");
+        }
+        if (!$has('publish_at')) {
+            $pdo->exec("ALTER TABLE subject_module_documents ADD COLUMN publish_at DATETIME NULL AFTER is_published");
+        }
+    } catch (Exception $e) {
+        error_log('ModuleDocuments ensurePublishColumns: ' . $e->getMessage());
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,10 +207,13 @@ function handleList(): void
     }
 
     $docTypes = ($role === 'student') ? "('sas')" : "('teaching_guide','sas')";
+    // Students only ever see a document once it's published or its scheduled
+    // publish_at has arrived — checked live against NOW() here, not a cron.
+    $visibilityClause = ($role === 'student') ? "AND (is_published = 1 OR (publish_at IS NOT NULL AND publish_at <= NOW()))" : '';
     $rows = db()->fetchAll(
-        "SELECT doc_id, module_number, doc_type, original_name, file_size, uploaded_at
+        "SELECT doc_id, module_number, doc_type, original_name, file_size, uploaded_at, is_published, publish_at
          FROM subject_module_documents
-         WHERE subject_id = ? AND doc_type IN {$docTypes}
+         WHERE subject_id = ? AND doc_type IN {$docTypes} {$visibilityClause}
          ORDER BY module_number, doc_type",
         [$subjectId]
     );
@@ -195,10 +225,49 @@ function handleList(): void
             'original_name' => $r['original_name'],
             'file_size'     => (int)$r['file_size'],
             'uploaded_at'   => $r['uploaded_at'],
+            'is_published'  => (bool)$r['is_published'],
+            'publish_at'    => $r['publish_at'],
         ];
     }
 
-    echo json_encode(['success' => true, 'data' => $docs, 'can_upload' => $canManage]);
+    // Module quizzes (Let's Practice / Reflection / Wrap Up Quiz) built from
+    // this subject's SAS/Teaching Guide — see AIQuizAPI.php's
+    // generate-from-module-docs + save. Surfaced here so the same modal can
+    // offer "Build/Manage Quiz" (staff) or "Answer now" (student).
+    $quizzes = [];
+    try {
+        $quizRows = db()->fetchAll(
+            "SELECT quiz_id, module_number, gradebook_component, status, quiz_title
+             FROM quiz WHERE subject_id = ? AND module_number IS NOT NULL AND gradebook_component IS NOT NULL",
+            [$subjectId]
+        );
+        $myAttempts = [];
+        if ($role === 'student' && $quizRows) {
+            $quizIds = array_map(fn($q) => (int)$q['quiz_id'], $quizRows);
+            $placeholders = implode(',', array_fill(0, count($quizIds), '?'));
+            $attemptRows = db()->fetchAll(
+                "SELECT quiz_id, status, percentage, passed FROM student_quiz_attempts
+                 WHERE user_student_id = ? AND quiz_id IN ({$placeholders}) ORDER BY attempt_id DESC",
+                array_merge([$user['id']], $quizIds)
+            );
+            foreach ($attemptRows as $a) {
+                if (!isset($myAttempts[(int)$a['quiz_id']])) $myAttempts[(int)$a['quiz_id']] = $a; // latest first
+            }
+        }
+        foreach ($quizRows as $q) {
+            if ($role === 'student' && $q['status'] !== 'published') continue; // hide drafts-in-progress from students
+            $quizzes[(int)$q['module_number']][$q['gradebook_component']] = [
+                'quiz_id'     => (int)$q['quiz_id'],
+                'status'      => $q['status'],
+                'quiz_title'  => $q['quiz_title'],
+                'my_attempt'  => $myAttempts[(int)$q['quiz_id']] ?? null,
+            ];
+        }
+    } catch (Exception $e) {
+        error_log('ModuleDocuments list quizzes: ' . $e->getMessage());
+    }
+
+    echo json_encode(['success' => true, 'data' => $docs, 'quizzes' => $quizzes, 'can_upload' => $canManage]);
 }
 
 /**
@@ -253,10 +322,14 @@ function handleUpload(): void
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
         'application/vnd.ms-powerpoint' => 'ppt',
         'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+        'application/vnd.ms-excel' => 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        'text/plain' => 'txt',
+        'text/csv' => 'csv',
     ];
     $mimeType = mime_content_type($file['tmp_name']);
     if (!isset($allowedTypes[$mimeType])) {
-        echo json_encode(['success' => false, 'message' => 'Only PDF, Word, or PowerPoint files are allowed.']);
+        echo json_encode(['success' => false, 'message' => 'Only PDF, Word, Excel, or text files are allowed.']);
         return;
     }
 
@@ -288,20 +361,29 @@ function handleUpload(): void
             }
         }
 
+        // A replaced file resets to unpublished — the instructor/dean should
+        // consciously re-publish a changed document rather than have the old
+        // one's publish state silently carry over to different content.
         pdo()->prepare(
             "INSERT INTO subject_module_documents
-                (subject_id, module_number, doc_type, file_name, original_name, file_path, file_size, uploaded_by, uploaded_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                (subject_id, module_number, doc_type, file_name, original_name, file_path, file_size, uploaded_by, uploaded_at, is_published, publish_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0, NULL)
              ON DUPLICATE KEY UPDATE
                 file_name = VALUES(file_name), original_name = VALUES(original_name),
                 file_path = VALUES(file_path), file_size = VALUES(file_size),
-                uploaded_by = VALUES(uploaded_by), uploaded_at = NOW()"
+                uploaded_by = VALUES(uploaded_by), uploaded_at = NOW(),
+                is_published = 0, publish_at = NULL"
         )->execute([
             $subjectId, $moduleNum, $docType,
             $fileName, $file['name'], 'uploads/module_documents/' . $fileName, $file['size'], $user['id'],
         ]);
 
-        echo json_encode(['success' => true, 'message' => 'File uploaded']);
+        $docId = (int)db()->fetchOne(
+            "SELECT doc_id FROM subject_module_documents WHERE subject_id = ? AND module_number = ? AND doc_type = ?",
+            [$subjectId, $moduleNum, $docType]
+        )['doc_id'];
+
+        echo json_encode(['success' => true, 'message' => 'File uploaded', 'data' => ['doc_id' => $docId]]);
     } catch (Exception $e) {
         if (file_exists($filePath)) unlink($filePath);
         error_log('ModuleDocuments upload: ' . $e->getMessage());
@@ -380,7 +462,9 @@ function serveDocument(): void
 
     $role = $user['role'];
     if ($role === 'student') {
-        if ($doc['doc_type'] !== 'sas' || !studentEnrolledInSubject((int)$doc['subject_id'], $user['id'])) {
+        $published = (bool)$doc['is_published']
+            || ($doc['publish_at'] !== null && strtotime($doc['publish_at']) <= time());
+        if ($doc['doc_type'] !== 'sas' || !$published || !studentEnrolledInSubject((int)$doc['subject_id'], $user['id'])) {
             http_response_code(403);
             header('Content-Type: text/plain');
             echo 'Access denied';
@@ -408,4 +492,100 @@ function serveDocument(): void
     header('Content-Disposition: inline; filename="' . basename($doc['original_name']) . '"');
     header('X-Content-Type-Options: nosniff');
     readfile($path);
+}
+
+/**
+ * POST ?action=set_publish
+ * Body: { doc_id, is_published?: bool, publish_at?: "YYYY-MM-DD HH:MM"|null }
+ * Only whoever can manage the document's subject (admin, the instructor
+ * assigned to teach it, its dean, or its program head) may publish/schedule
+ * it — this is the "student can see it or not, or on a schedule" control.
+ */
+function handleSetPublish(): void {
+    $data  = json_decode(file_get_contents('php://input'), true) ?? [];
+    $docId = (int)($data['doc_id'] ?? 0);
+    if (!$docId) {
+        echo json_encode(['success' => false, 'message' => 'doc_id required']);
+        return;
+    }
+
+    $doc = db()->fetchOne("SELECT subject_id FROM subject_module_documents WHERE doc_id = ?", [$docId]);
+    if (!$doc) {
+        echo json_encode(['success' => false, 'message' => 'Document not found']);
+        return;
+    }
+    if (!userCanManageSubject((int)$doc['subject_id'], currentUser())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+
+    $isPublished = array_key_exists('is_published', $data) ? (int)(bool)$data['is_published'] : null;
+    $publishAt   = array_key_exists('publish_at', $data) ? ($data['publish_at'] ?: null) : null;
+    if ($publishAt !== null) {
+        $ts = strtotime($publishAt);
+        if ($ts === false) {
+            echo json_encode(['success' => false, 'message' => 'Invalid publish date/time']);
+            return;
+        }
+        $publishAt = date('Y-m-d H:i:s', $ts);
+    }
+
+    // Publishing immediately clears any pending schedule (it's redundant); a
+    // fresh schedule implies "not published yet" so students don't see it
+    // early, unless the caller explicitly also sets is_published.
+    if ($isPublished === 1 && !array_key_exists('publish_at', $data)) $publishAt = null;
+
+    try {
+        $sets = [];
+        $params = [];
+        if ($isPublished !== null) { $sets[] = 'is_published = ?'; $params[] = $isPublished; }
+        if (array_key_exists('publish_at', $data)) { $sets[] = 'publish_at = ?'; $params[] = $publishAt; }
+        if (!$sets) { echo json_encode(['success' => false, 'message' => 'Nothing to update']); return; }
+        $params[] = $docId;
+        pdo()->prepare("UPDATE subject_module_documents SET " . implode(', ', $sets) . " WHERE doc_id = ?")->execute($params);
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        error_log('ModuleDocuments set_publish: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to update']);
+    }
+}
+
+/**
+ * GET ?action=match_subject&code=ITE300
+ * Used by the client-side PDF scanner (bulk Lesson Material upload) to
+ * resolve a "Course Name: ITE 300 ..." string it read out of a Teaching
+ * Guide/SAS PDF into a real subject_id. Staff-only (same roles as upload).
+ */
+function handleMatchSubject(): void {
+    $user = currentUser();
+    if (!in_array($user['role'], ['admin', 'instructor', 'dean', 'program_head'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+    $code = trim($_GET['code'] ?? '');
+    if (!$code) {
+        echo json_encode(['success' => false, 'message' => 'code required']);
+        return;
+    }
+    // Normalize "ITE 300" / "ITE300" / "ite-300" to the same bare form before
+    // comparing, since subject_code is stored without spaces (e.g. "ITE300").
+    $bare = strtoupper(preg_replace('/[\s\-]+/', '', $code));
+    $rows = db()->fetchAll(
+        "SELECT subject_id, subject_code, subject_name FROM subject WHERE status = 'active'"
+    );
+    $exact = null; $partial = [];
+    foreach ($rows as $r) {
+        $rowBare = strtoupper(preg_replace('/[\s\-]+/', '', $r['subject_code']));
+        if ($rowBare === $bare) { $exact = $r; break; }
+        if ($bare !== '' && strpos($rowBare, $bare) !== false) $partial[] = $r;
+    }
+    if ($exact) {
+        echo json_encode(['success' => true, 'data' => $exact, 'exact' => true]);
+    } elseif (count($partial) === 1) {
+        echo json_encode(['success' => true, 'data' => $partial[0], 'exact' => false]);
+    } else {
+        echo json_encode(['success' => true, 'data' => null, 'candidates' => array_slice($partial, 0, 5)]);
+    }
 }

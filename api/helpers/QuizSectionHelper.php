@@ -3,6 +3,70 @@
  * Quiz ↔ section targeting (same pattern as lessons / announcements).
  */
 
+require_once __DIR__ . '/ScopeHelper.php';
+
+/**
+ * Same access rule as ModuleDocumentsAPI.php's userCanManageSubject(): admin
+ * always, instructor if assigned as teacher of record, dean/program_head if
+ * the subject's program falls in their scope. Shared by AIQuizAPI.php
+ * (building a module quiz) and QuizAttemptsAPI.php (grading/finalizing one),
+ * so dean/program_head oversight is consistent everywhere a quiz is touched.
+ */
+function canManageQuizSubject(int $subjectId, int $userId, string $role): bool {
+    if ($role === 'admin') return true;
+    if ($role === 'instructor') {
+        return (bool)db()->fetchOne(
+            "SELECT 1 FROM subject_offered WHERE subject_id = ? AND user_teacher_id = ? LIMIT 1",
+            [$subjectId, $userId]
+        );
+    }
+    if ($role === 'dean') {
+        $subj = db()->fetchOne("SELECT program_id FROM subject WHERE subject_id = ?", [$subjectId]);
+        return $subj && in_array((int)$subj['program_id'], deanProgramIds(), true);
+    }
+    if ($role === 'program_head') {
+        $subj = db()->fetchOne("SELECT program_id FROM subject WHERE subject_id = ?", [$subjectId]);
+        $scope = programHeadScope();
+        return $subj && (int)$subj['program_id'] === $scope['program_id'];
+    }
+    return false;
+}
+
+/**
+ * Which subject_ids the CURRENT user may see quiz grading/review data for:
+ * instructor -> subjects they're the teacher of record on; dean/program_head
+ * -> every subject in their program scope (not just ones they personally
+ * teach); admin -> everything. Used to scope list-style grading queries
+ * (pending grading, flagged attempts) the same way canManageQuizSubject()
+ * scopes single-subject checks — dean/program_head previously saw nothing in
+ * these lists unless they also happened to be the literal teacher of record.
+ */
+function gradingScopeSubjectIds(): array {
+    $role = Auth::role();
+    $userId = (int)Auth::id();
+
+    if ($role === 'admin') {
+        $rows = db()->fetchAll("SELECT subject_id FROM subject");
+        return array_map(fn($r) => (int)$r['subject_id'], $rows);
+    }
+    if ($role === 'dean') {
+        $ids = deanProgramIds();
+        if (!$ids) return [];
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $rows = db()->fetchAll("SELECT subject_id FROM subject WHERE program_id IN ($placeholders)", $ids);
+        return array_map(fn($r) => (int)$r['subject_id'], $rows);
+    }
+    if ($role === 'program_head') {
+        $scope = programHeadScope();
+        if (!$scope['program_id']) return [];
+        $rows = db()->fetchAll("SELECT subject_id FROM subject WHERE program_id = ?", [$scope['program_id']]);
+        return array_map(fn($r) => (int)$r['subject_id'], $rows);
+    }
+    // instructor (default)
+    $rows = db()->fetchAll("SELECT DISTINCT subject_id FROM subject_offered WHERE user_teacher_id = ?", [$userId]);
+    return array_map(fn($r) => (int)$r['subject_id'], $rows);
+}
+
 function ensureQuizBehaviorColumns() {
     static $done = false;
     if ($done) return;
@@ -154,6 +218,32 @@ function ensureTabSwitchColumn() {
         }
     } catch (Exception $e) {
         error_log('tab_switch_count column: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Links a quiz to a specific Global Gradebook module/component (Let's
+ * Practice / Reflection / Wrap Up Quiz), and to the SAS document it was built
+ * from — set only for quizzes created via the SAS/Teaching-Guide module-quiz
+ * flow (AIQuizAPI.php's generate-from-module-docs + saveQuiz). Stays NULL for
+ * every regular quiz, so nothing else changes behavior.
+ */
+function ensureQuizModuleLinkColumns() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!db()->fetchOne("SHOW COLUMNS FROM quiz LIKE 'module_number'")) {
+            pdo()->exec("ALTER TABLE quiz ADD COLUMN module_number TINYINT NULL COMMENT '1-14, Global Gradebook module this quiz feeds' AFTER grading_period");
+        }
+        if (!db()->fetchOne("SHOW COLUMNS FROM quiz LIKE 'gradebook_component'")) {
+            pdo()->exec("ALTER TABLE quiz ADD COLUMN gradebook_component ENUM('lets_practice','lets_practice_optional','reflection','wrap_up_quiz') NULL AFTER module_number");
+        }
+        if (!db()->fetchOne("SHOW COLUMNS FROM quiz LIKE 'source_doc_id'")) {
+            pdo()->exec("ALTER TABLE quiz ADD COLUMN source_doc_id INT NULL COMMENT 'subject_module_documents.doc_id (SAS) this quiz was generated from' AFTER gradebook_component");
+        }
+    } catch (Exception $e) {
+        error_log('ensureQuizModuleLinkColumns: ' . $e->getMessage());
     }
 }
 

@@ -374,10 +374,10 @@ async function openNewGroupModal() {
 
     document.getElementById('ng-create').addEventListener('click', async () => {
         const name = document.getElementById('ng-name')?.value.trim();
-        if (!name) { alert('Please enter a group name.'); return; }
+        if (!name) { notify.error('Please enter a group name.'); return; }
         const memberIds = [...overlay.querySelectorAll('#ng-contacts input[type=checkbox]:checked')]
             .map(cb => parseInt(cb.value));
-        if (!memberIds.length) { alert('Select at least one member.'); return; }
+        if (!memberIds.length) { notify.error('Select at least one member.'); return; }
 
         const btn = document.getElementById('ng-create');
         btn.disabled = true; btn.textContent = 'Creating…';

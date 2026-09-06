@@ -261,10 +261,59 @@ async function renderClassRecord(container, opts) {
         host.querySelector('#gb-export-csv')?.addEventListener('click', () =>
             exportClassRecordCsv(subject, section, record)
         );
+        wireScoreOverrideEditing(host, () => renderClassRecord(container, opts));
     } catch (err) {
         console.error('Class record load error:', err);
         host.innerHTML = emptyBox('Could not load class record. Please try again.');
     }
+}
+
+/**
+ * Click-to-edit for quiz score cells — same directly-editable-cell spirit as
+ * the Global Gradebook's dropdowns, but a free-entry number here since a raw
+ * quiz score isn't a fixed 0-3/percentage domain. Saves via
+ * GradebookAPI.php's score-override actions, which layer on top of the
+ * computed best-attempt score without touching attempt data.
+ */
+function wireScoreOverrideEditing(host, onSaved) {
+    host.querySelectorAll('.gb-editable-td').forEach(td => {
+        td.addEventListener('click', () => {
+            if (td.querySelector('input')) return; // already editing
+            const target = td.querySelector('.gb-edit-target');
+            const current = td.dataset.earned || '';
+            const total = td.dataset.total || '';
+            td.innerHTML = `<input type="number" class="gb-score-input" min="0" ${total ? `max="${total}"` : ''} step="0.5" value="${esc(current)}" placeholder="${total ? `/ ${total}` : ''}">`;
+            const input = td.querySelector('input');
+            input.focus();
+            input.select();
+
+            let cancelled = false;
+            const commit = async () => {
+                if (cancelled) return;
+                const raw = input.value.trim();
+                const quizId = parseInt(td.dataset.quizId, 10);
+                const studentId = parseInt(td.dataset.studentId, 10);
+                const res = await Api.post('/GradebookAPI.php?action=save-score-override', {
+                    quiz_id: quizId,
+                    user_student_id: studentId,
+                    earned_points: raw === '' ? null : parseFloat(raw),
+                });
+                if (res.success) {
+                    onSaved();
+                } else {
+                    notify.error(res.message || 'Could not save score.');
+                    if (target) td.replaceChildren(target);
+                }
+            };
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                if (e.key === 'Escape') { e.preventDefault(); cancelled = true; if (target) td.replaceChildren(target); }
+            });
+            input.addEventListener('blur', commit, { once: true });
+            input.addEventListener('click', (e) => e.stopPropagation());
+        });
+    });
 }
 
 async function loadClassRecord(subject, section) {
@@ -345,6 +394,25 @@ async function loadClassRecord(subject, section) {
 
     for (const [, st] of matrix) st.lessonStatus = lessonProgress[st.user_student_id] || {};
 
+    // Manual score overrides — same spirit as the Global Gradebook's directly
+    // editable cells, applied on top of the computed best-attempt score
+    // without touching the underlying attempt data.
+    if (quizzes.length) {
+        const quizIds = quizzes.map(q => q.quiz_id).join(',');
+        const ovRes = await Api.get(`/GradebookAPI.php?action=get-score-overrides&quiz_ids=${quizIds}`, { ttl: 0 }).catch(() => null);
+        const overrides = ovRes?.success ? (ovRes.data || {}) : {};
+        for (const quiz of quizzes) {
+            const byStudent = overrides[quiz.quiz_id];
+            if (!byStudent) continue;
+            for (const [, st] of matrix) {
+                if (!(st.user_student_id in byStudent)) continue;
+                const total = st.quizScores[quiz.quiz_id]?.total || parseFloat(quiz.total_points) || 0;
+                const earned = byStudent[st.user_student_id];
+                st.quizScores[quiz.quiz_id] = { earned, total, passed: total > 0 && earned / total >= 0.6, overridden: true };
+            }
+        }
+    }
+
     return { quizzes, lessons, periodGroups, students: [...matrix.values()], lessonProgress };
 }
 
@@ -377,11 +445,16 @@ function renderTableHeaders(allItems) {
 function renderStudentItemCell(st, item) {
     if (item.kind === 'quiz') {
         const cell = st.quizScores[item.id];
+        const editAttrs = `data-edit-cell data-quiz-id="${item.id}" data-student-id="${st.user_student_id}" data-total="${item.totalPoints || cell?.total || 0}"`;
         if (cell === null || cell === undefined) {
             const missing = isItemMissing(item);
-            return `<td class="td-num"><span class="${missing ? 'gc-cur-badge-missing' : 'gc-cur-badge-none'}">${missing ? 'Missing' : '—'}</span></td>`;
+            return `<td class="td-num gb-editable-td" ${editAttrs} data-earned="">
+                <span class="${missing ? 'gc-cur-badge-missing' : 'gc-cur-badge-none'} gb-edit-target">${missing ? 'Missing' : '—'}</span>
+            </td>`;
         }
-        return `<td class="td-num"><span class="gc-cur-badge-raw">${cell.earned}</span></td>`;
+        return `<td class="td-num gb-editable-td" ${editAttrs} data-earned="${cell.earned}">
+            <span class="gc-cur-badge-raw${cell.overridden ? ' gb-overridden' : ''} gb-edit-target">${cell.earned}</span>
+        </td>`;
     }
     const status = st.lessonStatus?.[item.id];
     if (status === 'completed') return `<td class="td-num"><span class="gc-cur-badge-pass">Done</span></td>`;
@@ -666,6 +739,18 @@ function pageCss() {
         .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;
             background:#FEF3C7; color:#B45309; }
         .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
+
+        /* Click-to-edit quiz score cells — same directly-editable-cell spirit
+           and focus treatment as the Global Gradebook's dropdowns. */
+        .gb-editable-td { cursor:pointer; position:relative; transition:background .12s; }
+        .gb-editable-td:hover { background:${GL}; }
+        .gb-editable-td:hover .gb-edit-target { text-decoration:underline; text-decoration-style:dotted; text-decoration-color:${G}; }
+        .gb-overridden { color:${G2} !important; }
+        .gb-overridden::after { content:'✎'; font-size:9px; margin-left:3px; opacity:.7; }
+        .gb-score-input {
+            width:56px; padding:2px 4px; border:1px solid ${G}; border-radius:4px; font-size:12px;
+            font-family:inherit; text-align:center; outline:none; box-shadow:0 0 0 2px rgba(0,70,27,.15);
+        }
 
         .gb-table-scroll { overflow-x:auto; }
         /* Override curriculumTableCss's overflow:hidden — clip doesn't create a

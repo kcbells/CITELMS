@@ -9,15 +9,18 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
 require_once __DIR__ . '/helpers/GroqCurl.php';
+require_once __DIR__ . '/helpers/AiProvider.php';
 require_once __DIR__ . '/helpers/StudentListParser.php';
+require_once __DIR__ . '/helpers/ScopeHelper.php';
 
 header('Content-Type: application/json');
 ini_set('display_errors', '0');
 
-// Require instructor role — deans who self-assign as the teacher of record for a
-// subject (see SubjectOfferingsAPI.php's dean-assign self path) reuse this same
-// instructor UI, so they must be allowed through too, not just literal 'instructor'.
-if (!Auth::check() || !in_array(Auth::role(), ['instructor', 'dean'], true)) {
+// Require instructor role — deans/program heads who oversee a subject (or who
+// self-assign as the teacher of record — see SubjectOfferingsAPI.php's
+// dean-assign self path) reuse this same instructor UI, so they must be
+// allowed through too, not just literal 'instructor'.
+if (!Auth::check() || !in_array(Auth::role(), ['instructor', 'dean', 'program_head'], true)) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
@@ -33,6 +36,7 @@ $_aiPerms = [
     'extract-text'  => 'ai_tools.generate',
     'generate'      => 'ai_tools.generate',
     'save'          => 'ai_tools.generate',
+    'generate-from-module-docs' => 'ai_tools.generate',
 ];
 if (isset($_aiPerms[$action]) && !Auth::can($_aiPerms[$action])) {
     http_response_code(403);
@@ -49,6 +53,9 @@ switch ($action) {
         break;
     case 'save':
         saveQuiz($input, $userId);
+        break;
+    case 'generate-from-module-docs':
+        generateFromModuleDocs($input);
         break;
     case 'subjects':
         getInstructorSubjects($userId);
@@ -86,6 +93,169 @@ function getSubjectLessons($userId) {
         [$subjectId, $userId]
     );
     echo json_encode(['success' => true, 'data' => $data]);
+}
+
+/**
+ * POST ?action=generate-from-module-docs
+ * Body: { subject_id, module_number, gradebook_component }
+ * Reads the module's already-uploaded Teaching Guide + SAS (subject_module_documents),
+ * asks Groq to pull out the ACTUAL activity items belonging to the requested
+ * gradebook section from the SAS, paired with the matching answer/rubric note
+ * from the Teaching Guide. Returns a draft question list for the caller to
+ * review/edit — nothing is saved here; saving happens via the existing
+ * `save` action (extended with module_number/gradebook_component/source_doc_id).
+ */
+function generateFromModuleDocs(array $input): void {
+    $subjectId = (int)($input['subject_id'] ?? 0);
+    $moduleNum = (int)($input['module_number'] ?? 0);
+    $component = $input['gradebook_component'] ?? '';
+    $validComponents = ['lets_practice', 'lets_practice_optional', 'reflection', 'wrap_up_quiz'];
+
+    if (!$subjectId || $moduleNum < 1 || $moduleNum > 14 || !in_array($component, $validComponents, true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        return;
+    }
+    if (!canManageQuizSubject($subjectId, (int)Auth::id(), Auth::role())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You do not have access to this subject']);
+        return;
+    }
+
+    $docs = db()->fetchAll(
+        "SELECT doc_id, doc_type, file_path, original_name FROM subject_module_documents
+         WHERE subject_id = ? AND module_number = ? AND doc_type IN ('sas','teaching_guide')",
+        [$subjectId, $moduleNum]
+    );
+    $sas = null; $tg = null;
+    foreach ($docs as $d) {
+        if ($d['doc_type'] === 'sas') $sas = $d;
+        if ($d['doc_type'] === 'teaching_guide') $tg = $d;
+    }
+    if (!$sas) {
+        echo json_encode(['success' => false, 'message' => 'No Student Activity Sheet uploaded for this module yet']);
+        return;
+    }
+
+    try {
+        $sasPath = realpath(__DIR__ . '/../' . ltrim($sas['file_path'], '/'));
+        $sasText = StudentListParser::extractReadableTextFromPath($sasPath, $sas['original_name']);
+        $tgText = '';
+        if ($tg) {
+            $tgPath = realpath(__DIR__ . '/../' . ltrim($tg['file_path'], '/'));
+            if ($tgPath) {
+                try {
+                    $tgText = StudentListParser::extractReadableTextFromPath($tgPath, $tg['original_name']);
+                } catch (Exception $e) { /* TG optional — fall back to SAS-only extraction */ }
+            }
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage() ?: 'Could not read the uploaded document']);
+        return;
+    }
+
+    $apiKey = getAiApiKey();
+    if (!$apiKey) {
+        echo json_encode(['success' => false, 'message' => 'Hugging Face API key not configured. Add it in Settings, or build this module\'s quiz manually.']);
+        return;
+    }
+
+    $sectionLabel = [
+        'lets_practice'          => "Let's Practice",
+        'lets_practice_optional' => "Let's Practice (Optional)",
+        'reflection'             => 'Reflection',
+        'wrap_up_quiz'           => 'Wrap Up Quiz',
+    ][$component];
+
+    $prompt = buildModuleExtractionPrompt($sasText, $tgText, $sectionLabel);
+    $result = callAiChatCompletion(
+        'You extract real activity items from a student activity sheet and pair them with answers from a teaching guide. You respond ONLY with strict JSON — a single array, no prose, no markdown fences.',
+        $prompt, 3000, 0.2, $apiKey
+    );
+    if (!$result['success']) {
+        echo json_encode(['success' => false, 'message' => $result['error'] ?? 'AI extraction failed']);
+        return;
+    }
+
+    $items = parseModuleExtractionResponse($result['text']);
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'questions'     => $items,
+            'source_doc_id' => (int)$sas['doc_id'],
+            'has_teaching_guide' => (bool)$tg,
+        ],
+    ]);
+}
+
+function buildModuleExtractionPrompt(string $sasText, string $tgText, string $sectionLabel): string {
+    $tgBlock = $tgText !== ''
+        ? "TEACHING GUIDE (contains the answer key / rubric notes):\n\"\"\"\n{$tgText}\n\"\"\"\n"
+        : "TEACHING GUIDE: (not available — infer a reasonable model answer from the activity sheet itself)\n";
+
+    return <<<PROMPT
+You are reading a Student Activity Sheet (SAS) and its Teaching Guide for one module of a college course.
+
+STUDENT ACTIVITY SHEET:
+"""
+{$sasText}
+"""
+
+{$tgBlock}
+
+TASK: Find the actual items that belong to the "{$sectionLabel}" section of the Student Activity Sheet — do NOT invent new questions, only extract what is really written there. For each item, find the matching expected answer or grading rubric note from the Teaching Guide (or a reasonable model answer if the Teaching Guide doesn't cover it).
+
+Return STRICT JSON only — a single JSON array, no prose before or after, no markdown fences:
+[
+  {
+    "question": "the exact or lightly-cleaned item text",
+    "type": "short_answer" | "essay" | "multiple_choice" | "true_false",
+    "options": ["A", "B", "C", "D"],
+    "correct_index": 0,
+    "answer": "the expected answer or rubric note (for short_answer/essay/true_false)",
+    "points": 1
+  }
+]
+Only include "options"/"correct_index" for "multiple_choice" items. Omit them otherwise.
+If the "{$sectionLabel}" section does not clearly exist in the activity sheet, return an empty array: []
+PROMPT;
+}
+
+/** Parse the strict-JSON extraction response into saveQuiz()-compatible question rows. */
+function parseModuleExtractionResponse(string $text): array {
+    $text = trim($text);
+    $text = preg_replace('/^```(json)?/i', '', $text);
+    $text = preg_replace('/```$/', '', $text);
+    $text = trim($text);
+
+    $start = strpos($text, '[');
+    $end = strrpos($text, ']');
+    if ($start === false || $end === false || $end < $start) return [];
+    $json = substr($text, $start, $end - $start + 1);
+
+    $decoded = json_decode($json, true);
+    if (!is_array($decoded)) return [];
+
+    $allowedTypes = ['short_answer', 'essay', 'multiple_choice', 'true_false'];
+    $items = [];
+    foreach ($decoded as $raw) {
+        if (!is_array($raw) || empty($raw['question'])) continue;
+        $type = in_array($raw['type'] ?? '', $allowedTypes, true) ? $raw['type'] : 'short_answer';
+        $item = [
+            'type'     => $type,
+            'question' => cleanQuestionText((string)$raw['question']),
+            'points'   => max(1, min(20, (int)($raw['points'] ?? 1))),
+        ];
+        if ($type === 'multiple_choice' && !empty($raw['options']) && is_array($raw['options'])) {
+            $item['options'] = array_map('strval', array_slice($raw['options'], 0, 8));
+            $item['correct_index'] = max(0, min(count($item['options']) - 1, (int)($raw['correct_index'] ?? 0)));
+        } elseif ($type === 'true_false') {
+            $item['answer'] = !empty($raw['answer']) && stripos((string)$raw['answer'], 'true') !== false;
+        } else {
+            $item['answer'] = cleanQuestionText((string)($raw['answer'] ?? ''));
+        }
+        $items[] = $item;
+    }
+    return $items;
 }
 
 /**
@@ -130,18 +300,9 @@ function generateQuestions($input) {
     $numEssay = (int)($input['num_essay'] ?? 0);
     $difficulty = $input['difficulty'] ?? 'medium';
 
-    // Read API key from system_settings
-    $apiKey = '';
-    $envKey = getenv('GROQ_API_KEY') ?: '';
-    $keySetting = $envKey !== ''
-        ? ['setting_value' => $envKey]
-        : db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'groq_api_key'");
-    if ($keySetting && !empty($keySetting['setting_value'])) {
-        $apiKey = $keySetting['setting_value'];
-    }
-
+    $apiKey = getAiApiKey();
     if (empty($apiKey)) {
-        echo json_encode(['success' => false, 'error' => 'Groq API key not configured. Please set it in System Settings.']);
+        echo json_encode(['success' => false, 'error' => 'Hugging Face API key not configured. Please set it in System Settings.']);
         return;
     }
     if (empty($text)) {
@@ -156,8 +317,10 @@ function generateQuestions($input) {
     $prompt = buildPrompt($text, $numMC, $numTF, $numFIB, $numSA, $numEssay, $difficulty);
 
     try {
-        // Call Groq API
-        $response = callGroqAPI($apiKey, $prompt);
+        $response = callAiChatCompletion(
+            'You are an educational quiz generator. Generate well-formatted quiz questions based on the provided content. Follow the exact format specified in the user prompt.',
+            $prompt, 4000, 0.7, $apiKey
+        );
 
         if (!$response['success']) {
             echo json_encode(['success' => false, 'error' => $response['error']]);
@@ -253,82 +416,8 @@ ANSWER: [model answer listing the key points and ideas expected in a good respon
     return $prompt;
 }
 
-/**
- * Call Groq API for text generation
- * Groq offers fast inference with generous free tier
- */
-function callGroqAPI($apiKey, $prompt) {
-    // Get model from settings or use default
-    $model = 'llama-3.1-8b-instant';
-    $modelSetting = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'ai_model'");
-    if ($modelSetting && !empty($modelSetting['setting_value'])) {
-        $model = $modelSetting['setting_value'];
-    }
-
-    $url = "https://api.groq.com/openai/v1/chat/completions";
-
-    $payload = [
-        'model' => $model,
-        'messages' => [
-            [
-                'role' => 'system',
-                'content' => 'You are an educational quiz generator. Generate well-formatted quiz questions based on the provided content. Follow the exact format specified in the user prompt.'
-            ],
-            [
-                'role' => 'user',
-                'content' => $prompt
-            ]
-        ],
-        'max_tokens' => 4000,
-        'temperature' => 0.7
-    ];
-
-    $ch = curl_init($url);
-    $curlOpts = [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json'
-        ],
-        CURLOPT_TIMEOUT => 120,
-    ];
-
-    $curlOpts = applyGroqCurlSsl($curlOpts);
-    curl_setopt_array($ch, $curlOpts);
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    if ($error) {
-        return ['success' => false, 'error' => 'Connection error: ' . $error];
-    }
-
-    $data = json_decode($response, true);
-
-    if ($httpCode === 401) {
-        return ['success' => false, 'error' => 'Invalid API key. Please check your Groq API key.'];
-    }
-
-    if ($httpCode === 429) {
-        return ['success' => false, 'error' => 'Rate limit exceeded. Please wait a moment and try again.'];
-    }
-
-    if ($httpCode !== 200) {
-        $errorMsg = $data['error']['message'] ?? $data['error'] ?? 'Unknown API error (HTTP ' . $httpCode . ')';
-        return ['success' => false, 'error' => $errorMsg];
-    }
-
-    // Extract generated text from chat completion response
-    if (isset($data['choices'][0]['message']['content'])) {
-        return ['success' => true, 'text' => $data['choices'][0]['message']['content']];
-    }
-
-    return ['success' => false, 'error' => 'Unexpected API response format'];
-}
+// Question generation now calls the shared callAiChatCompletion() (see
+// helpers/AiProvider.php) instead of a Groq-specific function here.
 
 
 /**
@@ -524,11 +613,17 @@ function saveQuiz($input, $userId) {
 
     $totalPoints = array_sum(array_map('intval', array_column($allQuestions, 'points')));
 
+    $moduleNumber = !empty($input['module_number']) ? max(1, min(14, (int)$input['module_number'])) : null;
+    $validComponents = ['lets_practice', 'lets_practice_optional', 'reflection', 'wrap_up_quiz'];
+    $gradebookComponent = in_array($input['gradebook_component'] ?? '', $validComponents, true) ? $input['gradebook_component'] : null;
+    $sourceDocId = !empty($input['source_doc_id']) ? (int)$input['source_doc_id'] : null;
+
     // DDL must run outside transactions (MySQL implicit commit)
     ensureQuizSectionTable();
     ensureQuizScheduleColumns();
     ensureQuizBehaviorColumns();
     ensureQuestionMediaColumns();
+    ensureQuizModuleLinkColumns();
     fixQuestionOptionFk();
 
     try {
@@ -552,8 +647,8 @@ function saveQuiz($input, $userId) {
             $stmt = $pdo->prepare(
                 "INSERT INTO quiz (user_teacher_id, subject_id, quiz_title, quiz_description, time_limit, passing_rate,
                  max_attempts, total_points, status, availability_start, due_date, quiz_type,
-                 objective_grading_mode, subjective_grading_mode, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+                 objective_grading_mode, subjective_grading_mode, module_number, gradebook_component, source_doc_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
             );
             $stmt->execute([
                 $userId,
@@ -572,6 +667,9 @@ function saveQuiz($input, $userId) {
                 $quizType,
                 $objGrade,
                 $subGrade,
+                $moduleNumber,
+                $gradebookComponent,
+                $sourceDocId,
             ]);
             $quizId = $pdo->lastInsertId();
 

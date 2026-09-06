@@ -1,8 +1,16 @@
 /**
- * Sections Page — "Struggling Students" report (shared by Dean and Program
- * Head via alias). A program head sees this scoped to their own program and
- * the year level(s) their account handles; a dean sees every program in
- * their department, all year levels.
+ * Reports — "Struggling Students" / class performance report, shared by
+ * Dean, Program Head, and Instructor (all via alias — see app.js's
+ * PAGE_ALIASES for 'program_head/sections' and 'instructor/reports').
+ * Scope differs per role:
+ *   - Instructor: only the subjects they're assigned to teach.
+ *   - Program Head: only their own program + the year level(s) their dean
+ *     assigned them to handle.
+ *   - Dean: every program in their department, all year levels.
+ * Organized Subject → Section → students, so enrolled/submitted/lacking
+ * counts are visible per section, not just a flat problem list. Colors
+ * intentionally match the Global Gradebook's exact palette (green pass,
+ * amber single-issue, red critical) — no separate light pastel scheme.
  */
 import { Api } from '../../api.js';
 
@@ -12,15 +20,36 @@ function esc(str) {
     return div.innerHTML;
 }
 
-const SLICE_PALETTE = ['#00461B', '#C8941A', '#1E3A8A', '#9A3412', '#5B21B6', '#0E7490', '#9D174D', '#065F46'];
+// ── Same palette as instructor/global-gradebook.js — reused verbatim ──────
+const G       = '#00461B';
+const G2      = '#006428';
+const GL      = '#E8F5EC';
+const BORDER  = '#E5E7EB';
+const AMBER_BG = '#FEF3C7';
+const AMBER_FG = '#92400E';
+const AMBER_BD = '#FDE68A';
+const RED_BG  = '#FEE2E2';
+const RED_FG  = '#7F1D1D';
+const RED_BD  = '#FCA5A5';
+const GRAY_BG = '#F3F4F6';
+const GRAY_FG = '#4B5563';
+const GRAY_BD = '#D1D5DB';
+
+const SLICE_PALETTE = [G, '#C8941A', '#1E3A8A', G2, '#5B21B6', '#0E7490', '#9D174D', '#065F46'];
 const SLICE_OTHER_COLOR = '#9CA3AF';
 
 function sliceColor(i) {
     return SLICE_PALETTE[i % SLICE_PALETTE.length];
 }
 
+const STATUS_META = {
+    critical: { label: 'Critical', bg: RED_BG,   fg: RED_FG,   bd: RED_BD },
+    at_risk:  { label: 'At Risk',  bg: AMBER_BG, fg: AMBER_FG, bd: AMBER_BD },
+    lacking:  { label: 'Lacking',  bg: GRAY_BG,  fg: GRAY_FG,  bd: GRAY_BD },
+};
+
 /**
- * Donut chart of struggling-student counts by subject, built as plain SVG
+ * Donut chart of flagged-student counts by subject, built as plain SVG
  * (stacked <circle> arcs via stroke-dasharray) — no charting library, same
  * dependency-free approach as the rest of this app's custom SVG art. Caps
  * at the top 7 subjects individually and folds the rest into one "Other"
@@ -56,7 +85,7 @@ function renderDonut(bySubject) {
 
     return `
         <div class="ss-donut-wrap">
-            <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="ss-donut" role="img" aria-label="Struggling students by subject">
+            <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="ss-donut" role="img" aria-label="Flagged students by subject">
                 <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="#F3F4F6" stroke-width="${thickness}"></circle>
                 ${arcs}
                 <text x="${size / 2}" y="${size / 2 - 3}" text-anchor="middle" class="ss-donut-total">${total}</text>
@@ -65,18 +94,12 @@ function renderDonut(bySubject) {
         </div>`;
 }
 
-function scoreColor(score) {
-    if (score < 40) return { bg: '#FEE2E2', fg: '#B91C1C', border: '#FCA5A5' };
-    if (score < 55) return { bg: '#FFEDD5', fg: '#C2410C', border: '#FDBA74' };
-    return { bg: '#FEF9C3', fg: '#A16207', border: '#FDE68A' }; // 55–<60, borderline
-}
-
 let _data = null;
 let _search = '';
 let _subjectFilter = '';
 
 export async function render(container) {
-    container.innerHTML = `<div class="ss-loading">Loading struggling-students report…</div><style>${css()}</style>`;
+    container.innerHTML = `<div class="ss-loading">Loading report…</div><style>${css()}</style>`;
 
     const res = await Api.get('/ReportsAPI.php?action=struggling-students');
     if (!res.success) {
@@ -90,8 +113,20 @@ export async function render(container) {
     renderPage(container);
 }
 
+/** Sum flagged-student counts per subject, for the donut + subject chip list. */
+function computeBySubject(subjects) {
+    return subjects
+        .map(subj => ({
+            subject_code: subj.subject_code,
+            subject_name: subj.subject_name,
+            count: subj.sections.reduce((n, sec) => n + sec.students.length, 0),
+        }))
+        .filter(s => s.count > 0)
+        .sort((a, b) => b.count - a.count);
+}
+
 function renderPage(container) {
-    const { students = [], by_subject: bySubject = [], scope = {}, unscoped } = _data;
+    const { subjects = [], totals, scope = {}, unscoped } = _data;
 
     if (unscoped) {
         container.innerHTML = `<style>${css()}</style>${emptyState(
@@ -101,9 +136,7 @@ function renderPage(container) {
         return;
     }
 
-    const totalStudents = students.length;
-    const totalFlags = students.reduce((n, s) => n + s.subjects.length, 0);
-    const worstSubject = bySubject[0];
+    const bySubject = computeBySubject(subjects);
     const scopeLabel = scope.year_from && scope.year_to
         ? (scope.year_from === scope.year_to
             ? `${ordinal(scope.year_from)} year only`
@@ -115,29 +148,33 @@ function renderPage(container) {
         <div class="ss-page">
             <div class="ss-head">
                 <div>
-                    <h1>Struggling Students</h1>
-                    <p>Students below the struggling cutoff in at least one subject &mdash; 80% for Global Gradebook grades, 60% for quiz-only subjects &mdash; ${esc(scopeLabel)}.</p>
+                    <h1>Reports</h1>
+                    <p>Subjects, sections, and enrolled students — flagged when below the struggling cutoff (80% for Global Gradebook grades, 60% for quiz-only subjects), or lacking any submitted work at all &mdash; ${esc(scopeLabel)}.</p>
                 </div>
             </div>
 
             <div class="ss-stat-row">
                 <div class="ss-stat">
-                    <span class="ss-stat-num">${totalStudents}</span>
-                    <span class="ss-stat-lbl">Student${totalStudents !== 1 ? 's' : ''} flagged</span>
+                    <span class="ss-stat-num">${totals.enrolled}</span>
+                    <span class="ss-stat-lbl">Enrolled</span>
                 </div>
                 <div class="ss-stat">
-                    <span class="ss-stat-num">${totalFlags}</span>
-                    <span class="ss-stat-lbl">Subject${totalFlags !== 1 ? 's' : ''} flagged</span>
+                    <span class="ss-stat-num">${totals.submitted}</span>
+                    <span class="ss-stat-lbl">Submitted work</span>
                 </div>
-                <div class="ss-stat">
-                    <span class="ss-stat-num">${worstSubject ? esc(worstSubject.subject_code) : '—'}</span>
-                    <span class="ss-stat-lbl">${worstSubject ? `Hardest hit &middot; ${worstSubject.count} student${worstSubject.count !== 1 ? 's' : ''}` : 'No subjects flagged'}</span>
+                <div class="ss-stat ss-stat-lacking">
+                    <span class="ss-stat-num">${totals.lacking}</span>
+                    <span class="ss-stat-lbl">Lacking</span>
+                </div>
+                <div class="ss-stat ss-stat-flagged">
+                    <span class="ss-stat-num">${totals.flagged}</span>
+                    <span class="ss-stat-lbl">Flagged</span>
                 </div>
             </div>
 
-            ${totalStudents === 0 ? emptyState(
-                'No struggling students right now',
-                'Nobody in your scope is currently below the struggling cutoff (80% for Global Gradebook grades, 60% for quiz-only subjects) in any subject. This report updates as grades and quiz attempts come in.'
+            ${subjects.length === 0 ? emptyState(
+                'Nothing to report yet',
+                'No subjects/sections found in your scope.'
             ) : `
                 <div class="ss-layout">
                     <aside class="ss-subjects">
@@ -146,7 +183,7 @@ function renderPage(container) {
                         <p class="ss-subjects-hint">Click a subject to filter the list</p>
                         <div class="ss-subject-list">
                             <button type="button" class="ss-subject-chip ${_subjectFilter === '' ? 'active' : ''}" data-subject="">
-                                <span>All subjects</span><span class="ss-subject-count">${totalStudents}</span>
+                                <span>All subjects</span><span class="ss-subject-count">${totals.flagged}</span>
                             </button>
                             ${bySubject.map((s, i) => `
                                 <button type="button" class="ss-subject-chip ${_subjectFilter === s.subject_code ? 'active' : ''}" data-subject="${esc(s.subject_code)}" title="${esc(s.subject_name)}">
@@ -164,26 +201,20 @@ function renderPage(container) {
                                 <input type="search" id="ss-search" class="ss-search" placeholder="Search student name or ID…" autocomplete="off" value="${esc(_search)}">
                             </div>
                         </div>
-                        <div class="ss-table-wrap">
-                            <table class="ss-table">
-                                <thead><tr><th>Student</th><th>Year</th><th>Struggling in</th></tr></thead>
-                                <tbody id="ss-tbody"></tbody>
-                            </table>
-                            <p class="ss-no-results" id="ss-no-results" hidden>No students match.</p>
-                        </div>
+                        <div id="ss-subject-blocks"></div>
                     </div>
                 </div>
             `}
         </div>
     `;
 
-    if (totalStudents === 0) return;
+    if (subjects.length === 0) return;
 
-    renderRows(container, students);
+    renderSubjectBlocks(container, subjects);
 
     container.querySelector('#ss-search')?.addEventListener('input', (e) => {
         _search = e.target.value;
-        renderRows(container, students);
+        renderSubjectBlocks(container, subjects);
     });
     container.querySelectorAll('.ss-subject-chip').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -193,50 +224,67 @@ function renderPage(container) {
     });
 }
 
-function renderRows(container, students) {
+function renderSubjectBlocks(container, subjects) {
     const q = _search.trim().toLowerCase();
-    const filtered = students.filter(s => {
-        const matchesSubject = !_subjectFilter || s.subjects.some(sub => sub.subject_code === _subjectFilter);
-        if (!matchesSubject) return false;
-        if (!q) return true;
-        return s.name.toLowerCase().includes(q) || String(s.student_id || '').toLowerCase().includes(q);
-    });
+    const host = container.querySelector('#ss-subject-blocks');
+    if (!host) return;
 
-    const tbody = container.querySelector('#ss-tbody');
-    const noResults = container.querySelector('#ss-no-results');
-    if (!tbody) return;
+    const visibleSubjects = subjects.filter(s => !_subjectFilter || s.subject_code === _subjectFilter);
 
-    if (filtered.length === 0) {
-        tbody.innerHTML = '';
-        if (noResults) noResults.hidden = false;
+    const blocks = visibleSubjects.map(subj => {
+        const sectionsHtml = subj.sections.map(sec => {
+            const students = q
+                ? sec.students.filter(s => s.name.toLowerCase().includes(q) || String(s.student_id || '').toLowerCase().includes(q))
+                : sec.students;
+            // Hide a section entirely only when searching AND it has no matches;
+            // otherwise always show it so enrolled/submitted/lacking counts stay visible.
+            if (q && students.length === 0) return '';
+            return `
+                <div class="ss-section">
+                    <div class="ss-section-head">
+                        <span class="ss-section-name">${esc(sec.section_name)}</span>
+                        <span class="ss-section-mini">${sec.enrolled_count} enrolled</span>
+                        <span class="ss-section-mini ss-mini-ok">${sec.submitted_count} submitted</span>
+                        ${sec.lacking_count > 0 ? `<span class="ss-section-mini ss-mini-lacking">${sec.lacking_count} lacking</span>` : ''}
+                    </div>
+                    ${students.length === 0
+                        ? `<p class="ss-section-clean">No flagged students in this section.</p>`
+                        : `<table class="ss-table">
+                            <thead><tr><th>Student</th><th>Year</th><th>Score</th><th>Remarks</th></tr></thead>
+                            <tbody>
+                                ${students.map(s => {
+                                    const meta = STATUS_META[s.status];
+                                    return `<tr>
+                                        <td>
+                                            <div class="ss-student">
+                                                <span class="ss-student-name">${esc(s.name)}</span>
+                                                <span class="ss-student-id">${esc(s.student_id || '—')}</span>
+                                            </div>
+                                        </td>
+                                        <td><span class="ss-year-badge">${s.year_level ? `${ordinal(s.year_level)} yr` : '—'}</span></td>
+                                        <td>${s.score !== null ? `<span class="ss-score">${s.score}%</span><span class="ss-score-src">${s.source === 'grade' ? 'gradebook avg' : 'quiz avg'}</span>` : '<span class="ss-score-none">No submissions</span>'}</td>
+                                        <td><span class="ss-remark" style="background:${meta.bg};color:${meta.fg};border-color:${meta.bd}">${meta.label}</span></td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>`}
+                </div>`;
+        }).join('');
+
+        if (q && !sectionsHtml.trim()) return '';
+
+        return `
+            <div class="ss-subject-block">
+                <h3 class="ss-subject-title">${esc(subj.subject_code)} <span>${esc(subj.subject_name)}</span></h3>
+                ${sectionsHtml || '<p class="ss-section-clean">No sections found.</p>'}
+            </div>`;
+    }).join('');
+
+    if (!blocks.trim()) {
+        host.innerHTML = `<p class="ss-no-results">No students match.</p>`;
         return;
     }
-    if (noResults) noResults.hidden = true;
-
-    tbody.innerHTML = filtered.map(s => {
-        const subjectsToShow = _subjectFilter ? s.subjects.filter(sub => sub.subject_code === _subjectFilter) : s.subjects;
-        return `
-            <tr>
-                <td>
-                    <div class="ss-student">
-                        <span class="ss-student-name">${esc(s.name)}</span>
-                        <span class="ss-student-id">${esc(s.student_id || '—')}</span>
-                    </div>
-                </td>
-                <td><span class="ss-year-badge">${s.year_level ? `${ordinal(s.year_level)} yr` : '—'}</span></td>
-                <td>
-                    <div class="ss-subject-chips">
-                        ${subjectsToShow.map(sub => {
-                            const c = scoreColor(sub.score);
-                            return `<span class="ss-score-chip" style="background:${c.bg};color:${c.fg};border-color:${c.border}"
-                                        title="${esc(sub.subject_name)} &mdash; ${sub.source === 'grade' ? 'Gradebook average' : 'Quiz average'}">
-                                ${esc(sub.subject_code)} · ${sub.score}%
-                            </span>`;
-                        }).join('')}
-                    </div>
-                </td>
-            </tr>`;
-    }).join('');
+    host.innerHTML = blocks;
 }
 
 function ordinal(n) {
@@ -265,21 +313,25 @@ function css() {
         .ss-loading { padding:60px 20px; text-align:center; color:#6B7280; font-size:14px; }
         .ss-page { padding:4px 0 40px; }
         .ss-head { margin-bottom:20px; }
-        .ss-head h1 { margin:0 0 4px; font-size:21px; font-weight:800; color:#111827; }
+        .ss-head h1 { margin:0 0 4px; font-size:21px; font-weight:800; color:${G}; }
         .ss-head p { margin:0; font-size:13px; color:#6B7280; }
 
-        .ss-stat-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:22px; }
-        .ss-stat { background:#fff; border:1.5px solid #E5E7EB; border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:4px; }
+        .ss-stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+        .ss-stat { background:#fff; border:1.5px solid ${BORDER}; border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:4px; }
         .ss-stat-num { font-size:24px; font-weight:800; color:#111827; }
         .ss-stat-lbl { font-size:12px; font-weight:600; color:#6B7280; }
+        .ss-stat-lacking { border-color:${GRAY_BD}; background:${GRAY_BG}; }
+        .ss-stat-lacking .ss-stat-num { color:${GRAY_FG}; }
+        .ss-stat-flagged { border-color:${RED_BD}; background:${RED_BG}; }
+        .ss-stat-flagged .ss-stat-num { color:${RED_FG}; }
 
         .ss-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:70px 20px; min-height:280px; }
-        .ss-empty-icon { width:64px; height:64px; border-radius:18px; background:#E8F5E9; color:#1B4D3E; display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
+        .ss-empty-icon { width:64px; height:64px; border-radius:18px; background:${GL}; color:${G}; display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
         .ss-empty h2 { margin:0 0 6px; font-size:18px; font-weight:800; color:#1f2937; }
         .ss-empty p { margin:0; font-size:13.5px; color:#6b7280; max-width:380px; }
 
         .ss-layout { display:grid; grid-template-columns:220px 1fr; gap:20px; align-items:start; }
-        .ss-subjects { background:#fff; border:1.5px solid #E5E7EB; border-radius:12px; padding:14px; position:sticky; top:16px; }
+        .ss-subjects { background:#fff; border:1.5px solid ${BORDER}; border-radius:12px; padding:14px; position:sticky; top:16px; }
         .ss-subjects h3 { margin:0 0 10px; font-size:13px; font-weight:800; color:#111827; }
         .ss-donut-wrap { display:flex; justify-content:center; margin-bottom:12px; }
         .ss-donut { overflow:visible; }
@@ -294,39 +346,54 @@ function css() {
             background:none; cursor:pointer; font-family:inherit; font-size:12.5px; font-weight:600;
             color:#374151; text-align:left; transition:background .12s,border-color .12s;
         }
-        .ss-subject-chip:hover { background:#F9FAFB; }
-        .ss-subject-chip.active { background:#E8F5E9; border-color:#1B4D2E; color:#1B4D2E; }
+        .ss-subject-chip:hover { background:${GL}; }
+        .ss-subject-chip.active { background:${GL}; border-color:${G}; color:${G}; }
         .ss-subject-chip-label { display:flex; align-items:center; gap:7px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ss-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
         .ss-subject-count { font-size:11px; font-weight:800; color:#9CA3AF; flex-shrink:0; }
-        .ss-subject-chip.active .ss-subject-count { color:#1B4D2E; }
+        .ss-subject-chip.active .ss-subject-count { color:${G}; }
 
         .ss-main { min-width:0; }
         .ss-toolbar { margin-bottom:12px; }
         .ss-search-wrap { position:relative; max-width:320px; }
         .ss-search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9CA3AF; pointer-events:none; }
-        .ss-search { width:100%; padding:9px 12px 9px 34px; border:1.5px solid #E5E7EB; border-radius:9px; font-size:13px; font-family:inherit; outline:none; transition:border-color .15s; }
-        .ss-search:focus { border-color:#1B4D2E; }
+        .ss-search { width:100%; padding:9px 12px 9px 34px; border:1.5px solid ${BORDER}; border-radius:9px; font-size:13px; font-family:inherit; outline:none; transition:border-color .15s; }
+        .ss-search:focus { border-color:${G}; }
 
-        .ss-table-wrap { background:#fff; border:1.5px solid #E5E7EB; border-radius:12px; overflow:hidden; }
+        .ss-subject-block { margin-bottom:22px; }
+        .ss-subject-title { margin:0 0 10px; font-size:14px; font-weight:800; color:${G}; }
+        .ss-subject-title span { font-weight:600; color:#6B7280; margin-left:6px; }
+
+        .ss-section { background:#fff; border:1.5px solid ${BORDER}; border-radius:12px; overflow:hidden; margin-bottom:12px; }
+        .ss-section-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 16px; background:${GL}; border-bottom:1.5px solid ${BORDER}; }
+        .ss-section-name { font-weight:800; color:${G}; font-size:13px; margin-right:auto; }
+        .ss-section-mini { font-size:11px; font-weight:700; color:#4B5563; background:#fff; border:1px solid ${BORDER}; border-radius:20px; padding:2px 10px; }
+        .ss-mini-ok { color:${G}; border-color:${G}; }
+        .ss-mini-lacking { color:${GRAY_FG}; background:${GRAY_BG}; border-color:${GRAY_BD}; }
+        .ss-section-clean { margin:0; padding:14px 16px; font-size:12.5px; color:#9CA3AF; font-style:italic; }
+
         .ss-table { width:100%; border-collapse:collapse; font-size:13px; }
-        .ss-table th { background:#F9FAFB; color:#374151; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:11px 16px; border-bottom:1.5px solid #E5E7EB; text-align:left; }
-        .ss-table td { padding:11px 16px; vertical-align:top; border-bottom:1px solid #F3F4F6; }
+        .ss-table th { background:#F9FAFB; color:#374151; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:9px 16px; border-bottom:1.5px solid ${BORDER}; text-align:left; }
+        .ss-table td { padding:9px 16px; vertical-align:top; border-bottom:1px solid #F3F4F6; }
         .ss-table tr:last-child td { border-bottom:none; }
         .ss-student { display:flex; flex-direction:column; gap:1px; }
         .ss-student-name { font-weight:700; color:#111827; }
         .ss-student-id { font-size:11.5px; color:#9CA3AF; font-family:ui-monospace,monospace; }
         .ss-year-badge { display:inline-block; background:#F3F4F6; color:#4B5563; font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; }
-        .ss-subject-chips { display:flex; flex-wrap:wrap; gap:6px; }
-        .ss-score-chip { font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:7px; border:1.5px solid; white-space:nowrap; }
+        .ss-score { font-weight:800; color:#111827; }
+        .ss-score-src { display:block; font-size:10.5px; color:#9CA3AF; font-weight:600; }
+        .ss-score-none { font-size:12px; color:#9CA3AF; font-style:italic; }
+        .ss-remark { display:inline-block; font-size:11px; font-weight:800; padding:4px 10px; border-radius:7px; border:1.5px solid; white-space:nowrap; }
         .ss-no-results { padding:30px; text-align:center; color:#9CA3AF; font-size:13px; }
 
         @media(max-width:860px) {
-            .ss-stat-row { grid-template-columns:1fr; }
+            .ss-stat-row { grid-template-columns:1fr 1fr; }
             .ss-layout { grid-template-columns:1fr; }
             .ss-subjects { position:static; }
             .ss-subject-list { flex-direction:row; flex-wrap:wrap; }
             .ss-subject-chip { width:auto; }
+            .ss-section-head { flex-direction:column; align-items:flex-start; }
+            .ss-section-name { margin-right:0; }
         }
     `;
 }

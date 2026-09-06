@@ -183,6 +183,9 @@ export async function render(container) {
                     <div class="set-nav-item" data-section="maintenance">
                         <span class="nav-icon">${icon('wrench')}</span> Maintenance
                     </div>
+                    <div class="set-nav-item" data-section="ai">
+                        <span class="nav-icon">${icon('robot')}</span> AI / Ali Assistant
+                    </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Administration</div>
                     <div class="set-nav-item" data-section="users">
@@ -316,6 +319,26 @@ export async function render(container) {
                         </div>
                     </div>
 
+                    <!-- ── AI / Ali Assistant ── -->
+                    <div class="set-panel" data-panel="ai">
+                        <div class="set-card">
+                            <div class="set-card-head">
+                                <div class="set-card-head-icon">${icon('robot', { size: 22 })}</div>
+                                <div class="set-card-title">
+                                    <h3>AI Provider</h3>
+                                    <p>Powers Ali the assistant, AI quiz generation, AI answer grading, and the SAS/Teaching Guide module-quiz builder — via Hugging Face's free Inference API</p>
+                                </div>
+                            </div>
+                            <div class="set-card-body" id="ai-body">
+                                <div style="text-align:center;padding:40px;color:#737373;">Loading...</div>
+                            </div>
+                            <div class="set-card-foot">
+                                <span style="font-size:12px;color:#737373;">Get a free token at huggingface.co/settings/tokens</span>
+                                <button class="btn-primary" id="save-ai">Save AI Settings</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ── Users ── -->
                     <div class="set-panel" data-panel="users">
                         <div id="set-users-mount"></div>
@@ -331,7 +354,7 @@ export async function render(container) {
     `;
 
     // ── Nav switching ──
-    const _loaded = { users: false, rbac: false, overview: false, activity: false };
+    const _loaded = { users: false, rbac: false, overview: false, activity: false, ai: false };
 
     container.querySelectorAll('.set-nav-item').forEach(item => {
         item.addEventListener('click', async () => {
@@ -350,6 +373,10 @@ export async function render(container) {
             if (sec === 'activity' && !_loaded.activity) {
                 _loaded.activity = true;
                 loadActivityLog();
+            }
+            if (sec === 'ai' && !_loaded.ai) {
+                _loaded.ai = true;
+                loadAiSettings();
             }
             if (sec === 'users' && !_loaded.users) {
                 _loaded.users = true;
@@ -400,6 +427,30 @@ export async function render(container) {
     container.querySelector('#btn-archive-sems').addEventListener('click', async () => {
         const ok = await notify.confirm('Archive semesters older than 2 years?', { confirmText: 'Archive' });
         if (ok) showToast('Semesters archived successfully.', 'success');
+    });
+
+    // ── AI / Ali Assistant save ──
+    container.querySelector('#save-ai').addEventListener('click', async () => {
+        const btn = container.querySelector('#save-ai');
+        const keyInput = container.querySelector('#ai-hf-key');
+        const modelInput = container.querySelector('#ai-model');
+        if (!keyInput) return; // panel never opened/loaded
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `${icon('clock', inl)} Saving...`;
+        const res = await Api.post('/AiSettingsAPI.php?action=save', {
+            hf_api_key: keyInput.value.trim(),
+            ai_model: modelInput.value.trim(),
+        });
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (res.success) {
+            showToast('AI settings saved successfully!', 'success');
+            keyInput.value = '';
+            loadAiSettings();
+        } else {
+            showToast(res.message || 'Could not save AI settings.', 'error');
+        }
     });
 
     // ── System Overview ──────────────────────────────────────────────────────
@@ -585,6 +636,35 @@ export async function render(container) {
     };
     function activityMeta(type) {
         return ACTIVITY_META[type] || { label: type.replace(/_/g, ' '), color: '#374151', bg: '#f3f4f6' };
+    }
+
+    async function loadAiSettings() {
+        const body = container.querySelector('#ai-body');
+        body.innerHTML = '<div class="sov-loading">Loading...</div>';
+
+        const res = await Api.get('/AiSettingsAPI.php?action=get', { ttl: 0 });
+        if (!res.success) {
+            body.innerHTML = `<div style="color:#b91c1c;font-size:13px;padding:20px;">Could not load AI settings: ${escSy(res.message || 'Unknown error')}</div>`;
+            return;
+        }
+        const { has_key, masked_key, model } = res.data;
+
+        body.innerHTML = `
+            <div class="fg">
+                <label>Hugging Face Access Token</label>
+                <input type="password" class="f-input" id="ai-hf-key" placeholder="${has_key ? 'Currently set — leave blank to keep it' : 'hf_...'}" autocomplete="off">
+                <div class="fg-hint">
+                    ${has_key
+                        ? `${icon('checkCircle', { size: 13, className: 'ui-icon-inline' })} A token is saved (${escSy(masked_key)}). Enter a new one to replace it.`
+                        : `${icon('warning', { size: 13, className: 'ui-icon-inline' })} No token saved yet — Ali, AI quiz generation, AI grading, and the SAS module-quiz builder won't work until one is added.`}
+                    Get a free token at huggingface.co/settings/tokens.
+                </div>
+            </div>
+            <div class="fg">
+                <label>Model</label>
+                <input type="text" class="f-input" id="ai-model" value="${escSy(model || 'meta-llama/Llama-3.1-8B-Instruct')}">
+                <div class="fg-hint">A Hugging Face chat/instruct model id available on the free Inference API router. Leave the default unless you know you need a different one.</div>
+            </div>`;
     }
 
     async function loadActivityLog() {

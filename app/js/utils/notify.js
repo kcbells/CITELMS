@@ -139,6 +139,75 @@ function confirm(message, {
     });
 }
 
+// ── Centered "big icon" alert modal — success/failure confirmations ────────
+// (a circular icon, bold title, description, single OK button) — distinct
+// from toast() (corner notification) and confirm() (Yes/No dialog). Returns
+// Promise<void>, resolved when the user dismisses it.
+
+const ALERT_ICONS = {
+    success: `<svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`,
+    error:   `<svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>`,
+    warning: `<svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v5m0 3.5h.01"/></svg>`,
+    info:    `<svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v5.5m0-9v.01"/></svg>`,
+};
+
+const ALERT_COLORS = {
+    success: { ring: '#00461B', icon: '#00461B', btn: '#00461B', btnHv: '#006428' }, // dark green — app brand green
+    error:   { ring: '#7F1D1D', icon: '#7F1D1D', btn: '#7F1D1D', btnHv: '#5C1414' }, // dark red
+    warning: { ring: '#78350F', icon: '#78350F', btn: '#78350F', btnHv: '#57260A' }, // dark amber/brown
+    info:    { ring: '#1E3A8A', icon: '#1E3A8A', btn: '#1E3A8A', btnHv: '#152A63' }, // dark blue
+};
+
+/**
+ * @param {string} message
+ * @param {{ title?: string, type?: 'success'|'error'|'warning'|'info', okText?: string }} [opts]
+ * @returns {Promise<void>} resolves when dismissed (OK, backdrop click, or Escape)
+ */
+function alertModal(message, { title = '', type = 'info', okText = 'OK' } = {}) {
+    const col  = ALERT_COLORS[type] || ALERT_COLORS.info;
+    const icon = ALERT_ICONS[type]  || ALERT_ICONS.info;
+
+    return new Promise(resolve => {
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = [
+            'position:fixed', 'inset:0', 'background:rgba(0,0,0,.45)',
+            'z-index:100000', 'display:flex', 'align-items:center',
+            'justify-content:center', 'padding:20px', 'animation:nfyIn .18s ease',
+        ].join(';');
+
+        backdrop.innerHTML = `
+        <div style="background:#fff;border-radius:18px;width:100%;max-width:380px;padding:34px 28px 26px;
+            box-shadow:0 16px 56px rgba(0,0,0,.22);text-align:center;animation:nfyIn .2s ease">
+            <div style="width:78px;height:78px;margin:0 auto 20px;border-radius:50%;
+                border:2.5px solid ${col.ring};display:flex;align-items:center;justify-content:center">
+                <span style="color:${col.icon};display:flex">${icon}</span>
+            </div>
+            ${title ? `<p style="font-size:19px;font-weight:800;color:#111827;margin:0 0 10px;line-height:1.3">${esc(title)}</p>` : ''}
+            <p style="font-size:14px;color:#4b5563;margin:0 0 26px;line-height:1.6">${esc(message)}</p>
+            <button id="nfy-alert-ok" style="padding:11px 40px;min-width:130px;border:none;border-radius:9px;
+                background:${col.btn};color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;transition:background .15s">${esc(okText)}</button>
+        </div>`;
+
+        const close = () => {
+            backdrop.style.animation = 'nfyOut .15s ease forwards';
+            setTimeout(() => backdrop.remove(), 150);
+            document.removeEventListener('keydown', onKey);
+            resolve();
+        };
+        const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+
+        const okBtn = backdrop.querySelector('#nfy-alert-ok');
+        okBtn.addEventListener('click', close);
+        okBtn.addEventListener('mouseenter', () => okBtn.style.background = col.btnHv);
+        okBtn.addEventListener('mouseleave', () => okBtn.style.background = col.btn);
+        backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+        document.addEventListener('keydown', onKey);
+
+        document.body.appendChild(backdrop);
+        setTimeout(() => okBtn.focus(), 50);
+    });
+}
+
 function esc(str) {
     const d = document.createElement('div');
     d.textContent = str || '';
@@ -151,4 +220,9 @@ export const notify = {
     warning: (msg, ms) => toast('warning', msg, ms),
     info:    (msg, ms) => toast('info',    msg, ms),
     confirm,
+    // Big-icon centered "OK" modal — for a single important confirmation
+    // (registration submitted, action succeeded/failed) rather than a
+    // passing corner toast. e.g. notify.alert('Your request was submitted.',
+    // { title: 'Submitted', type: 'success' })
+    alert: alertModal,
 };
