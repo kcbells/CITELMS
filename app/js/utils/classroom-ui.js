@@ -84,17 +84,17 @@ export function renderClassworkPostCard(opts) {
 /** Curriculum-style table CSS (reuse for grade tables) */
 export function curriculumTableCss() {
     return `
-        .gc-cur-wrap { border:2px solid #000; border-radius:0 0 8px 8px; overflow:hidden; background:#fff; }
+        .gc-cur-wrap { border:2px solid #000; border-radius:0 0 8px 8px; overflow-x:auto; -webkit-overflow-scrolling:touch; background:#fff; }
         .gc-cur-label {
             font-size:12px; font-weight:700; text-align:center; padding:7px 12px;
-            background:#E8F5E9; color:#1B4D3E; border-bottom:1px solid #000; letter-spacing:.5px;
+            background:#E8F5EC; color:${G}; border-bottom:1px solid #000; letter-spacing:.5px;
         }
         /* Full black grid — every cell gets its own border instead of just a
            row separator, so columns are visually divided too, not only rows. */
         .gc-cur-table { width:100%; border-collapse:collapse; font-size:12px; border:1px solid #000; }
         .gc-cur-table th, .gc-cur-table td { border:1px solid #000; }
         .gc-cur-table thead tr th {
-            background:#f7f7f7; color:#404040; font-weight:700;
+            background:${G}; color:#fff; font-weight:700;
             padding:8px 10px; text-align:center; white-space:nowrap;
         }
         .gc-cur-table thead tr th.th-left { text-align:left; }
@@ -127,12 +127,12 @@ export function curriculumTableCss() {
            working" even though sticky itself is fine. */
         .gc-th-info {
             position:sticky; left:0; z-index:4; width:160px;
-            background:#f7f7f7; overflow:hidden; text-overflow:ellipsis;
+            background:${G}; overflow:hidden; text-overflow:ellipsis;
             box-shadow:2px 0 8px rgba(0,0,0,.14);
         }
         .gc-th-info::after {
             content:''; position:absolute; top:0; bottom:0; left:100%;
-            width:14px; background:#f7f7f7;
+            width:14px; background:${G};
         }
         .gc-cur-table .td-name {
             position:sticky; left:0; z-index:2;
@@ -569,8 +569,7 @@ export function classroomCss(accent) {
         .sc-rail-teacher-name { font-size:13px; font-weight:600; color:#111; }
         .sc-rail-live {
             display:flex; align-items:center; gap:8px;
-            font-size:12px; font-weight:600; color:#15803D;
-            background:#F0FDF4; border:1px solid #BBF7D0;
+            font-size:12px; font-weight:600; color:#fff; background:#00461B; border:1px solid #BBF7D0;
             padding:8px 12px; border-radius:8px; margin-bottom:12px;
         }
         .sc-live-dot {
@@ -593,7 +592,7 @@ export function classroomCss(accent) {
             background:#fff; color:#374151; border:1px solid ${BORDER};
         }
         .sc-rail-btn.outline:hover { background:#F9FAFB; }
-        .sc-rail-btn.danger { background:#FEF2F2; color:#B91C1C; border:1px solid #FCA5A5; }
+        .sc-rail-btn.danger { background:#7F1D1D; color:#fff; border:1px solid #FCA5A5; }
         .sc-rail-btn.danger:hover { background:#FEE2E2; }
         .sc-rail-foot { font-size:10px; color:#9CA3AF; margin:10px 0 0; text-align:center; }
         .sc-rail-work .sc-rail-title {
@@ -627,7 +626,7 @@ export function classroomCss(accent) {
             background:#F1F3F4; color:#5F6368; font-size:18px; line-height:1;
             cursor:pointer; display:flex; align-items:center; justify-content:center;
         }
-        .gc-attach-remove:hover { background:#FEE2E2; color:#C5221F; }
+        .gc-attach-remove:hover { background:#7F1D1D; color:#fff; }
         .gc-add-attach-btn {
             display:flex; align-items:center; justify-content:center; gap:6px;
             width:100%; padding:9px 12px; border:1px dashed #DADCE0; border-radius:8px;
@@ -686,8 +685,8 @@ export function classroomCss(accent) {
             border:1.5px solid #DADCE0; background:#F8F9FA; color:#5F6368;
         }
         .gc-sub-due-btn:hover { border-color:var(--subj, ${G}); color:var(--subj, ${G}); background:var(--subj-soft, #E8F5EC); }
-        .gc-sub-due-btn--set { border-color:#BBDDC4; background:#E8F5EC; color:#00461B; }
-        .gc-sub-due-btn--set.late { border-color:#FECACA; background:#FEE2E2; color:#991B1B; }
+        .gc-sub-due-btn--set { border-color:#BBDDC4; background:#00461B; color:#fff; }
+        .gc-sub-due-btn--set.late { border-color:#FECACA; background:#7F1D1D; color:#fff; }
         /* ── Due date modal ─────────────────────────────────────────── */
         .gc-due-modal-body { display:flex; flex-direction:column; gap:20px; }
         .gc-due-modal-current {
@@ -728,7 +727,7 @@ export function classroomCss(accent) {
             background:#fff; color:#6B7280; font-size:13px; font-weight:600;
             cursor:pointer; font-family:inherit; transition:background .12s, border-color .12s, color .12s;
         }
-        .gc-due-modal-remove:hover { border-color:#DC2626; color:#DC2626; background:#FEF2F2; }
+        .gc-due-modal-remove:hover { border-color:#DC2626; color:#fff; background:#7F1D1D; }
         .gc-due-modal-remove:disabled { opacity:.6; cursor:not-allowed; }
         /* ── Viewers row (above comments) ───────────────────────────── */
         .gc-detail-viewers-row {
@@ -882,8 +881,13 @@ export function classroomCss(accent) {
             transition:color .15s, background .15s;
             border-radius:8px 8px 0 0;
         }
+        .sc-tab { display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+        .sc-tab .ui-icon, .sc-tab svg { flex-shrink:0; }
         .sc-tab:hover { color:${accent}; background:rgba(0,70,27,.04); }
         .sc-tab.active { color:${accent}; border-bottom-color:${accent}; background:#fff; }
+        /* Sits in the tab bar for discoverability, but opens a modal rather
+           than being a peer tab — pushed right so it reads as an action. */
+        .sc-tab-reviewer { margin-left:auto; color:${accent}; font-weight:700; }
 
         .sc-body { padding:24px 28px 32px; min-height:280px; }
         .sc-body-focus { padding:20px 24px 28px; }
@@ -979,10 +983,10 @@ export function classroomCss(accent) {
             margin-left:auto; flex-shrink:0;
             display:inline-flex; align-items:center; gap:4px;
             padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700;
-            background:#FEF3C7; color:#92400E;
+            background:#B45309; color:#fff;
             white-space:nowrap; letter-spacing:.1px;
         }
-        .gc-cw-due-pill.late { background:#FEE2E2; color:#991B1B; }
+        .gc-cw-due-pill.late { background:#7F1D1D; color:#fff; }
         .gc-post-card__work {
             display:flex; align-items:center; gap:16px;
             padding:14px 16px 16px;
@@ -1417,8 +1421,13 @@ export function classroomCss(accent) {
             .sc-hero-stats { width:100%; justify-content:flex-start; }
             .sc-people-grid { grid-template-columns:1fr; }
             .sc-body { padding:20px 16px 28px; }
-            .sc-tabs { overflow-x:auto; }
-            .sc-tab { padding:14px 16px; white-space:nowrap; }
+            /* Phones/tablets: icon-only tabs spread evenly, so every tab fits
+               without sideways scrolling (names stay in title/aria-label). */
+            .sc-tabs { overflow-x:visible; padding:0 4px; }
+            .sc-tab { flex:1 1 0; min-width:0; padding:13px 6px; white-space:nowrap; }
+            .sc-tab-label { display:none; }
+            .sc-tab svg { width:21px; height:21px; }
+            .sc-tab-reviewer { margin-left:0; }
             .sc-rail { grid-template-columns:1fr; }
         }
     `;

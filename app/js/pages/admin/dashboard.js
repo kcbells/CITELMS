@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { icon } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const G      = '#00461B';
 const GL     = '#E8F5EC';
 const BORDER = '#E5E7EB';
@@ -112,7 +113,7 @@ export async function render(container) {
 
         /* ── User table ── */
         .ad-table { width:100%; border-collapse:collapse; }
-        .ad-table th { padding:10px 16px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#6B7280; background:#FAFAFA; border-bottom:1px solid #F0F0F0; text-align:left; }
+        .ad-table th { padding:10px 16px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#fff; background:#00461B; border-bottom:1px solid #F0F0F0; text-align:left; }
         .ad-table td { padding:11px 16px; border-bottom:1px solid #F5F5F5; font-size:13px; vertical-align:middle; }
         .ad-table tr:last-child td { border-bottom:none; }
         .ad-table tr:hover td { background:#FAFFFE; }
@@ -123,11 +124,11 @@ export async function render(container) {
         .ad-av.dean       { background:#1B4D3E; color:#fff; }
         .ad-user-name  { font-weight:600; font-size:13px; color:#111; }
         .ad-user-email { font-size:11px; color:#9CA3AF; }
-        .ad-role-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; display:inline-block; background:#E8F5E9; color:#1B4D3E; }
-        .ad-role-badge.admin      { background:#E8F5E9; color:#1B4D3E; }
-        .ad-role-badge.instructor { background:#E8F5E9; color:#1B4D3E; }
-        .ad-role-badge.student    { background:#E8F5E9; color:#1B4D3E; }
-        .ad-role-badge.dean       { background:#E8F5E9; color:#1B4D3E; }
+        .ad-role-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; display:inline-block; background:#00461B; color:#fff; }
+        .ad-role-badge.admin      { background:#00461B; color:#fff; }
+        .ad-role-badge.instructor { background:#00461B; color:#fff; }
+        .ad-role-badge.student    { background:#00461B; color:#fff; }
+        .ad-role-badge.dean       { background:#00461B; color:#fff; }
         .ad-status { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:500; color:#6B7280; }
         .ad-status::before { content:''; width:7px; height:7px; border-radius:50%; background:#d1d5db; }
         .ad-status.active::before   { background:#22c55e; }
@@ -196,6 +197,13 @@ export async function render(container) {
             .ad-dept-num  { display:none; }
         }
         @media(max-width:600px)  { .ad-stats { grid-template-columns:1fr; } .ad-meta { grid-template-columns:1fr 1fr; } }
+        /* Phones: the department row had more fixed columns than a phone is wide.
+           Keep rank · name · count · chevron; the bar just restates the count. */
+        @media(max-width:600px)  {
+            .ad-dept-main { grid-template-columns:28px minmax(0,1fr) auto 20px; gap:8px; padding:12px 14px; }
+            .ad-dept-bar  { display:none; }
+            .ad-prog-expand { padding:0 14px 12px 50px; }
+        }
     </style>
 
     <!-- ── Header card ── -->
@@ -425,8 +433,4 @@ export async function render(container) {
     if (pageContent) pageContent.style.background = '#fff';
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)

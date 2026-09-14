@@ -17,7 +17,10 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole(['instructor', 'program_head', 'dean']);
+// RBAC: was Auth::requireRole(), which redirects (HTML) on failure instead of
+// returning JSON — breaks a fetch().then(r => r.json()) caller. The $_qbPerms
+// map below (question_bank.view/create/delete) already scopes every action to
+// exactly admin/dean/program_head/instructor, so this blanket check is redundant.
 
 // Auto-migrate: add lessons_id to question_bank if it doesn't exist yet
 (function() {
@@ -73,14 +76,18 @@ function browseBank() {
     $subjectId = (int)($_GET['subject_id'] ?? 0);
     $type      = trim($_GET['type']      ?? '');
 
+    // A general question with no subject_id at all (allowed by the schema)
+    // is meant for everyone once it's public — never gated behind the
+    // caller's own subject scope, so even someone with zero subjects in
+    // scope still sees those, not an empty bank.
     $handled = bankSubjectInClause($userId);
     if ($handled['sql'] === '0') {
-        echo json_encode(['success' => true, 'data' => []]);
-        return;
+        $where  = "qb.visibility = 'public' AND qb.subject_id IS NULL";
+        $params = [];
+    } else {
+        $where  = "qb.visibility = 'public' AND (qb.subject_id IS NULL OR qb.subject_id IN ({$handled['sql']}))";
+        $params = $handled['params'];
     }
-
-    $where  = "qb.visibility = 'public' AND qb.subject_id IN ({$handled['sql']})";
-    $params = $handled['params'];
 
     if ($search) {
         $where  .= " AND qb.question_text LIKE ?";

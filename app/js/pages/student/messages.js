@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { renderMessageBody, validateMessageFile, bindImagePreview } from '../../utils/message-ui.js';
+import { esc } from '../../utils/classroom-ui.js';
 import {
     messagePageStyles, messageSidebarShell,
     messagePlaceholder, applyMessagePageBg, enterMobileChat, exitMobileChat,
@@ -25,12 +26,8 @@ let activeTab     = 'direct'; // 'direct' | 'group'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function esc(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// esc() now imported from classroom-ui.js — the DOM-based version there also
+// correctly escapes single quotes, which this file's old regex-based copy did not.
 
 function relativeTime(ts) {
     if (!ts) return '';
@@ -123,6 +120,23 @@ async function loadGroups() {
         const q = document.getElementById('msg-thread-search')?.value || '';
         renderGroupList(q);
     }
+    updateGroupTabBadge();
+}
+
+/**
+ * Puts a count on the "Groups" tab so a student can tell there is something
+ * waiting there without having to switch tabs first. A group they have never
+ * opened counts as 1 even when nobody has posted in it yet — that is how being
+ * added to a group becomes visible.
+ */
+function updateGroupTabBadge() {
+    const tab = document.querySelector('.msg-type-tab[data-type="group"]');
+    if (!tab) return;
+    const pending = allGroups.reduce(
+        (n, g) => n + (parseInt(g.unread || 0) || (parseInt(g.is_new || 0) ? 1 : 0)), 0);
+    tab.innerHTML = pending > 0
+        ? `Groups <span class="msg-tab-count">${pending > 99 ? '99+' : pending}</span>`
+        : 'Groups';
 }
 
 function renderGroupList(query = '') {
@@ -143,6 +157,7 @@ function renderGroupList(query = '') {
     list.innerHTML = groups.map(g => {
         const initials = (g.group_name || 'G').slice(0, 2).toUpperCase();
         const unread   = parseInt(g.unread || 0);
+        const isNew    = !unread && !!parseInt(g.is_new || 0);
         const active   = activeGroupId === parseInt(g.group_id) ? 'active' : '';
         return `
             <div class="thread-item ${active}" data-gid="${g.group_id}"
@@ -150,11 +165,12 @@ function renderGroupList(query = '') {
                 <div class="thread-avatar thread-avatar--group">${initials}</div>
                 <div class="thread-info">
                     <div class="thread-name">${esc(g.group_name)} <span class="thread-group-badge">Group</span></div>
-                    <div class="thread-preview">${esc((g.last_message || 'No messages yet').slice(0, 50))}</div>
+                    <div class="thread-preview">${isNew ? 'You were added to this group' : esc((g.last_message || 'No messages yet').slice(0, 50))}</div>
                 </div>
                 <div class="thread-meta">
                     <span class="thread-time">${g.last_at ? relativeTime(g.last_at) : ''}</span>
-                    ${unread > 0 ? `<span class="thread-badge">${unread}</span>` : ''}
+                    ${unread > 0 ? `<span class="thread-badge">${unread}</span>`
+                                 : (isNew ? '<span class="thread-badge">New</span>' : '')}
                 </div>
             </div>`;
     }).join('');
@@ -638,7 +654,7 @@ async function updateSidebarBadge() {
 function startBadgePolling() {
     updateSidebarBadge();
     clearInterval(badgeTimer);
-    badgeTimer = setInterval(updateSidebarBadge, 30000);
+    badgeTimer = setInterval(() => { updateSidebarBadge(); loadGroups(); }, 30000);
 }
 
 // ── New chat modal ─────────────────────────────────────────────────────────

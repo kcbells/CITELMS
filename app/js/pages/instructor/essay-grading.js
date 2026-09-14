@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
@@ -41,7 +42,7 @@ export async function render(container) {
             .eg-prog-label { display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:5px; }
             .eg-prog-bar { height:5px; background:#e8e8e8; border-radius:3px; overflow:hidden; }
             .eg-prog-fill { height:100%; background:#1B4D3E; border-radius:3px; transition:width .3s; }
-            .eg-pending-count { background:#FEF3C7; color:#B45309; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
+            .eg-pending-count { background:#B45309; color:#fff; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
             .eg-btn { padding:8px 16px; background:#1B4D3E; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:6px; }
             .eg-btn:hover { background:#2D6A4F; }
 
@@ -84,8 +85,8 @@ export async function render(container) {
             .qnum { font-size:11px; font-weight:700; color:#1B4D3E; text-transform:uppercase; }
             .qtype-badge { font-size:11px; padding:2px 8px; border-radius:4px; font-weight:600; }
             .qtype-badge.essay        { background:#EDE9FE; color:#7C3AED; }
-            .qtype-badge.short_answer { background:#FEF3C7; color:#B45309; }
-            .qtype-badge.multiple_choice,.qtype-badge.true_false,.qtype-badge.fill_blank { background:#E8F5E9; color:#1B4D3E; }
+            .qtype-badge.short_answer { background:#B45309; color:#fff; }
+            .qtype-badge.multiple_choice,.qtype-badge.true_false,.qtype-badge.fill_blank { background:#00461B; color:#fff; }
             .qblock-body { padding:15px; }
             .q-text { font-size:14px; font-weight:600; color:#222; margin-bottom:10px; line-height:1.5; }
             .student-ans { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px 14px; font-size:13px; color:#333; line-height:1.6; margin-bottom:12px; white-space:pre-wrap; }
@@ -103,7 +104,7 @@ export async function render(container) {
             .save-btn:hover { background:#2D6A4F; }
             .save-btn.saved { background:#10b981; }
             .save-btn:disabled { opacity:.6; cursor:not-allowed; }
-            .graded-badge { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; background:#E8F5E9; color:#1B4D3E; border-radius:6px; font-size:12px; font-weight:600; }
+            .graded-badge { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; background:#00461B; color:#fff; border-radius:6px; font-size:12px; font-weight:600; }
             .mc-row { display:flex; gap:8px; align-items:center; font-size:13px; color:#555; margin-bottom:6px; }
             .icon-ok  { color:#1B4D3E; }
             .icon-bad { color:#b91c1c; }
@@ -211,7 +212,7 @@ async function loadList(container, subjectId) {
                 </div>
                 ${totalPending > 0
                     ? `<span class="eg-pending-count">${totalPending} pending</span>`
-                    : `<span class="eg-pending-count" style="background:#E8F5E9;color:#1B4D3E;">${icon('check', inl)} all graded</span>`
+                    : `<span class="eg-pending-count" style="background:#00461B; color:#fff;">${icon('check', inl)} all graded</span>`
                 }
                 <span style="font-size:12px;color:#9ca3af;">${totalAttempts} attempt${totalAttempts!==1?'s':''}</span>
             </div>
@@ -227,7 +228,7 @@ async function loadList(container, subjectId) {
                             <strong>${esc(a.quiz_title)}</strong>
                             <span>${esc(a.subject_code)} &bull; ${date}</span>
                             ${parseInt(a.tab_switch_count || 0) > 0
-                                ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#FEE2E2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-top:3px;">
+                                ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#7F1D1D; color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-top:3px;">
                                     ${icon('siren', inl)} ${a.tab_switch_count} tab switch${parseInt(a.tab_switch_count)>1?'es':''}
                                    </span>`
                                 : ''}
@@ -238,7 +239,7 @@ async function loadList(container, subjectId) {
                         </div>
                         ${parseInt(a.pending_count) > 0
                             ? `<span class="eg-pending-count" style="font-size:11px;">${a.pending_count} pending</span>`
-                            : `<span class="eg-pending-count" style="font-size:11px;background:#E8F5E9;color:#1B4D3E;">${icon('check', inl)} graded</span>`
+                            : `<span class="eg-pending-count" style="font-size:11px;background:#00461B; color:#fff;">${icon('check', inl)} graded</span>`
                         }
                         <button class="eg-btn grade-btn" data-attempt="${a.attempt_id}" data-switches="${a.tab_switch_count || 0}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -531,8 +532,5 @@ function formatType(t) {
     return { essay:'Essay', short_answer:'Short Answer', multiple_choice:'Multiple Choice', true_false:'True/False', fill_blank:'Fill in Blank' }[t] || t;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

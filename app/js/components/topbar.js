@@ -4,7 +4,7 @@
  */
 
 import { Auth } from '../auth.js';
-import { Api }  from '../api.js';
+import { Api, BASE_URL } from '../api.js';
 import { icon, resolveIcon } from '../utils/icons.js';
 
 
@@ -14,6 +14,7 @@ let _notifPollTimer       = null;
 let _cachedNewLessons     = [];   // newly posted lessons (students)
 let _cachedTeachingAlerts = [];   // instructor dashboard alerts
 let _cachedCommentReplies = [];   // private comment replies (students)
+let _cachedLackingCount   = 0;    // overdue/not-done quizzes+lessons (students)
 let _topbarRole           = null;
 let _topbarUserId         = null;
 
@@ -31,16 +32,19 @@ export function renderTopbar(container) {
         <div class="topbar-right">
             <!-- Search -->
             <button class="topbar-btn" id="search-btn" title="Search  (Ctrl+K)">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
+                ${icon('search', { size: 19 })}
+            </button>
+
+            <!-- Ali (AI assistant) -->
+            <button class="topbar-btn" id="fa-topbar-btn" title="Ask Ali" aria-label="Ask Ali">
+                <img src="${BASE_URL}/assets/images/assistant-ali.png" alt="" class="fa-topbar-img"
+                     onerror="this.style.display='none';this.parentElement.querySelector('.fa-topbar-fallback').style.display='inline-flex'">
+                <span class="fa-topbar-fallback">${icon('robot', { size: 19 })}</span>
             </button>
 
             <!-- Messenger -->
             <button class="topbar-btn" id="fm-topbar-btn" title="Messenger">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.15 2 11.25c0 2.91 1.45 5.54 3.78 7.26L4.5 21.5l3.2-1.68c1.12.31 2.31.48 3.55.48 5.52 0 10-4.15 10-9.25S17.52 2 12 2zm1 12.5-2.5-2.67L6 14.5l5-5.33 2.5 2.67L18 9.5l-5 5z"/>
-                </svg>
+                ${icon('messenger', { size: 19 })}
                 <span class="badge" id="fm-topbar-badge" style="display:none">0</span>
             </button>
 
@@ -68,7 +72,7 @@ export function renderTopbar(container) {
             <!-- User Dropdown -->
             <div class="dropdown" id="user-dropdown">
                 <div class="topbar-user" id="user-toggle">
-                    <div class="topbar-user-avatar">${Auth.initials()}</div>
+                    <div class="topbar-user-avatar">${icon('user', { size: 18 })}</div>
                     <div class="topbar-user-info">
                         <span class="topbar-user-name">${escapeHtml(user.name)}</span>
                         <span class="topbar-user-role">${Auth.roleName(role)}</span>
@@ -174,6 +178,11 @@ export function renderTopbar(container) {
     });
 
     // Search
+    document.getElementById('fa-topbar-btn')?.addEventListener('click', async () => {
+        const { toggleAssistant } = await import('./floating-assistant.js');
+        toggleAssistant();
+    });
+
     document.getElementById('search-btn').addEventListener('click', () => openSearch());
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
@@ -205,12 +214,14 @@ async function pollUnreadCount() {
         } else if (_topbarRole === 'student') {
             requests.push(Api.get('/LessonsAPI.php?action=new-lessons&since=' + encodeURIComponent(getLessonLastSeen().toISOString())));
             requests.push(Api.get('/ClassroomAPI.php?action=new-replies&since=' + encodeURIComponent(getReplyLastSeen().toISOString())));
+            requests.push(Api.get('/GradebookAPI.php?action=my-lacking-work', { ttl: 0 }));
         }
 
         const results = await Promise.all(requests);
-        const msgRes    = results[0];
-        const extraRes  = results[1];
-        const replyRes  = results[2];
+        const msgRes     = results[0];
+        const extraRes   = results[1];
+        const replyRes   = results[2];
+        const lackingRes = results[3];
 
         const msgCount = msgRes.success ? (msgRes.count || 0) : 0;
         // Drive the messenger topbar badge
@@ -228,12 +239,16 @@ async function pollUnreadCount() {
             _cachedTeachingAlerts = [];
             _cachedNewLessons     = (_topbarRole === 'student' && extraRes?.success) ? (extraRes.data || [])  : [];
             _cachedCommentReplies = (_topbarRole === 'student' && replyRes?.success) ? (replyRes.data || [])  : [];
+            _cachedLackingCount   = (_topbarRole === 'student' && lackingRes?.success)
+                ? ((lackingRes.data?.quizzes?.length || 0) + (lackingRes.data?.lessons?.length || 0))
+                : 0;
         }
 
         updateNotifBadge(
             _cachedNewLessons.length
             + _cachedCommentReplies.length
             + _cachedTeachingAlerts.length
+            + _cachedLackingCount
         );
     } catch (_) {}
 }
@@ -286,6 +301,7 @@ async function loadNotifications(role) {
     } else if (role === 'student') {
         fetches.push(Api.get('/LessonsAPI.php?action=new-lessons&since=' + encodeURIComponent(getLessonLastSeen().toISOString())));
         fetches.push(Api.get('/ClassroomAPI.php?action=new-replies&since=' + encodeURIComponent(getReplyLastSeen().toISOString())));
+        fetches.push(Api.get('/GradebookAPI.php?action=my-lacking-work', { ttl: 0 }));
     }
 
     const results = await Promise.all(fetches);
@@ -303,6 +319,10 @@ async function loadNotifications(role) {
     const newLessons = role === 'student' ? _cachedNewLessons     : [];
     const replies    = role === 'student' ? _cachedCommentReplies : [];
     const teachingAlerts = role === 'instructor' ? _cachedTeachingAlerts : [];
+    const lackingRes = role === 'student' ? results[3] : null;
+    const lackingQuizzes = lackingRes?.success ? (lackingRes.data?.quizzes || []) : [];
+    const lackingLessons = lackingRes?.success ? (lackingRes.data?.lessons || []) : [];
+    const lackingItems = [...lackingQuizzes, ...lackingLessons];
 
     if (newLessons.length) {
         markLessonLastSeen();
@@ -313,7 +333,7 @@ async function loadNotifications(role) {
         setTimeout(pollUnreadCount, 300);
     }
 
-    if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length) {
+    if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length && !lackingItems.length) {
         body.innerHTML = `<div class="notif-empty">You're all caught up!</div>`;
         return;
     }
@@ -385,6 +405,33 @@ async function loadNotifications(role) {
         }).join('');
     }
 
+    // ── Lacking work — overdue quizzes/exams/activities (student) ─────
+    if (lackingItems.length) {
+        html += `<div class="notif-section-label">Lacking Work</div>`;
+        html += lackingQuizzes.map(q => {
+            const href = `#student/subject?subject_id=${q.subject_id}&work=quiz&work_id=${q.quiz_id}`;
+            return `
+                <div class="notification-item unread notif-lacking-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
+                    <div class="notification-content">
+                        <span class="notification-title">Overdue quiz${q.subject_code ? ` in <strong>${escapeHtml(q.subject_code)}</strong>` : ''}: <strong>${escapeHtml(q.quiz_title || 'Quiz')}</strong></span>
+                        <span class="notification-time">Was due ${relativeTime(q.due_date)}</span>
+                    </div>
+                    <span class="notif-dot"></span>
+                </div>`;
+        }).join('');
+        html += lackingLessons.map(l => {
+            const href = `#student/subject?subject_id=${l.subject_id}&work=lesson&work_id=${l.lessons_id}`;
+            return `
+                <div class="notification-item unread notif-lacking-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
+                    <div class="notification-content">
+                        <span class="notification-title">Overdue activity${l.subject_code ? ` in <strong>${escapeHtml(l.subject_code)}</strong>` : ''}: <strong>${escapeHtml(l.lesson_title || 'Activity')}</strong></span>
+                        <span class="notification-time">Was due ${relativeTime(l.due_date)}</span>
+                    </div>
+                    <span class="notif-dot"></span>
+                </div>`;
+        }).join('');
+    }
+
     // ── Teaching alerts (instructor) ───────────────────────────────────
     if (teachingAlerts.length) {
         html += `<div class="notif-section-label">Teaching Updates</div>`;
@@ -411,8 +458,8 @@ async function loadNotifications(role) {
         });
     });
 
-    // Lesson / reply / teaching alert click → navigate
-    body.querySelectorAll('.notif-lesson-item, .notif-reply-item, .notif-teach-item').forEach(el => {
+    // Lesson / reply / teaching alert / lacking-work click → navigate
+    body.querySelectorAll('.notif-lesson-item, .notif-reply-item, .notif-teach-item, .notif-lacking-item').forEach(el => {
         el.addEventListener('click', () => {
             document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
             const href = el.dataset.href;
@@ -540,6 +587,19 @@ function addTopbarStyles() {
         .dropdown-item.danger:hover { background: var(--danger-bg); color: var(--danger); }
         .dropdown-divider { height: 1px; background: var(--gray-100); margin: 4px 0; }
         .notification-dropdown { width: 320px; }
+
+        /* On a phone a 320px menu anchored to the bell hangs off the left edge
+           and clips its own text. Break out of the button and span the screen. */
+        @media (max-width: 640px) {
+            .dropdown-menu {
+                position: fixed;
+                top: calc(var(--topbar-height, 70px) - 6px);
+                left: 8px; right: 8px;
+                width: auto; min-width: 0; margin-top: 0;
+            }
+            .notification-dropdown { width: auto; }
+            .dropdown-body { max-height: calc(100dvh - var(--topbar-height, 70px) - 90px); }
+        }
         /* Facebook-style notification rows — avatars & text only, no icon boxes */
         .notification-item {
             display: flex; align-items: center; gap: 12px;
@@ -579,7 +639,7 @@ function addTopbarStyles() {
         }
         .topbar-user:hover { background: var(--gray-100); }
         .topbar-user-avatar {
-            width: 38px; height: 38px; background: var(--primary); color: var(--white);
+            width: 38px; height: 38px; background: none; color: var(--gray-500);
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-weight: 700; font-size: 14px;
         }

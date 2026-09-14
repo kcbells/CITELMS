@@ -581,7 +581,9 @@ function uploadAnnouncementMaterial() {
     $allowedTypes = [
         'application/pdf' => 'document',
         'image/jpeg' => 'image', 'image/png' => 'image', 'image/gif' => 'image',
-        'image/webp' => 'image', 'image/bmp' => 'image', 'image/svg+xml' => 'image',
+        'image/webp' => 'image', 'image/bmp' => 'image',
+        // SVG deliberately excluded — it can carry <script>/event-handler XSS,
+        // and this endpoint serves files back inline by default (see below).
         'application/msword' => 'document',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'document',
         'application/vnd.ms-powerpoint' => 'document',
@@ -618,7 +620,28 @@ function uploadAnnouncementMaterial() {
         mkdir($uploadDir, 0755, true);
     }
 
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+    // Extension is derived from the *validated* MIME type, not the client-supplied
+    // filename — otherwise a file whose content passes MIME sniffing but is named
+    // e.g. "shell.php" would be saved with a .php extension.
+    $mimeToExt = [
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif',
+        'image/webp' => 'webp', 'image/bmp' => 'bmp',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-powerpoint' => 'ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+        'application/vnd.ms-excel' => 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        'text/plain' => 'txt', 'text/csv' => 'csv', 'application/csv' => 'csv',
+        'application/rtf' => 'rtf', 'text/rtf' => 'rtf',
+        'application/zip' => 'zip', 'application/x-rar-compressed' => 'rar', 'application/vnd.rar' => 'rar',
+        'audio/mpeg' => 'mp3', 'audio/mp3' => 'mp3', 'audio/wav' => 'wav', 'audio/ogg' => 'ogg',
+        'audio/mp4' => 'm4a', 'audio/aac' => 'aac', 'audio/flac' => 'flac',
+        'audio/x-wav' => 'wav', 'audio/x-m4a' => 'm4a',
+        'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov',
+    ];
+    $ext = $mimeToExt[$mimeType] ?? 'bin';
     $fileName = 'ann_' . $annId . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     $filePath = $uploadDir . $fileName;
 

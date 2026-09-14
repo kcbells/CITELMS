@@ -11,13 +11,11 @@ import { Api, BASE_URL } from '../api.js';
 import { notify } from '../utils/notify.js';
 import { icon } from '../utils/icons.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const API_URL = BASE_URL + '/api';
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 /**
  * Same request Api.postForm() makes (same headers, same JSON handling), but
@@ -107,26 +105,29 @@ function postFormWithProgress(endpoint, formData, { onProgress, onUploadDone, on
  * button and clicking the backdrop does nothing while it's up; it closes
  * itself the moment the import finishes (see close()).
  */
-function openImportProgressModal(fileName) {
+function openImportProgressModal(fileName, opts = {}) {
     const overlay = document.createElement('div');
     overlay.id = 'bi-progress-overlay';
     overlay.innerHTML = `
-        <div class="bi-pm-modal" role="alertdialog" aria-live="polite" aria-label="Importing file">
-            <div class="bi-pm-spin"></div>
-            <h3>Importing your file</h3>
+        <div class="bi-pm-modal" role="alertdialog" aria-live="polite" aria-label="${esc(opts.title || 'Importing file')}">
+            ${scanBoxHtml('bi-pm-scan')}
+            <h3 id="bi-pm-title">${esc(opts.title || 'Importing your file')}</h3>
             <p class="bi-pm-file">${esc(fileName)}</p>
             <div class="bi-progress-track"><div class="bi-progress-fill" id="bi-pm-fill"></div></div>
             <div class="bi-progress-label">
                 <span id="bi-pm-phase">Uploading&hellip;</span>
                 <span id="bi-pm-pct">0%</span>
             </div>
-            <p class="bi-pm-hint">Please keep this tab open until it finishes.</p>
+            <p class="bi-pm-hint" id="bi-pm-hint">${esc(opts.hint || 'Please keep this tab open until it finishes.')}</p>
         </div>`;
     document.body.appendChild(overlay);
 
     const fill  = overlay.querySelector('#bi-pm-fill');
     const phase = overlay.querySelector('#bi-pm-phase');
     const pct   = overlay.querySelector('#bi-pm-pct');
+    const scan  = overlay.querySelector('#bi-pm-scan');
+    const title = overlay.querySelector('#bi-pm-title');
+    const hint  = overlay.querySelector('#bi-pm-hint');
 
     return {
         setProgress(p, label) {
@@ -149,10 +150,96 @@ function openImportProgressModal(fileName) {
             phase.textContent = `Importing rows… ${done.toLocaleString()} / ${total.toLocaleString()}`;
             pct.textContent = total ? `${Math.round((done / total) * 100)}%` : '';
         },
+        // Swaps the scanning beam for a drawn-in checkmark and holds the
+        // modal open briefly — a beat of visible confirmation that the scan
+        // finished, before it closes and the fuller result summary appears.
+        async showSuccess(counts) {
+            scan.innerHTML = successCheckHtml();
+            fill.style.width = '100%';
+            fill.classList.remove('bi-progress-indeterminate');
+            title.textContent = 'Import complete';
+            phase.textContent = counts?.total ? `${counts.done.toLocaleString()} / ${counts.total.toLocaleString()} rows` : 'Done';
+            pct.textContent = '100%';
+            hint.textContent = 'Finishing up…';
+            await new Promise(r => setTimeout(r, 750));
+        },
         close() {
             overlay.remove();
         },
     };
+}
+
+/** A QR-scanner-style viewfinder (corner brackets) around a document, with a bright green laser line sweeping across it on loop. */
+function scanBoxHtml(id) {
+    return `
+        <div class="bi-scan-box" id="${id}">
+            <div class="bi-scan-frame">
+                <span class="bi-scan-corner bi-scan-corner-tl"></span>
+                <span class="bi-scan-corner bi-scan-corner-tr"></span>
+                <span class="bi-scan-corner bi-scan-corner-bl"></span>
+                <span class="bi-scan-corner bi-scan-corner-br"></span>
+                <div class="bi-scan-doc">
+                    <div class="bi-scan-doc-fold"></div>
+                    <span class="bi-scan-doc-line"></span>
+                    <span class="bi-scan-doc-line"></span>
+                    <span class="bi-scan-doc-line"></span>
+                    <span class="bi-scan-doc-line bi-scan-doc-line-short"></span>
+                    <div class="bi-scan-beam"></div>
+                </div>
+            </div>
+        </div>`;
+}
+
+/**
+ * A dedicated "Import Successful" modal — big drawn-in checkmark, the same
+ * size/weight as the scan popup it follows, with the real created/updated
+ * counts right in it instead of a plain one-line alert. Resolves when
+ * dismissed (OK, backdrop click, or Escape) — same contract as notify.alert.
+ */
+function openImportSuccessModal(data, { hasErrors = false } = {}) {
+    const allStats = [
+        ['Instructors created', data.created_instructors], ['Instructors updated', data.updated_instructors],
+        ['Students created',    data.created_students],    ['Students updated',    data.updated_students],
+        ['Subjects created',    data.created_subjects],     ['Subjects updated',    data.updated_subjects],
+        ['Sections created',    data.created_sections],
+        ['Classes linked',      data.linked_offerings],     ['Students enrolled',   data.enrolled_students],
+    ].filter(([, val]) => val > 0);
+
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.id = 'bi-success-overlay';
+        overlay.innerHTML = `
+            <div class="bi-pm-modal" role="alertdialog" aria-modal="true" aria-label="${hasErrors ? 'Import finished, with errors' : 'Import successful'}">
+                <svg class="bi-check-svg" viewBox="0 0 52 52">
+                    <circle class="bi-check-circle" cx="26" cy="26" r="23" fill="none"/>
+                    <path class="bi-check-mark" fill="none" d="M15 27l7.5 7.5L37 18"/>
+                </svg>
+                <h3>${hasErrors ? 'Import Finished, With Errors' : 'Import Successful'}</h3>
+                <p class="bi-pm-file">${hasErrors
+                    ? `${esc(String(data.errors?.length || 0))} row error${(data.errors?.length || 0) !== 1 ? 's' : ''} — see the log below for details.`
+                    : `Processed ${esc(String(data.rows_processed ?? 0))} row${data.rows_processed === 1 ? '' : 's'} successfully.`}</p>
+                ${allStats.length ? `<div class="bi-success-stats">${allStats.map(([label, val]) => `
+                    <div class="bi-stat"><strong>${val}</strong><span>${esc(label)}</span></div>
+                `).join('')}</div>` : ''}
+                <button type="button" class="bi-run-btn bi-success-ok" id="bi-success-ok">OK</button>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => { overlay.remove(); resolve(); };
+        overlay.querySelector('#bi-success-ok').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { document.removeEventListener('keydown', onKey); close(); } };
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+/** A dark-green circle+checkmark that draws itself in — shown once a scan/import finishes. */
+function successCheckHtml() {
+    return `
+        <svg class="bi-check-svg" viewBox="0 0 52 52">
+            <circle class="bi-check-circle" cx="26" cy="26" r="23" fill="none"/>
+            <path class="bi-check-mark" fill="none" d="M15 27l7.5 7.5L37 18"/>
+        </svg>`;
 }
 
 /**
@@ -163,27 +250,11 @@ export function mountBulkImportUI(host, opts = {}) {
     // Class Density (default) creates/updates everything from one roster;
     // Class List (opts.importAction set) only ever enrolls students into a
     // class the caller already picked — same dropzone/preview/progress
-    // chrome, different help text, import endpoint, extra POST fields, and
+    // chrome, different import endpoint, extra POST fields, and
     // result summary.
     const importAction = opts.importAction || 'import';
     host.innerHTML = `
         <div class="bi-layout">
-            <aside class="bi-sticky-note">
-                <div class="bi-sticky-head">
-                    ${icon('document', { size: 13, className: 'ui-icon-inline' })}
-                    <span>File Format &amp; Accounts</span>
-                </div>
-                <div class="bi-sticky-body">
-                    ${opts.helpHtml || `
-                    <ul>
-                        <li><strong>Files:</strong> Excel, CSV/text, Word table, or a clear photo</li>
-                        <li><strong>Columns read:</strong> ID, Email, Name, Section, Program, Department, Subject info</li>
-                        <li><strong>New accounts:</strong> log in with their ID, set a password on first login</li>
-                        <li><strong>Shared "ID" column:</strong> letters &rarr; instructor, numbers-only &rarr; student</li>
-                        <li><strong>Photos</strong> use OCR — double-check the preview before importing</li>
-                    </ul>`}
-                </div>
-            </aside>
 
             <div class="bi-main">
                 <div class="bi-dropzone" id="bi-dropzone">
@@ -230,10 +301,12 @@ export function mountBulkImportUI(host, opts = {}) {
 
     let selectedFile = null;
     let previewOk = false;
+    let knownTotalRows = 0; // from the preview response — lets the import step show a real "0 / N" the instant it starts, instead of waiting on the first streamed progress line (which can arrive too late to see on a fast/small import)
 
     const setFile = (file) => {
         selectedFile = file || null;
         previewOk = false;
+        knownTotalRows = 0;
         resultEl.innerHTML = '';
         runBtn.disabled = true;
         if (selectedFile) {
@@ -249,27 +322,17 @@ export function mountBulkImportUI(host, opts = {}) {
     };
 
     async function runPreview(file) {
-        previewEl.innerHTML = `
-            <div class="bi-preview-loading">
-                <div class="bi-progress-track bi-progress-track-sm"><div class="bi-progress-fill" id="bi-prev-fill"></div></div>
-                <span id="bi-prev-loading-label">Uploading… 0%</span>
-            </div>`;
-        const fill  = previewEl.querySelector('#bi-prev-fill');
-        const label = previewEl.querySelector('#bi-prev-loading-label');
+        previewEl.innerHTML = '';
+        const modal = openImportProgressModal(file.name, { title: 'Reading your file', hint: 'Scanning for columns we recognize…' });
 
         try {
             const fd = new FormData();
             fd.append('file', file);
             const res = await postFormWithProgress('/BulkImportAPI.php?action=preview', fd, {
-                onProgress: (pct) => {
-                    fill.style.width = `${pct}%`;
-                    label.textContent = `Uploading… ${pct}%`;
-                },
-                onUploadDone: () => {
-                    fill.classList.add('bi-progress-indeterminate');
-                    label.textContent = 'Reading file…';
-                },
+                onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
+                onUploadDone: () => modal.setIndeterminate('Reading file…'),
             });
+            modal.close();
 
             if (!res.success) {
                 previewEl.innerHTML = `<div class="bi-alert bi-alert-error">${esc(res.message || 'Could not preview this file.')}</div>`;
@@ -280,9 +343,11 @@ export function mountBulkImportUI(host, opts = {}) {
 
             previewEl.innerHTML = renderPreview(res.data);
             previewOk = true;
+            knownTotalRows = res.data.total_data_rows || 0;
             runBtn.disabled = false;
         } catch (err) {
             console.error('Bulk import preview error:', err);
+            modal.close();
             previewEl.innerHTML = `<div class="bi-alert bi-alert-error">Connection error while previewing. Please try again.</div>`;
             previewOk = false;
             runBtn.disabled = true;
@@ -321,6 +386,7 @@ export function mountBulkImportUI(host, opts = {}) {
         resultEl.innerHTML = '';
 
         const modal = openImportProgressModal(selectedFile.name);
+        let lastRowProgress = null;
 
         try {
             const fd = new FormData();
@@ -329,14 +395,14 @@ export function mountBulkImportUI(host, opts = {}) {
             const res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, fd, {
                 onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
                 // The file itself is fully sent — from here on the server is
-                // parsing rows and writing to the database. Start on an
-                // animated "still working" bar in case the file is small
-                // enough that the first real row-progress line takes a
-                // moment; setRowProgress (below) takes over the instant the
-                // server's first {"type":"progress"} line arrives, swapping
-                // this for an actual "1,240 / 10,000 rows" count.
-                onUploadDone: () => modal.setIndeterminate('Processing rows…'),
-                onRowProgress: (done, total) => modal.setRowProgress(done, total),
+                // parsing rows and writing to the database. We already know
+                // the row count from the preview step, so show "0 / N" right
+                // away instead of a vague "Processing rows…" — a fast/small
+                // import can finish before the first real streamed progress
+                // line ever reaches the browser, and this way there's always
+                // a real count on screen, not just an animation.
+                onUploadDone: () => knownTotalRows > 0 ? modal.setRowProgress(0, knownTotalRows) : modal.setIndeterminate('Processing rows…'),
+                onRowProgress: (done, total) => { lastRowProgress = { done, total }; modal.setRowProgress(done, total); },
             });
 
             // Bypassing Api.postForm() for the progress events above means its
@@ -351,19 +417,35 @@ export function mountBulkImportUI(host, opts = {}) {
             Api.invalidate('DashboardAPI');
 
             if (!res.success) {
+                modal.close(); // no success beat on failure — straight to the error
                 resultEl.innerHTML = `<div class="bi-alert bi-alert-error">${esc(res.message || 'Import failed.')}</div>`;
+                await notify.alert(res.message || 'Import failed. Please check the file and try again.', { title: 'Import Failed', type: 'error' });
                 return;
             }
 
+            // Prefer the last real streamed count; fall back to the known
+            // preview total paired with the server's final processed count —
+            // covers the fast-import case where no progress line ever arrived.
+            const finalCounts = lastRowProgress || (knownTotalRows ? { done: res.data.rows_processed ?? knownTotalRows, total: knownTotalRows } : null);
+            await modal.showSuccess(finalCounts); // brief scan-complete checkmark before the modal closes
+            modal.close();
+
             resultEl.innerHTML = (opts.renderResult || renderImportResult)(res.data);
             attachUndoButton(resultEl, res.data.batch_id);
-            notify.success('Import finished.');
+            // A completed import always gets its own centered confirmation —
+            // not just a corner toast — since it's a real write to the
+            // database the admin needs to consciously register, success or
+            // failure, the same indicator used for every upload in the system.
+            const errCount = res.data.errors?.length || 0;
+            await openImportSuccessModal(res.data, { hasErrors: errCount > 0 });
             opts.onImported?.(res.data);
         } catch (err) {
             console.error('Bulk import error:', err);
-            resultEl.innerHTML = `<div class="bi-alert bi-alert-error">Connection error. Please try again.</div>`;
-        } finally {
             modal.close();
+            resultEl.innerHTML = `<div class="bi-alert bi-alert-error">Connection error. Please try again.</div>`;
+            await notify.alert('Connection error while importing. Please try again.', { title: 'Import Failed', type: 'error' });
+        } finally {
+            modal.close(); // no-op if already closed above — safe to call twice
             runBtn.innerHTML = `${icon('upload', { size: 14, className: 'ui-icon-inline' })} Upload &amp; Import`;
             setFile(null);
             fileInput.value = '';
@@ -472,29 +554,10 @@ function attachUndoButton(resultEl, batchId) {
 
 export function bulkImportCss() {
     return `
-        /* ── Instructions card — black-bordered to match the dropzone below ── */
-        /* ── Layout: small note beside the upload flow ───────────────────── */
+        /* ── Layout ───────────────────────────────────────────────────────── */
         .bi-layout { display:flex; align-items:flex-start; gap:16px; }
         .bi-main { flex:1 1 auto; min-width:0; }
 
-        /* ── Note — small, black border, white, black text ───────────────── */
-        .bi-sticky-note { flex:0 0 190px; width:190px; box-sizing:border-box;
-            background:#fff; border:1.5px solid #111; border-radius:8px; padding:12px 13px; }
-        .bi-sticky-head { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800;
-            color:#111; margin-bottom:8px; padding-bottom:7px; border-bottom:1px solid #111; }
-        .bi-sticky-head svg { color:#111; flex-shrink:0; }
-        .bi-sticky-body ul { margin:0; padding:0; list-style:none; }
-        .bi-sticky-body li { position:relative; font-size:10.5px; line-height:1.5; color:#111;
-            margin-bottom:8px; padding-left:12px; }
-        .bi-sticky-body li:last-child { margin-bottom:0; }
-        .bi-sticky-body li::before { content:''; position:absolute; left:0; top:5px; width:4px; height:4px;
-            border-radius:50%; background:#111; }
-        .bi-sticky-body strong { color:#111; }
-        .bi-cols { color:#111 !important; font-weight:700; }
-        @media (max-width: 640px) {
-            .bi-layout { flex-direction:column; }
-            .bi-sticky-note { width:100%; flex:1 1 auto; }
-        }
 
         /* ── Dropzone ─────────────────────────────────────────────────── */
         .bi-dropzone { border:2px dashed #111; border-radius:14px; padding:34px 24px; text-align:center;
@@ -510,7 +573,7 @@ export function bulkImportCss() {
         .bi-dz-title strong { font-weight:700; }
         .bi-dz-hint { color:#6B7280 !important; font-size:12px !important; margin:0 !important; }
         #bi-dropzone-file { display:flex; align-items:center; justify-content:center; gap:10px; }
-        .bi-dz-file-icon { width:34px; height:34px; border-radius:9px; background:#E8F5EC; color:#00461B;
+        .bi-dz-file-icon { width:34px; height:34px; border-radius:9px; background:#00461B; color:#fff;
             display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         #bi-file-name { font-size:13.5px; color:#111; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px; }
         .bi-file-clear { display:flex; align-items:center; justify-content:center; width:24px; height:24px;
@@ -524,17 +587,18 @@ export function bulkImportCss() {
         #bi-result { margin-top:16px; }
         #bi-preview { margin-top:16px; }
 
-        /* ── Import progress modal ─────────────────────────────────────── */
-        #bi-progress-overlay { position:fixed; inset:0; background:rgba(15,23,20,.5); z-index:9999;
+        /* ── Import progress + success modals ──────────────────────────── */
+        #bi-progress-overlay, #bi-success-overlay { position:fixed; inset:0; background:rgba(15,23,20,.5); z-index:9999;
             display:flex; align-items:center; justify-content:center; padding:20px; animation:biFadeIn .15s ease; }
         @keyframes biFadeIn { from { opacity:0; } to { opacity:1; } }
-        .bi-pm-modal { background:#fff; border-radius:16px; width:100%; max-width:360px; padding:28px 26px 24px;
+        .bi-pm-modal { background:#fff; border-radius:20px; width:100%; max-width:420px; padding:40px 32px 28px;
             box-shadow:0 20px 60px rgba(0,0,0,.3); text-align:center; }
-        .bi-pm-spin { width:32px; height:32px; margin:0 auto 14px; border:3px solid #E5E7EB; border-top-color:#00461B;
-            border-radius:50%; animation:biSpin .8s linear infinite; }
-        .bi-pm-modal h3 { margin:0 0 4px; font-size:16px; font-weight:800; color:#111; }
-        .bi-pm-file { margin:0 0 18px; font-size:12.5px; color:#6B7280; word-break:break-all; }
+        .bi-pm-modal h3 { margin:0 0 4px; font-size:19px; font-weight:800; color:#111; }
+        .bi-pm-file { margin:0 0 22px; font-size:13px; color:#6B7280; word-break:break-all; }
         .bi-pm-hint { margin:12px 0 0; font-size:11px; color:#9CA3AF; }
+        .bi-success-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px;
+            margin:4px 0 22px; text-align:left; }
+        .bi-success-ok { width:100%; justify-content:center; }
         .bi-progress-track { height:8px; border-radius:6px; background:#E5E7EB; overflow:hidden; position:relative; }
         .bi-progress-fill { height:100%; width:0%; background:#00461B; border-radius:6px; transition:width .2s ease; }
         .bi-progress-fill.bi-progress-indeterminate {
@@ -544,15 +608,43 @@ export function bulkImportCss() {
         @keyframes biProgressSlide { 0% { left:-35%; } 100% { left:100%; } }
         .bi-progress-label { display:flex; justify-content:space-between; margin-top:7px; font-size:11.5px;
             color:#9CA3AF; font-variant-numeric:tabular-nums; }
-        .bi-preview-loading { padding:14px 2px; }
-        .bi-preview-loading .bi-progress-track-sm { height:6px; }
-        .bi-preview-loading span { display:block; margin-top:7px; font-size:11.5px; color:#6B7280; font-variant-numeric:tabular-nums; }
+        /* ── Scan animation — a QR-scanner-style viewfinder around a document, ──
+           a bright laser line sweeping across it on loop */
+        .bi-scan-box { width:140px; height:140px; margin:0 auto 22px; display:flex; align-items:center; justify-content:center; }
+        .bi-scan-frame { position:relative; width:140px; height:140px; display:flex; align-items:center; justify-content:center; }
+        .bi-scan-corner { position:absolute; width:22px; height:22px; border:3px solid #00461B; }
+        .bi-scan-corner-tl { top:0;    left:0;   border-right:none;  border-bottom:none; border-radius:6px 0 0 0; }
+        .bi-scan-corner-tr { top:0;    right:0;  border-left:none;   border-bottom:none; border-radius:0 6px 0 0; }
+        .bi-scan-corner-bl { bottom:0; left:0;   border-right:none;  border-top:none;    border-radius:0 0 0 6px; }
+        .bi-scan-corner-br { bottom:0; right:0;  border-left:none;   border-top:none;    border-radius:0 0 6px 0; }
+        .bi-scan-doc { position:relative; width:84px; height:104px; background:#fff; border:1.5px solid #111;
+            border-radius:5px; overflow:hidden; box-shadow:0 8px 20px rgba(0,0,0,.15); }
+        .bi-scan-doc-fold { position:absolute; top:0; right:0; width:0; height:0;
+            border-style:solid; border-width:0 14px 14px 0; border-color:transparent #E5E7EB transparent transparent; }
+        .bi-scan-doc-line { display:block; height:3px; background:#D1D5DB; border-radius:2px; margin:14px 14px 0; }
+        .bi-scan-doc-line-short { width:45%; }
+        .bi-scan-beam { position:absolute; left:2px; right:2px; top:0; height:2.5px; border-radius:2px;
+            background:#00461B; box-shadow:0 0 6px 1.5px #00461B, 0 0 16px 4px rgba(0,70,27,.75);
+            animation: biScanSweep 1.6s cubic-bezier(.45,0,.55,1) infinite; }
+        @keyframes biScanSweep { 0% { top:0; } 50% { top:calc(100% - 3px); } 100% { top:0; } }
+
+        /* ── Success checkmark — draws itself in once a scan/import finishes ── */
+        .bi-check-svg { width:92px; height:92px; display:block; margin:0 auto; }
+        /* Success modal only — the scan box centres its own copy via flex, so
+           the extra bottom gap belongs just to the standalone one. */
+        .bi-pm-modal > .bi-check-svg { margin-bottom:18px; }
+        .bi-check-circle { stroke:#00461B; stroke-width:3; stroke-miterlimit:10;
+            stroke-dasharray:145; stroke-dashoffset:145; animation:biCheckCircle .5s ease-out forwards; }
+        .bi-check-mark { stroke:#00461B; stroke-width:4; stroke-linecap:round; stroke-linejoin:round;
+            stroke-dasharray:32; stroke-dashoffset:32; animation:biCheckMark .3s .4s ease-out forwards; }
+        @keyframes biCheckCircle { to { stroke-dashoffset:0; } }
+        @keyframes biCheckMark { to { stroke-dashoffset:0; } }
         .bi-spin { width:16px; height:16px; border:2px solid #eee; border-top-color:#00461B; border-radius:50%; animation:biSpin .75s linear infinite; flex-shrink:0; }
         @keyframes biSpin { to { transform:rotate(360deg); } }
         .bi-alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-        .bi-alert-success { background:#E8F5E9; color:#1B4D3E; border:1px solid #A7F3D0; }
-        .bi-alert-error { background:#FEE2E2; color:#b91c1c; border:1px solid #FECACA; }
-        .bi-alert-warn { background:#FEF3C7; color:#92400E; border:1px solid #FDE68A; }
+        .bi-alert-success { background:#00461B; color:#fff; border:1px solid #A7F3D0; }
+        .bi-alert-error { background:#7F1D1D; color:#fff; border:1px solid #FECACA; }
+        .bi-alert-warn { background:#B45309; color:#fff; border:1px solid #FDE68A; }
         .bi-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:12px; }
         .bi-stat { background:#F8FDF9; border:1px solid #E5E7EB; border-radius:8px; padding:8px 10px; text-align:center; }
         .bi-stat strong { display:block; font-size:18px; color:#00461B; }
@@ -572,7 +664,7 @@ export function bulkImportCss() {
 
         .bi-preview-tablewrap { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; max-height:320px; overflow-y:auto; }
         .bi-preview-table { width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }
-        .bi-preview-table th { position:sticky; top:0; background:#F8FDF9; color:#00461B; text-align:left;
+        .bi-preview-table th { position:sticky; top:0; background:#00461B; color:#fff; text-align:left;
             padding:8px 12px; border-bottom:2px solid #C5D9CB; font-weight:700; }
         .bi-prev-sheethdr { display:block; font-size:10px; font-weight:500; color:#9CA3AF; text-transform:none; margin-top:2px; }
         .bi-preview-table td { padding:7px 12px; border-bottom:1px solid #F3F4F6; color:#374151; }

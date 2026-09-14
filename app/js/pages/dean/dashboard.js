@@ -8,6 +8,7 @@ import { subjectColor, programPatternSvg } from '../../utils/subject-colors.js';
 import { notify } from '../../utils/notify.js';
 import { buildStudentJoinUrl, renderQrInto } from '../../utils/qr-utils.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const G      = '#00461B';
 const GL     = '#E8F5EC';
 const BORDER = '#E5E7EB';
@@ -124,7 +125,7 @@ export async function render(container) {
             display:flex; align-items:center; justify-content:center; color:#5F6368; flex-shrink:0;
         }
         .gc-home-kebab:hover { background:#F1F3F4; }
-        .gc-home-kebab .material-symbols-outlined { font-size:19px; }
+        .gc-home-kebab svg { width:19px; height:19px; }
         .gc-home-menu {
             position:absolute; right:0; bottom:40px; z-index:20; min-width:160px;
             background:#fff; border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.18);
@@ -136,7 +137,7 @@ export async function render(container) {
             font-size:13px; font-weight:600; color:#374151; text-align:left; font-family:inherit;
         }
         .gc-home-menu button:hover { background:${GL}; color:${G}; }
-        .gc-home-menu [data-card-action="archive"]:hover { background:#FEE2E2; color:#B91C1C; }
+        .gc-home-menu [data-card-action="archive"]:hover { background:#7F1D1D; color:#fff; }
     </style>
 
     <!-- ── Header ── -->
@@ -180,11 +181,8 @@ export async function render(container) {
     bindHomeCardMenus(container);
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function deanSubjCard(c, user) {
     const color = subjectColor(c.subject_id);
@@ -205,7 +203,7 @@ function deanSubjCard(c, user) {
         <div class="gc-home-footer">
             <div class="gc-home-menu-wrap">
                 <button type="button" class="gc-home-kebab" data-kebab-toggle title="More" aria-label="More">
-                    <span class="material-symbols-outlined">more_vert</span>
+                    ${icon('moreVertical', { size: 19 })}
                 </button>
                 <div class="gc-home-menu" data-kebab-menu hidden>
                     <button type="button" data-card-action="archive">${icon('archive', { size: 15 })} Archive</button>

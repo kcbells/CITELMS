@@ -12,7 +12,14 @@
  */
 class DocxTableReader
 {
-    public static function readFirstTable(string $filePath): array
+    private const NS_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+    /**
+     * Opens word/document.xml and returns it as a namespace-registered
+     * SimpleXMLElement — shared by readFirstTable() (table rows only) and
+     * readAllText() (every paragraph, table cell, header/footer text run).
+     */
+    private static function loadDocumentXml(string $filePath): SimpleXMLElement
     {
         if (!extension_loaded('zip')) {
             throw new Exception('The "zip" PHP extension is not enabled on this server — ask whoever manages the server to enable it.');
@@ -44,24 +51,46 @@ class DocxTableReader
             throw new Exception('Could not parse the document\'s XML — the file may be corrupted.');
         }
 
-        $ns = $doc->getNamespaces(true);
-        $w = $ns['w'] ?? 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-        $doc->registerXPathNamespace('w', $w);
+        $doc->registerXPathNamespace('w', self::NS_W);
+        return $doc;
+    }
 
+    /**
+     * Every bit of text in the document — paragraphs AND table cells alike
+     * (a <w:t> run appears in both), in document order. Unlike
+     * readFirstTable(), this never requires a table to be present: it's for
+     * content-sniffing a document's own text (e.g. a "Course Name: ITE 300 /
+     * Module Number: 3" info block that's written as plain paragraphs rather
+     * than a table), not for importing tabular data.
+     */
+    public static function readAllText(string $filePath): string
+    {
+        $doc = self::loadDocumentXml($filePath);
+        $texts = $doc->xpath('//w:t');
+        $parts = [];
+        foreach ($texts as $t) {
+            $parts[] = (string)$t;
+        }
+        return implode(' ', $parts);
+    }
+
+    public static function readFirstTable(string $filePath): array
+    {
+        $doc = self::loadDocumentXml($filePath);
         $tables = $doc->xpath('//w:tbl');
         if (!$tables) {
             throw new Exception('No table found in this document. Paste your roster into a Word table (Insert → Table) and try again.');
         }
 
         $table = $tables[0];
-        $table->registerXPathNamespace('w', $w);
+        $table->registerXPathNamespace('w', self::NS_W);
 
         $rows = [];
         foreach ($table->xpath('.//w:tr') as $tr) {
-            $tr->registerXPathNamespace('w', $w);
+            $tr->registerXPathNamespace('w', self::NS_W);
             $cells = [];
             foreach ($tr->xpath('.//w:tc') as $tc) {
-                $tc->registerXPathNamespace('w', $w);
+                $tc->registerXPathNamespace('w', self::NS_W);
                 // Concatenate every text run in the cell — a cell can have
                 // multiple <w:r><w:t> runs if it was formatted/edited piecemeal.
                 $texts = $tc->xpath('.//w:t');

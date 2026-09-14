@@ -166,7 +166,7 @@ function handleRegister() {
     }
 
     $studentId   = trim($input['student_id'] ?? $input['user_id'] ?? '');
-    $fullName    = Sanitize::text($input['full_name'] ?? '');
+    $fullName    = Sanitize::properName($input['full_name'] ?? '');
     $email       = trim($input['email'] ?? '');
     $programCode = trim($input['program_code'] ?? '');
     $major       = trim($input['major'] ?? '');
@@ -366,10 +366,10 @@ function handleRegisterRequest() {
         jsonResponse(false, 'Registration failed. Please try again.');
     }
 
-    $firstName   = Sanitize::text($input['first_name'] ?? '');
-    $middleName  = Sanitize::text($input['middle_name'] ?? '');
-    $lastName    = Sanitize::text($input['last_name'] ?? '');
-    $suffix      = Sanitize::text($input['suffix'] ?? '');
+    $firstName   = Sanitize::properName($input['first_name'] ?? '');
+    $middleName  = Sanitize::properName($input['middle_name'] ?? '');
+    $lastName    = Sanitize::properName($input['last_name'] ?? '');
+    $suffix      = Sanitize::properName($input['suffix'] ?? '');
     $email       = trim($input['email'] ?? '');
     $studentId   = trim($input['student_id'] ?? '');
     $campusId    = (int)($input['campus_id'] ?? 0);
@@ -617,13 +617,10 @@ function handleLogin() {
             jsonResponse(false, 'Password is required');
         }
 
-        // Check if user is active
-        if ($user['status'] === 'pending') {
-            incrementLoginAttempts();
-            logActivity($user['users_id'], 'login_blocked', 'Login blocked - account pending activation');
-            jsonResponse(false, 'Your account is pending activation. Please wait for an administrator to activate your account.');
-        }
-
+        // Check if user is active — status is only ever 'active'/'inactive'/
+        // 'suspended' (see users.status enum); "hasn't activated yet" is a
+        // separate, actively-used signal (NULL password / must_change_password),
+        // handled further down, not a status value of its own.
         if ($user['status'] !== 'active') {
             incrementLoginAttempts();
             logActivity($user['users_id'], 'login_blocked', 'Login blocked - account not active');
@@ -640,7 +637,6 @@ function handleLogin() {
             jsonResponse(true, 'First login detected. Please set your password.', [
                 'first_login' => true,
                 'token'       => $token,
-                'csrf_token'  => Auth::csrfToken(),
                 'tab_lease'   => Auth::tabLease(),
                 'needs_phinmaed_email' => isPlaceholderEmail($user['email']),
                 'user'        => [
@@ -693,7 +689,6 @@ function handleLogin() {
                 'role'  => $user['role']
             ],
             'token'                => $token,
-            'csrf_token'           => Auth::csrfToken(),
             'tab_lease'            => Auth::tabLease(),
             'redirect'             => $redirectUrl,
             // Bulk-imported accounts log in with a temp password (their last
@@ -777,7 +772,6 @@ function handleCheck() {
             'authenticated' => true,
             'auth_method'   => 'session',
             'user'          => Auth::user(),
-            'csrf_token'    => Auth::csrfToken(),
             'tab_lease'     => Auth::tabLease(),
         ]);
         return;
@@ -789,7 +783,6 @@ function handleCheck() {
             'authenticated' => true,
             'auth_method'   => 'jwt',
             'user'          => $jwtUser,
-            'csrf_token'    => Auth::csrfToken(),
             'tab_lease'     => Auth::tabLease(),
         ]);
         return;
@@ -872,7 +865,7 @@ function handleGetCurrentUser() {
             jsonResponse(false, 'User not found', null, 404);
         }
         
-        jsonResponse(true, 'User data retrieved', ['user' => $user, 'csrf_token' => Auth::csrfToken()]);
+        jsonResponse(true, 'User data retrieved', ['user' => $user]);
 
     } catch (Exception $e) {
         error_log('Get user error: ' . $e->getMessage());
@@ -891,8 +884,8 @@ function handleUpdateProfile() {
     }
 
     $input = json_decode(file_get_contents('php://input'), true);
-    $firstName = Sanitize::text($input['first_name'] ?? '');
-    $lastName = Sanitize::text($input['last_name'] ?? '');
+    $firstName = Sanitize::properName($input['first_name'] ?? '');
+    $lastName = Sanitize::properName($input['last_name'] ?? '');
     $email = trim($input['email'] ?? '');
     $userId = Auth::id();
 
@@ -1175,11 +1168,27 @@ function loginAttemptKey() {
 }
 
 function checkLoginRateLimit() {
-    $key = loginAttemptKey();
+    $key  = loginAttemptKey();
     $data = $_SESSION[$key] ?? ['count' => 0, 'locked_until' => 0];
+    $lockedUntil = (int)($data['locked_until'] ?? 0);
 
-    if (time() < ($data['locked_until'] ?? 0)) {
+    // Still serving the lockout.
+    if (time() < $lockedUntil) {
         return false;
+    }
+
+    // The lockout has expired — clear the record so the next attempt starts a
+    // fresh set of 5.
+    //
+    // This is what was missing: `count` is only reset on a SUCCESSFUL login,
+    // which is impossible while locked out. So once it hit 5 it stayed at 5,
+    // and the check below re-locked for another 60 seconds on every single
+    // attempt. Waiting never let anyone back in — the only escape was the
+    // session expiring. That's why "wait 60 seconds" still failed after two
+    // minutes.
+    if ($lockedUntil > 0) {
+        unset($_SESSION[$key]);
+        return true;
     }
 
     if (($data['count'] ?? 0) >= 5) {
@@ -1258,10 +1267,6 @@ function handleCheckId() {
     if (!$user) {
         usleep(random_int(200000, 400000));
         jsonResponse(false, UserIdHelper::loginIdErrorMessage($userId));
-    }
-
-    if ($user['status'] === 'pending') {
-        jsonResponse(false, 'Your account is pending activation. Please wait for an administrator to activate your account.');
     }
 
     if ($user['status'] !== 'active') {

@@ -18,7 +18,15 @@ if (!Auth::check()) {
     exit;
 }
 
-Auth::requireRole(['instructor', 'program_head', 'dean']);
+// RBAC: was Auth::requireRole(), which redirects (HTML) on failure instead of
+// returning JSON — breaks a fetch().then(r => r.json()) caller. 'lessons.view'
+// (used below) is also granted to students for their own classwork, so it can't
+// stand in for this staff-only gate; keep it explicit and JSON-friendly instead.
+if (!in_array(Auth::role(), ['instructor', 'program_head', 'dean', 'admin'], true)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
 
 $action = $_GET['action'] ?? '';
 
@@ -58,14 +66,18 @@ function browseBank() {
     $search   = trim($_GET['search']   ?? '');
     $subjectId = (int)($_GET['subject_id'] ?? 0);
 
+    // A general resource with no subject_id at all (allowed by the schema)
+    // is meant for everyone once it's public — never gated behind the
+    // caller's own subject scope, so even someone with zero subjects in
+    // scope still sees those, not an empty bank.
     $handled = bankSubjectInClause($userId);
     if ($handled['sql'] === '0') {
-        echo json_encode(['success' => true, 'data' => []]);
-        return;
+        $where  = "lb.visibility = 'public' AND lb.subject_id IS NULL";
+        $params = [];
+    } else {
+        $where  = "lb.visibility = 'public' AND (lb.subject_id IS NULL OR lb.subject_id IN ({$handled['sql']}))";
+        $params = $handled['params'];
     }
-
-    $where  = "lb.visibility = 'public' AND lb.subject_id IN ({$handled['sql']})";
-    $params = $handled['params'];
 
     if ($search) {
         $where  .= " AND (lb.lesson_title LIKE ? OR lb.lesson_description LIKE ? OR lb.tags LIKE ?)";

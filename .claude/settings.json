@@ -47,7 +47,22 @@
       "Bash(/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe C:/Users/Asne/AppData/Local/Temp/claude/c--xampp-nen-htdocs-COC-LMS-2-/8d4cf877-8e49-42cb-a37d-ade061a3d9e1/scratchpad/mksession.php 38)",
       "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ 'http://localhost/COC_LMS\\(2\\)/api/ReportsAPI.php?action=struggling-students')",
       "Bash(\"/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe\" -l \"/c/xampp_nen/htdocs/COC_LMS\\(2\\)/api/GradebookAPI.php\")",
-      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ -H 'Content-Type: application/json' -d '{ *)"
+      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(\"/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe\" -l \"/c/xampp_nen/htdocs/COC_LMS\\(2\\)/api/UsersAPI.php\")",
+      "Bash(\"/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe\" -l \"/c/xampp_nen/htdocs/COC_LMS\\(2\\)/api/BulkImportAPI.php\")",
+      "Bash(/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe C:/Users/Asne/AppData/Local/Temp/claude/c--xampp-nen-htdocs-COC-LMS-2-/8d4cf877-8e49-42cb-a37d-ade061a3d9e1/scratchpad/mksession.php 24)",
+      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ -H 'Content-Type: application/json' -d '{\"users_id\":36,\"is_irregular\":true,\"year_level\":2}' 'http://localhost/COC_LMS\\(2\\)/api/UsersAPI.php?action=set-year-standing')",
+      "Bash(rm -f \"C:/Users/Asne/AppData/Local/Temp/claude/c--xampp-nen-htdocs-COC-LMS-2-/8d4cf877-8e49-42cb-a37d-ade061a3d9e1/scratchpad/mksession.php\" /tmp/test_yl.php)",
+      "Bash(/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe C:/Users/Asne/AppData/Local/Temp/claude/c--xampp-nen-htdocs-COC-LMS-2-/8d4cf877-8e49-42cb-a37d-ade061a3d9e1/scratchpad/mksession.php 40)",
+      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ 'http://localhost/COC_LMS\\(2\\)/api/MessagingAPI.php?action=unread_count')",
+      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ 'http://localhost/COC_LMS\\(2\\)/api/MessagingAPI.php?action=messages&with=38')",
+      "Bash(awk -F: '$1>217')",
+      "Bash(curl -s --cookie PHPSESSID=__CMDSUB_OUTPUT__ 'http://localhost/COC_LMS\\(2\\)/api/ReportsAPI.php?action=struggling-trend')",
+      "Bash(python3 -c ' *)",
+      "Bash(/c/laragon/bin/php/php-8.3.30-Win32-vs16-x64/php.exe -r ' *)",
+      "Bash(awk 'NR==799,NR==799+5' \"/c/xampp_nen/htdocs/COC_LMS\\(2\\)/app/js/pages/instructor/global-gradebook.js\")",
+      "Bash(awk -F: '$1 > 799 && $1 < 1100')",
+      "Bash(grep -n '\\\\${G2}\\\\|G2 ' \"/c/xampp_nen/htdocs/COC_LMS\\(2\\)/app/js/pages/instructor/global-gradebook.js\")"
     ]
   }
 }

@@ -8,6 +8,7 @@
 import { Api } from '../../api.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let _programs       = [];
 let _activeProg      = null;
 let _subjects        = [];  // curriculum subjects for active program
@@ -370,7 +371,8 @@ async function toggleOffering(container, subjectOfferedId, status) {
 async function toggleGradingType(container, subjectOfferedId, currentStatus, gradingType, box) {
     const label = gradingType === 'global' ? 'Global Gradebook' : 'Raw Score';
     const confirmed = await notify.confirm(
-        `Switch this class to ${label} grading? This changes how grades are recorded and shown for every student already enrolled.`,
+        `Switch this subject to ${label} grading? This applies to EVERY section and instructor teaching it, not just one — ` +
+        `it changes how grades are recorded and shown for every student already enrolled.`,
         { confirmText: 'Switch' }
     );
     if (!confirmed) {
@@ -384,6 +386,15 @@ async function toggleGradingType(container, subjectOfferedId, currentStatus, gra
         grading_type: gradingType,
     });
     if (res.success) {
+        // Api.post() only auto-invalidates cache entries for the file it
+        // just posted to (SubjectOfferingsAPI) — the instructor/global
+        // gradebook pages read this same grading_type from a DIFFERENT
+        // file (SectionsAPI's instructor-classes), which would otherwise
+        // keep serving its cached pre-switch value for up to 45s. Clear it
+        // explicitly so the new Raw Score/Global table shows up the moment
+        // anyone (this dean acting as instructor, or the real instructor)
+        // next opens the gradebook, not on a delay.
+        Api.invalidate('SectionsAPI');
         notify.success(`Switched to ${label}`);
         await loadSubjects(container);
     } else {
@@ -392,11 +403,8 @@ async function toggleGradingType(container, subjectOfferedId, currentStatus, gra
     }
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 // ── CSS — mirrors dean/curriculum.js's ps-*/cr-* checklist styling exactly,
 // plus so-* additions for the Status/Action columns this page adds. ──
@@ -466,12 +474,12 @@ function css() { return `
 .so-status, .so-action { text-align:center; white-space:nowrap; }
 .so-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap; }
 .so-badge-none { background:#f3f4f6; color:#9ca3af; }
-.so-badge-open { background:#dcfce7; color:#15803d; }
-.so-badge-closed { background:#fef3c7; color:#b45309; }
+.so-badge-open { background:#00461B; color:#fff; }
+.so-badge-closed { background:#B45309; color:#fff; }
 .so-btn-open, .so-btn-close { border:none; border-radius:6px; padding:5px 11px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap; }
 .so-btn-open { background:#00461B; color:#fff; }
 .so-btn-open:hover { background:#006428; }
-.so-btn-close { background:#FEE2E2; color:#b91c1c; }
+.so-btn-close { background:#7F1D1D; color:#fff; }
 .so-btn-close:hover { background:#FECACA; }
 .so-offterm-tag { display:block; margin-top:3px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#b45309; cursor:help; }
 .so-grading-toggle { display:flex; align-items:center; justify-content:center; gap:5px; margin:5px auto 0;

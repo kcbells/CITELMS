@@ -14,19 +14,16 @@
  */
 import { Api } from '../api.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const STORAGE_FALLBACK_KEY = 'lms_tour_seen_fallback'; // only used if the server check itself fails
 
 let root = null;
 let steps = [];
 let stepIndex = 0;
-let wasSidebarCollapsed = false;
 let repositionHandler = null;
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 /** Role → ordered list of {selector, title, body}. Steps whose selector
  *  isn't found in the live DOM are skipped automatically (defensive —
@@ -95,13 +92,6 @@ export async function maybeStartTour() {
 }
 
 function start() {
-    const sidebar = document.querySelector('.sidebar');
-    wasSidebarCollapsed = !!sidebar?.classList.contains('sidebar--collapsed');
-    if (wasSidebarCollapsed) {
-        sidebar.classList.remove('sidebar--collapsed');
-        document.querySelector('.main-content')?.classList.remove('sidebar--collapsed-ml');
-    }
-
     injectStyles();
     root = document.createElement('div');
     root.id = 'tour-root';
@@ -230,12 +220,6 @@ function finish(skipped) {
     document.removeEventListener('keydown', onKeyDown);
     root?.remove();
     root = null;
-
-    if (wasSidebarCollapsed) {
-        const sidebar = document.querySelector('.sidebar');
-        sidebar?.classList.add('sidebar--collapsed');
-        document.querySelector('.main-content')?.classList.add('sidebar--collapsed-ml');
-    }
 
     try { localStorage.setItem(STORAGE_FALLBACK_KEY, '1'); } catch (_) {}
     Api.post('/AuthAPI.php?action=mark-tutorial-seen', {}).catch(() => {});

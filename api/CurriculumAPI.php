@@ -729,7 +729,7 @@ function handleImportPdfCurriculum() {
         $lec       = max(0, (int)($s['lec']    ?? 3));
         $lab       = max(0, (int)($s['lab']    ?? 0));
         $units     = max(0, (int)($s['units']  ?? ($lec + $lab ?: 3)));
-        $yearLevel = in_array((string)($s['year'] ?? ''), ['1','2','3','4']) ? (int)$s['year'] : null;
+        $yearLevel = in_array((string)($s['year'] ?? ''), ['1','2','3','4','5']) ? (int)$s['year'] : null;
         $semester  = in_array((string)($s['sem']  ?? ''), ['1','2','3'])     ? (int)$s['sem']  : 1;
         $prereq    = trim($s['prereq'] ?? '');
 

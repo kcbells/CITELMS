@@ -4,6 +4,7 @@
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const G = '#00461B';
 
 export async function render(container) {
@@ -67,8 +68,5 @@ export async function render(container) {
         <p style="font-size:13px;color:#6B7280"><a href="#dean/sections" style="color:${G};font-weight:700">View full struggling-students report →</a></p>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

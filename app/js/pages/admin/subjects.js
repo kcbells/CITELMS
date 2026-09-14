@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let programs    = [];
 let departments = [];
 let semesters   = [];
@@ -39,28 +40,31 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
         <style>
             .page-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .page-header .count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
-            .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; }
+            .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; flex-wrap:wrap; }
+            .filters input, .filters select { max-width:100%; box-sizing:border-box; }
+            .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            @media (max-width:640px) { .filters input, .filters select { min-width:0; flex:1 1 100%; } }
             .filters input { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:260px; }
             .filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:200px; background:#fff; }
             .filters .clear-btn { color:#00461B; font-size:13px; cursor:pointer; text-decoration:underline; }
 
             .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
             .data-table tbody tr:nth-child(even) { background:#f9fafb; }
             .data-table tbody tr:hover { background:#f0fdf4; }
             .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
 
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:600; font-size:13px; }
+            .subj-code { background:#00461B; color:#fff; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:600; font-size:13px; }
             .subj-name { font-weight:600; color:#262626; }
             .meta-text { color:#737373; font-size:13px; }
             .units-badge { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:capitalize; }
-            .badge-active { background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-            .badge-inactive { background:#fee2e2; color:#b91c1c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-active { background:#00461B; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-inactive { background:#7F1D1D; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
 
             .actions-cell { position:relative; }
             .btn-actions { background:none; border:1px solid #e0e0e0; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
@@ -88,21 +92,21 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .btn-secondary:hover { background:#e8e8e8; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; border:1px solid #FECACA; }
+            .alert-error { background:#7F1D1D; color:#fff; border:1px solid #FECACA; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
             .off-badge { padding:3px 8px; border-radius:20px; font-size:11px; font-weight:700; display:inline-block; }
-            .off-open  { background:#E8F5E9; color:#1B4D3E; }
+            .off-open  { background:#00461B; color:#fff; }
             .off-none  { background:#f3f4f6; color:#9ca3af; }
-            .off-warn  { background:#FEF3C7; color:#B45309; }
-            .off-sec-pill { background:#EFF6FF; color:#1D4ED8; padding:2px 7px; border-radius:20px; font-size:10px; font-weight:600; margin-left:4px; }
-            .off-sec-none { background:#FEF3C7; color:#B45309; }
+            .off-warn  { background:#B45309; color:#fff; }
+            .off-sec-pill { background:#1D4ED8; color:#fff; padding:2px 7px; border-radius:20px; font-size:10px; font-weight:600; margin-left:4px; }
+            .off-sec-none { background:#B45309; color:#fff; }
             @media(max-width:768px) { .form-grid { grid-template-columns:1fr; } .filters { flex-direction:column; } }
 
             .subj-pagination { display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:12px; }
             .sp-info { font-size:13px; color:#6b7280; }
             .sp-controls { display:flex; gap:8px; }
             .sp-btn { background:#fff; border:1.5px solid #e5e7eb; color:#374151; padding:8px 16px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; transition:all .15s; }
-            .sp-btn:hover:not(:disabled) { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .sp-btn:hover:not(:disabled) { border-color:#00461B; color:#fff; background:#00461B; }
             .sp-btn:disabled { opacity:.4; cursor:not-allowed; }
         </style>
 
@@ -130,7 +134,7 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
             ${(search || deptId || progId || semId) ? '<span class="clear-btn" id="clear-search">Clear</span>' : ''}
         </div>
 
-        <table class="data-table">
+        <div class="tbl-scroll"><table class="data-table">
             <thead>
                 <tr>
                     <th>Code</th>
@@ -176,7 +180,7 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
                         </tr>`;
                   }).join('')}
             </tbody>
-        </table>
+        </table></div>
 
         ${totalPages > 1 ? `
         <div class="subj-pagination">
@@ -232,7 +236,16 @@ async function renderList(container, search = '', deptId = '', progId = '', semI
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-            container.querySelector(`[data-dropdown="${btn.dataset.id}"]`).classList.toggle('show');
+            const dd = container.querySelector(`[data-dropdown="${btn.dataset.id}"]`);
+            dd.classList.toggle('show');
+            // The table scrolls sideways on small screens, which would clip a menu
+            // anchored inside it — pin the open menu to the screen under its button.
+            if (dd.classList.contains('show')) {
+                const r = btn.getBoundingClientRect();
+                Object.assign(dd.style, { position: 'fixed', right: 'auto', zIndex: '1000', top: `${r.bottom + 4}px` });
+                dd.style.left = `${Math.max(8, Math.min(r.right - dd.offsetWidth, window.innerWidth - dd.offsetWidth - 8))}px`;
+                window.addEventListener('scroll', () => dd.classList.remove('show'), { once: true, capture: true });
+            }
         });
     });
     document.addEventListener('click', () => container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show')), { once: true });
@@ -357,11 +370,8 @@ function openModal(container, subj = null) {
     });
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 // ── Export (CSV / PDF) ──────────────────────────────────────────────────────
 // Fetches every row matching the current filters (not just the current page).

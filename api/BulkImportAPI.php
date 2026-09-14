@@ -36,6 +36,7 @@ require_once __DIR__ . '/helpers/XlsxReader.php';
 require_once __DIR__ . '/helpers/DelimitedTextReader.php';
 require_once __DIR__ . '/helpers/DocxTableReader.php';
 require_once __DIR__ . '/helpers/OcrHelper.php';
+require_once __DIR__ . '/helpers/Sanitize.php';
 
 // Declared up here, before the action dispatch below — a top-level `const`
 // only takes effect once execution actually reaches its line, and the
@@ -91,7 +92,7 @@ try {
     // JSON.parse() on the frontend ("Server returned an invalid response").
     error_log('BulkImportAPI fatal: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Import failed unexpectedly: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Import failed unexpectedly. Please try again.']);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +239,10 @@ function fieldAliases(): array
         // ("GEN 001") or a full title ("Purposive Communication"). Matched
         // against both subject_code and subject_name — see resolveSubject().
         'subject_code'     => ['subject code', 'subject'],
-        'subject_name'     => ['subject name'],
+        // "Descriptive Title" / "Subject Title" / "Course Title" are the
+        // standard PHINMA/CHED wording on a real curriculum or schedule
+        // export — "Subject Name" alone was missing every one of them.
+        'subject_name'     => ['subject name', 'descriptive title', 'subject title', 'course title'],
         'subject_type'     => ['subject type'],
         'program'          => ['program', 'course', 'program/course', 'program / course', 'program course'],
         // "College" is how PHINMA COC refers to its departments — e.g. a
@@ -386,7 +390,12 @@ function findHeaderRowIndex(array $rows): int
 {
     $bestIdx = 0;
     $bestScore = -1;
-    $limit = min(count($rows), 10);
+    // Scans further than a typical file needs (most headers are within the
+    // first few rows) so a file with an unusually long banner/title block
+    // before the real header doesn't get its header row — and every data
+    // row after it — misdetected. Cheap either way: no DB calls, runs once
+    // per import, not once per row.
+    $limit = min(count($rows), 25);
     for ($i = 0; $i < $limit; $i++) {
         if (isBlankRow($rows[$i])) continue;
         $score = count(detectColumnMap($rows[$i]));
@@ -468,7 +477,7 @@ function readAndMapUpload(): ?array
         // plain `catch (Exception)` does NOT catch, so it would otherwise
         // crash the whole response into a blank/HTML body instead of JSON.
         error_log('BulkImport readRowsForUpload: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Could not read the file: ' . $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Could not read the file. Please check the format and try again.']);
         return null;
     }
 
@@ -697,7 +706,10 @@ function matchSubjectsFromUpload(): ?array
     $matched = [];
     $unmatched = [];
     foreach ($codes as $code) {
-        $subject = db()->fetchOne("SELECT subject_id, subject_code, subject_name FROM subject WHERE LOWER(subject_code) = ?", [strtolower($code)]);
+        // subject_code = ? is already case-insensitive under this DB's ci
+        // collation and can use subject_code's unique index — wrapping the
+        // column in LOWER() (as this used to) forces a full table scan instead.
+        $subject = db()->fetchOne("SELECT subject_id, subject_code, subject_name FROM subject WHERE subject_code = ?", [$code]);
         if (!$subject) {
             $unmatched[] = $code;
             continue;
@@ -785,8 +797,11 @@ function resolveSubjectForClassList(string $value): ?array
     $key = strtolower($value);
     if (array_key_exists($key, $cache)) return $cache[$key];
 
-    $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_code) = ?", [$key])
-        ?: db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_name) = ?", [$key]);
+    // subject_code/subject_name = ? are already case-insensitive under this
+    // DB's ci collation (subject_code is also uniquely indexed) — wrapping
+    // the columns in LOWER() forces a full table scan on every row instead.
+    $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE subject_code = ?", [$value])
+        ?: db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE subject_name = ?", [$value]);
 
     // A real registrar export commonly puts "CODE - Full Subject Title" in
     // one combined Subject column (e.g. "ITE 310 - CAPSTONES PROJECT AND
@@ -797,7 +812,7 @@ function resolveSubjectForClassList(string $value): ?array
     if (!$row && str_contains($value, ' - ')) {
         $codePart = trim(strstr($value, ' - ', true));
         if ($codePart !== '') {
-            $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE LOWER(subject_code) = ?", [strtolower($codePart)]);
+            $row = db()->fetchOne("SELECT subject_id, subject_code FROM subject WHERE subject_code = ?", [$codePart]);
         }
     }
 
@@ -813,12 +828,15 @@ function resolveSectionForClassList(string $value, ?int $programId): ?int
     $key = strtolower($value) . '|' . ($programId ?? '');
     if (array_key_exists($key, $cache)) return $cache[$key];
 
+    // section_name = ? is already case-insensitive under this DB's ci
+    // collation and index-eligible — LOWER(section_name) (as this used to
+    // do) forces a full table scan on every row instead.
     $row = null;
     if ($programId) {
         $row = db()->fetchOne(
-            "SELECT section_id FROM section WHERE LOWER(section_name) = ? AND (program_id = ? OR program_id IS NULL)
+            "SELECT section_id FROM section WHERE section_name = ? AND (program_id = ? OR program_id IS NULL)
              ORDER BY (program_id IS NOT NULL) DESC LIMIT 1",
-            [strtolower($value), $programId]
+            [$value, $programId]
         );
     }
     // Fall back to matching by name alone — a Course column that doesn't
@@ -826,7 +844,7 @@ function resolveSectionForClassList(string $value, ?int $programId): ?int
     // block an otherwise-unambiguous section name match. Real registrar
     // exports don't always agree with how sections were set up here.
     if (!$row) {
-        $row = db()->fetchOne("SELECT section_id FROM section WHERE LOWER(section_name) = ? LIMIT 1", [strtolower($value)]);
+        $row = db()->fetchOne("SELECT section_id FROM section WHERE section_name = ? LIMIT 1", [$value]);
     }
 
     return $cache[$key] = $row ? (int)$row['section_id'] : null;
@@ -836,9 +854,17 @@ function resolveSectionForClassList(string $value, ?int $programId): ?int
 function findExistingOffering(int $subjectId, ?int $sectionId): ?int
 {
     if ($sectionId) {
+        // section_subject.status is an enum('active','inactive') — there is
+        // no 'inactive' equivalent value called 'cancelled', so a
+        // "!= 'cancelled'" check here always matched (it's a no-op) and let
+        // a stale/retired section-to-offering link through as if still
+        // active. Must be a positive "= 'active'" match, the same as every
+        // other query against this table, so a section reassigned to a
+        // different teacher's offering (see linkOffering()) stops resolving
+        // back to its old, now-inactive one.
         $row = db()->fetchOne(
             "SELECT so.subject_offered_id FROM subject_offered so
-             JOIN section_subject ss ON ss.subject_offered_id = so.subject_offered_id AND ss.status != 'cancelled'
+             JOIN section_subject ss ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'active'
              WHERE so.subject_id = ? AND ss.section_id = ? AND so.status != 'cancelled' LIMIT 1",
             [$subjectId, $sectionId]
         );
@@ -1339,7 +1365,12 @@ function processRow(array $d, int $rowNum, array &$summary, bool $instrEmailColA
     // Instructor
     $instructorId = null;
     ['id' => $empId, 'name' => $instName, 'email' => $instEmail, 'middle' => $instMiddle] = personIdentityFromRow($d, 'instructor');
-    if ($empId !== '' || $instEmail !== '') {
+    // A class-density-style report typically only names the faculty member —
+    // no Employee ID or email column at all — so the name alone must be
+    // enough to at least ATTEMPT a match; previously this whole block was
+    // skipped when only a name was given, so a row like this silently did
+    // nothing instead of matching (or clearly failing to match) an account.
+    if ($empId !== '' || $instEmail !== '' || trim($instName) !== '') {
         $res = upsertPerson('instructor', $empId, $instEmail, $instName, $departmentId, $programId, $instMiddle, $campusId);
         $instructorId = $res['users_id'];
         if ($res['created']) { $summary['created_instructors']++; $summary['notes'][] = "Row $rowNum: created instructor account — {$res['note']}"; }
@@ -1349,7 +1380,7 @@ function processRow(array $d, int $rowNum, array &$summary, bool $instrEmailColA
     // Student
     $studentId = null;
     ['id' => $stuId, 'name' => $stuName, 'email' => $stuEmail, 'middle' => $stuMiddle] = personIdentityFromRow($d, 'student');
-    if ($stuId !== '' || $stuEmail !== '') {
+    if ($stuId !== '' || $stuEmail !== '' || trim($stuName) !== '') {
         $res = upsertPerson('student', $stuId, $stuEmail, $stuName, $departmentId, $programId, $stuMiddle, $campusId);
         $studentId = $res['users_id'];
         if ($res['created']) { $summary['created_students']++; $summary['notes'][] = "Row $rowNum: created student account — {$res['note']}"; }
@@ -1495,14 +1526,29 @@ function splitPersonName(string $full): array
 
 function findOrCreateSubject(array $d, ?int $programId): ?array
 {
+    // Per-run cache, keyed by lowercased code — a file with hundreds of rows
+    // typically shares a handful of subjects, and re-SELECTing the same
+    // subject on every one of those rows was the single biggest avoidable
+    // query multiplier in this file. Safe because a subject is only ever
+    // looked up/created here inside one import's transaction.
+    static $cache = [];
+
     $code = trim($d['subject_code'] ?? '');
     if ($code === '') return null;
-    // Case-insensitive on purpose — "ite300" from a sheet must match an
-    // existing "ITE300" subject, or a duplicate gets silently created every
-    // time someone's casing doesn't happen to match exactly (the single
-    // biggest real accuracy gap found in this file: resolveSubjectForClassList()
-    // already did this correctly for Class List, findOrCreateSubject() didn't).
-    $existing = db()->fetchOne("SELECT * FROM subject WHERE LOWER(subject_code) = LOWER(?)", [$code]);
+    $cacheKey = mb_strtolower($code);
+
+    // Case-insensitive match against an existing subject on purpose —
+    // "ite300" from a sheet must match an existing "ITE300", or a duplicate
+    // gets silently created every time someone's casing doesn't happen to
+    // match exactly. The DB's utf8mb4_unicode_ci collation already makes a
+    // plain `=` comparison case-insensitive AND able to use subject_code's
+    // unique index — wrapping it in LOWER() would have forced a full table
+    // scan on every single row for no benefit.
+    $existingId = $cache[$cacheKey] ?? null;
+    if ($existingId === null && !array_key_exists($cacheKey, $cache)) {
+        $existing = db()->fetchOne("SELECT subject_id FROM subject WHERE subject_code = ?", [$code]);
+        $existingId = $existing ? (int)$existing['subject_id'] : null;
+    }
 
     $name      = trim($d['subject_name'] ?? '');
     $type      = trim($d['subject_type'] ?? '') ?: null;
@@ -1512,7 +1558,7 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
     $labUnits  = is_numeric($d['lab_units']  ?? '') ? (int)$d['lab_units']  : null;
     $units     = is_numeric($d['units']      ?? '') ? (int)$d['units']     : null;
 
-    if ($existing) {
+    if ($existingId) {
         $map = [
             'subject_name'  => $name !== '' ? $name : null,
             'subject_type'  => $type,
@@ -1528,10 +1574,11 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
             if ($val !== null) { $sets[] = "`$col` = ?"; $params[] = $val; }
         }
         if ($sets) {
-            $params[] = $existing['subject_id'];
+            $params[] = $existingId;
             pdo()->prepare("UPDATE subject SET " . implode(', ', $sets) . ", updated_at = NOW() WHERE subject_id = ?")->execute($params);
         }
-        return ['subject_id' => (int)$existing['subject_id'], 'created' => false, 'updated' => (bool)$sets];
+        $cache[$cacheKey] = $existingId;
+        return ['subject_id' => $existingId, 'created' => false, 'updated' => (bool)$sets];
     }
 
     if ($name === '') {
@@ -1545,32 +1592,50 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
     )->execute([$programId, $code, $name, $type, $lectHrs ?? 0, $labHrs ?? 0, $lectUnits, $labUnits, $units ?? 3]);
     $newSubjectId = (int)pdo()->lastInsertId();
     trackBatchRow('subject', $newSubjectId);
+    $cache[$cacheKey] = $newSubjectId;
     return ['subject_id' => $newSubjectId, 'created' => true, 'updated' => false];
 }
 
 function findOrCreateSection(string $name, ?int $programId, ?int $capacity): ?array
 {
+    // Same per-run cache reasoning as findOrCreateSubject() — a class list
+    // typically has one section shared across dozens of rows. Keyed on
+    // (name, programId) together since which row matches depends on both.
+    static $cache = [];
+
     $name = trim($name);
     if ($name === '') return null;
+    $cacheKey = mb_strtolower($name) . '|' . ($programId ?? '');
 
-    // Case-insensitive for the same reason as findOrCreateSubject() above —
-    // "coc-fab-bsit3-01" from a sheet must match an existing "COC-FAB-BSIT3-01".
-    $existing = $programId
-        ? db()->fetchOne(
-            "SELECT * FROM section WHERE LOWER(section_name) = LOWER(?) AND (program_id = ? OR program_id IS NULL)
-             ORDER BY (program_id IS NOT NULL) DESC LIMIT 1",
-            [$name, $programId])
-        : db()->fetchOne("SELECT * FROM section WHERE LOWER(section_name) = LOWER(?) LIMIT 1", [$name]);
+    $existing = $cache[$cacheKey] ?? null;
+    if ($existing === null && !array_key_exists($cacheKey, $cache)) {
+        // Case-insensitive for the same reason as findOrCreateSubject() above
+        // — "coc-fab-bsit3-01" from a sheet must match an existing
+        // "COC-FAB-BSIT3-01". The DB's ci collation already makes a plain
+        // `=` case-insensitive and index-eligible; LOWER() on both sides
+        // would force a full table scan on every row for no benefit.
+        $row = $programId
+            ? db()->fetchOne(
+                "SELECT section_id, max_students, program_id FROM section
+                 WHERE section_name = ? AND (program_id = ? OR program_id IS NULL)
+                 ORDER BY (program_id IS NOT NULL) DESC LIMIT 1",
+                [$name, $programId])
+            : db()->fetchOne("SELECT section_id, max_students, program_id FROM section WHERE section_name = ? LIMIT 1", [$name]);
+        $existing = $row ?: null;
+    }
 
     if ($existing) {
         if ($capacity && (int)$existing['max_students'] !== $capacity) {
             pdo()->prepare("UPDATE section SET max_students = ?, updated_at = NOW() WHERE section_id = ?")
                  ->execute([$capacity, $existing['section_id']]);
+            $existing['max_students'] = $capacity;
         }
         if ($programId && empty($existing['program_id'])) {
             pdo()->prepare("UPDATE section SET program_id = ?, updated_at = NOW() WHERE section_id = ?")
                  ->execute([$programId, $existing['section_id']]);
+            $existing['program_id'] = $programId;
         }
+        $cache[$cacheKey] = $existing;
         return ['section_id' => (int)$existing['section_id'], 'created' => false];
     }
 
@@ -1584,6 +1649,7 @@ function findOrCreateSection(string $name, ?int $programId, ?int $capacity): ?ar
     )->execute([$name, $programId, $semesterId, $code, $capacity ?: 40]);
     $newSectionId = (int)pdo()->lastInsertId();
     trackBatchRow('section', $newSectionId);
+    $cache[$cacheKey] = ['section_id' => $newSectionId, 'max_students' => $capacity ?: 40, 'program_id' => $programId];
     return ['section_id' => $newSectionId, 'created' => true];
 }
 
@@ -1617,18 +1683,61 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     $idColumn = $role === 'instructor' ? 'employee_id' : 'student_id';
     $idValue  = trim($idValue);
     $email    = trim($email);
-    $middleName = trim($middleName);
+    // Class-density/roster reports are routinely ALL CAPS — normalize to
+    // Title Case here so every account this creates or fills in matches the
+    // system-wide name-casing standard, not just ones created via the admin
+    // "Add User" form.
+    $middleName = Sanitize::properName($middleName);
+    $fullName   = Sanitize::properName($fullName);
 
     // Case-insensitive lookups — an email typed/exported with different
     // casing ("Juan.Cruz@x.com" vs "juan.cruz@x.com") or an ID with a stray
     // capital letter must still match the existing account, or a duplicate
     // gets silently created instead of updating the real one.
+    // `$idColumn`/email = ? are already case-insensitive under this DB's ci
+    // collation and both are uniquely indexed — wrapping them in LOWER()
+    // forces a full table scan on the whole `users` table on every row instead.
     $user = null;
     if ($idValue !== '') {
-        $user = db()->fetchOne("SELECT * FROM users WHERE LOWER(`$idColumn`) = LOWER(?)", [$idValue]);
+        $user = db()->fetchOne("SELECT * FROM users WHERE `$idColumn` = ?", [$idValue]);
     }
     if (!$user && $email !== '') {
-        $user = db()->fetchOne("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [$email]);
+        $user = db()->fetchOne("SELECT * FROM users WHERE email = ?", [$email]);
+    }
+    // Last resort: a class-density-style report often names faculty by name
+    // only (no Employee ID or email column exists in that file at all) — a
+    // full-name match against an EXISTING account of the same role is safe
+    // (matches an already-registered instructor instead of missing them
+    // entirely), but only when it's unambiguous: two people can share a
+    // name, and guessing wrong would silently attach this row to the wrong
+    // account. Zero or multiple matches fall through to the normal "can't
+    // create without an ID" error below instead of guessing.
+    if (!$user && $idValue === '' && $email === '' && trim($fullName) !== '') {
+        [$fnFirst, $fnLast] = splitPersonName($fullName);
+        if ($fnFirst !== '' && $fnLast !== '') {
+            $candidates = db()->fetchAll(
+                "SELECT * FROM users WHERE role = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?)",
+                [$role, $fnFirst, $fnLast]
+            );
+            // Many real class-density/class-list exports write the
+            // instructor as "Lastname Firstname" with no comma to signal the
+            // order — indistinguishable from the normal "Firstname Lastname"
+            // splitPersonName() assumes, so a name that's genuinely reversed
+            // from how the account is stored (file says "VERGARA JUSTINE",
+            // account has first_name=Justine/last_name=Vergara) would never
+            // match at all otherwise, and the row would wrongly report
+            // "no Employee ID given" instead of finding the existing person.
+            // Try the swapped reading too before giving up — same
+            // uniqueness guard (only an unambiguous single match) applies.
+            if (count($candidates) !== 1) {
+                $swapped = db()->fetchAll(
+                    "SELECT * FROM users WHERE role = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?)",
+                    [$role, $fnLast, $fnFirst]
+                );
+                if (count($swapped) === 1) $candidates = $swapped;
+            }
+            if (count($candidates) === 1) $user = $candidates[0];
+        }
     }
 
     if ($user) {
@@ -1645,7 +1754,7 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         $sets = []; $params = [];
         if ($idValue !== '' && empty($user[$idColumn]))                          { $sets[] = "`$idColumn` = ?";     $params[] = $idValue; }
         if ($email !== '' && strcasecmp($email, $user['email'] ?? '') !== 0 && !$hasRealEmail) {
-            $emailTaken = db()->fetchOne("SELECT 1 FROM users WHERE LOWER(email) = LOWER(?) AND users_id != ?", [$email, $user['users_id']]);
+            $emailTaken = db()->fetchOne("SELECT 1 FROM users WHERE email = ? AND users_id != ?", [$email, $user['users_id']]);
             if ($emailTaken) {
                 throw new Exception("can't add email \"$email\" to $role \"$idValue\" — it's already used by another account");
             }
@@ -1673,7 +1782,7 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     // exists so the UNIQUE(email) constraint doesn't block account creation
     // when a row genuinely has none.
     $finalEmail = $email !== '' ? $email : ($idValue . '@pending.local');
-    if (db()->fetchOne("SELECT 1 FROM users WHERE LOWER(email) = LOWER(?)", [$finalEmail])) {
+    if (db()->fetchOne("SELECT 1 FROM users WHERE email = ?", [$finalEmail])) {
         throw new Exception("can't create $role \"$idValue\" — email \"$finalEmail\" is already used by another account");
     }
 
@@ -1682,16 +1791,28 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     // true-first-login (NULL password) path uses, see handleSetFirstPassword()
     // and the must_change_password branch in AuthAPI's login handler.
     $tempPassword = strtoupper($lastName);
+    // New student accounts get their year level derived from the batch year
+    // embedded in their ID (e.g. "02-2324-00766" -> enrolled AY 2023-2024)
+    // right away, rather than sitting NULL until someone manually sets it —
+    // see helpers/YearLevelHelper.php. Left unlocked, so it stays current
+    // automatically as academic years roll forward, unless a dean later
+    // overrides it for an irregular student.
+    $yearLevel = null;
+    if ($role === 'student') {
+        require_once __DIR__ . '/helpers/YearLevelHelper.php';
+        $yearLevel = deriveYearLevel($idValue);
+    }
     pdo()->prepare(
         "INSERT INTO users (first_name, middle_name, last_name, email, password, role, status,
-             department_id, program_id, campus_id, employee_id, student_id, must_change_password, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, 1, NOW(), NOW())"
+             department_id, program_id, campus_id, employee_id, student_id, year_level, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())"
     )->execute([
         $firstName, $middleName !== '' ? $middleName : null, $lastName, $finalEmail,
         password_hash($tempPassword, PASSWORD_DEFAULT), $role,
         $departmentId, $programId, $campusId,
         $role === 'instructor' ? $idValue : null,
         $role === 'student'    ? $idValue : null,
+        $yearLevel,
     ]);
     $newId = (int)pdo()->lastInsertId();
     trackBatchRow('users', $newId);
@@ -1718,13 +1839,37 @@ function linkOffering(int $subjectId, ?int $sectionId, ?int $teacherId): ?int
 
     $offering = null;
     if ($teacherId) {
+        // 1) An offering already assigned to THIS teacher (handles re-imports
+        //    of the same file, and one teacher covering several sections of
+        //    the same subject — they all share one offering, as intended).
         $offering = db()->fetchOne(
             "SELECT subject_offered_id, user_teacher_id FROM subject_offered
              WHERE subject_id = ? AND user_teacher_id = ? AND (semester_id = ? OR ? IS NULL) LIMIT 1",
             [$subjectId, $teacherId, $semesterId, $semesterId]
         );
-    }
-    if (!$offering) {
+        if (!$offering) {
+            // 2) No offering has this teacher yet — only reuse one that's
+            //    still teacher-less (e.g. pre-created via the Subject
+            //    Offerings page). An offering that already belongs to a
+            //    DIFFERENT teacher must be left alone and a fresh one
+            //    created for this teacher instead: reusing "any" offering
+            //    here used to silently collapse every section of a
+            //    multi-section subject onto whichever teacher's row
+            //    happened to import first, permanently losing every other
+            //    section's real instructor (confirmed live in this DB —
+            //    several GenEd subjects with 15-20 parallel sections ended
+            //    up on one shared, often teacherless, offering).
+            $offering = db()->fetchOne(
+                "SELECT subject_offered_id, user_teacher_id FROM subject_offered
+                 WHERE subject_id = ? AND user_teacher_id IS NULL AND (semester_id = ? OR ? IS NULL) LIMIT 1",
+                [$subjectId, $semesterId, $semesterId]
+            );
+        }
+    } else {
+        // No teacher named on this row — attach to whatever offering already
+        // exists for the subject (old behavior), preferring one that already
+        // has a teacher over a bare one, so a teacher-less row never creates
+        // a redundant duplicate offering next to a real one.
         $offering = db()->fetchOne(
             "SELECT subject_offered_id, user_teacher_id FROM subject_offered
              WHERE subject_id = ? AND (semester_id = ? OR ? IS NULL)
@@ -1749,11 +1894,27 @@ function linkOffering(int $subjectId, ?int $sectionId, ?int $teacherId): ?int
     }
 
     if ($sectionId) {
+        // A re-import that reassigns this section to a different teacher
+        // picks/creates a DIFFERENT subject_offered above — without this,
+        // the section would stay linked to its old offering too, showing
+        // two "teachers" for the same subject+section at once. Retire any
+        // other still-active link from this section to a different
+        // offering of the SAME subject before adding the new one.
+        pdo()->prepare(
+            "UPDATE section_subject ss
+             JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+             SET ss.status = 'inactive'
+             WHERE ss.section_id = ? AND so.subject_id = ? AND ss.subject_offered_id != ? AND ss.status != 'inactive'"
+        )->execute([$sectionId, $subjectId, $offeredId]);
+
         $exists = db()->fetchOne("SELECT 1 FROM section_subject WHERE section_id = ? AND subject_offered_id = ?", [$sectionId, $offeredId]);
         if (!$exists) {
             pdo()->prepare("INSERT INTO section_subject (section_id, subject_offered_id, status, created_at) VALUES (?, ?, 'active', NOW())")
                  ->execute([$sectionId, $offeredId]);
             trackBatchRow('section_subject', (int)pdo()->lastInsertId());
+        } else {
+            pdo()->prepare("UPDATE section_subject SET status = 'active' WHERE section_id = ? AND subject_offered_id = ?")
+                 ->execute([$sectionId, $offeredId]);
         }
     }
 

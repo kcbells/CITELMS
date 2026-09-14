@@ -5,7 +5,9 @@
  */
 import { Api, BASE_URL } from '../api.js';
 import { openModuleQuizBuilder } from './module-quiz-builder.js';
+import { notify } from '../utils/notify.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const G = '#00461B';
 const GL = '#E8F5EC';
 const BORDER = '#E5E7EB';
@@ -17,13 +19,9 @@ const COMPONENT_LABELS = {
     wrap_up_quiz: 'Wrap Up Quiz',
 };
 
-function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
 
-function fileServeUrl(docId) {
+export function fileServeUrl(docId) {
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('jwt_token') : null;
     let url = `${BASE_URL}/api/ModuleDocumentsAPI.php?action=serve&doc_id=${encodeURIComponent(docId)}`;
     if (token) url += `&token=${encodeURIComponent(token)}`;
@@ -63,7 +61,15 @@ export async function openModuleDocumentsModal(subjectId, opts = {}) {
         </div>`;
     document.body.appendChild(overlay);
 
-    const close = () => overlay.remove();
+    let closed = false;
+    const close = () => {
+        overlay.remove();
+        // Only ever fire once — whichever of the two listeners below gets
+        // there first (X button vs. backdrop click can't both fire for the
+        // same close, but guard anyway since callers may treat a second
+        // call as "closed again", e.g. re-triggering a page refresh).
+        if (!closed) { closed = true; opts.onClose?.(); }
+    };
     overlay.querySelector('#mdoc-close').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
@@ -95,9 +101,24 @@ async function loadAndRender(overlay, subjectId, opts) {
             btn.addEventListener('click', () => {
                 const mod = parseInt(btn.dataset.mod, 10);
                 const component = btn.dataset.component;
-                openModuleQuizBuilder(subjectId, mod, component, {
-                    onSaved: () => loadAndRender(overlay, subjectId, opts),
+                const quizId = btn.dataset.quizId ? parseInt(btn.dataset.quizId, 10) : null;
+                // The builder is a page now, and this overlay lives on
+                // document.body — without removing it first it would hang
+                // over the builder page after the route changes.
+                overlay.remove();
+                openModuleQuizBuilder(subjectId, mod, component, { quizId });
+            });
+        });
+
+        body.querySelectorAll('.mdoc-quiz-pub-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const publishing = btn.dataset.action === 'publish';
+                btn.disabled = true;
+                await Api.post('/QuizzesAPI.php?action=set-status', {
+                    quiz_id: parseInt(btn.dataset.quizId, 10),
+                    status: publishing ? 'published' : 'draft',
                 });
+                await loadAndRender(overlay, subjectId, opts);
             });
         });
     }
@@ -122,8 +143,10 @@ async function loadAndRender(overlay, subjectId, opts) {
                 const up = await Api.postForm('/ModuleDocumentsAPI.php?action=upload', fd);
                 if (up.success) {
                     await loadAndRender(overlay, subjectId, opts);
-                } else if (status) {
-                    status.textContent = up.message || 'Upload failed';
+                    await notify.alert('Uploaded — hidden from students until published.', { title: 'File Uploaded', type: 'success' });
+                } else {
+                    if (status) status.textContent = up.message || 'Upload failed';
+                    await notify.alert(up.message || 'Upload failed. Please try again.', { title: 'Upload Failed', type: 'error' });
                 }
                 inp.value = '';
             });
@@ -198,9 +221,21 @@ function moduleQuizRow(moduleNum, quizzesForModule, canUpload) {
 function moduleQuizChip(moduleNum, component, quiz, canUpload) {
     const label = COMPONENT_LABELS[component];
     if (canUpload) {
-        return `<button type="button" class="mdoc-quiz-build" data-mod="${moduleNum}" data-component="${component}">
+        const buildBtn = `<button type="button" class="mdoc-quiz-build" data-mod="${moduleNum}" data-component="${component}" ${quiz ? `data-quiz-id="${quiz.quiz_id}"` : ''}>
             ${quiz ? `${esc(label)} Quiz &#x270E;` : `+ Build ${esc(label)} Quiz`}
         </button>`;
+        if (!quiz) return buildBtn;
+        // Each component publishes independently — building one doesn't touch
+        // the other two, and saving it (module-quiz-builder.js) always leaves
+        // it as a draft until the instructor flips this toggle themselves.
+        const isPublished = quiz.status === 'published';
+        return `<span class="mdoc-quiz-staff-item">
+            ${buildBtn}
+            <span class="mdoc-quiz-pill mdoc-quiz-pill-${isPublished ? 'on' : 'off'}">${isPublished ? 'Open to students' : 'Hidden from students'}</span>
+            <button type="button" class="mdoc-quiz-pub-btn" data-quiz-id="${quiz.quiz_id}" data-action="${isPublished ? 'hide' : 'publish'}">
+                ${isPublished ? 'Unpublish' : 'Publish'}
+            </button>
+        </span>`;
     }
     if (!quiz) return `<span class="mdoc-quiz-chip mdoc-quiz-none">${esc(label)}: not ready yet</span>`;
     const attempt = quiz.my_attempt;
@@ -316,7 +351,7 @@ function css() {
         padding:8px 10px; background:#FAFAFA; border:1px solid ${BORDER}; border-radius:8px; font-size:11.5px; }
     .mdoc-pill { padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; flex-shrink:0; }
     .mdoc-pill-published { background:${GL}; color:${G}; }
-    .mdoc-pill-scheduled { background:#FEF3C7; color:#92400E; }
+    .mdoc-pill-scheduled { background:#B45309; color:#fff; }
     .mdoc-pill-hidden { background:#F3F4F6; color:#6B7280; }
     .mdoc-pub-btn { background:#fff; border:1.5px solid ${G}; color:${G}; padding:4px 11px; border-radius:7px;
         font-size:11px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0; }
@@ -339,6 +374,14 @@ function css() {
     .mdoc-quiz-answer { background:${G}; color:#fff; }
     .mdoc-quiz-answer:hover { background:#006428; }
     .mdoc-quiz-done { background:${GL}; color:${G}; }
+    .mdoc-quiz-staff-item { display:inline-flex; align-items:center; gap:6px; }
+    .mdoc-quiz-pill { padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; flex-shrink:0; }
+    .mdoc-quiz-pill-on  { background:${GL}; color:${G}; }
+    .mdoc-quiz-pill-off { background:#F3F4F6; color:#6B7280; }
+    .mdoc-quiz-pub-btn { background:#fff; border:1.5px solid ${G}; color:${G}; padding:4px 11px; border-radius:7px;
+        font-size:11px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0; }
+    .mdoc-quiz-pub-btn:hover { background:${GL}; }
+    .mdoc-quiz-pub-btn:disabled { opacity:.6; cursor:default; }
 
     @media(max-width:640px) {
         .mdoc-slot-label { min-width:auto; }

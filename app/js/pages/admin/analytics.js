@@ -4,6 +4,7 @@
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const G = '#00461B';
 
 export async function render(container) {
@@ -54,8 +55,5 @@ export async function render(container) {
         </div>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

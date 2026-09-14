@@ -3,7 +3,9 @@
  */
 import { Api } from '../api.js';
 import { icon } from '../utils/icons.js';
+import { armScreenshotGuard, disarmScreenshotGuard } from '../utils/screenshot-guard.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 const MODAL_STYLES = `
@@ -41,9 +43,9 @@ const MODAL_STYLES = `
     .sqr-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
     .sqr-qnum { font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; }
     .sqr-badge { font-size:10px; font-weight:800; padding:3px 8px; border-radius:20px; text-transform:uppercase; }
-    .sqr-badge.ok { background:#DCFCE7; color:#15803D; }
-    .sqr-badge.no { background:#FEE2E2; color:#B91C1C; }
-    .sqr-badge.wait { background:#FEF3C7; color:#B45309; }
+    .sqr-badge.ok { background:#00461B; color:#fff; }
+    .sqr-badge.no { background:#7F1D1D; color:#fff; }
+    .sqr-badge.wait { background:#B45309; color:#fff; }
     .sqr-qtext { font-size:14px; font-weight:600; color:#111827; margin-bottom:10px; line-height:1.45; }
     .sqr-row { margin-bottom:8px; font-size:13px; }
     .sqr-row:last-child { margin-bottom:0; }
@@ -75,11 +77,8 @@ const MODAL_STYLES = `
     }
 `;
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function injectStyles() {
     const id = 'sqr-modal-styles-v3';
@@ -188,11 +187,23 @@ function renderReviewContent(data, tab = 'wrong') {
     const submittedAt = fmtAttemptDate(attempt.submitted_at || attempt.created_at);
     const duration = fmtDuration(attempt.time_spent);
 
+    // Let's Practice/Reflection/Wrap Up Quiz are Global Gradebook components —
+    // show the same raw score the gradebook records (0-3 rubric, or a %)
+    // instead of this attempt's own points/percentage.
+    const rubricComponents = ['lets_practice', 'lets_practice_optional', 'reflection'];
+    const component = data.gradebook_component;
+    const rawScore = data.raw_gradebook_score;
+    const scorePill = rubricComponents.includes(component)
+        ? (rawScore != null ? `<span class="sqr-pill"><strong>${rawScore}/3</strong> gradebook score</span>` : '')
+        : (component === 'wrap_up_quiz' && rawScore != null
+            ? `<span class="sqr-pill"><strong>${Math.round(rawScore)}%</strong> gradebook score</span>`
+            : `<span class="sqr-pill"><strong>${attempt.earned_points}/${attempt.total_points}</strong> points</span>
+               <span class="sqr-pill"><strong>${pct}%</strong> score</span>`);
+
     return `
         <div class="sqr-content">
         <div class="sqr-summary">
-            <span class="sqr-pill"><strong>${attempt.earned_points}/${attempt.total_points}</strong> points</span>
-            <span class="sqr-pill"><strong>${pct}%</strong> score</span>
+            ${scorePill}
             <span class="sqr-pill ${wrong.length ? 'bad' : ''}"><strong>${wrong.length}</strong> to review</span>
             ${pending.length ? `<span class="sqr-pill warn"><strong>${pending.length}</strong> pending</span>` : ''}
             ${submittedAt ? `<span class="sqr-pill">${submittedAt}</span>` : ''}
@@ -242,12 +253,14 @@ export async function openStudentQuizReviewModal(attemptId) {
 
     const close = () => {
         document.body.style.overflow = '';
+        disarmScreenshotGuard();
         overlay.remove();
     };
     document.body.style.overflow = 'hidden';
     overlay.querySelector('.sqr-close')?.addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.body.appendChild(overlay);
+    armScreenshotGuard(overlay.querySelector('.sqr-modal'));
 
     const res = await Api.get(`/ProgressAPI.php?action=quiz-result&attempt_id=${attemptId}`);
     if (!res.success) {

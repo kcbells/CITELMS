@@ -136,16 +136,29 @@ export function gradingPeriodTableCss() {
         .gb-item-th {
             font-size:10px !important; text-align:center !important; vertical-align:bottom !important;
             min-width:72px; max-width:100px; padding:8px 6px !important;
-            background:#f8faf9 !important; border-bottom:1px solid #d1d5db !important;
+            /* Deliberately NOT the same dark green as the "#/Student ID/Name"
+               identity columns (.gc-cur-table thead tr th, classroom-ui.js) —
+               a distinct dark slate keeps the per-module SOC/LP/REFL/WUQ
+               columns visually separate from the identity columns instead of
+               blending into one solid green bar, while still being dark
+               enough for the light mint/lavender/white label text below to
+               read clearly. */
+            background:#1F2937 !important; border-bottom:1px solid #111827 !important;
         }
-        .gb-item-th--empty { color:#9ca3af; font-style:italic; }
+        .gb-item-th--empty { color:rgba(255,255,255,.7); font-style:italic; }
+        /* These sit inside .gc-cur-table's <th> header row, which is dark
+           green by default (see classroom-ui.js's curriculumTableCss()) —
+           colors here are light tints readable on that background, not the
+           dark-on-light colors this used before that header turned green.
+           Quiz vs Activity keeps a distinct hue (mint vs lavender) so the
+           type badge still reads at a glance, just light instead of dark. */
         .gb-item-type {
             display:block; font-size:8px; font-weight:800; text-transform:uppercase;
-            color:#6b7280; letter-spacing:.4px; margin-bottom:2px;
+            color:rgba(255,255,255,.75); letter-spacing:.4px; margin-bottom:2px;
         }
-        .gb-item-type.quiz { color:#1B4D3E; }
-        .gb-item-type.activity { color:#7C3AED; }
-        .gb-item-name { display:block; font-weight:700; color:#111827; line-height:1.2; }
+        .gb-item-type.quiz { color:#A7F3D0; }
+        .gb-item-type.activity { color:#DDD6FE; }
+        .gb-item-name { display:block; font-weight:700; color:#fff; line-height:1.2; }
         .gb-period-section { margin-bottom:20px; }
         .gb-period-section-hdr {
             display:flex; align-items:center; gap:10px; padding:12px 16px;
@@ -157,7 +170,7 @@ export function gradingPeriodTableCss() {
         .gb-period-section-title { font-size:13px; color:#6B7280; }
         .gb-period-section-sub {
             margin-left:auto; font-size:12px; font-weight:700;
-            background:#E8F5EC; color:#00461B; padding:4px 10px; border-radius:20px;
+            background:#00461B; color:#fff; padding:4px 10px; border-radius:20px;
         }
         .gb-period-panel {
             border:1px solid #e5e7eb; border-top:none; border-radius:0 0 12px 12px;
@@ -166,7 +179,7 @@ export function gradingPeriodTableCss() {
         .gb-period-empty { padding:24px; text-align:center; color:#9ca3af; font-size:13px; }
         .gb-stu-kind { display:inline-block; padding:2px 7px; border-radius:10px; font-size:9px;
             font-weight:800; text-transform:uppercase; }
-        .gb-stu-kind.quiz { background:#E8F5EC; color:#00461B; }
+        .gb-stu-kind.quiz { background:#00461B; color:#fff; }
         .gb-stu-kind.activity { background:#EDE9FE; color:#6D28D9; }
     `;
 }

@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
@@ -61,8 +62,8 @@ export async function render(container) {
             .sp-tl-title.done-text { color:#1B4D3E; }
             .sp-tl-meta { font-size:11px; color:#a0a0a0; margin-top:1px; }
             .sp-tl-badge { padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; flex-shrink:0; text-transform:uppercase; letter-spacing:.3px; }
-            .sp-tl-badge.done { background:#E8F5E9; color:#1B4D3E; }
-            .sp-tl-badge.pending { background:#FEF3C7; color:#B45309; }
+            .sp-tl-badge.done { background:#00461B; color:#fff; }
+            .sp-tl-badge.pending { background:#B45309; color:#fff; }
 
             /* ─── Quiz Score Cards ─── */
             .sp-quiz-list { display:flex; flex-direction:column; gap:10px; }
@@ -79,8 +80,8 @@ export async function render(container) {
             .sp-quiz-type.post { background:#EDE9FE; color:#6D28D9; }
             .sp-quiz-type.regular { background:#f5f5f5; color:#737373; }
             .sp-quiz-status { padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; text-transform:uppercase; flex-shrink:0; }
-            .sp-quiz-status.passed { background:#E8F5E9; color:#1B4D3E; }
-            .sp-quiz-status.failed { background:#FEE2E2; color:#b91c1c; }
+            .sp-quiz-status.passed { background:#00461B; color:#fff; }
+            .sp-quiz-status.failed { background:#7F1D1D; color:#fff; }
             .sp-quiz-status.nottaken { background:#f5f5f5; color:#a0a0a0; }
 
             /* ─── Performance Bars ─── */
@@ -348,4 +349,5 @@ function fmtDate(dateStr) {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

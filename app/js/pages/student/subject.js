@@ -17,10 +17,12 @@ import {
     renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss, resolveMaterialUrl,
 } from '../../utils/material-files.js';
 import { subjectHash } from './quizzes.js';
+import { openReviewerModal } from '../../components/reviewer-modal.js';
 import { mountStudentGrades } from './grades.js';
 import { setAssistantContext, clearAssistantContext } from '../../utils/assistant-context.js';
 import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
 import { notify } from '../../utils/notify.js';
+import { fileServeUrl } from '../../components/module-documents-modal.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -45,11 +47,12 @@ export async function render(container, params) {
 
     container.innerHTML = `<div class="sc-loading"><div class="sc-spin"></div></div>`;
 
-    const [subjRes, classRes, annRes, quizRes] = await Promise.all([
+    const [subjRes, classRes, annRes, quizRes, modDocsRes] = await Promise.all([
         Api.get('/EnrollmentAPI.php?action=my-subjects'),
         Api.get('/ClassroomAPI.php?action=info&subject_id=' + subjectId),
         Api.get('/AnnouncementsAPI.php?action=student-list'),
         Api.get('/ProgressAPI.php?action=student-quizzes&subject_id=' + subjectId),
+        Api.get('/ModuleDocumentsAPI.php?action=list&subject_id=' + subjectId),
     ]);
 
     const subject = (subjRes.success ? subjRes.data : [])
@@ -70,6 +73,24 @@ export async function render(container, params) {
     const classmates = classmatesRes.success ? classmatesRes.data : [];
     const announcements = (annRes.success ? annRes.data : [])
         .filter(a => String(a.subject_id) === String(subjectId));
+    // Teaching Guide / Student Activity Sheet, per module — mirrors the
+    // instructor's own Classwork feed card (see instructor/subject.js's
+    // moduleDocRow). ModuleDocumentsAPI.php already filters this to SAS
+    // only, and only once it's actually published (or its schedule has
+    // arrived) for the student role — teaching_guide never comes back here
+    // at all, so nothing extra needs filtering out on this side.
+    const moduleDocsByModule = modDocsRes.success ? (modDocsRes.data || {}) : {};
+    const moduleRequirements = modDocsRes.success ? (modDocsRes.requirements || {}) : {};
+    const moduleMyScores = modDocsRes.success ? (modDocsRes.my_scores || {}) : {};
+    const moduleDocs = Object.entries(moduleDocsByModule)
+        .map(([moduleNumber, byType]) => ({
+            module_number: parseInt(moduleNumber, 10),
+            sas: byType?.sas || null,
+            created_at: byType?.sas?.uploaded_at || null,
+            requirement: moduleRequirements[parseInt(moduleNumber, 10)] || null,
+            myScores: moduleMyScores[parseInt(moduleNumber, 10)] || null,
+        }))
+        .filter(m => m.sas);
 
     const isArchived = subject.offering_status === 'archived';
     const color = subjectColor(subject.subject_id);
@@ -110,8 +131,6 @@ export async function render(container, params) {
         return '';
     }
 
-    let clockInterval = null;
-
     function renderPage() {
         if (renderGen !== activeRenderGen) return;
         const focused = !!state.selectedWork;
@@ -138,10 +157,6 @@ export async function render(container, params) {
                             ${subject.instructor_name ? `<span class="sc-chip">${icon('user', inl)} ${esc(subject.instructor_name)}</span>` : ''}
                         </div>
                     </div>
-                    <div class="sc-hero-clock" id="sc-hero-clock">
-                        <div class="sc-clock-time" id="sc-clock-time">--:--:--</div>
-                        <div class="sc-clock-date" id="sc-clock-date">---</div>
-                    </div>
                 </header>
 
                 ${isArchived ? `
@@ -154,9 +169,10 @@ export async function render(container, params) {
                     <div class="sc-main">
                         <div class="sc-panel">
                             <nav class="sc-tabs" id="sc-tabs">
-                                <button class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork">Classwork</button>
-                                <button class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people">People</button>
-                                <button class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook">Grades</button>
+                                <button class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork" title="Classwork" aria-label="Classwork">${icon('clipboard', { size: 18 })}<span class="sc-tab-label">Classwork</span></button>
+                                <button class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people" title="People" aria-label="People">${icon('users', { size: 18 })}<span class="sc-tab-label">People</span></button>
+                                <button class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" title="Grades" aria-label="Grades">${icon('gradebook', { size: 18 })}<span class="sc-tab-label">Grades</span></button>
+                                <button class="sc-tab sc-tab-reviewer" id="sc-reviewer-btn" type="button" title="Exam Reviewer" aria-label="Exam Reviewer">${icon('lessons', { size: 18 })}<span class="sc-tab-label">Exam Reviewer</span></button>
                             </nav>
                             <div class="sc-body ${focused ? 'sc-body-focus' : ''}">
                                 ${renderMainBody()}
@@ -184,19 +200,6 @@ export async function render(container, params) {
             }
         }
         bindMaterialAttachments(container);
-
-        if (clockInterval) clearInterval(clockInterval);
-        function tickClock() {
-            const timeEl = container.querySelector('#sc-clock-time');
-            const dateEl = container.querySelector('#sc-clock-date');
-            if (!timeEl) { clearInterval(clockInterval); clockInterval = null; return; }
-            const d = new Date();
-            timeEl.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()]
-                .map(n => String(n).padStart(2, '0')).join(':');
-            dateEl.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-        }
-        tickClock();
-        clockInterval = setInterval(tickClock, 1000);
     }
 
     function renderMessageRailCard() {
@@ -399,6 +402,7 @@ export async function render(container, params) {
             ...lessons.map(l => ({ type: 'lesson', id: l.lessons_id, data: l })),
             ...quizzes.map(q => ({ type: 'quiz', id: q.quiz_id, data: q })),
             ...announcements.map(a => ({ type: 'announcement', id: a.announcement_id, data: a })),
+            ...moduleDocs.map(m => ({ type: 'moduledoc', id: `mod-${m.module_number}`, data: m })),
         ].sort((a, b) => classworkPostedTime(b.data) - classworkPostedTime(a.data));
 
         const feedInner = !items.length
@@ -448,6 +452,50 @@ export async function render(container, params) {
                                 <div class="gc-ann-title">${esc(title)}</div>
                                 ${preview ? `<p class="gc-ann-preview">${esc(preview)}</p>` : ''}
                                 ${renderAnnAttachments(d.attachments)}
+                            </div>
+                        </div>
+                    </div>
+                </article>`;
+        }
+
+        if (item.type === 'moduledoc') {
+            const sas = d.sas;
+            const req = d.requirement;
+            const reqBadge = req?.required
+                ? `<span class="gc-moddoc-req-badge gc-moddoc-req-badge--${req.complete ? 'done' : 'pending'}">
+                       ${req.complete ? `${icon('check', { size: 12, className: 'ui-icon-inline' })} All parts complete` : `${req.parts_done} of 3 parts done — Let's Practice, Reflection &amp; Wrap Up Quiz all required`}
+                   </span>`
+                : '';
+            // Raw scores — Let's Practice/Reflection are the Global Gradebook's
+            // 0-3 rubric, never points or a percentage, so shown as "x/3" here
+            // to match exactly what the instructor's own gradebook records.
+            const s = d.myScores;
+            const scoreParts = [];
+            if (s?.lets_practice !== null && s?.lets_practice !== undefined) scoreParts.push(`Let's Practice: <strong>${s.lets_practice}/3</strong>`);
+            if (s?.reflection !== null && s?.reflection !== undefined) scoreParts.push(`Reflection: <strong>${s.reflection}/3</strong>`);
+            if (s?.wrap_up_quiz !== null && s?.wrap_up_quiz !== undefined) scoreParts.push(`Wrap Up Quiz: <strong>${Math.round(s.wrap_up_quiz)}%</strong>`);
+            const scoresLine = scoreParts.length ? `<div class="gc-moddoc-scores">${scoreParts.join(' &nbsp;·&nbsp; ')}</div>` : '';
+            return `
+                <article class="gc-post-card">
+                    <div class="gc-post-card__row">
+                        <div class="gc-moddoc-main">
+                            <header class="gc-post-card__hdr">
+                                <div class="sc-avatar sm teacher-av">${esc(teacherInitials)}</div>
+                                <div class="gc-cw-author-text">
+                                    <span class="gc-cw-author-name">${esc(teacherName)}</span>
+                                    ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                                </div>
+                            </header>
+                            <div class="gc-post-card__work">
+                                <span class="gc-cw-icon gc-cw-icon--subj">${icon('document', { size: 20 })}</span>
+                                <div class="gc-cw-body">
+                                    <div class="gc-cw-title">Module ${d.module_number} — Student Activity Sheet</div>
+                                    ${reqBadge}
+                                    ${scoresLine}
+                                    <a class="gc-moddoc-link" href="${fileServeUrl(sas.doc_id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+                                        ${icon('document', { size: 13, className: 'ui-icon-inline' })} ${esc(sas.original_name)}
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -517,6 +565,29 @@ export async function render(container, params) {
             return pts != null && pts !== '' ? Number(pts) : null;
         }
         return null;
+    }
+
+    // Let's Practice/Reflection/Wrap Up Quiz are Global Gradebook components —
+    // the score shown here must match what the raw gradebook records for
+    // them (a 0-3 rubric, or a %), not a points fraction. Regular quizzes
+    // (no gradebook_component) keep the points/percentage display.
+    function quizMetaScoreLabel(q) {
+        const rubricComponents = ['lets_practice', 'lets_practice_optional', 'reflection'];
+        const component = q.gradebook_component;
+        if (rubricComponents.includes(component)) {
+            const s = moduleMyScores[q.module_number];
+            const key = component === 'reflection' ? 'reflection' : 'lets_practice';
+            const val = s?.[key];
+            return val != null ? ` · Score ${val}/3` : '';
+        }
+        if (component === 'wrap_up_quiz') {
+            const s = moduleMyScores[q.module_number];
+            const val = s?.wrap_up_quiz != null ? s.wrap_up_quiz : q.best_score;
+            return val != null ? ` · Score ${Math.round(val)}%` : '';
+        }
+        return q.earned_points != null && q.total_points != null
+            ? ` · Score ${parseFloat(q.earned_points)}/${parseFloat(q.total_points)} pts`
+            : (q.best_score != null ? ` · Best ${parseFloat(q.best_score).toFixed(0)}%` : '');
     }
 
     function renderSubmitAction(w) {
@@ -606,9 +677,28 @@ export async function render(container, params) {
                     const info = JSON.parse(turnedInRaw);
                     if (String(info.quizId) === String(w.data.quiz_id)) {
                         sessionStorage.removeItem('coc_quiz_turned_in');
-                        const raw = info.earned_points != null && info.total_points
-                            ? ` — ${info.earned_points}/${info.total_points} pts`
-                            : (info.percentage != null ? ` — ${parseFloat(info.percentage).toFixed(0)}%` : '');
+                        // Let's Practice/Reflection/Wrap Up Quiz are Global
+                        // Gradebook components — show the same raw score the
+                        // gradebook records (0-3 rubric or a %), not a
+                        // points fraction, so this note matches the score
+                        // shown on the module's classwork card exactly.
+                        const component = w.data.gradebook_component;
+                        const rubricComponents = ['lets_practice', 'lets_practice_optional', 'reflection'];
+                        let raw = '';
+                        if (rubricComponents.includes(component)) {
+                            const s = moduleMyScores[w.data.module_number];
+                            const key = component === 'reflection' ? 'reflection' : 'lets_practice';
+                            const val = s?.[key];
+                            raw = val != null ? ` — ${val}/3` : '';
+                        } else if (component === 'wrap_up_quiz') {
+                            const s = moduleMyScores[w.data.module_number];
+                            const val = s?.wrap_up_quiz != null ? s.wrap_up_quiz : info.percentage;
+                            raw = val != null ? ` — ${Math.round(val)}%` : '';
+                        } else {
+                            raw = info.earned_points != null && info.total_points
+                                ? ` — ${info.earned_points}/${info.total_points} pts`
+                                : (info.percentage != null ? ` — ${parseFloat(info.percentage).toFixed(0)}%` : '');
+                        }
                         turnedInNote = `<p class="gc-focus-card-note gc-focus-card-note--success">Quiz submitted${raw}. Your work has been turned in.</p>`;
                     }
                 } catch (_) { /* ignore */ }
@@ -717,9 +807,7 @@ export async function render(container, params) {
                 ${w.data.time_limit ? `${w.data.time_limit} min` : 'No time limit'} ·
                 Pass ${w.data.passing_rate || 0}%
                 ${(w.data.max_attempts || 0) > 0 ? ` · ${w.data.max_attempts} attempt${w.data.max_attempts !== 1 ? 's' : ''} allowed` : ' · Unlimited attempts'}
-                ${w.data.earned_points != null && w.data.total_points != null
-                    ? ` · Score ${parseFloat(w.data.earned_points)}/${parseFloat(w.data.total_points)} pts`
-                    : (w.data.best_score != null ? ` · Best ${parseFloat(w.data.best_score).toFixed(0)}%` : '')}
+                ${quizMetaScoreLabel(w.data)}
             </p>` : '';
 
         const lessonHost = w.type === 'lesson'
@@ -1179,9 +1267,19 @@ export async function render(container, params) {
     }
 
     function bindEvents() {
+        // Opens a modal rather than switching tabs, so it sits in the tab bar
+        // for discoverability without owning a tab's worth of page state.
+        container.querySelector('#sc-reviewer-btn')?.addEventListener('click', () => {
+            openReviewerModal(subjectId, {
+                subjectCode: subject.subject_code,
+                subjectName: subject.subject_name,
+            });
+        });
+
         container.querySelectorAll('.sc-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const nextTab = tab.dataset.tab;
+                if (!nextTab) return; // the reviewer button lives here but isn't a tab
                 if (state.tab === nextTab && !state.selectedWork) return;
                 state.tab = nextTab;
                 state.selectedWork = null;
@@ -1287,7 +1385,7 @@ function studentClassworkCss() {
 .sc-student-class .sc-cw-layout--student { display:block; }
 .sc-student-class .sc-cw-feed { min-width:0; }
 .sc-student-class .gc-cw-right { flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-.sc-student-class .gc-cw-status:not(.done):not(.locked) { color:#B45309; background:#FEF3C7; padding:2px 8px; border-radius:10px; font-size:11px; }
+.sc-student-class .gc-cw-status:not(.done):not(.locked) { color:#fff; background:#B45309; padding:2px 8px; border-radius:10px; font-size:11px; }
 .sc-student-class .gc-cw-status.done { color:#137333; background:#E6F4EA; padding:2px 8px; border-radius:10px; font-size:11px; }
 .sc-student-class .gc-cw-status.locked { color:#5F6368; background:#F1F3F4; padding:2px 8px; border-radius:10px; font-size:11px; }
 .sc-student-class .gc-cw-card-author--detail { display:flex; align-items:center; gap:12px; padding:0 0 8px; }
@@ -1296,6 +1394,14 @@ function studentClassworkCss() {
 .sc-student-class .gc-cw-author-name { font-size:14px; font-weight:600; color:#202124; }
 .sc-student-class .gc-cw-posted-time { font-size:12px; color:#5F6368; }
 .sc-student-class .gc-unified-work-card { display:flex; flex-direction:column; gap:16px; }
+.sc-student-class .gc-moddoc-main { flex:1; min-width:0; }
+.sc-student-class .gc-moddoc-link { display:inline-flex; align-items:center; gap:5px; color:#00461B; font-size:13px; font-weight:600; text-decoration:none; margin-top:2px; }
+.sc-student-class .gc-moddoc-link:hover { text-decoration:underline; }
+.sc-student-class .gc-moddoc-req-badge { display:block; font-size:11.5px; font-weight:600; margin:3px 0 6px; }
+.sc-student-class .gc-moddoc-req-badge--done { color:#137333; }
+.sc-student-class .gc-moddoc-req-badge--pending { color:#92400E; }
+.sc-student-class .gc-moddoc-scores { font-size:12px; color:#374151; margin:2px 0 6px; }
+.sc-student-class .gc-moddoc-scores strong { color:#00461B; }
 .sc-student-class .gc-focus-card {
     border:1px solid #E8EAED; border-radius:12px; padding:16px 18px; background:#fff;
     box-shadow:0 2px 10px rgba(0,0,0,.08);
@@ -1343,25 +1449,6 @@ function studentClassworkCss() {
 .sc-student-class .gc-submit-btn--frozen { background:#F1F3F4; color:#5F6368; border:1px solid #E0E0E0; }
 .sc-student-class .gc-work-status.done { color:#137333; background:#E6F4EA; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
 .sc-student-class .sc-empty--inline { padding:40px 20px; }
-.sc-hero-clock {
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    padding:10px 24px; border-radius:16px;
-    background:#111; border:1px solid #111;
-    min-width:210px; text-align:center;
-}
-.sc-clock-time {
-    font-family:'Courier New', Courier, monospace;
-    font-size:38px; font-weight:800;
-    color:#fff; letter-spacing:4px; line-height:1;
-    font-variant-numeric:tabular-nums;
-    text-shadow:0 2px 10px rgba(0,0,0,0.35);
-}
-.sc-clock-date {
-    font-size:10.5px; font-weight:600;
-    color:rgba(255,255,255,0.88);
-    letter-spacing:1.5px; text-transform:uppercase;
-    margin-top:6px; line-height:1;
-}
 .sc-chip--archived {
     display:inline-flex; align-items:center; gap:4px;
     background:#111; color:#fff; font-size:11px; font-weight:600;

@@ -26,7 +26,7 @@ export function normalizeSubjectCode(raw) {
 
 export function parseJoinParamsFromScan(raw) {
     const text = String(raw || '').trim();
-    if (!text) return { subject_code: '', section_id: 0, enrollment_code: '' };
+    if (!text) return { subject_code: '', section_id: 0, enrollment_code: '', subject_id: 0 };
 
     try {
         let url;
@@ -50,15 +50,17 @@ export function parseJoinParamsFromScan(raw) {
                 subject_code: url.searchParams.get('subject_code') || '',
                 section_id: parseInt(url.searchParams.get('section_id') || '0', 10) || 0,
                 enrollment_code: url.searchParams.get('enrollment_code') || '',
+                subject_id: parseInt(url.searchParams.get('subject_id') || '0', 10) || 0,
             };
             if (fromQuery.enrollment_code) {
-                return { subject_code: '', section_id: 0, enrollment_code: fromQuery.enrollment_code.toUpperCase() };
+                return { subject_code: '', section_id: 0, enrollment_code: fromQuery.enrollment_code.toUpperCase(), subject_id: fromQuery.subject_id };
             }
             if (fromQuery.subject_code) {
                 return {
                     subject_code: normalizeSubjectCode(fromQuery.subject_code),
                     section_id: fromQuery.section_id,
                     enrollment_code: '',
+                    subject_id: 0,
                 };
             }
 
@@ -67,8 +69,9 @@ export function parseJoinParamsFromScan(raw) {
             if (query) {
                 const params = new URLSearchParams(query);
                 const enrollmentCode = params.get('enrollment_code') || '';
+                const subjectIdHint = parseInt(params.get('subject_id') || '0', 10) || 0;
                 if (enrollmentCode) {
-                    return { subject_code: '', section_id: 0, enrollment_code: enrollmentCode.toUpperCase() };
+                    return { subject_code: '', section_id: 0, enrollment_code: enrollmentCode.toUpperCase(), subject_id: subjectIdHint };
                 }
                 const subjectCode = params.get('subject_code') || '';
                 if (subjectCode) {
@@ -76,6 +79,7 @@ export function parseJoinParamsFromScan(raw) {
                         subject_code: normalizeSubjectCode(subjectCode),
                         section_id: parseInt(params.get('section_id') || '0', 10) || 0,
                         enrollment_code: '',
+                        subject_id: 0,
                     };
                 }
             }
@@ -89,13 +93,13 @@ export function parseJoinParamsFromScan(raw) {
     const plain = text.toUpperCase().replace(/\s+/g, '');
     const ENROLLMENT_CODE_RE = /^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/;
     if (ENROLLMENT_CODE_RE.test(plain)) {
-        return { subject_code: '', section_id: 0, enrollment_code: plain };
+        return { subject_code: '', section_id: 0, enrollment_code: plain, subject_id: 0 };
     }
     if (/^[A-Z0-9-]{2,20}$/i.test(text)) {
-        return { subject_code: normalizeSubjectCode(text), section_id: 0, enrollment_code: '' };
+        return { subject_code: normalizeSubjectCode(text), section_id: 0, enrollment_code: '', subject_id: 0 };
     }
 
-    return { subject_code: '', section_id: 0, enrollment_code: '' };
+    return { subject_code: '', section_id: 0, enrollment_code: '', subject_id: 0 };
 }
 
 export function buildStudentJoinUrl(subjectCode, sectionId = 0) {
@@ -105,9 +109,18 @@ export function buildStudentJoinUrl(subjectCode, sectionId = 0) {
     return `${window.location.origin}${BASE_URL}/index.html?${params.toString()}`;
 }
 
-export function buildStudentJoinUrlByEnrollmentCode(enrollmentCode) {
+/**
+ * @param {string} enrollmentCode  the section's own class code
+ * @param {number} [subjectId]  when this QR is shown from one specific
+ *        subject's Classwork page, scope the join to just that subject —
+ *        otherwise a section's code joins EVERY subject taught to it at
+ *        once, which is surprising when an instructor hands out "their"
+ *        class code expecting it to cover only their own class.
+ */
+export function buildStudentJoinUrlByEnrollmentCode(enrollmentCode, subjectId = 0) {
     const code = String(enrollmentCode || '').toUpperCase().replace(/\s+/g, '');
     const params = new URLSearchParams({ enrollment_code: code });
+    if (subjectId) params.set('subject_id', String(subjectId));
     return `${window.location.origin}${BASE_URL}/index.html?${params.toString()}`;
 }
 

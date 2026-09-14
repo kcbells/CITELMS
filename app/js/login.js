@@ -69,7 +69,38 @@ function genCaptcha(displayId, inputId, answerSetter) {
     answerSetter(ans);
     document.getElementById(displayId).textContent = `${a} + ${b} = ?`;
     const input = document.getElementById(inputId);
-    if (input) { input.value = ''; input.classList.remove('correct', 'error'); }
+    if (input) {
+        input.value = '';
+        input.classList.remove('correct', 'error');
+        restrictToDigits(input);
+    }
+}
+
+/**
+ * Keeps a captcha box numeric. The answer is always two positive numbers
+ * added together, so a letter or symbol can only ever be a typo — strip it as
+ * it's typed instead of letting it sit there and fail on submit.
+ *
+ * inputmode="numeric" alone isn't enough: it only hints which keyboard a
+ * phone should show, and does nothing about typing on a desktop or pasting.
+ */
+function restrictToDigits(input) {
+    if (input.dataset.digitsOnly) return; // don't stack listeners on refresh
+    input.dataset.digitsOnly = '1';
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('pattern', '[0-9]*');
+    input.addEventListener('input', () => {
+        const digits = input.value.replace(/\D/g, '');
+        if (digits !== input.value) {
+            const atEnd = input.selectionStart === input.value.length;
+            input.value = digits;
+            // Keep the caret where it was, unless they were typing at the end.
+            if (!atEnd) {
+                const pos = Math.min(input.selectionStart ?? digits.length, digits.length);
+                input.setSelectionRange(pos, pos);
+            }
+        }
+    });
 }
 
 function refreshLoginCaptcha() {

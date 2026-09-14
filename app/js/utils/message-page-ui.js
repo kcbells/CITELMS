@@ -81,6 +81,13 @@ export function messagePageStyles() {
             background:${G}; color:#fff; border-color:${G};
         }
         .msg-type-tab:not(.active):hover { background:#F3F4F6; color:#374151; }
+        .msg-tab-count {
+            display:inline-flex; align-items:center; justify-content:center;
+            min-width:16px; height:16px; padding:0 4px; margin-left:5px;
+            border-radius:10px; background:${G}; color:#fff;
+            font-size:10px; font-weight:800; line-height:1;
+        }
+        .msg-type-tab.active .msg-tab-count { background:#fff; color:${G}; }
         .thread-avatar--group { background:#0369A1; border-radius:10px !important; }
         .thread-group-badge {
             font-size:9px; font-weight:700; background:#E0F2FE; color:#0369A1;

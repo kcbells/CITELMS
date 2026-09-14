@@ -4,6 +4,7 @@
 import { Api } from '../api.js';
 import { icon } from '../utils/icons.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const MAX_FILE_MB = 25;
 const ALLOWED_EXTENSIONS = [
     'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'txt', 'rtf', 'zip', 'rar',
@@ -14,11 +15,8 @@ const FILE_ACCEPT = ALLOWED_EXTENSIONS.map(e => `.${e}`).join(',');
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function validateFile(file) {
     if (!file?.size) return 'The selected file appears to be empty.';
@@ -52,22 +50,22 @@ function injectStyles() {
     s.textContent = `
     /* ── Trigger bar ─────────────────────────────── */
     .cc-bar {
-        display:flex; align-items:center; gap:12px;
+        display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0;
         padding:12px 16px; background:#fff;
         border:2px solid #111; border-radius:14px;
         margin-bottom:20px;
         box-shadow:none;
     }
     .cc-bar-pill {
-        flex:1; padding:10px 14px;
+        flex:1 1 220px; min-width:0; padding:10px 14px;
         border:1px solid #DADCE0; border-radius:24px;
         font-size:14px; color:#9AA0A6; background:#FAFAFA;
         cursor:pointer; text-align:left; font-family:inherit;
         transition:border-color .15s, background .15s;
     }
-    .cc-bar-pill:hover { border-color:#00461B; background:#F8FDF9; color:#202124; }
+    .cc-bar-pill:hover { border-color:#00461B; background:#00461B; color:#fff; }
     .cc-bar-actions {
-        display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap;
+        display:flex; gap:6px; flex-wrap:wrap; min-width:0;
     }
     .cc-bar-btn {
         display:inline-flex; align-items:center; gap:5px;
@@ -77,9 +75,21 @@ function injectStyles() {
         cursor:pointer; font-family:inherit; white-space:nowrap;
         transition:all .15s;
     }
-    .cc-bar-btn:hover { border-color:#00461B; color:#00461B; background:#F8FDF9; }
+    .cc-bar-btn:hover { border-color:#00461B; color:#fff; background:#00461B; }
     .cc-bar-btn.cc-bar-btn--primary { border-color:#00461B; color:#00461B; }
     .cc-bar-btn.cc-bar-btn--primary:hover { background:#E8F5EC; }
+
+    /* Phones: the action buttons could not shrink, so they pushed the whole class
+       page wider than the screen — Upload Lesson / Create Quiz went off-screen and
+       the posts below were stretched past the right edge. Put the actions on their
+       own full-width row of equal buttons instead. */
+    @media (max-width: 640px) {
+        .cc-bar { flex-wrap:wrap; gap:10px; padding:12px; min-width:0; }
+        .cc-bar-pill { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .cc-bar-actions { flex:1 1 100%; display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:6px; }
+        .cc-bar-btn { justify-content:center; padding:9px 6px; font-size:12px; min-width:0; }
+        .cc-verb { display:none; }
+    }
 
     /* ── Modal backdrop & shell ─────────────────── */
     .cm-backdrop {
@@ -186,7 +196,7 @@ function injectStyles() {
         background:#fff; font-size:12px; font-weight:600; color:#5F6368;
         cursor:pointer; font-family:inherit; transition:all .15s;
     }
-    .cm-attach-btn:hover { border-color:#00461B; color:#00461B; background:#F8FDF9; }
+    .cm-attach-btn:hover { border-color:#00461B; color:#fff; background:#00461B; }
 
     /* ── Link input box ─────────────────────────── */
     .cm-link-box { margin-top:10px; }
@@ -1011,12 +1021,12 @@ export function mountClassComposer(mountEl, options = {}) {
             <button type="button" class="cc-bar-pill" id="cc-pill">Write an announcement…</button>
             <div class="cc-bar-actions">
                 <button type="button" class="cc-bar-btn" id="cc-bar-activity">
-                    ${icon('document', inl)} Create Activity
+                    ${icon('document', inl)} <span class="cc-verb">Create </span>Activity
                 </button>
                 <button type="button" class="cc-bar-btn" id="cc-bar-lesson">
-                    ${icon('upload', inl)} Upload Lesson
+                    ${icon('upload', inl)} <span class="cc-verb">Upload </span>Lesson
                 </button>
-                ${onCreateQuiz ? `<button type="button" class="cc-bar-btn" id="cc-bar-quiz">${icon('quiz', inl)} Create Quiz</button>` : ''}
+                ${onCreateQuiz ? `<button type="button" class="cc-bar-btn" id="cc-bar-quiz">${icon('quiz', inl)} <span class="cc-verb">Create </span>Quiz</button>` : ''}
             </div>
         </div>`;
 

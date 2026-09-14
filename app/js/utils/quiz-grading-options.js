@@ -22,10 +22,10 @@ const GRADING_STYLES = `
     .qz-grade-opt-title { font-size:13px; font-weight:600; color:#111827; }
     .qz-grade-tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px;
         text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
-    .qz-grade-tag.instant { background:#DCFCE7; color:#15803D; }
-    .qz-grade-tag.held    { background:#FEF3C7; color:#B45309; }
-    .qz-grade-tag.required { background:#FEE2E2; color:#B91C1C; }
-    .qz-grade-tag.ai      { background:#EFF6FF; color:#1D4ED8; }
+    .qz-grade-tag.instant { background:#00461B; color:#fff; }
+    .qz-grade-tag.held    { background:#B45309; color:#fff; }
+    .qz-grade-tag.required { background:#7F1D1D; color:#fff; }
+    .qz-grade-tag.ai      { background:#1D4ED8; color:#fff; }
     .qz-grade-opt-desc { font-size:11px; color:#9CA3AF; margin-top:3px; line-height:1.45; }
 `;
 

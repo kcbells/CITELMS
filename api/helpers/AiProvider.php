@@ -20,6 +20,15 @@ require_once __DIR__ . '/GroqCurl.php'; // applyGroqCurlSsl() — a generic "ski
 
 const AI_DEFAULT_MODEL = 'meta-llama/Llama-3.1-8B-Instruct';
 
+/**
+ * Request budgets, in seconds. Both sit below PHP's max_execution_time (120)
+ * on purpose — see callAiChatCompletion()'s doc comment. Anything at or above
+ * that limit makes PHP kill the script mid-call and return an HTML fatal
+ * instead of a JSON error the UI can actually show.
+ */
+const AI_TIMEOUT_INTERACTIVE = 45;  // chat assistant — a person is waiting
+const AI_TIMEOUT_LONGFORM    = 100; // reviewer / quiz generation — big output, worth the wait
+
 /** Hugging Face access token — system_settings.hf_api_key, or HF_API_KEY env var. */
 function getAiApiKey(): string {
     $envKey = getenv('HF_API_KEY') ?: '';
@@ -39,18 +48,26 @@ function getAiModel(): string {
  * ['success'=>false,'error'=>...] — the exact shape every caller already
  * expected from the old callGroqAPI()/inline-curl code.
  */
-function callAiChatCompletion(string $systemMessage, string $userPrompt, int $maxTokens = 2000, float $temperature = 0.3, ?string $apiKeyOverride = null): array {
+/**
+ * @param int $timeout Seconds to wait for the model. MUST stay below PHP's
+ *   max_execution_time (120s here): if cURL is allowed to run that long, PHP
+ *   kills the script first and the caller gets an HTML fatal-error page
+ *   instead of JSON — which is exactly how the assistant ended up looking
+ *   "unresponsive" for two minutes. Interactive chat should use the short
+ *   default; long-form generation can pass a larger value.
+ */
+function callAiChatCompletion(string $systemMessage, string $userPrompt, int $maxTokens = 2000, float $temperature = 0.3, ?string $apiKeyOverride = null, int $timeout = AI_TIMEOUT_INTERACTIVE): array {
     return callAiChatCompletionWithMessages(
         [
             ['role' => 'system', 'content' => $systemMessage],
             ['role' => 'user', 'content' => $userPrompt],
         ],
-        $maxTokens, $temperature, $apiKeyOverride
+        $maxTokens, $temperature, $apiKeyOverride, $timeout
     );
 }
 
 /** Same as callAiChatCompletion() but takes a full messages array (e.g. with conversation history) instead of a single system+user pair. */
-function callAiChatCompletionWithMessages(array $messages, int $maxTokens = 2000, float $temperature = 0.3, ?string $apiKeyOverride = null): array {
+function callAiChatCompletionWithMessages(array $messages, int $maxTokens = 2000, float $temperature = 0.3, ?string $apiKeyOverride = null, int $timeout = AI_TIMEOUT_INTERACTIVE): array {
     $apiKey = $apiKeyOverride ?? getAiApiKey();
     if (empty($apiKey)) {
         return ['success' => false, 'error' => 'Hugging Face API key not configured. Add a free access token in System Settings (huggingface.co/settings/tokens).'];
@@ -63,16 +80,33 @@ function callAiChatCompletionWithMessages(array $messages, int $maxTokens = 2000
         'temperature' => $temperature,
     ];
 
+    // JSON_INVALID_UTF8_SUBSTITUTE matters here: without it, json_encode()
+    // silently returns false the moment any message content contains a
+    // stray invalid UTF-8 byte (common from crude PDF/DOCX text extraction,
+    // e.g. StudentListParser's regex-based PDF reader doesn't sanitize its
+    // output). CURLOPT_POSTFIELDS would then get set to `false`, which
+    // libcurl sends as an effectively empty body — the router sees no
+    // `model` field at all and reports it as invalid, which is meaningless
+    // to whoever's staring at the error in the quiz builder.
+    $body = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($body === false) {
+        error_log('AiProvider: json_encode failed even with JSON_INVALID_UTF8_SUBSTITUTE: ' . json_last_error_msg());
+        return ['success' => false, 'error' => 'Could not prepare the request (the source document may contain unreadable characters). Please try again or edit the document.'];
+    }
+
     $ch = curl_init('https://router.huggingface.co/v1/chat/completions');
     $curlOpts = applyGroqCurlSsl([
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_POSTFIELDS => $body,
         CURLOPT_HTTPHEADER => [
             'Authorization: Bearer ' . $apiKey,
             'Content-Type: application/json',
         ],
-        CURLOPT_TIMEOUT => 120,
+        CURLOPT_TIMEOUT => $timeout,
+        // Give up early if the provider never even starts responding, rather
+        // than burning the whole budget on a dead connection.
+        CURLOPT_CONNECTTIMEOUT => 10,
     ]);
     curl_setopt_array($ch, $curlOpts);
 
@@ -82,7 +116,13 @@ function callAiChatCompletionWithMessages(array $messages, int $maxTokens = 2000
     unset($ch); // curl_close() deprecated in PHP 8.5 — let the destructor handle it
 
     if ($error) {
-        return ['success' => false, 'error' => 'Connection error: ' . $error];
+        // curl's raw error text ("Could not resolve host: router.huggingface.co",
+        // timeouts, TLS handshake failures, ...) is meaningless to an
+        // instructor/dean — it almost always means the SERVER's own internet/
+        // DNS dropped for a moment, not anything wrong with their request.
+        // Log the real error for diagnosis, surface a plain-language one.
+        error_log('AiProvider connection error: ' . $error);
+        return ['success' => false, 'error' => 'Ali couldn\'t reach the AI service just now — this is usually a brief network hiccup on the server, not something wrong with your question. Please try again in a moment.'];
     }
 
     $data = json_decode($response, true);

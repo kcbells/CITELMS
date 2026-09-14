@@ -6,22 +6,25 @@
 import { Api } from '../../api.js';
 import { subjectColor } from '../../utils/subject-colors.js';
 import { icon } from '../../utils/icons.js';
-import { curriculumTableCss, rotateOverlayHtml, rotateOverlayCss } from '../../utils/classroom-ui.js';
+import { curriculumTableCss, rotateOverlayHtml, rotateOverlayCss, esc } from '../../utils/classroom-ui.js';
 import { gradingPeriodTableCss } from '../../utils/gradebook-periods.js';
 import {
     rubricToPercent, socGrade, letsPracticeGrade, projectOverallGrade, checkinAverage,
     computeStudentReport, formatGrade, PERIOD_MODULES, PERIODS,
 } from '../../utils/grading-engine.js';
-import { openModuleDocumentsModal } from '../../components/module-documents-modal.js';
 import { Auth } from '../../auth.js';
 import { openGradingWorkbookExport } from './gradebook-xlsx-export.js';
+import { UI } from '../../utils/ui-tokens.js';
 
-const G      = '#00461B';
-const G2     = '#006428';
-const GL     = '#E8F5EC';
+// Same palette as Content Bank (content-bank.js) — both now read from the
+// shared UI tokens module. BORDER here is a lighter gray than Content Bank's
+// flat-black border, a genuinely different value, so it stays local.
+const G      = UI.primary;
+const G2     = UI.primaryDark;
+const GL     = UI.primaryLight;
 const BORDER = '#E5E7EB';
-const VIOLET = '#7C3AED';
-const VL     = '#EDE9FE';
+const VIOLET = UI.violet;
+const VL     = UI.violetLight;
 
 // ── WUQ dropdown values (7-question quiz scale) ────────────────────────────
 const WUQ_OPTS = [
@@ -72,7 +75,11 @@ export async function mountInstructorGlobalGradebook(host, { subjectId } = {}) {
 
 async function renderGlobalGradebook(container, opts) {
     container.innerHTML = `<div class="ggb-loading"><div class="ggb-spin"></div></div><style>${css()}</style>`;
-    const res    = await Api.get('/SectionsAPI.php?action=instructor-classes');
+    // ttl:0 — see the matching comment in instructor/gradebook.js; this
+    // page is only reached once that page's own grading_type check already
+    // routed here, but keeping this fetch fresh too avoids a second,
+    // independently-stale copy of the same subject/section data.
+    const res    = await Api.get('/SectionsAPI.php?action=instructor-classes', { ttl: 0 });
     _classesData = res.success ? (res.data || []) : [];
 
     bindRowSelect(container);
@@ -131,16 +138,20 @@ function nav(container, opts, patch = {}) {
     return renderGlobalGradebook(container, next);
 }
 
-function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
 
 // ── Level 1: Subjects ─────────────────────────────────────────────────────
 
 function renderSubjectsView(container, opts) {
-    const subjects = _classesData.filter(s => s.grading_type === 'global');
+    // A subject can have several subject_offered rows (e.g. sections opened
+    // under separate offerings) each with its own grading_type — checking
+    // s.grading_type (SectionsAPI's own subject-wide "whichever offering it
+    // saw last" pick) would wrongly hide a subject that DOES have a global
+    // section just because a different offering under the same subject_id
+    // happens to be raw, or the reverse. Include it here whenever ANY of its
+    // sections is actually global; renderSectionsView() below then narrows
+    // down to just those sections.
+    const subjects = _classesData.filter(s => (s.sections || []).some(sec => sec.grading_type === 'global'));
     container.innerHTML = `<style>${css()}</style>
     <div class="ggb-page">
         <header class="ggb-hero">
@@ -205,7 +216,10 @@ function renderSectionsView(container, opts) {
         container.innerHTML = `<style>${css()}</style><div class="ggb-page">${emptyBox('Subject not found.')}</div>`;
         return;
     }
-    const sections = subject.sections || [];
+    // Only sections whose OWN offering is actually 'global' belong on this
+    // page — a subject can have a mix (see renderSubjectsView's comment),
+    // and a raw-score section has no 14-module gradebook to open.
+    const sections = (subject.sections || []).filter(sec => sec.grading_type === 'global');
     const color    = subjectColor(subject.subject_id);
 
     container.innerHTML = `<style>${css()}</style>
@@ -364,6 +378,7 @@ const VIEW_LABELS = { modules: 'Module Records', project: 'Project Grades', summ
 
 function mountRecord(host, container, subject, section, offeredId, students, grades, project, retries, opts) {
     let activeView = opts.view || 'modules';
+    let moduleFilter = 'all'; // Module Records view: 'all' or a module number 1-14
 
     function renderShell() {
         const schedule = [section.schedule, section.room].filter(Boolean).join(' · ');
@@ -378,12 +393,6 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
                 </div>
                 <div class="gb-record-actions">
                     <span class="gb-record-count">${students.length} student${students.length !== 1 ? 's' : ''}</span>
-                    <button class="ggb-grade-btn" id="ggb-grade-btn">
-                        ${icon('edit', { size: 13, className: 'ui-icon-inline' })} GRADE
-                    </button>
-                    <button class="gb-export-btn" id="ggb-docs-btn">
-                        ${icon('document', { size: 13, className: 'ui-icon-inline' })} Documents
-                    </button>
                     <button class="gb-export-btn" id="ggb-export">
                         ${icon('download', { size: 13, className: 'ui-icon-inline' })} Export
                     </button>
@@ -432,14 +441,6 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
             exportSisCsvs(subject, section, students, grades, project)
         );
 
-        host.querySelector('#ggb-docs-btn').addEventListener('click', () =>
-            openModuleDocumentsModal(subject.subject_id)
-        );
-
-        host.querySelector('#ggb-grade-btn').addEventListener('click', () =>
-            openGradeModal(offeredId, students, grades, () => renderView())
-        );
-
         const guideOverlay = host.querySelector('#ggb-guide-overlay');
         // Mount the fixed-position overlay on <body> — nesting it inside the
         // classroom page's tabs (which sit in a sibling z-index stacking
@@ -464,13 +465,37 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
     function renderView() {
         const area = host.querySelector('#ggb-view-area');
         if (!area) return;
-        if      (activeView === 'modules') area.innerHTML = renderModuleTable(students, grades, project, subject.subject_code, section.section_name);
+        if      (activeView === 'modules') area.innerHTML = renderModuleTable(students, grades, project, subject.subject_code, section.section_name, moduleFilter);
         else if (activeView === 'project') area.innerHTML = renderProjectTable(students, project, subject.subject_code, section.section_name);
         else if (activeView === 'sis')     area.innerHTML = renderSisTable(students, grades, project, subject, section);
         else if (activeView === 'retries') area.innerHTML = renderRetriesTable(students, grades, project, retries, subject.subject_code, section.section_name);
         else                               area.innerHTML = renderSummaryTable(students, grades, project, subject.subject_code, section.section_name);
 
-        if (activeView === 'modules') attachModuleEvents(area, offeredId, grades, project);
+        if (activeView === 'modules') {
+            attachModuleEvents(area, offeredId, grades, project);
+            const ddBtn  = area.querySelector('#ggb-module-btn');
+            const ddMenu = area.querySelector('#ggb-module-menu');
+            if (ddBtn && ddMenu) {
+                const closeMenu = () => { ddMenu.hidden = true; };
+                ddBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const opening = ddMenu.hidden;
+                    ddMenu.hidden = !ddMenu.hidden;
+                    // Arm the outside-click closer only once actually open, and only
+                    // after this same click finishes bubbling — arming it immediately
+                    // (same tick) risks it firing on stray propagation from this very
+                    // click instead of a real "outside" one.
+                    if (opening) setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
+                });
+                ddMenu.querySelectorAll('.ggb-module-dd-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        moduleFilter = item.dataset.mod;
+                        renderView();
+                    });
+                });
+            }
+        }
         if (activeView === 'project') attachProjectEvents(area, offeredId, project);
         if (activeView === 'retries') attachRetriesEvents(area, offeredId, retries);
     }
@@ -478,11 +503,12 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
     renderShell();
 }
 
-// ── Horizontal module table (all 14 modules side-by-side) ─────────────────
+// ── Horizontal module table (all 14 modules side-by-side, or one at a time
+// via the module dropdown) ─────────────────────────────────────────────────
 // Uses the SAME CSS classes as the raw-score gradebook for visual consistency.
 
-function renderModuleTable(students, grades, project, subjectCode = '', sectionName = '') {
-    const modules = Array.from({ length: 14 }, (_, i) => i + 1);
+function renderModuleTable(students, grades, project, subjectCode = '', sectionName = '', moduleFilter = 'all') {
+    const modules = moduleFilter === 'all' ? Array.from({ length: 14 }, (_, i) => i + 1) : [parseInt(moduleFilter, 10)];
 
     // Row 1: Module N (dark green, period-coloured)
     let hdr1 = `<th rowspan="3">#</th>
@@ -535,8 +561,27 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
     }).join('');
 
     const label = subjectCode && sectionName ? `CLASS RECORD — ${subjectCode} / ${sectionName}` : 'MODULE GRADES';
+    const totalCols = 3 + modules.length * 6;
+    const currentLabel = moduleFilter === 'all' ? 'All Modules' : `Module ${moduleFilter}`;
 
+    // A native <select> here would sometimes pop its option list UPWARD
+    // instead of down, depending on how much viewport space the browser
+    // thinks is left below it — not something CSS can force for a real
+    // <select>. This is a small self-built dropdown instead, so it always
+    // opens directly below the button, every time.
     return `
+    <div class="ggb-module-toolbar">
+        <label>Module</label>
+        <div class="ggb-module-dd">
+            <button type="button" class="ggb-module-dd-btn" id="ggb-module-btn">${esc(currentLabel)} ${icon('chevronDown', { size: 12, className: 'ui-icon-inline' })}</button>
+            <div class="ggb-module-dd-menu" id="ggb-module-menu" hidden>
+                <button type="button" class="ggb-module-dd-item${moduleFilter === 'all' ? ' active' : ''}" data-mod="all">All Modules</button>
+                ${Array.from({ length: 14 }, (_, i) => i + 1).map(m =>
+                    `<button type="button" class="ggb-module-dd-item${String(moduleFilter) === String(m) ? ' active' : ''}" data-mod="${m}">Module ${m}</button>`
+                ).join('')}
+            </div>
+        </div>
+    </div>
     <div class="gc-cur-wrap">
         <div class="gc-cur-label">${esc(label)}</div>
         <div class="gb-table-scroll">
@@ -547,7 +592,7 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
                     <tr>${hdr3}</tr>
                 </thead>
                 <tbody>
-                    ${rows || '<tr><td colspan="87" class="gc-cur-empty">No students enrolled in this section.</td></tr>'}
+                    ${rows || `<tr><td colspan="${totalCols}" class="gc-cur-empty">No students enrolled in this section.</td></tr>`}
                 </tbody>
             </table>
         </div>
@@ -795,121 +840,6 @@ function attachFillHandles(area) {
         }
         fillDrag = null;
     });
-}
-
-// ── GRADE modal — pick a module, grade every student in a focused form ─────
-// Reads/writes the SAME `grades` object (and the SAME save endpoint) as the
-// inline Module Records table, so this is just an alternate entry point —
-// nothing about the underlying data model changes. Project grading (one
-// shared project per student, not per module) lives only on the dedicated
-// Project Grades tab now, not duplicated here.
-
-function openGradeModal(offeredId, students, grades, onClose) {
-    document.querySelectorAll('#ggb-grade-overlay').forEach(el => el.remove());
-
-    const overlay = document.createElement('div');
-    overlay.id = 'ggb-grade-overlay';
-    overlay.innerHTML = `<style>${gradeModalCss()}</style>
-        <div class="ggm-modal" role="dialog" aria-label="Grade a Module">
-            <div class="ggm-hdr">
-                <div>
-                    <h3>GRADE</h3>
-                    <p class="ggm-sub">Pick a module, then fill in Start of Class, Effortful Learning and Mastery for every student.</p>
-                </div>
-                <button class="ggm-close" id="ggm-close" aria-label="Close">&#x2715;</button>
-            </div>
-            <div class="ggm-toolbar">
-                <label for="ggm-mod-select">Module</label>
-                <select id="ggm-mod-select">
-                    ${Array.from({ length: 14 }, (_, i) => i + 1).map(m => `<option value="${m}">Module ${m}</option>`).join('')}
-                </select>
-            </div>
-            <div class="ggm-body" id="ggm-body"></div>
-        </div>`;
-    document.body.appendChild(overlay);
-
-    const close = () => { overlay.remove(); if (onClose) onClose(); };
-    overlay.querySelector('#ggm-close').addEventListener('click', close);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-    const sel = overlay.querySelector('#ggm-mod-select');
-    const renderModule = () => {
-        const mod  = parseInt(sel.value, 10);
-        const body = overlay.querySelector('#ggm-body');
-        // Project Check-in used to also live here, but it's redundant with —
-        // and was actually out of sync with — the dedicated Project Grades
-        // tab, which is the single source of truth for the one shared
-        // project grade now. This popup only handles per-module grading.
-        body.innerHTML = renderGradeModuleTable(students, grades, mod);
-        attachModuleEvents(body, offeredId, grades);
-    };
-    sel.addEventListener('change', renderModule);
-    renderModule();
-}
-
-function renderGradeModuleTable(students, grades, mod) {
-    const rows = students.map((st, i) => {
-        const sid = st.user_student_id;
-        const mg  = grades[sid]?.[mod] || {};
-        return `<tr data-stu="${sid}">
-            <td class="td-rank">${i + 1}</td>
-            <td class="td-id">${esc(st.student_id || '—')}</td>
-            <td class="td-name">${esc(st.name)}</td>
-            <td class="td-num td-soc-cell">${socSel('soc1', sid, mod, mg.soc1 ?? '')}</td>
-            <td class="td-num td-soc-cell">${socSel('soc2', sid, mod, mg.soc2 ?? '')}</td>
-            <td class="td-num">${rubricSel('lets_practice',          sid, mod, mg.lets_practice          ?? '')}</td>
-            <td class="td-num">${rubricSel('lets_practice_optional', sid, mod, mg.lets_practice_optional ?? '')}</td>
-            <td class="td-num">${rubricSel('reflection',             sid, mod, mg.reflection             ?? '')}</td>
-            <td class="td-num">${wuqSel(   'wrap_up_quiz',           sid, mod, mg.wrap_up_quiz           ?? '')}</td>
-        </tr>`;
-    }).join('');
-
-    return `
-    <div class="gc-cur-wrap">
-        <div class="gc-cur-label">MODULE ${mod} — GRADING</div>
-        <div class="gb-table-scroll">
-            <table class="gc-cur-table ggm-table">
-                <thead>
-                    <tr>
-                        <th rowspan="2">#</th>
-                        <th rowspan="2" class="th-left">Student ID</th>
-                        <th rowspan="2" class="gc-th-info th-left">Name</th>
-                        <th colspan="2" class="gb-group-th gb-group-th--soc">Start of Class (5%)</th>
-                        <th colspan="3" class="gb-group-th gb-group-th--el">Effortful Learning</th>
-                        <th colspan="1" class="gb-group-th gb-group-th--mastery">Mastery (15%)</th>
-                    </tr>
-                    <tr>
-                        <th class="gb-item-th">SOC 1</th>
-                        <th class="gb-item-th">SOC 2</th>
-                        <th class="gb-item-th">LP (35%)</th>
-                        <th class="gb-item-th">LP Opt</th>
-                        <th class="gb-item-th">Refl (15%)</th>
-                        <th class="gb-item-th">WUQ (15%)</th>
-                    </tr>
-                </thead>
-                <tbody>${rows || '<tr><td colspan="9" class="gc-cur-empty">No students enrolled.</td></tr>'}</tbody>
-            </table>
-        </div>
-    </div>`;
-}
-
-function gradeModalCss() {
-    return `
-    #ggb-grade-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999;
-        display:flex; align-items:center; justify-content:center; padding:20px; }
-    .ggm-modal { background:#fff; border-radius:16px; width:100%; max-width:920px; max-height:88vh;
-        display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3); overflow:hidden; }
-    .ggm-hdr { display:flex; align-items:center; justify-content:space-between; padding:18px 22px;
-        border-bottom:1px solid ${BORDER}; background:${GL}; }
-    .ggm-hdr h3 { margin:0; font-size:16px; font-weight:800; color:${G}; letter-spacing:.5px; }
-    .ggm-sub { margin:2px 0 0; font-size:12px; color:#4b7a5a; max-width:560px; }
-    .ggm-close { background:none; border:none; font-size:16px; cursor:pointer; color:#6b7280; padding:4px 8px; }
-    .ggm-close:hover { color:#111; }
-    .ggm-toolbar { display:flex; align-items:center; gap:10px; padding:14px 22px; border-bottom:1px solid ${BORDER}; }
-    .ggm-toolbar label { font-size:12px; font-weight:700; color:${G}; }
-    .ggm-toolbar select { padding:7px 12px; border:1.5px solid ${BORDER}; border-radius:8px; font-size:13px; font-family:inherit; }
-    .ggm-body { padding:16px 22px 22px; overflow-y:auto; }
-    `;
 }
 
 // ── Project tab ────────────────────────────────────────────────────────────
@@ -1596,11 +1526,12 @@ function tableCss() { return `
 .gb-group-th--el       { background:#7C3AED !important; }
 .gb-group-th--mastery  { background:#B45309 !important; }
 /* .gb-item-type/.gb-item-name (see gradingPeriodTableCss() in
-   gradebook-periods.js) each carry their own dark color meant for the
-   plain grey .gb-item-th background — Project Grades' header row reuses
+   gradebook-periods.js) carry light colors (mint/lavender/white) meant for
+   the dark green .gb-item-th background — Project Grades' header row reuses
    those same spans inside colored .gb-group-th cells now, so without this
-   override they'd render dark-on-purple/dark-on-amber, the same low-
-   contrast mistake the P3 pink header had. Force white here too. */
+   override .gb-item-type's mint/lavender would render on top of purple/
+   amber instead of white, the same low-contrast mistake the P3 pink header
+   had. Force white here too. */
 .gb-group-th .gb-item-type, .gb-group-th .gb-item-name { color:#fff !important; }
 
 /* Project Grades header text was overlapping between columns — the shared
@@ -1741,7 +1672,7 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 .ggb-doc-eyebrow { font-size:10.5px; color:#9CA3AF; font-style:italic; margin:0 0 3px; }
 .ggb-doc-title { font-size:14px; font-weight:800; color:${G}; margin:0 0 10px; }
 .ggb-rub-tbl { width:100%; border-collapse:collapse; font-size:11.5px; min-width:460px; }
-.ggb-rub-tbl th { background:#F9FAFB; color:#374151; padding:6px 9px;
+.ggb-rub-tbl th { background:${G}; color:#fff; padding:6px 9px;
     font-size:10.5px; font-weight:700; text-align:left; vertical-align:top;
     border:1px solid #E5E7EB; }
 .ggb-th-sub { display:block; font-weight:400; color:#9CA3AF; font-size:9.5px; }
@@ -1768,10 +1699,28 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
     font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
 .ggb-guide-btn:hover { border-color:${G}; color:${G}; background:${GL}; }
 
-.ggb-grade-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
-    border-radius:8px; border:1.5px solid ${G}; background:${G}; color:#fff;
-    font-size:12px; font-weight:700; cursor:pointer; letter-spacing:.3px; }
-.ggb-grade-btn:hover { background:${G2}; border-color:${G2}; }
+/* Module Records' own module-picker — "All Modules" or one at a time,
+   replacing the separate GRADE popup (same underlying data/save endpoint,
+   just without a second UI for the same job). A self-built dropdown, not a
+   native <select> — a native one sometimes pops its option list UPWARD
+   depending on the browser's own guess at remaining viewport space, which
+   isn't something CSS can override; this always opens straight down. */
+.ggb-module-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.ggb-module-toolbar label { font-size:12px; font-weight:700; color:${G}; }
+.ggb-module-dd { position:relative; }
+.ggb-module-dd-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 12px;
+    border:1.5px solid ${BORDER}; border-radius:8px; font-size:13px; font-family:inherit;
+    background:#fff; color:#111827; cursor:pointer; }
+.ggb-module-dd-btn:hover, .ggb-module-dd-btn:focus { outline:none; border-color:${G}; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
+.ggb-module-dd-menu {
+    position:absolute; top:calc(100% + 4px); left:0; z-index:60; min-width:170px; max-height:280px;
+    overflow-y:auto; background:#fff; border:1.5px solid ${BORDER}; border-radius:10px;
+    box-shadow:0 10px 30px rgba(0,0,0,.14); padding:4px;
+}
+.ggb-module-dd-item { display:block; width:100%; text-align:left; padding:7px 10px; border:none;
+    background:none; border-radius:6px; font-size:13px; font-family:inherit; color:#374151; cursor:pointer; }
+.ggb-module-dd-item:hover { background:${GL}; }
+.ggb-module-dd-item.active { background:${G}; color:#fff; font-weight:700; }
 
 /* ── Grading Guide Modal ── */
 .ggb-guide-overlay {

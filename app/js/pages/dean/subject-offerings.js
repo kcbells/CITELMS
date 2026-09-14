@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     const [offRes, semRes] = await Promise.all([
         Api.get('/SubjectOfferingsAPI.php?action=list'),
@@ -22,7 +23,7 @@ function renderView(container, offerings, semesters, semFilter = '') {
         <style>
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .page-header .count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
             .stat-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:16px; text-align:center; }
             .stat-card .num { font-size:24px; font-weight:800; color:#1B4D3E; }
@@ -30,15 +31,15 @@ function renderView(container, offerings, semesters, semFilter = '') {
             .filters { margin-bottom:20px; }
             .filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:240px; }
             .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
             .data-table tbody tr:nth-child(even) { background:#f9fafb; }
             .data-table tbody tr:hover { background:#f0fdf4; }
             .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; margin-right:8px; }
+            .subj-code { background:#00461B; color:#fff; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; margin-right:8px; }
             .meta-badge { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-open { background:#E8F5E9; color:#1B4D3E; }
-            .badge-closed { background:#FEE2E2; color:#b91c1c; }
+            .badge-open { background:#00461B; color:#fff; }
+            .badge-closed { background:#7F1D1D; color:#fff; }
             .badge-cancelled { background:#f3f4f6; color:#737373; }
             .batch-badge { background:#DBEAFE; color:#1E40AF; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
@@ -98,4 +99,5 @@ function renderView(container, offerings, semesters, semFilter = '') {
     container.querySelector('#filter-batch').addEventListener('change', applyFilters);
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

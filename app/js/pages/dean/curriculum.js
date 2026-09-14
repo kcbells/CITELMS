@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let _programs   = [];
 let _activeProg = null;
 let _versions   = [];
@@ -1438,11 +1439,7 @@ function showMsg(el, text, type) {
     el.style.display = 'block';
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
 
 // ── CSS ────────────────────────────────────────────────────────────────────
 

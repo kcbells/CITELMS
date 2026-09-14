@@ -25,6 +25,7 @@ import {
 } from '../../utils/grading-engine.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 // ── Color roles — lifted straight from the live gradebook screen ────────
@@ -756,11 +757,7 @@ function buildExportSheets(subject, section, students, grades, project, retries,
     ];
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
 
 function styleAt(fills, r, c) {
     for (let i = fills.length - 1; i >= 0; i--) {

@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     const res = await Api.get('/SubjectsAPI.php?action=all');
     const allSubjects = res.success ? res.data : [];
@@ -13,7 +14,7 @@ export async function render(container) {
         <style>
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .page-header .count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .filters { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; align-items:center; }
             .filters input { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; min-width:220px; flex:1; }
             .filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; background:#fff; cursor:pointer; }
@@ -21,14 +22,14 @@ export async function render(container) {
             .btn-clear { background:none; border:none; color:#1B4D3E; font-size:13px; cursor:pointer; text-decoration:underline; padding:0; white-space:nowrap; }
             .btn-clear:hover { color:#006428; }
             .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
             .data-table tbody tr:nth-child(even) { background:#f9fafb; }
             .data-table tbody tr:hover { background:#f0fdf4; }
             .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; }
+            .subj-code { background:#00461B; color:#fff; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; }
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:capitalize; }
-            .badge-active { background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-            .badge-inactive { background:#fee2e2; color:#b91c1c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-active { background:#00461B; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-inactive { background:#7F1D1D; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
             .units-badge { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
         </style>
@@ -102,4 +103,5 @@ function renderRows(list) {
         </tr>`).join('');
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

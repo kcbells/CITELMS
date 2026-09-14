@@ -3,6 +3,7 @@
  */
 import { Api } from '../api.js';
 
+import { esc } from './classroom-ui.js';
 // ── Password security rules (mirrors Auth::validatePasswordStrength in PHP) ──
 const PW_RULES = [
     { id: 'len',   label: 'At least 8 characters',          test: p => p.length >= 8 },
@@ -105,11 +106,8 @@ export function attachStrengthMeter(inputEl) {
     update();
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 /**
  * @param {HTMLElement} root

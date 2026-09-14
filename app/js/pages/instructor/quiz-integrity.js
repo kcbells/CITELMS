@@ -6,6 +6,7 @@
 import { Api } from '../../api.js';
 import { icon } from '../../utils/action-labels.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
@@ -41,7 +42,7 @@ async function renderList(container, subjects, subjectId) {
             .table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden; }
             .qi-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
             .qi-table th {
-                background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
+                background:#00461B; color:#fff; font-size:11px; font-weight:700;
                 text-transform:uppercase; letter-spacing:0.05em; padding:13px 20px;
                 border-bottom:1px solid #e5e7eb; text-align:left;
             }
@@ -56,10 +57,10 @@ async function renderList(container, subjects, subjectId) {
             .qi-id { font-size:11.5px; color:#9ca3af; }
 
             .qi-severity { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:4px 12px; border-radius:20px; }
-            .qi-severity.low  { background:#FEF3C7; color:#92400E; }
-            .qi-severity.high { background:#FEE2E2; color:#B91C1C; }
+            .qi-severity.low  { background:#B45309; color:#fff; }
+            .qi-severity.high { background:#7F1D1D; color:#fff; }
 
-            .qi-subj-code { background:#E8F5E9; color:#1B4D3E; padding:3px 9px; border-radius:6px; font-family:monospace; font-weight:700; font-size:12px; }
+            .qi-subj-code { background:#00461B; color:#fff; padding:3px 9px; border-radius:6px; font-family:monospace; font-weight:700; font-size:12px; }
             .qi-score { font-weight:700; color:#374151; }
 
             .qi-empty { text-align:center; padding:60px 20px; color:#9ca3af; }
@@ -147,8 +148,4 @@ async function renderList(container, subjects, subjectId) {
     });
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str ?? '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)

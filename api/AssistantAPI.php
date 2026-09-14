@@ -96,7 +96,7 @@ function chat() {
     $name = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
 
     $systemPrompt = buildAssistantSystemPrompt($role, $name)
-        . buildAssistantContextBlock($context, $userId, $role);
+        . buildAssistantContextBlock($context, $userId, $role, $message);
 
     $messages = [['role' => 'system', 'content' => $systemPrompt]];
 
@@ -155,19 +155,39 @@ function buildAssistantSystemPrompt(string $role, string $name): string {
             . 'Encourage learning rather than giving away answers to graded work.';
     }
 
+    $dataNote = ' The CONTEXT below always includes a "CLASS SNAPSHOT DATA" section, and may also include '
+        . '"STRUGGLING STUDENTS DATA", "PERFORMANCE REPORT DATA", "ATTENDANCE DATA", or "INDIVIDUAL STUDENT DATA" '
+        . '(when the message names one specific enrolled student) — all of it is real, live data '
+        . 'pulled from this LMS for THIS question, not an example or a guess. When the user asks something a section '
+        . 'above already answers (how many/who/what score/how many absences), state the exact number or name directly '
+        . 'in your first sentence — do NOT reply with generic instructions like "log in and navigate to Reports" or '
+        . '"check the Analytics section"; you already have the answer, so give it. Only fall back to pointing at a '
+        . 'Reports page for something genuinely not covered by any data section above, and say plainly that this '
+        . 'specific figure isn\'t available to you rather than making one up.';
+
     if ($role === 'instructor') {
         return $base . ' The user is an instructor'
             . ($name ? " named {$name}" : '')
-            . '. Help with teaching ideas, quiz design, rubrics, lesson planning, and explaining topics to students.';
+            . '. Help with teaching ideas, quiz design, rubrics, lesson planning, explaining topics to students, '
+            . 'and identifying which of their students are struggling or at risk when asked.' . $dataNote;
     }
 
     if ($role === 'dean') {
         return $base . ' The user is a dean'
             . ($name ? " named {$name}" : '')
-            . '. Help with academic administration, curriculum planning, faculty coordination, and reporting insights.';
+            . '. Help with academic administration, curriculum planning, faculty coordination, and reporting insights — '
+            . 'including real performance/pass-rate reports and struggling-student summaries for their department when asked.' . $dataNote;
+    }
+
+    if ($role === 'program_head') {
+        return $base . ' The user is a program head'
+            . ($name ? " named {$name}" : '')
+            . '. Help with academic oversight of their program — curriculum, faculty coordination, and reporting insights — '
+            . 'including real performance/pass-rate reports and struggling-student summaries for their program when asked.' . $dataNote;
     }
 
     return $base . ' The user is an administrator'
         . ($name ? " named {$name}" : '')
-        . '. Help with system usage, academic setup, and operational questions about the LMS.';
+        . '. Help with system usage, academic setup, and operational questions about the LMS, '
+        . 'including real system-wide performance and struggling-student data when asked.' . $dataNote;
 }

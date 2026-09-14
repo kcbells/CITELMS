@@ -46,6 +46,9 @@ switch ($action) {
 }
 
 function ensureBankCommentsTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS bank_comments (
             comment_id INT AUTO_INCREMENT PRIMARY KEY,

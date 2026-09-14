@@ -31,6 +31,7 @@ require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizProctorHelper.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
+require_once __DIR__ . '/helpers/SemesterArchiveHelper.php';
 
 // Discard any stray output from includes
 ob_clean();
@@ -72,6 +73,7 @@ $_attemptPerms = [
     'quiz-question-stats' => 'grades.view',
     'finalize-grading' => 'quizzes.grade',
     'flagged-attempts' => 'grades.view',
+    'ai-grade-attempt' => 'quizzes.grade',
 ];
 if (isset($_attemptPerms[$action]) && !Auth::can($_attemptPerms[$action])) {
     http_response_code(403);
@@ -235,7 +237,11 @@ function submitQuiz() {
 
         ensureQuizScheduleColumns();
         ensureQuizBehaviorColumns();
-        if (!empty($quiz['due_date']) && isPastDueDate((string)$quiz['due_date'])) {
+        // Falls back to the module-level deadline when this quiz has none of
+        // its own, so an instructor can set one date on the module card and
+        // have all three parts inherit it.
+        $effectiveDue = effectiveQuizDueDate($quiz);
+        if ($effectiveDue && isPastDueDate($effectiveDue)) {
             echo json_encode(['success' => false, 'message' => 'This quiz is past its due date. Contact your instructor for an extension.']);
             return;
         }
@@ -584,7 +590,7 @@ function getQuizScores() {
  * Get attempts with pending essay grades for instructor
  */
 function getPendingGrading() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     $subjectId = $_GET['subject_id'] ?? '';
 
     $scopeIds = gradingScopeSubjectIds();
@@ -642,7 +648,14 @@ function getPendingGrading() {
  * flagged attempts instead of stumbling on them per-quiz.
  */
 function getFlaggedAttempts() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // 'grades.view' (the $_attemptPerms gate above) also covers students viewing
+    // their own grades — but integrity-flagged attempts across a whole class are
+    // staff-only, so that broader permission isn't enough on its own here.
+    if (!in_array(Auth::role(), ['instructor', 'program_head', 'dean', 'admin'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
     $subjectId = $_GET['subject_id'] ?? '';
 
     $scopeIds = gradingScopeSubjectIds();
@@ -689,7 +702,7 @@ function getFlaggedAttempts() {
  * Get full attempt details with all answers for grading
  */
 function getAttemptAnswers() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     $attemptId = (int)($_GET['attempt_id'] ?? 0);
     if (!$attemptId) {
         echo json_encode(['success' => false, 'message' => 'Attempt ID required']);
@@ -749,7 +762,7 @@ function getAttemptAnswers() {
  * Grade a single answer (essay/short answer)
  */
 function gradeAnswer() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -823,7 +836,7 @@ function gradeAnswer() {
  * Finalize grading: recalculate attempt score after all essays graded
  */
 function finalizeGrading() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -932,6 +945,13 @@ function syncModuleGradeFromQuiz(int $subjectId, int $studentId, int $moduleNumb
         $value = $percentage >= 100 ? 3 : ($percentage >= 80 ? 2 : ($percentage >= 60 ? 1 : 0));
     }
 
+    // An attempt submitted against an archived semester must not rewrite that
+    // term's frozen gradebook. The attempt itself is still recorded — only the
+    // grade sync is skipped.
+    if (areGradesLockedForOffering($subjectOfferedId)) {
+        return ['field' => $component, 'value' => null, 'skipped' => 'semester archived'];
+    }
+
     try {
         ensureGlobalModuleGradesTable();
         pdo()->prepare(
@@ -975,7 +995,7 @@ function ensureGlobalModuleGradesTable(): void {
 // ── Trigger AI grading for a single answer (instructor-initiated) ────────────
 
 function aiGradeAnswerById() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -1056,7 +1076,7 @@ function aiGradeAnswerById() {
  * Run AI checker on all pending subjective answers for a quiz.
  */
 function aiGradeQuizPending() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return;
@@ -1150,7 +1170,7 @@ function aiGradeQuizPending() {
  * Sets grading_status to 'auto_graded' — instructor must still confirm each one.
  */
 function aiGradeAttemptPending() {
-    Auth::requireRole(['instructor', 'program_head', 'dean']);
+    // RBAC already enforced by the $_attemptPerms 'quizzes.grade' check above.
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']); return;
     }
@@ -1226,7 +1246,8 @@ function aiGradeAttemptPending() {
             'graded'  => $graded,
         ]);
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'AI grading failed: ' . $e->getMessage()]);
+        error_log('QuizAttemptsAPI aiGradeAttemptPending: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'AI grading failed. Check Hugging Face API key in Settings.']);
     }
 }
 

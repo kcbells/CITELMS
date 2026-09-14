@@ -6,6 +6,7 @@ import { Auth } from '../auth.js';
 import { icon } from '../utils/icons.js';
 import { isAssistantAllowed } from '../utils/quiz-guard.js';
 import { getAssistantContext, onAssistantContextChange, setAssistantContext } from '../utils/assistant-context.js';
+import { esc } from '../utils/classroom-ui.js';
 
 const G  = '#00461B';
 const G2 = '#006428';
@@ -17,12 +18,8 @@ let sending = false;
 let history = [];
 let stylesInjected = false;
 
-function esc(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc() now imported from classroom-ui.js — the DOM-based version there also
+// correctly escapes single quotes, which this file's old regex-based copy did not.
 
 function getEl(id) {
     return rootEl?.querySelector('#' + id) ?? null;
@@ -80,40 +77,26 @@ function injectStyles() {
     style.id = 'fa-styles';
     style.textContent = `
         #fa-root {
-            position: fixed; bottom: 24px; right: 24px; z-index: 955;
+            position: fixed; top: 68px; right: 24px; z-index: 955;
             font-family: inherit;
         }
         #fa-root * { box-sizing: border-box; }
 
-        .fa-fab {
-            width: 58px; height: 58px; border-radius: 50%;
-            background: ${G};
-            color: #fff; border: none; cursor: grab;
-            box-shadow: 0 6px 24px rgba(0,70,27,.4);
-            display: flex; align-items: center; justify-content: center;
-            transition: transform .15s, box-shadow .15s;
-            position: relative;
-        }
-        .fa-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,70,27,.5); }
-        .fa-fab svg { width: 28px; height: 28px; pointer-events: none; }
-        .fa-fab-img {
-            width: 100%; height: 100%; border-radius: 50%;
-            object-fit: cover; object-position: top center;
-            background: #fff; pointer-events: none;
-        }
-        .fa-fab-fallback { display: none; align-items: center; justify-content: center; pointer-events: none; }
+        #fa-topbar-btn { position: relative; }
+        #fa-topbar-btn.active { background: ${G}; color: #fff; }
+        .fa-topbar-img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; display: block; }
+        .fa-topbar-fallback { display: none; align-items: center; justify-content: center; }
+
         .fa-head-av-img {
             width: 100%; height: 100%; border-radius: 50%;
             object-fit: cover; object-position: top center; background: #fff;
         }
         .fa-head-av-fallback { display: none; align-items: center; justify-content: center; }
-        #fa-root.fa-dragging .fa-fab { cursor: grabbing; }
         .fa-head { cursor: grab; }
-        #fa-root.fa-dragging .fa-head { cursor: grabbing; }
 
         .fa-panel {
             display: none; flex-direction: column;
-            position: absolute; bottom: 72px; right: 0;
+            position: absolute; top: 0; right: 0;
             width: 360px; max-width: calc(100vw - 32px);
             height: 480px; max-height: calc(100dvh - 120px);
             background: #fff; border-radius: 16px;
@@ -185,25 +168,36 @@ function injectStyles() {
         @keyframes fa-dot { 0%,80%,100%{opacity:.3;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
 
         .fa-footer {
-            padding: 10px 12px; border-top: 1px solid #e5e7eb; background: #fff;
+            padding: 12px; border-top: 1px solid #e5e7eb; background: #fff;
             display: flex; gap: 8px; align-items: flex-end;
         }
         .fa-input {
             flex: 1; border: 1px solid #e5e7eb; border-radius: 12px;
             padding: 10px 12px; font-size: 14px; font-family: inherit;
             resize: none; max-height: 100px; outline: none; line-height: 1.4;
+            -webkit-appearance: none; appearance: none;
         }
         .fa-input:focus { border-color: ${G}; box-shadow: 0 0 0 3px rgba(0,70,27,.08); }
+        .fa-input::placeholder { color: #9ca3af; }
         .fa-send {
-            width: 40px; height: 40px; border-radius: 12px; border: none;
-            background: ${G}; color: #fff; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            min-width: 44px; min-height: 44px; width: 44px; height: 44px;
+            border-radius: 12px; border: none; background: ${G}; color: #fff;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; transition: background .15s, transform .1s;
+            -webkit-appearance: none; appearance: none;
         }
         .fa-send:disabled { opacity: .45; cursor: not-allowed; }
         .fa-send:not(:disabled):hover { background: ${G2}; }
+        .fa-send:not(:disabled):active { transform: scale(0.95); }
+        @supports (hover: hover) {
+            .fa-send:not(:disabled):hover { background: ${G2}; }
+        }
+        @supports not (hover: hover) {
+            .fa-send:not(:disabled):active { background: ${G2}; }
+        }
 
         .fa-error {
-            background: #FEF2F2; color: #b91c1c; border: 1px solid #FECACA;
+            background:#7F1D1D; color:#fff; border: 1px solid #FECACA;
             border-radius: 10px; padding: 10px 12px; font-size: 12.5px; align-self: stretch;
         }
 
@@ -230,10 +224,26 @@ function injectStyles() {
         .fa-quick-btn:last-child { margin-bottom: 0; }
 
         @media (max-width: 640px) {
-            #fa-root { bottom: 16px; right: 16px; }
+            #fa-root { top: 60px; right: 10px; }
             .fa-panel {
                 width: calc(100vw - 20px); right: -4px;
                 height: calc(100dvh - 80px); max-height: none;
+            }
+            .fa-topbar-img { width: 22px; height: 22px; }
+            .fa-send {
+                min-width: 48px; min-height: 48px; width: 48px; height: 48px;
+            }
+            .fa-input {
+                padding: 12px 14px; font-size: 16px;
+            }
+        }
+        @media (max-width: 480px) {
+            #fa-root { top: 56px; right: 6px; }
+            .fa-panel {
+                width: calc(100vw - 12px); right: -2px;
+            }
+            .fa-send {
+                min-width: 48px; min-height: 48px;
             }
         }
     `;
@@ -338,9 +348,14 @@ async function sendMessage(forcedText = null) {
     }
 }
 
+function markNavItem(on) {
+    document.getElementById('fa-topbar-btn')?.classList.toggle('active', on);
+}
+
 function expand() {
     if (!isAssistantAllowed()) return;
     isOpen = true;
+    markNavItem(true);
     rootEl?.classList.add('fa-open');
     getEl('fa-panel')?.setAttribute('aria-hidden', 'false');
     renderContextChip();
@@ -360,6 +375,7 @@ export async function askAli(question, extraContext = {}) {
 
 function minimize() {
     isOpen = false;
+    markNavItem(false);
     rootEl?.classList.remove('fa-open');
     getEl('fa-panel')?.setAttribute('aria-hidden', 'true');
 }
@@ -370,117 +386,78 @@ function toggle() {
     else expand();
 }
 
-const FA_POS_KEY = 'fa-pos';
+/**
+ * Ali is opened from the sidebar entry now, not from a floating bubble.
+ * Returns false when the assistant is unavailable (e.g. during a proctored quiz)
+ * so the caller can leave the nav item inactive.
+ */
+export function toggleAssistant() {
+    if (!isAssistantAllowed() || !rootEl) return false;
+    toggle();
+    return true;
+}
 
-function makeDraggable() {
-    const fab    = rootEl.querySelector('.fa-fab');
-    const header = rootEl.querySelector('.fa-head');
-
-    let startX, startY, startLeft, startTop;
-    let dragging = false;
-    let moved    = false;
-
-    function currentPos() {
-        const r = rootEl.getBoundingClientRect();
-        return { left: r.left, top: r.top };
-    }
-
-    function applyPos(left, top) {
-        const w = rootEl.offsetWidth  || 58;
-        const h = rootEl.offsetHeight || 58;
-        left = Math.max(0, Math.min(window.innerWidth  - w, left));
-        top  = Math.max(0, Math.min(window.innerHeight - h, top));
-        rootEl.style.right  = 'auto';
-        rootEl.style.bottom = 'auto';
-        rootEl.style.left   = left + 'px';
-        rootEl.style.top    = top  + 'px';
-    }
-
-    function onMove(e) {
-        if (!dragging) return;
-        const cx = e.touches ? e.touches[0].clientX : e.clientX;
-        const cy = e.touches ? e.touches[0].clientY : e.clientY;
-        if (Math.abs(cx - startX) > 4 || Math.abs(cy - startY) > 4) moved = true;
-        if (moved) applyPos(startLeft + (cx - startX), startTop + (cy - startY));
-    }
-
-    function onUp() {
-        if (!dragging) return;
-        dragging = false;
-        rootEl.classList.remove('fa-dragging');
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup',   onUp);
-        document.removeEventListener('touchmove', onMove);
-        document.removeEventListener('touchend',  onUp);
-
-        if (moved) {
-            // Swallow the upcoming click so the FAB doesn't toggle
-            document.addEventListener('click', e => e.stopPropagation(), { capture: true, once: true });
-            const r = rootEl.getBoundingClientRect();
-            try { localStorage.setItem(FA_POS_KEY, JSON.stringify({ left: r.left, top: r.top })); } catch (_) {}
-        }
-    }
-
-    function onDown(e) {
-        // Let a genuinely OTHER interactive descendant (the header's minimize
-        // button) work normally instead of starting a drag. This used to
-        // compare against `fab` specifically, but e.target.closest('button')
-        // for a click on the fab's own inner <img>/<span> always resolves to
-        // the fab itself (its nearest <button> ancestor) — so that check was
-        // true for every ordinary click on the icon, silently disabling
-        // dragging from the fab face entirely and leaving it draggable only
-        // from a sliver of the button not covered by the image. Comparing
-        // against e.currentTarget (whichever element this listener is bound
-        // to — the fab or the header) is correct for both cases.
-        const interactive = e.target.closest('button, textarea, input, a');
-        if (interactive && interactive !== e.currentTarget) return;
-        const pos  = currentPos();
-        startX     = e.touches ? e.touches[0].clientX : e.clientX;
-        startY     = e.touches ? e.touches[0].clientY : e.clientY;
-        startLeft  = pos.left;
-        startTop   = pos.top;
-        dragging   = true;
-        moved      = false;
-        rootEl.classList.add('fa-dragging');
-        document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup',   onUp);
-        document.addEventListener('touchmove', onMove, { passive: true });
-        document.addEventListener('touchend',  onUp);
-    }
-
-    fab.addEventListener('mousedown',  onDown);
-    fab.addEventListener('touchstart', onDown, { passive: true });
-    header?.addEventListener('mousedown',  onDown);
-    header?.addEventListener('touchstart', onDown, { passive: true });
-
-    // Restore saved position
-    try {
-        const saved = JSON.parse(localStorage.getItem(FA_POS_KEY) || 'null');
-        if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
-            requestAnimationFrame(() => applyPos(saved.left, saved.top));
-        }
-    } catch (_) {}
+export function isAssistantOpen() {
+    return isOpen;
 }
 
 function bindEvents() {
-    getEl('fa-bubble')?.addEventListener('click', toggle);
     rootEl?.querySelector('.fa-minimize-btn')?.addEventListener('click', minimize);
 
+    // Close when clicking elsewhere. Capture phase, so it still fires for topbar
+    // buttons that stopPropagation() — that is what keeps only one popover open.
+    document.addEventListener('click', (e) => {
+        if (!isOpen) return;
+        const btn = document.getElementById('fa-topbar-btn');
+        if (rootEl && !rootEl.contains(e.target) && btn && !btn.contains(e.target)) {
+            minimize();
+        }
+    }, true);
+
     const input = getEl('fa-input');
+    const sendBtn = getEl('fa-send');
+
+    // Auto-resize textarea
     input?.addEventListener('input', () => {
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 100) + 'px';
     });
+
+    // Handle Enter key (Shift+Enter for new line)
     input?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
     });
-    getEl('fa-send')?.addEventListener('click', sendMessage);
-    makeDraggable();
+
+    // Handle send button click
+    sendBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        sendMessage();
+    });
+
+    // Handle touch events for better mobile feedback
+    sendBtn?.addEventListener('touchstart', (e) => {
+        if (!sending && isAssistantAllowed()) {
+            sendBtn.style.opacity = '0.8';
+        }
+    });
+
+    sendBtn?.addEventListener('touchend', (e) => {
+        sendBtn.style.opacity = '';
+    });
+
+    // Prevent zoom on input focus (iOS)
+    input?.addEventListener('focus', () => {
+        if (input.style.fontSize !== '16px') {
+            input.style.fontSize = '16px';
+        }
+    });
+
+    input?.addEventListener('blur', () => {
+        input.style.fontSize = '14px';
+    });
 }
 
 export function mountFloatingAssistant() {
@@ -513,11 +490,6 @@ export function mountFloatingAssistant() {
                 <button type="button" class="fa-send" id="fa-send" title="Send">${icon('send', { size: 18 })}</button>
             </div>
         </div>
-        <button type="button" class="fa-fab" id="fa-bubble" aria-label="Open Ali">
-            <img src="${BASE_URL}/assets/images/assistant-ali.png" alt="Ali" class="fa-fab-img"
-                 onerror="this.style.display='none';this.parentElement.querySelector('.fa-fab-fallback').style.display='flex'">
-            <span class="fa-fab-fallback">${icon('robot', { size: 28 })}</span>
-        </button>
     `;
 
     document.body.appendChild(rootEl);

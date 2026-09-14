@@ -44,6 +44,9 @@ switch ($action) {
 }
 
 function ensureCommentsTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS class_comments (
             comment_id   INT AUTO_INCREMENT PRIMARY KEY,
@@ -486,6 +489,9 @@ function ensureSubmissionGradeColumn() {
 }
 
 function ensureWorkFilesTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS student_work_files (
             file_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -884,6 +890,9 @@ function setClassworkDueDate() {
 }
 
 function ensureClassworkViewsTable() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS classwork_views (
             view_id INT AUTO_INCREMENT PRIMARY KEY,

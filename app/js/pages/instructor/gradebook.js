@@ -13,10 +13,16 @@ import { notify } from '../../utils/notify.js';
 import { mountGlobalClassRecord } from './global-gradebook.js';
 
 const inl    = { size: 14, className: 'ui-icon-inline' };
+// Same palette as instructor/global-gradebook.js — the raw-score class
+// record uses the exact same colors/severity tiers, not a separate scheme.
 const G      = '#00461B';
 const G2     = '#006428';
 const GL     = '#E8F5EC';
 const BORDER = '#E5E7EB';
+const AMBER_BG = '#FEF3C7';
+const AMBER_FG = '#92400E';
+const RED_BG   = '#FEE2E2';
+const RED_FG   = '#7F1D1D';
 
 let classesData = [];
 
@@ -41,7 +47,14 @@ export async function mountInstructorGradebook(host, { subjectId, sectionId } = 
 async function renderGradebook(container, opts = {}) {
     container.innerHTML = `<div class="gb-loading"><div class="gb-spin"></div></div><style>${pageCss()}</style>`;
 
-    const res = await Api.get('/SectionsAPI.php?action=instructor-classes');
+    // ttl:0 — this drives whether raw-score or Global Gradebook renders
+    // (subject.grading_type). A dean can flip that mid-session from Subject
+    // Offered; a cached instructor-classes response here would keep showing
+    // the OLD table shape for up to 45s (Api.get's default cache), which
+    // reads as the wrong grade table, not just stale counts — always fetch
+    // fresh so a just-changed grading type takes effect the next time this
+    // page loads, not on some delay.
+    const res = await Api.get('/SectionsAPI.php?action=instructor-classes', { ttl: 0 });
     classesData = res.success ? (res.data || []) : [];
 
     bindRowSelect(container);
@@ -250,7 +263,20 @@ async function renderClassRecord(container, opts) {
     // Subjects the dean has marked "Global" use the 14-module Effortful
     // Learning / Mastery class record instead of the raw quiz-score table —
     // same Subjects → Sections → Class Record flow, different table.
-    if (subject.grading_type === 'global') {
+    //
+    // Read grading_type off THIS SECTION, not subject.grading_type — a
+    // subject can have several subject_offered rows (e.g. sections opened
+    // under separate offerings), each with its own independently-set
+    // grading_type. subject.grading_type is SectionsAPI's own "whichever
+    // open offering it saw last" pick across ALL of them, which doesn't
+    // necessarily match the specific offering backing the section actually
+    // being viewed — the dean switching one offering's grading mode could
+    // then appear to do nothing for a section really backed by another.
+    // section.grading_type is scoped to this section's own subject_offered
+    // row, so it's always correct for what's on screen; the subject-level
+    // value is only a fallback for a shape this section object doesn't have it in.
+    const effectiveGradingType = section.grading_type ?? subject.grading_type;
+    if (effectiveGradingType === 'global') {
         await mountGlobalClassRecord(host, subject, section);
         return;
     }
@@ -442,6 +468,24 @@ function renderTableHeaders(allItems) {
     return { periodRow, itemRow };
 }
 
+/**
+ * Single source of truth for the row-level status/remark, shared by the
+ * table renderer and the CSV export so they can never drift apart. Same
+ * cutoffs (60% / 40%) and labels as the Global Gradebook's amber/red
+ * convention and the Reports page.
+ */
+function classifyRow(earnedTotal, possibleTotal, missingCount, quizItemCount, allPassed) {
+    const anyScore = possibleTotal > 0;
+    const pct = anyScore ? (earnedTotal / possibleTotal) * 100 : null;
+    if (!anyScore) {
+        return missingCount > 0 ? { status: 'lacking', remark: 'Lacking' } : { status: 'none', remark: '—' };
+    }
+    if (quizItemCount > 0 && allPassed) return { status: 'good', remark: 'Passed' };
+    if (pct >= 60) return { status: 'good', remark: 'In progress' };
+    if (pct >= 40) return { status: 'at_risk', remark: 'At Risk' };
+    return { status: 'critical', remark: 'Critical' };
+}
+
 function renderStudentItemCell(st, item) {
     if (item.kind === 'quiz') {
         const cell = st.quizScores[item.id];
@@ -521,22 +565,19 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
         const totalLabel = possibleTotal > 0
             ? `<strong>${earnedTotal} / ${possibleTotal}</strong>`
             : '<span class="gc-cur-badge-none">—</span>';
-        const anyScore  = possibleTotal > 0;
-        const belowPass = anyScore && earnedTotal / possibleTotal < 0.6;
-        const atRisk    = belowPass || missingCount >= 2;
-        const remark    = !anyScore && missingCount > 0 ? 'At risk'
-            : !anyScore ? '—'
-            : quizItems.length > 0 && allPassed ? 'Passed'
-            : atRisk ? 'At risk' : 'In progress';
+
+        const { status, remark } = classifyRow(earnedTotal, possibleTotal, missingCount, quizItems.length, allPassed);
+        const rowClass = status === 'critical' ? 'gb-row-critical' : status === 'at_risk' ? 'gb-row-at-risk' : status === 'lacking' ? 'gb-row-lacking' : '';
+        const badgeClass = status === 'good' ? 'gc-cur-badge-pass' : status === 'at_risk' ? 'gc-cur-badge-atrisk' : status === 'critical' ? 'gc-cur-badge-critical' : status === 'lacking' ? 'gc-cur-badge-lacking' : 'gc-cur-badge-none';
 
         return `
-            <tr class="${atRisk ? 'gb-at-risk' : ''}" data-stu="${st.user_student_id}">
+            <tr class="${rowClass}" data-stu="${st.user_student_id}">
                 <td class="td-rank">${i + 1}</td>
                 <td class="td-id">${esc(st.student_id || '—')}</td>
-                <td class="td-name">${esc(st.name)}${atRisk ? ' <span class="gb-risk-tag">!</span>' : ''}</td>
+                <td class="td-name">${esc(st.name)}${status === 'critical' || status === 'at_risk' ? ' <span class="gb-risk-tag">!</span>' : ''}</td>
                 ${itemCells}
                 <td class="td-num">${totalLabel}</td>
-                <td class="td-pass"><span class="${atRisk && anyScore ? 'gc-cur-badge-fail' : 'gc-cur-badge-pass'}">${remark}</span></td>
+                <td class="td-pass"><span class="${badgeClass}">${remark}</span></td>
             </tr>`;
     }).join('');
 
@@ -615,14 +656,8 @@ function exportClassRecordCsv(subject, section, { periodGroups, students }) {
             }
         }
 
-        const anyScore  = possibleTotal > 0;
-        const belowPass = anyScore && earnedTotal / possibleTotal < 0.6;
-        const atRisk    = belowPass || missingCount >= 2;
-        const remark    = !anyScore && missingCount > 0 ? 'At risk'
-            : !anyScore ? ''
-            : quizItems.length > 0 && allPassed ? 'Passed'
-            : atRisk ? 'At risk' : 'In progress';
-        row.push(possibleTotal > 0 ? `${earnedTotal}/${possibleTotal}` : '', remark);
+        const { remark } = classifyRow(earnedTotal, possibleTotal, missingCount, quizItems.length, allPassed);
+        row.push(possibleTotal > 0 ? `${earnedTotal}/${possibleTotal}` : '', remark === '—' ? '' : remark);
         return row;
     });
 
@@ -732,12 +767,31 @@ function pageCss() {
             border-radius:8px; border:1.5px solid ${G}; background:#fff; color:${G}; font-size:12px; font-weight:700; cursor:pointer; }
         .gb-export-btn:hover { background:${GL}; }
 
-        .gb-at-risk { background:#FEF2F2 !important; }
-        .gb-at-risk:hover { background:#FEE2E2 !important; }
+        /* Severity tiers — same cutoffs (60% / 40%) and exact colors as the
+           Global Gradebook's amber/red convention and the Reports page.
+           One standard across the app: green (good) -> amber (at risk) ->
+           red (critical), plus a neutral gray for "lacking" (no submissions
+           at all yet), matching ReportsAPI.php's status classification. */
+        .gb-row-at-risk  { background:${AMBER_BG}55 !important; }
+        .gb-row-at-risk:hover  { background:${AMBER_BG} !important; }
+        .gb-row-critical { background:${RED_BG}55 !important; }
+        .gb-row-critical:hover { background:${RED_BG} !important; }
+        .gb-row-lacking  { background:#F9FAFB !important; }
         .gb-risk-tag { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
-            border-radius:50%; background:#FEE2E2; color:#B91C1C; font-size:10px; font-weight:800; margin-left:4px; }
-        .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;
-            background:#FEF3C7; color:#B45309; }
+            border-radius:50%; background:${RED_BG}; color:${RED_FG}; font-size:10px; font-weight:800; margin-left:4px; }
+
+        /* classroom-ui.js's shared curriculumTableCss() defines its own
+           .gc-cur-badge-pass (Google-style green/red) and loads AFTER this
+           stylesheet in every render call here — same specificity, later
+           source wins, so these need !important to actually take effect
+           (the same fix Global Gradebook itself already applies). */
+        .gc-cur-badge-pass     { background:${GL} !important; color:${G} !important; }
+        .gc-cur-badge-atrisk, .gc-cur-badge-missing { background:${AMBER_BG} !important; color:${AMBER_FG} !important; }
+        .gc-cur-badge-critical { background:${RED_BG} !important; color:${RED_FG} !important; }
+        .gc-cur-badge-lacking  { background:#F3F4F6 !important; color:#4B5563 !important; }
+        .gc-cur-badge-atrisk, .gc-cur-badge-critical, .gc-cur-badge-lacking, .gc-cur-badge-missing {
+            display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;
+        }
         .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
 
         /* Click-to-edit quiz score cells — same directly-editable-cell spirit

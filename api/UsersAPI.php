@@ -8,6 +8,9 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
+require_once __DIR__ . '/helpers/YearLevelHelper.php';
+require_once __DIR__ . '/helpers/ScopeHelper.php';
+ensureYearLevelLockColumn();
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -31,7 +34,7 @@ function logActivity($userId, $activityType, $description) {
 
 // Dean can list/view/create instructors in their campus
 $isDean = Auth::role() === 'dean';
-$deanAllowed = ['list', 'get', 'programs', 'departments', 'campuses', 'create', 'update', 'deactivate', 'set-password'];
+$deanAllowed = ['list', 'get', 'programs', 'departments', 'campuses', 'create', 'update', 'deactivate', 'set-password', 'set-year-standing'];
 
 $_userPerms = [
     'list'         => 'users.view',
@@ -46,6 +49,8 @@ $_userPerms = [
     'deactivate'   => 'users.edit',
     'set-password' => 'users.edit',
     'activity-log' => 'users.view',
+    'set-year-standing'    => 'users.edit',
+    'recompute-year-levels' => 'users.edit',
 ];
 
 if (isset($_userPerms[$action]) && !Auth::can($_userPerms[$action]) && !($isDean && in_array($action, $deanAllowed))) {
@@ -67,6 +72,8 @@ switch ($action) {
     case 'campuses':      handleCampuses();      break;
     case 'set-password':  handleSetPassword();   break;
     case 'activity-log':  handleActivityLog();   break;
+    case 'set-year-standing':     handleSetYearStanding();     break;
+    case 'recompute-year-levels': handleRecomputeYearLevels(); break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
@@ -340,10 +347,10 @@ function handleCreate() {
     ensureNameColumns();
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
 
-    $firstName  = Sanitize::text($data['first_name']  ?? '');
-    $middleName = Sanitize::text($data['middle_name'] ?? '') ?: null;
-    $lastName     = Sanitize::text($data['last_name']         ?? '');
-    $suffix       = Sanitize::text($data['suffix']            ?? '') ?: null;
+    $firstName  = Sanitize::properName($data['first_name']  ?? '');
+    $middleName = Sanitize::properName($data['middle_name'] ?? '') ?: null;
+    $lastName     = Sanitize::properName($data['last_name']         ?? '');
+    $suffix       = Sanitize::properName($data['suffix']            ?? '') ?: null;
     $email        = trim($data['email']             ?? '');
     $password     = $data['password']               ?? '';
     $departmentId = ($data['department_id'] ?? null) ?: null;
@@ -422,6 +429,13 @@ function handleCreate() {
         echo json_encode(['success' => false, 'message' => 'Employee ID already exists']);
         return;
     }
+    // student_id is UNIQUE too, but had no check here — so a duplicate fell
+    // through to the INSERT, threw, and surfaced as the catch-all "Failed to
+    // create user" with nothing telling the admin what was actually wrong.
+    if ($studentId && db()->fetchOne("SELECT users_id FROM users WHERE student_id = ?", [$studentId])) {
+        echo json_encode(['success' => false, 'message' => 'Student ID already exists']);
+        return;
+    }
 
     // Multi-campus scope for deans
     $campusIds = [];
@@ -433,13 +447,22 @@ function handleCreate() {
     }
 
     try {
+        // The password here was typed by whoever is creating the account, not
+        // by its owner — so it's a temporary one, exactly like a bulk import's
+        // (see BulkImportAPI's upsertPerson). Flagging it does two things:
+        // AuthAPI forces a real password on first login, and the Users list
+        // keeps showing "Not activated" until they've actually set one.
+        // Without this an admin-created account read as "Active" the moment it
+        // was made, even though nobody had ever logged into it.
+        $mustChangePassword = $passwordHash ? 1 : 0;
+
         pdo()->prepare(
             "INSERT INTO users
              (first_name, middle_name, last_name, suffix, email, password, role, status,
               campus_id, department_id, program_id, employee_id, student_id, year_level,
-              year_level_from, year_level_to,
+              year_level_from, year_level_to, must_change_password,
               created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
         )->execute([
             $firstName, $middleName, $lastName, $suffix, $email,
             $passwordHash,
@@ -447,6 +470,7 @@ function handleCreate() {
             $employeeId ?: null, $studentId ?: null, $yearLevel,
             $role === 'program_head' ? $yearLevelFrom : null,
             $role === 'program_head' ? $yearLevelTo   : null,
+            $mustChangePassword,
         ]);
         $newId = (int)pdo()->lastInsertId();
 
@@ -471,8 +495,37 @@ function handleCreate() {
         echo json_encode(['success' => true, 'message' => $msg, 'data' => ['id' => $newId]]);
     } catch (Exception $e) {
         error_log('Create user error: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to create user']);
+        // "Failed to create user" told the admin nothing and sent them looking
+        // for a bug that wasn't there. Translate the constraint that actually
+        // failed into something they can act on, without echoing raw SQL.
+        echo json_encode(['success' => false, 'message' => describeUserWriteError($e)]);
     }
+}
+
+/**
+ * Turns a DB exception from a users write into a message an admin can act on.
+ * Only recognised constraints get a specific message; anything unexpected stays
+ * generic so internal detail is never leaked to the browser.
+ */
+function describeUserWriteError(Throwable $e): string
+{
+    $msg = $e->getMessage();
+    if (stripos($msg, 'Duplicate entry') !== false || stripos($msg, '1062') !== false) {
+        if (stripos($msg, 'email') !== false)       return 'That email address is already used by another account.';
+        if (stripos($msg, 'employee') !== false)    return 'That Employee ID is already used by another account.';
+        if (stripos($msg, 'student') !== false)     return 'That Student ID is already used by another account.';
+        return 'One of the IDs or the email is already used by another account.';
+    }
+    if (stripos($msg, 'foreign key') !== false || stripos($msg, '1452') !== false) {
+        return 'The selected campus, department, or program no longer exists. Reload the page and pick again.';
+    }
+    if (stripos($msg, 'Data too long') !== false || stripos($msg, '1406') !== false) {
+        return 'One of the fields is too long. Please shorten it and try again.';
+    }
+    if (stripos($msg, 'cannot be null') !== false || stripos($msg, '1048') !== false) {
+        return 'A required field was left empty. Please fill in every field marked with *.';
+    }
+    return 'Could not save the account. Please check the details and try again.';
 }
 
 function handleUpdate() {
@@ -500,10 +553,10 @@ function handleUpdate() {
     }
 
     ensureNameColumns();
-    $firstName  = Sanitize::text($data['first_name']  ?? '');
-    $middleName = Sanitize::text($data['middle_name'] ?? '') ?: null;
-    $lastName   = Sanitize::text($data['last_name']   ?? '');
-    $suffix     = Sanitize::text($data['suffix']      ?? '') ?: null;
+    $firstName  = Sanitize::properName($data['first_name']  ?? '');
+    $middleName = Sanitize::properName($data['middle_name'] ?? '') ?: null;
+    $lastName   = Sanitize::properName($data['last_name']   ?? '');
+    $suffix     = Sanitize::properName($data['suffix']      ?? '') ?: null;
     $email      = trim($data['email']       ?? '');
     $password     = $data['password']               ?? '';
     // The Edit Faculty modal has no Department field of its own (only
@@ -652,6 +705,78 @@ function handleActivate() {
     if (!$user) { echo json_encode(['success' => false, 'message' => 'User not found']); return; }
     db()->execute("UPDATE users SET status='active', updated_at=NOW() WHERE users_id=?", [$id]);
     echo json_encode(['success' => true, 'message' => 'Account activated.']);
+}
+
+/**
+ * POST ?action=set-year-standing
+ * Body: { users_id, year_level, is_irregular }
+ * Dean-facing manual override for a student's year standing (irregular
+ * students who don't match the "batch year vs current AY" formula). Setting
+ * is_irregular=true locks the value so handleRecomputeYearLevels() skips
+ * them; is_irregular=false clears the lock and immediately recomputes from
+ * their student ID instead of leaving a stale manual number in place.
+ */
+function handleSetYearStanding() {
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $id   = (int)($data['users_id'] ?? 0);
+    if (!$id) { echo json_encode(['success' => false, 'message' => 'User ID required']); return; }
+
+    $student = db()->fetchOne("SELECT users_id, role, student_id, program_id FROM users WHERE users_id = ?", [$id]);
+    if (!$student || $student['role'] !== 'student') {
+        echo json_encode(['success' => false, 'message' => 'Student not found']);
+        return;
+    }
+
+    // Dean may only set standing for students in their own department's programs.
+    if (Auth::role() === 'dean') {
+        $allowed = deanProgramIds();
+        if (!$student['program_id'] || !in_array((int)$student['program_id'], $allowed, true)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'This student is outside your department']);
+            return;
+        }
+    }
+
+    $isIrregular = !empty($data['is_irregular']);
+    if ($isIrregular) {
+        $yearLevel = (int)($data['year_level'] ?? 0);
+        if ($yearLevel < 1 || $yearLevel > 10) {
+            echo json_encode(['success' => false, 'message' => 'Year level must be between 1 and 10']);
+            return;
+        }
+        db()->execute("UPDATE users SET year_level = ?, year_level_locked = 1, updated_at = NOW() WHERE users_id = ?", [$yearLevel, $id]);
+        echo json_encode(['success' => true, 'message' => 'Standing updated', 'data' => ['year_level' => $yearLevel, 'locked' => true]]);
+        return;
+    }
+
+    // Clearing the override — recompute immediately from their student ID rather than leaving a stale value.
+    $computed = $student['student_id'] ? deriveYearLevel($student['student_id']) : null;
+    db()->execute("UPDATE users SET year_level = ?, year_level_locked = 0, updated_at = NOW() WHERE users_id = ?", [$computed, $id]);
+    echo json_encode(['success' => true, 'message' => 'Standing set back to automatic', 'data' => ['year_level' => $computed, 'locked' => false]]);
+}
+
+/**
+ * POST ?action=recompute-year-levels
+ * Admin maintenance action — recomputes year_level for every student whose
+ * standing isn't dean-locked, from their student ID vs the current academic
+ * year. Safe to re-run any time (e.g. once a new school year starts).
+ */
+function handleRecomputeYearLevels() {
+    if (Auth::role() !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Admin only']);
+        return;
+    }
+    $students = db()->fetchAll("SELECT users_id, student_id FROM users WHERE role = 'student' AND (year_level_locked = 0 OR year_level_locked IS NULL) AND student_id IS NOT NULL");
+    $ayStart = getCurrentAcademicYearStart();
+    $updated = 0; $skipped = 0;
+    foreach ($students as $s) {
+        $level = deriveYearLevel($s['student_id'], $ayStart);
+        if ($level === null) { $skipped++; continue; }
+        db()->execute("UPDATE users SET year_level = ? WHERE users_id = ?", [$level, $s['users_id']]);
+        $updated++;
+    }
+    echo json_encode(['success' => true, 'message' => "Updated {$updated} student(s), skipped {$skipped} (no parseable batch year)", 'data' => ['updated' => $updated, 'skipped' => $skipped]]);
 }
 
 function handleSetPassword() {

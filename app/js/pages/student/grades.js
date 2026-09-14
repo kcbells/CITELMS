@@ -724,9 +724,9 @@ function pageCss() {
         /* Badges */
         .rc-status { display:inline-block; padding:3px 9px; border-radius:20px;
             font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
-        .rc-status.pass { background:#dcfce7; color:#15803d; }
-        .rc-status.warn { background:#fef3c7; color:#b45309; }
-        .rc-status.fail { background:#fee2e2; color:#b91c1c; }
+        .rc-status.pass { background:#00461B; color:#fff; }
+        .rc-status.warn { background:#B45309; color:#fff; }
+        .rc-status.fail { background:#7F1D1D; color:#fff; }
         .rc-status.none { background:#f3f4f6; color:#6b7280; }
 
         /* Expand detail button */
@@ -764,8 +764,8 @@ function pageCss() {
         .gb-total-pill { margin-left:auto; padding:6px 14px; border-radius:20px; background:${GL}; font-weight:700; color:${G}; }
         .gb-at-risk { background:#FEF2F2 !important; }
         .gb-risk-tag { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
-            border-radius:50%; background:#FEE2E2; color:#B91C1C; font-size:10px; font-weight:800; margin-left:4px; }
-        .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#FEF3C7; color:#B45309; }
+            border-radius:50%; background:#7F1D1D; color:#fff; font-size:10px; font-weight:800; margin-left:4px; }
+        .gc-cur-badge-missing { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#B45309; color:#fff; }
         .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
         .sg-cell-link { color:${G}; text-decoration:none; font-weight:700; background:none; border:none;
             padding:0; cursor:pointer; font:inherit; font-size:inherit; }
@@ -780,10 +780,10 @@ function pageCss() {
         .gc-cur-table .td-low   { color:#B91C1C !important; background:#FEF2F2 !important; }
         .ggb-mastery-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:700; white-space:nowrap; }
         .ggb-mastery-badge.met   { background:#E8F5E9; color:${G}; }
-        .ggb-mastery-badge.retry { background:#FEE2E2; color:#B91C1C; }
+        .ggb-mastery-badge.retry { background:#7F1D1D; color:#fff; }
         .ggb-remark-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:700; white-space:nowrap; }
         td.gc-cur-badge-pass .ggb-remark-badge { background:#E8F5E9; color:${G}; }
-        td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
+        td.gc-cur-badge-fail .ggb-remark-badge { background:#B45309; color:#fff; }
 
         /* Print styles */
         @media print {

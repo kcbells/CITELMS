@@ -357,6 +357,19 @@ class WebRtcSession {
 
     async start() {
         this.active = true;
+
+        // Request permissions before accessing media
+        try {
+            const { requestMediaPermissions } = await import('../utils/media-permissions.js');
+            const hasPermissions = await requestMediaPermissions();
+            if (!hasPermissions) {
+                this.active = false;
+                throw new Error('Camera and microphone permissions are required to join the class');
+            }
+        } catch (err) {
+            console.warn('Permission check failed:', err);
+        }
+
         this.localStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
             audio: true,

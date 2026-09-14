@@ -4,6 +4,7 @@
  */
 import { Api } from '../../api.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     const [dashRes, subjRes] = await Promise.all([
         Api.get('/DashboardAPI.php?action=instructor'),
@@ -87,7 +88,7 @@ export async function render(container) {
             .an-banner-inner { display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
             .an-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
             .an-banner-sub { font-size:14px; color:#6B7280; margin:0; }
-            .an-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .an-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#00461B; color:#fff; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
             .an-back-btn:hover { background:#d9efe0; }
 
             /* Stat cards */
@@ -131,11 +132,11 @@ export async function render(container) {
 
             /* Subject breakdown */
             .data-table { width:100%; border-collapse:collapse; border-radius:10px; overflow:hidden; border:2px solid #1B4D3E; }
-            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#404040; background:#f7f7f7; border-bottom:1px solid #ccc; }
+            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#fff; background:#00461B; border-bottom:1px solid #ccc; }
             .data-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:middle; }
             .data-table tr:last-child td { border-bottom:none; }
             .data-table tr:hover td { background:#f9fffe; }
-            .subj-tag { background:#E8F5E9; color:#1B4D3E; padding:3px 8px; border-radius:6px; font-family:monospace; font-size:12px; font-weight:700; }
+            .subj-tag { background:#00461B; color:#fff; padding:3px 8px; border-radius:6px; font-family:monospace; font-size:12px; font-weight:700; }
             .mini-bar { height:5px; border-radius:3px; background:#e2e8f0; overflow:hidden; width:72px; margin-top:3px; }
             .mini-fill { height:100%; border-radius:3px; }
 
@@ -372,4 +373,5 @@ export async function render(container) {
     `;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

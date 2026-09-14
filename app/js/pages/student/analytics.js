@@ -3,6 +3,7 @@
  */
 import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
+import { esc } from '../../utils/classroom-ui.js';
 const G = '#00461B';
 const M = '#6B0F1A';
 const Y = '#F59E0B';
@@ -55,7 +56,7 @@ export async function render(container) {
             .sa-sub { font-size:12px; color:#6B7280; }
             .sa-pill { display:inline-block; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700; }
             .sa-pill.high { background:#FDF2F4; color:${M}; }
-            .sa-pill.medium { background:#FEF9C3; color:#92400E; }
+            .sa-pill.medium { background:#B45309; color:#fff; }
             .sa-pill.good { background:#E8F5EC; color:${G}; }
             .sa-bar { height:8px; background:#F3F4F6; border-radius:4px; overflow:hidden; margin-top:6px; }
             .sa-bar-fill { height:100%; border-radius:4px; }
@@ -107,8 +108,5 @@ export async function render(container) {
         </div>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

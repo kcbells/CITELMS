@@ -252,18 +252,23 @@ function fixQuestionOptionFk() {
     if ($done) return;
     $done = true;
     try {
-        // The lms.sql schema had fk_qopt_quiz_question pointing to quiz_questions(quiz_questions_id),
-        // but every API uses quiz_question_id as an alias for questions.questions_id.
-        // Drop the wrong FK so inserts work correctly.
+        // The lms.sql schema had a FK on question_option.quiz_question_id pointing
+        // to quiz_questions(quiz_questions_id), but every API (this helper's own
+        // callers included) uses quiz_question_id as an alias for
+        // questions.questions_id, so that FK rejects every real insert. Look up
+        // whatever this constraint is actually named on THIS database rather than
+        // a hardcoded name — a hardcoded 'fk_qopt_quiz_question' silently matched
+        // nothing here (the live constraint is named 'fk_qo_quizquestion'), which
+        // made this whole function a no-op and left quiz option saves broken.
         $row = db()->fetchOne(
             "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
              WHERE TABLE_SCHEMA = DATABASE()
                AND TABLE_NAME = 'question_option'
-               AND CONSTRAINT_NAME = 'fk_qopt_quiz_question'
                AND REFERENCED_TABLE_NAME = 'quiz_questions'"
         );
         if ($row) {
-            pdo()->exec("ALTER TABLE question_option DROP FOREIGN KEY fk_qopt_quiz_question");
+            $constraintName = $row['CONSTRAINT_NAME'];
+            pdo()->exec("ALTER TABLE question_option DROP FOREIGN KEY `$constraintName`");
         }
     } catch (Exception $e) {
         error_log('fixQuestionOptionFk: ' . $e->getMessage());
@@ -300,10 +305,19 @@ function ensureQuizScheduleColumns() {
                  COMMENT 'When quiz becomes visible to students' AFTER status"
             );
         }
-        if (!db()->fetchOne("SHOW COLUMNS FROM quiz LIKE 'due_date'")) {
+        $dueCol = db()->fetchOne("SHOW COLUMNS FROM quiz LIKE 'due_date'");
+        if (!$dueCol) {
             pdo()->exec(
-                "ALTER TABLE quiz ADD COLUMN due_date DATE NULL DEFAULT NULL AFTER availability_start"
+                "ALTER TABLE quiz ADD COLUMN due_date DATETIME NULL DEFAULT NULL AFTER availability_start"
             );
+        } elseif (stripos((string)$dueCol['Type'], 'datetime') === false) {
+            // Widen DATE -> DATETIME so instructors can set a time of day, not
+            // just a day. Existing date-only values are pushed to 23:59:59
+            // first: a plain DATE meant "due at the end of that day", and
+            // converting it straight to DATETIME would silently turn it into
+            // midnight — locking students out a day earlier than intended.
+            pdo()->exec("UPDATE quiz SET due_date = CONCAT(due_date, ' 23:59:59') WHERE due_date IS NOT NULL");
+            pdo()->exec("ALTER TABLE quiz MODIFY COLUMN due_date DATETIME NULL DEFAULT NULL");
         }
     } catch (Exception $e) {
         error_log('quiz schedule columns: ' . $e->getMessage());
@@ -463,11 +477,16 @@ function parseQuizPublishInput(array $d): array {
     }
 
     $dueDate = null;
-    $dueRaw = trim((string)($d['due_date'] ?? ''));
+    // due_date is DATETIME (see ensureQuizScheduleColumns) so the instructor's
+    // chosen time of day is kept. A value with no time still means the END of
+    // that day, not midnight.
+    $dueRaw = str_replace('T', ' ', trim((string)($d['due_date'] ?? '')));
     if ($dueRaw !== '') {
         $dueTs = strtotime($dueRaw);
         if ($dueTs !== false) {
-            $dueDate = date('Y-m-d', $dueTs);
+            $dueDate = preg_match('/\d{1,2}:\d{2}/', $dueRaw)
+                ? date('Y-m-d H:i:s', $dueTs)
+                : date('Y-m-d 23:59:59', $dueTs);
         }
     }
 

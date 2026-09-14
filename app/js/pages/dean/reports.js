@@ -10,7 +10,7 @@ export async function render(container) {
             }
             .rp-soon-icon {
                 width: 72px; height: 72px; border-radius: 20px;
-                background: #E8F5E9; color: #1B4D3E;
+                background:#00461B; color:#fff;
                 display: flex; align-items: center; justify-content: center;
                 margin-bottom: 20px;
             }

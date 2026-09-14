@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects = [];
@@ -40,7 +41,7 @@ async function renderList(container, filterSubject = '') {
             .ls-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
             .ls-banner-sub { font-size:14px; color:#6B7280; margin:0; }
             .ls-banner-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-            .ls-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .ls-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#00461B; color:#fff; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
             .ls-back-btn:hover { background:#d9efe0; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
             .btn-primary:hover { background:#00351a; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
@@ -51,12 +52,12 @@ async function renderList(container, filterSubject = '') {
 
             .subject-group { margin-bottom:28px; }
             .subject-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #f1f5f9; }
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:700; font-size:13px; }
+            .subj-code { background:#00461B; color:#fff; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:700; font-size:13px; }
             .subj-name { font-size:16px; font-weight:700; color:#111827; }
 
             /* Fixed: Removed overflow:hidden so dropdowns aren't clipped */
             .data-table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; border:2px solid #1B4D3E; position:relative; }
-            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#404040; background:#f7f7f7; border-bottom:1px solid #ccc; }
+            .data-table th { text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#fff; background:#00461B; border-bottom:1px solid #ccc; }
             .data-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; font-size:13px; }
             .data-table tr:hover td { background:#f9fffe; }
 
@@ -68,8 +69,8 @@ async function renderList(container, filterSubject = '') {
             .lesson-title { font-weight:600; color:#262626; }
             .lesson-desc { font-size:12px; color:#737373; margin-top:2px; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-published { background:#E8F5E9; color:#1B4D3E; }
-            .badge-draft { background:#FEF3C7; color:#B45309; }
+            .badge-published { background:#00461B; color:#fff; }
+            .badge-draft { background:#B45309; color:#fff; }
             .meta-text { font-size:13px; color:#737373; }
 
             .actions-cell { position:relative; width:40px; }
@@ -100,8 +101,8 @@ async function renderList(container, filterSubject = '') {
             .form-input:focus, .form-select:focus, .form-textarea:focus { outline:none; border-color:#00461B; }
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; }
-            .alert-success { background:#E8F5E9; color:#1B4D3E; }
+            .alert-error { background:#7F1D1D; color:#fff; }
+            .alert-success { background:#00461B; color:#fff; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
 
             /* Materials Section */
@@ -111,7 +112,7 @@ async function renderList(container, filterSubject = '') {
             .mat-actions { display:flex; gap:8px; }
             .mat-btn { padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid #e0e0e0; background:#fff; color:#404040; display:inline-flex; align-items:center; gap:6px; }
             .mat-btn:hover { background:#f5f5f5; }
-            .mat-btn.green { background:#E8F5E9; color:#1B4D3E; border-color:#A7F3D0; }
+            .mat-btn.green { background:#00461B; color:#fff; border-color:#A7F3D0; }
             .mat-btn.green:hover { background:#D1FAE5; }
 
             .mat-link-form { display:none; background:#fafbfc; border:1px solid #e8e8e8; border-radius:10px; padding:14px; margin-bottom:12px; }
@@ -141,10 +142,10 @@ async function renderList(container, filterSubject = '') {
             .mat-item-name { font-weight:600; color:#1f2937; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
             .mat-item-meta { font-size:11px; color:#9ca3af; }
             .mat-item-del { background:none; border:none; cursor:pointer; color:#d1d5db; padding:4px; border-radius:6px; }
-            .mat-item-del:hover { color:#b91c1c; background:#FEE2E2; }
+            .mat-item-del:hover { color:#fff; background:#7F1D1D; }
 
             .mat-empty { text-align:center; padding:20px; color:#9ca3af; font-size:13px; }
-            .mat-save-hint { background:#FEF3C7; color:#92400E; padding:12px 16px; border-radius:10px; font-size:13px; text-align:center; }
+            .mat-save-hint { background:#B45309; color:#fff; padding:12px 16px; border-radius:10px; font-size:13px; text-align:center; }
         </style>
 
         <div class="ls-banner">
@@ -539,7 +540,7 @@ function openArchiveModal(lesson) {
                 </div>
                 <div class="form-group">
                     <label class="form-label">Subject</label>
-                    <div style="background:#E8F5E9;color:#1B4D3E;padding:7px 12px;border-radius:8px;font-size:13px;font-weight:700;display:inline-block;font-family:monospace;">${esc(lesson.subject_code)}</div>
+                    <div style="background:#00461B; color:#fff;padding:7px 12px;border-radius:8px;font-size:13px;font-weight:700;display:inline-block;font-family:monospace;">${esc(lesson.subject_code)}</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Lesson Title *</label>
@@ -677,7 +678,7 @@ function showLinkError(overlay, msg) {
     if (!el) {
         el = document.createElement('div');
         el.id = 'mat-link-error';
-        el.style.cssText = 'background:#FEE2E2;color:#b91c1c;padding:8px 12px;border-radius:8px;font-size:12px;margin-top:8px;';
+        el.style.cssText = 'background:#7F1D1D; color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;margin-top:8px;';
         overlay.querySelector('#mat-link-form').appendChild(el);
     }
     el.textContent = msg;
@@ -690,4 +691,4 @@ function clearLinkError(overlay) {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)

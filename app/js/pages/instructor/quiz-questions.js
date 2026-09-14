@@ -6,6 +6,7 @@ import { Api, BASE_URL } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 const QUESTION_TYPES = [
@@ -45,11 +46,11 @@ async function loadPage(container, quizId) {
             .qq-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .qq-title { font-size:22px; font-weight:700; color:#262626; }
             .qq-meta  { font-size:13px; color:#737373; margin-top:4px; }
-            .qq-meta .code { background:#E8F5E9; color:#1B4D3E; padding:2px 8px; border-radius:4px; font-family:monospace; font-weight:600; font-size:12px; }
-            .qq-count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .qq-meta .code { background:#00461B; color:#fff; padding:2px 8px; border-radius:4px; font-family:monospace; font-weight:600; font-size:12px; }
+            .qq-count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-published { background:#E8F5E9; color:#1B4D3E; }
-            .badge-draft { background:#FEF3C7; color:#B45309; }
+            .badge-published { background:#00461B; color:#fff; }
+            .badge-draft { background:#B45309; color:#fff; }
 
             .btn-primary  { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
@@ -117,8 +118,8 @@ async function loadPage(container, quizId) {
             .gf-media-bar { display:flex; align-items:center; gap:6px; padding:8px 0 14px; border-bottom:1px solid #f1f3f4; margin-bottom:14px; }
             .gf-media-bar-label { font-size:11px; font-weight:700; color:#5f6368; text-transform:uppercase; letter-spacing:.5px; margin-right:4px; }
             .gf-media-tab { display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:20px; border:1.5px solid #e0e0e0; font-size:12px; font-weight:600; color:#5f6368; cursor:pointer; background:#fff; transition:all .15s; }
-            .gf-media-tab:hover { border-color:#00461B; color:#00461B; background:#f0fdf4; }
-            .gf-media-tab.active { border-color:#00461B; color:#00461B; background:#E8F5EC; }
+            .gf-media-tab:hover { border-color:#00461B; color:#fff; background:#00461B; }
+            .gf-media-tab.active { border-color:#00461B; color:#fff; background:#00461B; }
             .gf-media-content { margin-bottom:14px; }
 
             /* Media upload area */
@@ -166,12 +167,13 @@ async function loadPage(container, quizId) {
             .gf-card-bottom { display:flex; align-items:center; justify-content:flex-end; gap:14px; padding:12px 22px; border-top:1px solid #f1f3f4; }
             .gf-pts-wrap { display:flex; align-items:center; gap:8px; margin-right:auto; }
             .gf-pts-label { font-size:13px; font-weight:600; color:#5f6368; }
+            .gf-pts-note { font-size:12px; font-weight:600; color:#00461B; line-height:1.4; }
             .gf-pts-input { width:60px; padding:6px 10px; border:1.5px solid #dadce0; border-radius:8px; font-size:14px; font-weight:700; text-align:center; font-family:inherit; color:#202124; }
             .gf-pts-input:focus { outline:none; border-color:#00461B; }
-            .gf-correct-hint { font-size:12px; color:#1B4D3E; background:#E8F5EC; padding:5px 10px; border-radius:6px; font-weight:600; }
+            .gf-correct-hint { font-size:12px; color:#fff; background:#00461B; padding:5px 10px; border-radius:6px; font-weight:600; }
 
             /* Alert */
-            .gf-alert { background:#FEE2E2; color:#b91c1c; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:4px; }
+            .gf-alert { background:#7F1D1D; color:#fff; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:4px; }
 
             /* Save buttons */
             .gf-btn-cancel { background:#fff; color:#5f6368; border:1.5px solid #dadce0; padding:9px 20px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; }
@@ -291,8 +293,19 @@ function renderQuestionCard(q, index) {
 /* ══════════════════════════════════════════════
    Google Forms-style Question Modal
 ══════════════════════════════════════════════ */
-export function openQuestionModal(container, quizId, question = null) {
+/**
+ * @param {HTMLElement|null} container  page to reload after saving (unused in offline mode)
+ * @param {number|string|null} quizId   quiz to save into (unused in offline mode)
+ * @param {object|null} question        existing question to edit
+ * @param {{ onSubmit?: (payload:object)=>void }} [opts]
+ *        Pass onSubmit to use this editor OFFLINE: nothing is written to the
+ *        database and no page is reloaded — the finished question is handed
+ *        back instead. That's what lets the module quiz builder reuse this
+ *        editor while assembling a quiz that doesn't exist yet.
+ */
+export function openQuestionModal(container, quizId, question = null, opts = {}) {
     const isEdit = !!question;
+    const onSubmit = typeof opts.onSubmit === 'function' ? opts.onSubmit : null;
     let currentType = question?.question_type || 'multiple_choice';
 
     // Normalize legacy types
@@ -367,8 +380,9 @@ export function openQuestionModal(container, quizId, question = null) {
                     <!-- Card bottom bar: points + hint -->
                     <div class="gf-card-bottom">
                         <div class="gf-pts-wrap">
+                            ${opts.pointsNote ? `<span class="gf-pts-note">${esc(opts.pointsNote)}</span>` : `
                             <label class="gf-pts-label" for="gf-pts">Points</label>
-                            <input type="number" class="gf-pts-input" id="gf-pts" min="1" max="100" value="${question?.points || 1}">
+                            <input type="number" class="gf-pts-input" id="gf-pts" min="1" max="100" value="${question?.points || 1}">`}
                         </div>
                         <span class="gf-correct-hint" id="gf-correct-hint" style="display:none;"></span>
                     </div>
@@ -607,7 +621,9 @@ export function openQuestionModal(container, quizId, question = null) {
 
         const type  = overlay.querySelector('#gf-qtype').value;
         const text  = overlay.querySelector('#gf-qtext').value.trim();
-        const pts   = parseInt(overlay.querySelector('#gf-pts').value) || 1;
+        // Absent when the caller suppressed the field (rubric-scored components
+        // weigh every question equally, so there's nothing to set).
+        const pts   = parseInt(overlay.querySelector('#gf-pts')?.value) || 1;
 
         if (!text) {
             alertEl.innerHTML = '<div class="gf-alert">Please enter the question text.</div>';
@@ -655,6 +671,13 @@ export function openQuestionModal(container, quizId, question = null) {
             media_name:    mediaState.name || '',
         };
         if (isEdit) payload.questions_id = question.questions_id;
+
+        // Offline mode — hand the question back to the caller, nothing is saved here.
+        if (onSubmit) {
+            overlay.remove();
+            onSubmit(payload);
+            return;
+        }
 
         const saveBtn = overlay.querySelector('#gf-save');
         saveBtn.disabled = true;
@@ -871,4 +894,5 @@ async function openBankModal(container, quizId) {
     loadBank();
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

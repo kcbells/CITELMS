@@ -4,6 +4,7 @@
 export const UI = {
     primary: '#00461B',
     primaryMid: '#1B4D3E',
+    primaryDark: '#006428',
     primaryLight: '#E8F5EC',
     surface: '#FFFFFF',
     muted: '#F3F4F6',
@@ -11,6 +12,13 @@ export const UI = {
     maroonDark: '#3D0C11',
     text: '#262626',
     textMuted: '#6B7280',
+    // Gradebook module-group accents — same three colors used by the Global
+    // Gradebook's 14-module header row and reused wherever else that same
+    // grouping (Effortful Learning / Mastery / Start-of-Class) is shown.
+    violet: '#7C3AED',
+    violetLight: '#EDE9FE',
+    amber: '#B45309',
+    blue: '#1D4ED8',
 };
 
 /** Flat page hero / banner */

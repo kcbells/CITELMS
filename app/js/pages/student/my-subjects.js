@@ -8,6 +8,7 @@ import { openJoinPanel } from '../../components/student-enroll-fab.js';
 import { subjectHash } from './quizzes.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G  = '#00461B';
 const G2 = '#006428';
@@ -219,7 +220,7 @@ function renderCard(s, annBySubject) {
         <div class="ms-card-top" style="background:${color}">
             ${programPatternSvg(s.program_code, s.subject_id)}
             <span class="ms-card-kebab" data-kebab-toggle title="More">
-                <span class="material-symbols-outlined">more_vert</span>
+                ${icon('moreVertical', { size: 19 })}
             </span>
             <div class="ms-card-menu" data-kebab-menu hidden>
                 <span data-card-action="unenroll">${icon('logout', inl)} Unenroll</span>
@@ -355,7 +356,7 @@ function styles() {
             color:#fff; cursor:pointer;
         }
         .ms-card-kebab:hover { background:rgba(255,255,255,.2); }
-        .ms-card-kebab .material-symbols-outlined { font-size:19px; }
+        .ms-card-kebab svg { width:19px; height:19px; }
         .ms-card-menu {
             position:absolute; top:40px; right:8px; z-index:20; min-width:160px;
             background:#fff; border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.2);
@@ -453,8 +454,5 @@ function truncate(s, n) {
     return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

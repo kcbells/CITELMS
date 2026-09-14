@@ -66,7 +66,7 @@ export async function render(container) {
         .rp-wrap { max-width: 100%; }
 
         /* ── Role cards ── */
-        .rp-roles { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+        .rp-roles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
         .rp-role-card {
             padding:16px; border-radius:14px; border:none;
             background:#fff; cursor:pointer; transition:background .15s;

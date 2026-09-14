@@ -13,7 +13,7 @@ import {
     renderPrivateCommentsRail, bindPrivateCommentRail, openGcModal, classroomPageFooter,
 } from '../../utils/classroom-ui.js';
 import {
-    renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss, resolveMaterialUrl,
+    renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss,
 } from '../../utils/material-files.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
@@ -22,8 +22,22 @@ import { mountInstructorGradebook } from './gradebook.js';
 import { mountQuizIntegrityTab } from './subject-integrity.js';
 import { buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
 import { notify } from '../../utils/notify.js';
+import { fileServeUrl } from '../../components/module-documents-modal.js';
+import { openModuleQuizBuilder } from '../../components/module-quiz-builder.js';
+import {
+    formatPosted, formatDue, classworkPostedTime, formatQType, groupStudentSubmissions,
+    renderStudentSubmissionRow, renderCwKebabMenu, renderQuizScoresTable,
+    renderQuestionDifficultyPanel, renderDetailSubmissionsPanel,
+} from './subject-render-helpers.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
+
+function fmtFileSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n > 1024) return (n / 1024).toFixed(1) + ' KB';
+    return n + ' B';
+}
 
 export async function render(container, params) {
     const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -47,7 +61,7 @@ export async function render(container, params) {
         ? `/ClassroomAPI.php?action=classmates&subject_id=${subjectId}&section_id=${urlSectionId}`
         : `/ClassroomAPI.php?action=classmates&subject_id=${subjectId}`;
 
-    const [dashboardRes, classRes, classmatesResInitial, annRes, lessonsRes, quizzesRes, sectionsRes, viewSummaryRes] = await Promise.all([
+    const [dashboardRes, classRes, classmatesResInitial, annRes, lessonsRes, quizzesRes, sectionsRes, viewSummaryRes, modDocsRes] = await Promise.all([
         Api.get('/DashboardAPI.php?action=instructor'),
         Api.get('/ClassroomAPI.php?action=info&subject_id=' + subjectId),
         Api.get(initialClassmatesUrl),
@@ -56,6 +70,7 @@ export async function render(container, params) {
         Api.get('/QuizzesAPI.php?action=instructor-list&subject_id=' + subjectId),
         Api.get('/SectionsAPI.php?action=instructor-classes'),
         Api.get('/ClassroomAPI.php?action=view-summary&subject_id=' + subjectId),
+        Api.get('/ModuleDocumentsAPI.php?action=list&subject_id=' + subjectId),
     ]);
 
     const classes = dashboardRes.success ? (dashboardRes.data?.classes || []) : [];
@@ -142,6 +157,39 @@ export async function render(container, params) {
         : allAnnouncements;
     console.debug('[Subject] ann API:', annRes.success, 'raw:', annRes.data?.length ?? 0, 'filtered by subject:', allAnnouncements.length, 'filtered by section ('+effectiveSectionId+'):', announcements.length);
     const classmates = classmatesRes.success ? classmatesRes.data : [];
+
+    // Teaching Guide / SAS files (subject_module_documents) and the Global
+    // Gradebook's Let's Practice / Reflection / Wrap Up Quiz components
+    // (quiz, keyed by module_number+gradebook_component) live in separate
+    // tables, but both are per-module curriculum material for the same
+    // module — flattened together here into ONE Classwork card per module
+    // instead of documents and quizzes being managed in two different
+    // places. Union of whichever module numbers show up in EITHER source
+    // (never assumed to be Module 1) — a module with only a built quiz and
+    // no uploaded file yet still gets a card, and vice versa.
+    const moduleDocsByModule = modDocsRes.success ? (modDocsRes.data || {}) : {};
+    const moduleQuizzesByModule = modDocsRes.success ? (modDocsRes.quizzes || {}) : {};
+    const moduleRequirements = modDocsRes.success ? (modDocsRes.requirements || {}) : {};
+    const moduleDueDates     = modDocsRes.success ? (modDocsRes.module_due_dates || {}) : {};
+    const moduleNumbersWithContent = Array.from(new Set([
+        ...Object.keys(moduleDocsByModule).map(n => parseInt(n, 10)),
+        ...Object.keys(moduleQuizzesByModule).map(n => parseInt(n, 10)),
+    ])).sort((a, b) => a - b);
+    const moduleDocs = moduleNumbersWithContent.map(moduleNumber => {
+        const byType = moduleDocsByModule[moduleNumber] || {};
+        const byComponent = moduleQuizzesByModule[moduleNumber] || {};
+        return {
+            module_number: moduleNumber,
+            teaching_guide: byType.teaching_guide || null,
+            sas: byType.sas || null,
+            lets_practice: byComponent.lets_practice || null,
+            reflection: byComponent.reflection || null,
+            wrap_up_quiz: byComponent.wrap_up_quiz || null,
+            requireAllParts: !!moduleRequirements[moduleNumber]?.required,
+            moduleDueDate: moduleDueDates[moduleNumber] || '',
+            created_at: [byType.teaching_guide?.uploaded_at, byType.sas?.uploaded_at].filter(Boolean).sort().pop(),
+        };
+    });
 
     const students = classmates.filter(c => {
         const isMe = String(c.users_id) === String(me.users_id) || c.is_me == 1;
@@ -359,10 +407,10 @@ export async function render(container, params) {
                     <div class="sc-main">
                         <div class="sc-panel">
                             <nav class="sc-tabs" id="sc-tabs" role="tablist">
-                                <button type="button" role="tab" class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork" aria-selected="${state.tab === 'classwork'}">Classwork</button>
-                                <button type="button" role="tab" class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people" aria-selected="${state.tab === 'people'}">People</button>
-                                <button type="button" role="tab" class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" aria-selected="${state.tab === 'gradebook'}">Gradebook</button>
-                                <button type="button" role="tab" class="sc-tab ${state.tab === 'integrity' ? 'active' : ''}" data-tab="integrity" aria-selected="${state.tab === 'integrity'}">Integrity</button>
+                                <button type="button" role="tab" class="sc-tab ${state.tab === 'classwork' ? 'active' : ''}" data-tab="classwork" aria-selected="${state.tab === 'classwork'}" title="Classwork" aria-label="Classwork">${icon('clipboard', { size: 18 })}<span class="sc-tab-label">Classwork</span></button>
+                                <button type="button" role="tab" class="sc-tab ${state.tab === 'people' ? 'active' : ''}" data-tab="people" aria-selected="${state.tab === 'people'}" title="People" aria-label="People">${icon('users', { size: 18 })}<span class="sc-tab-label">People</span></button>
+                                <button type="button" role="tab" class="sc-tab ${state.tab === 'gradebook' ? 'active' : ''}" data-tab="gradebook" aria-selected="${state.tab === 'gradebook'}" title="Gradebook" aria-label="Gradebook">${icon('gradebook', { size: 18 })}<span class="sc-tab-label">Gradebook</span></button>
+                                <button type="button" role="tab" class="sc-tab ${state.tab === 'integrity' ? 'active' : ''}" data-tab="integrity" aria-selected="${state.tab === 'integrity'}" title="Integrity" aria-label="Integrity">${icon('shield', { size: 18 })}<span class="sc-tab-label">Integrity</span></button>
                             </nav>
                             <div id="sc-body" class="sc-body"></div>
                             </div>
@@ -452,7 +500,7 @@ export async function render(container, params) {
                     </aside>`;
             }
 
-            const subsPanel = renderDetailSubmissionsPanel(w);
+            const subsPanel = renderDetailSubmissionsPanel(w, state.studentSubmissions, state.quizScores);
             return `
                 <aside class="sc-rail sc-rail--work-focus">
                     <div class="sc-rail-focus-stack">
@@ -483,187 +531,6 @@ export async function render(container, params) {
         `;
     }
 
-    function formatPosted(dateStr) {
-        if (!dateStr) return '';
-        const d = new Date(String(dateStr).replace(' ', 'T'));
-        if (Number.isNaN(d.getTime())) return '';
-        return d.toLocaleString('en-US', {
-            month: 'short', day: 'numeric', year: 'numeric',
-            hour: 'numeric', minute: '2-digit',
-        });
-    }
-
-    function formatDue(dateStr) {
-        if (!dateStr) return null;
-        const d = new Date(dateStr + 'T23:59:59');
-        if (Number.isNaN(d.getTime())) return null;
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const due = new Date(d);
-        due.setHours(0, 0, 0, 0);
-        const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        if (due < now) return { label, late: true };
-        if (due.getTime() === now.getTime()) return { label: 'Today', late: false };
-        return { label, late: false };
-    }
-
-    function fileHref(filePath) {
-        return resolveMaterialUrl(filePath);
-    }
-
-    function groupStudentSubmissions(files) {
-        const map = new Map();
-        for (const f of files) {
-            const key = String(f.user_student_id);
-            if (!map.has(key)) {
-                map.set(key, {
-                    user_student_id: f.user_student_id,
-                    student_name: f.student_name || 'Student',
-                    student_id: f.student_id || '',
-                    submitted_at: f.submitted_at || null,
-                    points_earned: f.points_earned != null ? f.points_earned : null,
-                    files: [],
-                });
-            }
-            const g = map.get(key);
-            g.files.push(f);
-            if (f.submitted_at && (!g.submitted_at || f.submitted_at < g.submitted_at)) {
-                g.submitted_at = f.submitted_at;
-            }
-            if (f.points_earned != null) g.points_earned = f.points_earned;
-        }
-        return [...map.values()].sort((a, b) => {
-            const ta = a.submitted_at ? new Date(String(a.submitted_at).replace(' ', 'T')).getTime() : Infinity;
-            const tb = b.submitted_at ? new Date(String(b.submitted_at).replace(' ', 'T')).getTime() : Infinity;
-            return ta - tb;
-        });
-    }
-
-    function renderStudentSubmissionRow(group, index) {
-        const submittedLbl = group.submitted_at ? formatPosted(group.submitted_at) : '';
-        const ini = group.student_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-        const filesHtml = group.files.map(f => {
-            const name = f.original_name || f.file_name || 'File';
-            const href = fileHref(f.file_path);
-            return `
-                <a class="gc-work-attach" href="${esc(href)}" target="_blank" rel="noopener">
-                    <span class="gc-work-attach-icon">${icon('document', { size: 20 })}</span>
-                    <span class="gc-work-attach-text">
-                        <span class="gc-work-attach-name">${esc(name)}</span>
-                    </span>
-                </a>`;
-        }).join('');
-
-        return `
-            <article class="gc-student-submission">
-                <div class="gc-student-submission-hdr">
-                    <span class="gc-submission-order">#${index + 1}</span>
-                    <div class="sc-avatar sm">${esc(ini)}</div>
-                    <div class="gc-student-submission-meta">
-                        <span class="gc-student-submission-name">${esc(group.student_name)}</span>
-                        ${group.student_id ? `<span class="gc-student-submission-id">${esc(group.student_id)}</span>` : ''}
-                        ${submittedLbl ? `<span class="gc-student-submission-time">${icon('clock', { size: 12, className: 'ui-icon-inline' })} ${esc(submittedLbl)}</span>` : ''}
-                    </div>
-                </div>
-                <div class="gc-student-submission-files">${filesHtml}</div>
-            </article>`;
-    }
-
-    function renderDetailSubmissionRow(group, index, totalPoints) {
-        const submittedLbl = group.submitted_at ? formatPosted(group.submitted_at) : '';
-        const ini = group.student_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-        const pointsEarned = group.points_earned != null ? group.points_earned : '';
-        const filesHtml = group.files.map(f => {
-            const name = f.original_name || f.file_name || 'File';
-            const href = fileHref(f.file_path);
-            return `<a class="gc-work-attach" href="${esc(href)}" target="_blank" rel="noopener">
-                <span class="gc-work-attach-icon">${icon('document', { size: 16 })}</span>
-                <span class="gc-work-attach-name gc-work-attach-text">${esc(name)}</span>
-            </a>`;
-        }).join('');
-
-        return `
-            <article class="gc-sub-row" data-student-id="${group.user_student_id}">
-                <div class="gc-sub-row-hdr">
-                    <div class="sc-avatar sm">${esc(ini)}</div>
-                    <div class="gc-sub-row-meta">
-                        <span class="gc-sub-row-name">${esc(group.student_name)}</span>
-                        ${submittedLbl ? `<span class="gc-sub-row-time">${esc(submittedLbl)}</span>` : ''}
-                    </div>
-                    ${pointsEarned !== '' ? `<span class="gc-sub-row-grade-badge">${pointsEarned}${totalPoints != null ? '/' + totalPoints : ''} pts</span>` : ''}
-                </div>
-                ${filesHtml ? `<div class="gc-sub-row-files">${filesHtml}</div>` : ''}
-                <div class="gc-sub-row-grade-row">
-                    <input type="number" class="gc-sub-grade-input" min="0"
-                        ${totalPoints != null ? `max="${totalPoints}"` : ''}
-                        step="0.5" placeholder="${totalPoints != null ? `/ ${totalPoints} pts` : 'Points'}"
-                        value="${esc(String(pointsEarned))}">
-                    <button type="button" class="gc-sub-grade-save" data-student-id="${group.user_student_id}">Save Grade</button>
-                </div>
-            </article>`;
-    }
-
-    function renderDetailSubmissionsPanel(w) {
-        const submissionGroups = groupStudentSubmissions(state.studentSubmissions || []);
-        const quizRows = w.type === 'quiz' ? listQuizSubmissionsInOrder(state.quizScores) : [];
-        const totalPoints = w.type === 'lesson'
-            ? (w.data.total_points != null && w.data.total_points !== '' ? Number(w.data.total_points) : null)
-            : null;
-
-        const totalCount = w.type === 'quiz'
-            ? quizRows.length + submissionGroups.length
-            : submissionGroups.length;
-
-        const lessonSubmissionsHtml = w.type === 'lesson'
-            ? (submissionGroups.length === 0
-                ? `<p class="gc-sub-panel-empty">No students have turned in work yet.</p>`
-                : submissionGroups.map((g, i) => renderDetailSubmissionRow(g, i, totalPoints)).join(''))
-            : '';
-
-        const quizSubmissionsHtml = w.type === 'quiz' ? `
-            <div class="gc-sub-panel-quiz">
-                ${renderQuizScoresTable(state.quizScores)}
-                ${submissionGroups.length ? `
-                    <h4 class="gc-sub-panel-subtitle">${icon('document', inl)} File attachments</h4>
-                    ${submissionGroups.map((g, i) => renderStudentSubmissionRow(g, i)).join('')}` : ''}
-            </div>` : '';
-
-        const showDueDate = w.type === 'quiz' || totalPoints != null;
-
-        const dueRaw = w.data.due_date ? String(w.data.due_date).slice(0, 10) : '';
-        const dueDisplay = (() => {
-            if (!dueRaw) return null;
-            const d = new Date(dueRaw + 'T00:00:00');
-            if (isNaN(d)) return null;
-            const late = d.getTime() < Date.now();
-            return {
-                label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                late,
-            };
-        })();
-
-        const calIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
-        const dueBtnHtml = !showDueDate ? '' : dueDisplay
-            ? `<button type="button" class="gc-sub-due-btn gc-sub-due-btn--set ${dueDisplay.late ? 'late' : ''}" id="gc-open-due-modal">
-                   ${calIcon} ${dueDisplay.late ? 'Past due · ' : 'Due · '}${esc(dueDisplay.label)}
-               </button>`
-            : `<button type="button" class="gc-sub-due-btn" id="gc-open-due-modal">
-                   ${calIcon} Set due date
-               </button>`;
-
-        return `
-            <div class="gc-sub-panel">
-                <div class="gc-sub-panel-hdr">
-                    <h3 class="gc-sub-panel-title">${icon('users', { size: 16, className: 'ui-icon-inline' })} Student Submissions <span class="gc-sub-panel-count">${totalCount}</span></h3>
-                    ${dueBtnHtml}
-                </div>
-                <div class="gc-sub-panel-body" id="gc-sub-panel-body">
-                    ${lessonSubmissionsHtml}
-                    ${quizSubmissionsHtml}
-                </div>
-            </div>`;
-    }
-
     function renderClassCodeAside() {
         const sectionLabel = activeSection?.section_name || subject.section_name || '';
         const qrSectionId = effectiveSectionId || activeSection?.section_id || 0;
@@ -683,7 +550,7 @@ export async function render(container, params) {
                 </aside>`;
         }
 
-        const joinUrl = buildStudentJoinUrlByEnrollmentCode(code);
+        const joinUrl = buildStudentJoinUrlByEnrollmentCode(code, subject.subject_id);
         const sectionPicker = availableSections.length > 1
             ? `<label class="sc-class-code-pick-label" for="sc-section-pick">Section</label>
                <select class="sc-class-code-section-pick" id="sc-section-pick" aria-label="Choose section for QR code">
@@ -710,19 +577,14 @@ export async function render(container, params) {
             </aside>`;
     }
 
-    function classworkPostedTime(data) {
-        const raw = data?.created_at || data?.updated_at || data?.posted_at || '';
-        const t = new Date(String(raw).replace(' ', 'T')).getTime();
-        return Number.isNaN(t) ? 0 : t;
-    }
-
     function renderClasswork() {
         const items = [
             ...lessons.map(l => ({ type: 'lesson', id: l.lessons_id, data: l })),
             ...quizzes.map(q => ({ type: 'quiz', id: q.quiz_id, data: q })),
             ...announcements.map(a => ({ type: 'announcement', id: a.announcement_id, data: a })),
+            ...moduleDocs.map(d => ({ type: 'moduledoc', id: d.module_number, data: d })),
         ].sort((a, b) => classworkPostedTime(b.data) - classworkPostedTime(a.data));
-        console.debug('[Classwork] lessons:', lessons.length, 'quizzes:', quizzes.length, 'announcements:', announcements.length, 'total items:', items.length);
+        console.debug('[Classwork] lessons:', lessons.length, 'quizzes:', quizzes.length, 'announcements:', announcements.length, 'module docs:', moduleDocs.length, 'total items:', items.length);
 
         const feedInner = !items.length
             ? `<div class="sc-empty sc-empty--inline">
@@ -744,114 +606,6 @@ export async function render(container, params) {
             </div>`;
     }
 
-    function renderCwKebabMenu(type, id, published, title) {
-        const pubLabel = published ? 'Save as draft' : 'Publish';
-        const pubStatus = published ? 'draft' : 'published';
-        const typeItems = type === 'quiz'
-            ? `<button type="button" class="gc-cw-kebab-item" data-cw-action="edit" data-cw-type="quiz" data-cw-id="${id}">${icon('edit', inl)} Edit quiz</button>
-               <button type="button" class="gc-cw-kebab-item" data-cw-action="questions" data-cw-type="quiz" data-cw-id="${id}">${icon('clipboard', inl)} Edit questions</button>`
-            : '';
-        return `
-            <div class="gc-cw-kebab-wrap">
-                <button type="button" class="gc-cw-kebab" title="Actions" aria-label="More actions">${icon('menu', { size: 18 })}</button>
-                <div class="gc-cw-kebab-menu">
-                    <button type="button" class="gc-cw-kebab-item" data-cw-action="status" data-cw-type="${type}" data-cw-id="${id}" data-cw-status="${pubStatus}">${icon(published ? 'folder' : 'check', inl)} ${pubLabel}</button>
-                    ${typeItems}
-                    <button type="button" class="gc-cw-kebab-item danger" data-cw-action="delete" data-cw-type="${type}" data-cw-id="${id}" data-cw-name="${esc(title)}">${icon('trash', inl)} Delete</button>
-                        </div>
-            </div>`;
-    }
-
-    function listQuizSubmissionsInOrder(rows) {
-        const map = new Map();
-        for (const r of rows || []) {
-            const key = r.student_id || `${r.first_name}-${r.last_name}`;
-            const pct = parseFloat(r.percentage) || 0;
-            const earned = parseFloat(r.earned_points) || 0;
-            const total = parseFloat(r.total_points) || 0;
-            const completed = r.completed_at || '';
-            const name = `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Student';
-            if (!map.has(key)) {
-                map.set(key, {
-                    student_id: r.student_id || '',
-                    name,
-                    score: pct,
-                    earned,
-                    total,
-                    attempts: 1,
-                    passed: Number(r.passed) === 1,
-                    first_completed: completed,
-                    attempt_id: r.attempt_id,
-                });
-            } else {
-                const g = map.get(key);
-                g.attempts += 1;
-                if (completed && (!g.first_completed || completed < g.first_completed)) {
-                    g.first_completed = completed;
-                    g.score = pct;
-                    g.earned = earned;
-                    g.total = total;
-                    g.passed = Number(r.passed) === 1;
-                    g.attempt_id = r.attempt_id;
-                }
-            }
-        }
-        return [...map.values()].sort((a, b) => {
-            const ta = a.first_completed ? new Date(String(a.first_completed).replace(' ', 'T')).getTime() : Infinity;
-            const tb = b.first_completed ? new Date(String(b.first_completed).replace(' ', 'T')).getTime() : Infinity;
-            return ta - tb;
-        });
-    }
-
-    function renderQuizScoresTable(scores) {
-        const rows = listQuizSubmissionsInOrder(scores);
-        if (!rows.length) {
-            return `<div class="gc-cur-empty">No student attempts yet.</div>`;
-        }
-        const fmtDate = (ts) => {
-            if (!ts) return '—';
-            const d = new Date(String(ts).replace(' ', 'T'));
-            if (Number.isNaN(d.getTime())) return '—';
-            return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-        };
-        return `
-            <div class="gc-cur-wrap">
-                <div class="gc-cur-label">Student submissions — first to last turned in</div>
-                <table class="gc-cur-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th class="th-left">Student ID</th>
-                            <th class="th-left">Name</th>
-                            <th>Score</th>
-                            <th>%</th>
-                            <th>Attempts</th>
-                            <th>Status</th>
-                            <th>Turned in</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows.map((s, i) => `
-                            <tr>
-                                <td class="td-rank">${i + 1}</td>
-                                <td class="td-id">${esc(s.student_id || '—')}</td>
-                                <td class="td-name">${esc(s.name)}</td>
-                                <td class="td-num"><strong>${s.earned}/${s.total || '—'}</strong></td>
-                                <td class="td-num">${s.score.toFixed(0)}%</td>
-                                <td class="td-num">${s.attempts}</td>
-                                <td class="td-pass">
-                                    <span class="${s.passed ? 'gc-cur-badge-pass' : 'gc-cur-badge-fail'}">${s.passed ? 'Passed' : 'Failed'}</span>
-                                </td>
-                                <td class="td-num" style="font-weight:400;font-size:11px;color:#5F6368;">${esc(fmtDate(s.first_completed))}</td>
-                                <td><button class="gc-grade-btn" data-attempt="${s.attempt_id}" style="padding:5px 12px;background:#00461B;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Check / Grade</button></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>`;
-    }
-
     async function loadQuizScores(quizId) {
         const res = await Api.get(`/QuizAttemptsAPI.php?action=quiz-scores&quiz_id=${quizId}`);
         return res.success ? (res.data || []) : [];
@@ -860,42 +614,6 @@ export async function render(container, params) {
     async function loadQuizQuestionStats(quizId) {
         const res = await Api.get(`/QuizAttemptsAPI.php?action=quiz-question-stats&quiz_id=${quizId}`);
         return res.success ? (res.data || []) : [];
-    }
-
-    function renderQuestionDifficultyPanel(stats) {
-        const rows = (stats || []).filter(s => Number(s.responses) > 0);
-        if (!rows.length) {
-            return `<div class="gc-focus-card gc-focus-card--analysis">
-                <h3 class="gc-focus-card-title">${icon('chart', inl)} Where students struggle</h3>
-                <p class="gc-focus-card-note gc-focus-card-note--muted">No completed attempts yet — stats appear after students submit.</p>
-            </div>`;
-        }
-        const top = rows.slice(0, 8);
-        return `
-            <div class="gc-focus-card gc-focus-card--analysis">
-                <h3 class="gc-focus-card-title">${icon('chart', inl)} Where students struggle</h3>
-                <p class="gc-focus-card-note gc-focus-card-note--muted">Questions ranked by how often students miss full points.</p>
-                <div class="gc-qstats-list">
-                    ${top.map((q, i) => {
-                        const miss = Number(q.miss_count) || 0;
-                        const resp = Number(q.responses) || 0;
-                        const pct = resp > 0 ? Math.round((miss / resp) * 100) : 0;
-                        const preview = String(q.question_text || '').replace(/<[^>]+>/g, '').slice(0, 120);
-                        return `
-                            <div class="gc-qstat-row">
-                                <div class="gc-qstat-rank">${i + 1}</div>
-                                <div class="gc-qstat-body">
-                                    <div class="gc-qstat-text">${esc(preview)}${preview.length >= 120 ? '…' : ''}</div>
-                                    <div class="gc-qstat-meta">${esc(q.question_type || 'question')} · ${q.max_points || 0} pts · avg ${q.avg_earned ?? 0}/${q.max_points || 0}</div>
-                    </div>
-                                <div class="gc-qstat-bar-wrap">
-                                    <div class="gc-qstat-bar" style="width:${pct}%"></div>
-                                    <span class="gc-qstat-pct">${miss}/${resp} missed</span>
-                </div>
-                            </div>`;
-                    }).join('')}
-                </div>
-            </div>`;
     }
 
     function renderAnnAttachments(atts) {
@@ -942,6 +660,10 @@ export async function render(container, params) {
                     </div>
                     ${viewersBlock('announcement', d.announcement_id)}
                 </article>`;
+        }
+
+        if (item.type === 'moduledoc') {
+            return moduleDocRow(d);
         }
 
         if (item.type === 'lesson') {
@@ -997,6 +719,108 @@ export async function render(container, params) {
             dueLabel: quizDue?.label || '',
             dueLate:  quizDue?.late  || false,
         });
+    }
+
+    /**
+     * One Classwork card per module that has at least one document or Global
+     * Gradebook component — Teaching Guide, SAS, Let's Practice, Reflection,
+     * and Wrap Up Quiz for the SAME module always share one card. Every
+     * action — view, replace, delete, build, publish — is a direct control
+     * right on the card, no modal needed for routine work. Only SAS gets a
+     * publish control here: Teaching Guide is staff-only and never shown to
+     * students regardless of publish state (see ModuleDocumentsAPI.php's
+     * handleUpload — teaching_guide has no publish gate at all).
+     * Admin-uploaded Teaching Guide/SAS is authoritative — instructors get a
+     * view-only row for it (see ModuleDocumentsAPI.php's `locked` flag),
+     * never a Replace/Delete control, so a subject's admin-provided material
+     * can't be swapped out or removed from under them.
+     */
+    function moduleDocRow(d) {
+        const posted = formatPosted(d.created_at);
+        const tg = d.teaching_guide;
+        const sas = d.sas;
+        const sasScheduled = sas?.publish_at && !sas?.is_published;
+        const sasPubState = !sas ? '' : sas.is_published ? 'published' : sasScheduled ? 'scheduled' : 'hidden';
+        const sasPubLabel = !sas ? '' : sas.is_published ? 'Published to students'
+            : sasScheduled ? 'Scheduled' : 'Hidden from students';
+
+        const docLine = (label, type, doc) => {
+            const inputId = `sc-moddoc-file-${d.module_number}-${type}`;
+            const locked = !!doc?.locked;
+            return `
+            <div class="gc-moddoc-row">
+                <span class="gc-moddoc-type">${esc(label)}</span>
+                ${doc
+                    ? `<a class="gc-moddoc-link" href="${fileServeUrl(doc.doc_id)}" target="_blank" rel="noopener">
+                           ${icon('document', { size: 13, className: 'ui-icon-inline' })} ${esc(doc.original_name)}
+                       </a>`
+                    : `<span class="gc-moddoc-empty">Not uploaded yet</span>`}
+                <span class="gc-moddoc-row-actions">
+                    ${locked
+                        ? `<span class="gc-moddoc-locked-tag" title="Uploaded by admin — instructors can't replace or remove it">${icon('lock', { size: 11, className: 'ui-icon-inline' })} Uploaded by admin</span>`
+                        : `<label class="gc-moddoc-replace-btn" for="${inputId}">${doc ? 'Replace' : 'Upload'}</label>
+                           <input type="file" id="${inputId}" class="gc-moddoc-file-inp"
+                                  data-mod="${d.module_number}" data-type="${type}"
+                                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv" hidden>
+                           ${doc ? `<button type="button" class="gc-moddoc-delete-btn" data-moddoc-delete-id="${doc.doc_id}" title="Remove">${icon('close', { size: 12, className: 'ui-icon-inline' })}</button>` : ''}`}
+                </span>
+            </div>`;
+        };
+
+        const quizLine = (label, component, quiz) => `
+            <div class="gc-moddoc-row">
+                <span class="gc-moddoc-type">${esc(label)}</span>
+                ${quiz
+                    ? `<span class="gc-moddoc-quiz-status gc-moddoc-quiz-status--${quiz.status}">${quiz.status === 'published' ? 'Published to students' : 'Draft — not visible to students'}</span>`
+                    : `<span class="gc-moddoc-empty">Not built yet</span>`}
+                <span class="gc-moddoc-row-actions">
+                    <button type="button" class="gc-moddoc-quizbuild-btn" data-quiz-mod="${d.module_number}" data-quiz-component="${component}" ${quiz ? `data-quiz-id="${quiz.quiz_id}"` : ''}>
+                        ${quiz ? 'Edit' : '+ Build'}
+                    </button>
+                </span>
+            </div>`;
+
+        return `
+            <article class="gc-post-card">
+                <div class="gc-post-card__row">
+                    <div class="gc-moddoc-main">
+                        <header class="gc-post-card__hdr">
+                            <div class="sc-avatar sm teacher-av">${esc(myInitials)}</div>
+                            <div class="gc-cw-author-text">
+                                <span class="gc-cw-author-name">${esc(myName)}</span>
+                                ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
+                            </div>
+                        </header>
+                        <div class="gc-post-card__work">
+                            <span class="gc-cw-icon gc-cw-icon--subj">${icon('document', { size: 20 })}</span>
+                            <div class="gc-cw-body">
+                                <div class="gc-cw-title">Module ${d.module_number} — Documents</div>
+                                <label class="gc-moddoc-require-toggle">
+                                    <input type="checkbox" data-require-mod="${d.module_number}" ${d.requireAllParts ? 'checked' : ''}>
+                                    Require all 3 parts (Let's Practice, Reflection, Wrap Up Quiz) to complete this module
+                                </label>
+                                <label class="gc-moddoc-due">
+                                    <span>Due date for this module</span>
+                                    <input type="datetime-local" data-due-mod="${d.module_number}" value="${esc(d.moduleDueDate)}">
+                                    <em>All 3 parts use this unless a part has its own deadline. Leave blank for none.</em>
+                                </label>
+                                ${docLine('Teaching Guide', 'teaching_guide', tg)}
+                                ${docLine('Student Activity Sheet', 'sas', sas)}
+                                ${quizLine("Let's Practice", 'lets_practice', d.lets_practice)}
+                                ${quizLine('Reflection', 'reflection', d.reflection)}
+                                ${quizLine('Wrap Up Quiz', 'wrap_up_quiz', d.wrap_up_quiz)}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="gc-moddoc-actions">
+                        ${sas ? `
+                            <span class="gc-cw-modpub gc-cw-modpub--${sasPubState}">${esc(sasPubLabel)}</span>
+                            <button type="button" class="gc-moddoc-pubtoggle" data-moddoc-pub-id="${sas.doc_id}" data-moddoc-pub-now="${sas.is_published ? 1 : 0}">
+                                ${sas.is_published ? 'Unpublish' : 'Publish to students'}
+                            </button>` : ''}
+                    </div>
+                </div>
+            </article>`;
     }
 
     function renderAnnouncementDetail() {
@@ -1493,7 +1317,7 @@ export async function render(container, params) {
                 .gp-close { background:none;border:none;color:#374151;width:30px;height:30px;border-radius:7px;font-size:20px;cursor:pointer;line-height:1; }
                 .gp-close:hover { background:#F3F4F6; }
                 .gp-toolbar { display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #e8e8e8;background:#fafafa;flex-shrink:0;flex-wrap:wrap; }
-                .gp-score-pill { background:#E8F5E9;color:#1B4D3E;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap; }
+                .gp-score-pill { background:#00461B; color:#fff;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap; }
                 .gp-ai-btn { display:flex;align-items:center;gap:6px;padding:7px 14px;background:#7C3AED;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer; }
                 .gp-ai-btn:hover { background:#6D28D9; }
                 .gp-ai-btn:disabled { opacity:.5;cursor:not-allowed; }
@@ -1515,11 +1339,11 @@ export async function render(container, params) {
                 .gp-qbody { padding:14px 16px; }
                 .gp-q-text { font-size:14px;font-weight:600;color:#111827;margin-bottom:10px;line-height:1.5; }
                 .gp-badge { padding:3px 8px;border-radius:10px;font-size:10px;font-weight:700; }
-                .gp-badge-ok { background:#E8F5E9;color:#1B4D3E; }
-                .gp-badge-wrong { background:#FEE2E2;color:#b91c1c; }
+                .gp-badge-ok { background:#00461B; color:#fff; }
+                .gp-badge-wrong { background:#7F1D1D; color:#fff; }
                 .gp-badge-ai { background:#EDE9FE;color:#7C3AED; }
-                .gp-badge-pending { background:#FEF3C7;color:#B45309; }
-                .gp-badge-confirmed { background:#E8F5E9;color:#1B4D3E; }
+                .gp-badge-pending { background:#B45309; color:#fff; }
+                .gp-badge-confirmed { background:#00461B; color:#fff; }
                 .gp-student-ans { background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 13px;font-size:13px;color:#1a1a1a;margin-bottom:10px;white-space:pre-wrap;line-height:1.6; }
                 .gp-student-ans.empty { background:#fef9f0;border-color:#fde68a;color:#92400e;font-style:italic; }
                 .gp-ai-result { background:#EDE9FE;border:1px solid #C4B5FD;border-radius:8px;padding:10px 13px;margin-bottom:10px;font-size:12px;color:#5B21B6; }
@@ -1868,10 +1692,6 @@ export async function render(container, params) {
         };
     }
 
-    function formatQType(t) {
-        const m = { multiple_choice:'Multiple Choice', true_false:'True/False', fill_blank:'Fill in Blank', fill_in_the_blank:'Fill in Blank', short_answer:'Short Answer', essay:'Essay', checkboxes:'Checkboxes', dropdown:'Dropdown' };
-        return m[t] || t;
-    }
     // ─────────────────────────────────────────────────────────────
 
     async function postComment(text, isPrivate = false) {
@@ -2121,6 +1941,122 @@ export async function render(container, params) {
             });
         });
 
+        // Replace/upload a Teaching Guide or SAS straight from its Classwork
+        // card — same endpoint the old modal-only flow used, just wired
+        // directly here so the instructor never has to leave Classwork to
+        // swap a file out. A full re-render (not just a local state patch)
+        // because the upload changes the document's identity (new doc_id,
+        // filename, reset publish state) rather than one boolean field.
+        container.querySelectorAll('.gc-moddoc-file-inp[data-mod]').forEach(inp => {
+            inp.addEventListener('change', async () => {
+                const file = inp.files?.[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('subject_id', subject.subject_id);
+                fd.append('module_number', inp.dataset.mod);
+                fd.append('doc_type', inp.dataset.type);
+                fd.append('file', file);
+                const res = await Api.postForm('/ModuleDocumentsAPI.php?action=upload', fd);
+                if (res.success) {
+                    render(container, { subject_id: subjectId, section_id: effectiveSectionId });
+                } else {
+                    notify.error(res.message || 'Upload failed. Please try again.');
+                }
+            });
+        });
+
+        container.querySelectorAll('.gc-moddoc-delete-btn[data-moddoc-delete-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const ok = await notify.confirm('Remove this file? Students will no longer be able to see it.', { title: 'Remove document', confirmText: 'Remove', danger: true });
+                if (!ok) return;
+                btn.disabled = true;
+                const res = await Api.post('/ModuleDocumentsAPI.php?action=delete', { doc_id: parseInt(btn.dataset.moddocDeleteId, 10) });
+                if (res.success) {
+                    render(container, { subject_id: subjectId, section_id: effectiveSectionId });
+                } else {
+                    btn.disabled = false;
+                    notify.error(res.message || 'Could not remove the file.');
+                }
+            });
+        });
+
+        container.querySelectorAll('.gc-moddoc-require-toggle input[data-require-mod]').forEach(cb => {
+            cb.addEventListener('change', async () => {
+                cb.disabled = true;
+                const res = await Api.post('/ModuleDocumentsAPI.php?action=set_module_requirement', {
+                    subject_id: subject.subject_id,
+                    module_number: parseInt(cb.dataset.requireMod, 10),
+                    require_all_parts: cb.checked,
+                });
+                if (!res.success) {
+                    cb.checked = !cb.checked;
+                    notify.error(res.message || 'Could not save this setting.');
+                }
+                cb.disabled = false;
+            });
+        });
+
+        container.querySelectorAll('.gc-moddoc-due input[data-due-mod]').forEach(inp => {
+            let last = inp.value;
+            inp.addEventListener('change', async () => {
+                inp.disabled = true;
+                const res = await Api.post('/ModuleDocumentsAPI.php?action=set_module_requirement', {
+                    subject_id: subject.subject_id,
+                    module_number: parseInt(inp.dataset.dueMod, 10),
+                    // Sent alongside the toggle's current state so saving a date
+                    // never silently flips "require all 3 parts" back off.
+                    require_all_parts: !!container.querySelector(`input[data-require-mod="${inp.dataset.dueMod}"]`)?.checked,
+                    due_date: inp.value,
+                });
+                if (res.success) {
+                    last = inp.value;
+                    notify.success(inp.value ? 'Module deadline saved.' : 'Module deadline removed.');
+                } else {
+                    inp.value = last;
+                    notify.error(res.message || 'Could not save the deadline.');
+                }
+                inp.disabled = false;
+            });
+        });
+
+        container.querySelectorAll('.gc-moddoc-quizbuild-btn[data-quiz-mod]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mod = parseInt(btn.dataset.quizMod, 10);
+                const component = btn.dataset.quizComponent;
+                const quizId = btn.dataset.quizId ? parseInt(btn.dataset.quizId, 10) : null;
+                // Opens the builder as its own page; closing/saving returns
+                // here, which re-renders and picks up the new quiz.
+                openModuleQuizBuilder(subject.subject_id, mod, component, { quizId });
+            });
+        });
+
+        // Publish/Unpublish the SAS straight from its Classwork card — the
+        // real control the instructor needs day-to-day, without opening the
+        // full modal just to flip one switch. Updates the in-memory
+        // moduleDocs entry (not just a server call) so the badge/button
+        // reflect the new state immediately on refreshBody(), same as any
+        // other in-place classwork edit here.
+        container.querySelectorAll('.gc-moddoc-pubtoggle[data-moddoc-pub-id]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const docId = parseInt(btn.dataset.moddocPubId, 10);
+                const publishing = btn.dataset.moddocPubNow !== '1';
+                btn.disabled = true;
+                const res = await Api.post('/ModuleDocumentsAPI.php?action=set_publish', { doc_id: docId, is_published: publishing });
+                if (res.success) {
+                    const mod = moduleDocs.find(m => m.sas?.doc_id === docId);
+                    if (mod?.sas) {
+                        mod.sas.is_published = publishing;
+                        if (publishing) mod.sas.publish_at = null;
+                    }
+                    refreshBody();
+                } else {
+                    btn.disabled = false;
+                    notify.error(res.message || 'Could not update publish status.');
+                }
+            });
+        });
+
         bindCwKebabMenus();
 
         container.querySelectorAll('.gc-viewers-toggle').forEach(btn => {
@@ -2305,8 +2241,7 @@ function instructorExtraCss() {
         .gc-sub-row-name { font-size:13px; font-weight:600; color:#111827; }
         .gc-sub-row-time { font-size:11px; color:#9CA3AF; }
         .gc-sub-row-grade-badge {
-            font-size:12px; font-weight:700; color:#00461B;
-            background:#E8F5EC; border:1px solid #bbf7d0;
+            font-size:12px; font-weight:700; color:#fff; background:#00461B; border:1px solid #bbf7d0;
             border-radius:20px; padding:2px 10px; white-space:nowrap; flex-shrink:0;
         }
         .gc-sub-row-files { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
@@ -2328,7 +2263,7 @@ function instructorExtraCss() {
         .gc-sub-grade-input:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
         .gc-sub-grade-save {
             padding:6px 12px; border:none; border-radius:6px;
-            background:#E8F5EC; color:#00461B; font-size:11px; font-weight:700;
+            background:#00461B; color:#fff; font-size:11px; font-weight:700;
             cursor:pointer; white-space:nowrap; font-family:inherit;
             transition:background .12s, color .12s;
         }
@@ -2416,7 +2351,7 @@ function instructorExtraCss() {
             margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #E5E7EB;
         }
         .sc-cw-head .sc-cw-title { font-size:15px; font-weight:700; color:#111827; margin:0; }
-        .sc-cw-head .sc-cw-count { font-size:12px; font-weight:600; color:#00461B; background:#E8F5EC; padding:4px 10px; border-radius:20px; }
+        .sc-cw-head .sc-cw-count { font-size:12px; font-weight:600; color:#fff; background:#00461B; padding:4px 10px; border-radius:20px; }
         .sc-instructor-class .gc-cw-list { margin-top:0; }
         .sc-instructor-class .gc-cw-row { width:100%; box-sizing:border-box; }
         .sc-instructor-class .gc-cw-right {
@@ -2432,14 +2367,53 @@ function instructorExtraCss() {
         .sc-open-btn.secondary:hover { background:#374151; }
         .sc-detail-title { font-weight:700; }
         .sc-ann-actions { display:flex; justify-content:flex-end; margin-bottom:12px; }
-        .sc-ann-target { font-size:11px; font-weight:600; color:#00461B; background:#E8F5EC; display:inline-block; padding:3px 8px; border-radius:6px; margin:4px 0 8px; }
+        .sc-ann-target { font-size:11px; font-weight:600; color:#fff; background:#00461B; display:inline-block; padding:3px 8px; border-radius:6px; margin:4px 0 8px; }
         .sc-person-info { min-width:0; }
         .sc-mate.sc-mate-click {
             display:flex; align-items:center; gap:12px;
             width:100%; cursor:pointer;
         }
-        .gc-cw-status:not(.done) { color:#B45309; background:#FEF3C7; padding:2px 8px; border-radius:10px; font-size:11px; }
+        .gc-cw-status:not(.done) { color:#fff; background:#B45309; padding:2px 8px; border-radius:10px; font-size:11px; }
         .gc-cw-status.done { color:#137333; }
+        .gc-cw-modpub { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap; }
+        .gc-cw-modpub--published { color:#137333; background:#E6F4EA; }
+        .gc-cw-modpub--scheduled { color:#fff; background:#B45309; }
+        .gc-cw-modpub--hidden { color:#5F6368; background:#F1F3F4; }
+        .gc-moddoc-main { flex:1; min-width:0; }
+        .gc-moddoc-row { display:flex; align-items:center; gap:10px; padding:5px 0; flex-wrap:wrap; }
+        .gc-moddoc-type { font-size:12px; font-weight:700; color:#5F6368; min-width:150px; flex-shrink:0; }
+        .gc-moddoc-link { display:inline-flex; align-items:center; gap:5px; color:#00461B; font-size:13px; font-weight:600; text-decoration:none; }
+        .gc-moddoc-link:hover { text-decoration:underline; }
+        .gc-moddoc-empty { font-size:12.5px; color:#9AA0A6; font-style:italic; }
+        .gc-moddoc-row-actions { display:inline-flex; align-items:center; gap:6px; margin-left:auto; }
+        .gc-moddoc-replace-btn { background:#fff; border:1.5px solid #E5E7EB; color:#374151; padding:3px 10px;
+            border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; }
+        .gc-moddoc-replace-btn:hover { border-color:#00461B; color:#00461B; }
+        .gc-moddoc-delete-btn { background:none; border:none; color:#B91C1C; cursor:pointer; padding:3px 5px;
+            display:inline-flex; align-items:center; }
+        .gc-moddoc-delete-btn:disabled { opacity:.5; cursor:default; }
+        .gc-moddoc-locked-tag { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;
+            color:#6B7280; background:#F3F4F6; padding:3px 9px; border-radius:6px; white-space:nowrap; }
+        .gc-moddoc-require-toggle { display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#374151;
+            font-weight:600; margin:2px 0 10px; cursor:pointer; line-height:1.4; }
+        .gc-moddoc-require-toggle input { margin-top:2px; accent-color:#00461B; flex-shrink:0; cursor:pointer; }
+        .gc-moddoc-due { display:flex; flex-direction:column; gap:4px; margin:8px 0 10px; font-size:12px; color:#374151; }
+        .gc-moddoc-due > span { font-weight:700; }
+        .gc-moddoc-due input { align-self:flex-start; border:1.5px solid #111; border-radius:8px;
+            padding:6px 9px; font-size:12.5px; font-family:inherit; }
+        .gc-moddoc-due em { font-style:normal; font-size:11px; color:#6B7280; }
+        .gc-moddoc-quiz-status { font-size:11.5px; font-weight:600; }
+        .gc-moddoc-quiz-status--published { color:#137333; }
+        .gc-moddoc-quiz-status--draft { color:#92400E; }
+        .gc-moddoc-quizbuild-btn { background:#fff; border:1.5px solid #E5E7EB; color:#374151; padding:3px 10px;
+            border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; }
+        .gc-moddoc-quizbuild-btn:hover { border-color:#00461B; color:#00461B; }
+        .gc-moddoc-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0; padding-top:2px; }
+        .gc-moddoc-pubtoggle { white-space:nowrap; background:#fff; border:1.5px solid #00461B; color:#00461B;
+            padding:6px 13px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;
+            transition:background .15s, color .15s; }
+        .gc-moddoc-pubtoggle:hover:not(:disabled) { background:#00461B; color:#fff; }
+        .gc-moddoc-pubtoggle:disabled { opacity:.5; cursor:default; }
         .sc-cw-layout {
             display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:start;
         }
@@ -2467,8 +2441,7 @@ function instructorExtraCss() {
         .sc-class-code-section-pick {
             width:100%; margin:0 0 8px; padding:8px 10px;
             border:1px solid #DADCE0; border-radius:8px;
-            font-size:13px; font-weight:600; color:#00461B;
-            background:#F8FDF9; font-family:inherit;
+            font-size:13px; font-weight:600; color:#fff; background:#00461B; font-family:inherit;
         }
         .sc-class-code-hint {
             font-size:12px; color:#5F6368; line-height:1.45; margin:0 0 14px;
@@ -2484,7 +2457,7 @@ function instructorExtraCss() {
         .sc-class-code-value {
             display:block; width:100%; font-family:ui-monospace, monospace;
             font-size:20px; font-weight:800; letter-spacing:2px;
-            color:#00461B; background:#E8F5EC; border:2px dashed #A7D4B5;
+            color:#fff; background:#00461B; border:2px dashed #A7D4B5;
             border-radius:10px; padding:10px 8px; cursor:pointer;
             margin-bottom:10px; transition:background .15s;
         }
@@ -2564,6 +2537,16 @@ function instructorExtraCss() {
             .sc-class-code-value, .sc-class-code-copy { grid-column:1 / -1; }
             .gc-qstat-row { flex-wrap:wrap; }
             .gc-qstat-bar-wrap { width:100%; margin-top:6px; }
+        }
+
+        /* Narrow phones: the 900px breakpoint's side-by-side QR+text grid
+           has no room to breathe once the aside is full-width but the
+           viewport itself is only ~360-480px — the section code and hint
+           text get squeezed into a sliver next to the QR. Revert to the
+           default stacked/centered card (same as desktop) below that. */
+        @media (max-width:480px) {
+            .sc-class-code-card { display:block; text-align:center; }
+            .sc-class-qr-wrap { margin:0 auto 14px; }
         }
 
         .gc-detail-action-btn--ai { background:#EDE9FE; color:#5B21B6; border-color:#C4B5FD; }

@@ -29,6 +29,16 @@ $userId = Auth::id();
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $_GET['action'] ?? $input['action'] ?? '';
 
+/** Standard item count for an AI-generated Wrap Up Quiz — a module with
+ *  unusually rich content may reasonably need more, so this is a floor the
+ *  prompt is told to meet, never a hard cap the AI has to hit exactly.
+ *  Declared here (before the dispatch switch below) because top-level
+ *  `const` statements execute in file order, not hoisted like function
+ *  declarations — defining it down near buildWrapUpQuizGenerationPrompt()
+ *  meant the switch could call into that function before this line had
+ *  ever run, throwing "Undefined constant". */
+const WRAP_UP_QUIZ_STANDARD_ITEM_COUNT = 7;
+
 // RBAC: enforce permission per action
 $_aiPerms = [
     'subjects'      => 'ai_tools.use',
@@ -37,6 +47,8 @@ $_aiPerms = [
     'generate'      => 'ai_tools.generate',
     'save'          => 'ai_tools.generate',
     'generate-from-module-docs' => 'ai_tools.generate',
+    'convert-to-fill-blank'     => 'ai_tools.generate',
+    'convert-to-multiple-choice' => 'ai_tools.generate',
 ];
 if (isset($_aiPerms[$action]) && !Auth::can($_aiPerms[$action])) {
     http_response_code(403);
@@ -56,6 +68,12 @@ switch ($action) {
         break;
     case 'generate-from-module-docs':
         generateFromModuleDocs($input);
+        break;
+    case 'convert-to-fill-blank':
+        convertToFillBlank($input);
+        break;
+    case 'convert-to-multiple-choice':
+        convertToMultipleChoice($input);
         break;
     case 'subjects':
         getInstructorSubjects($userId);
@@ -149,6 +167,12 @@ function generateFromModuleDocs(array $input): void {
             }
         }
     } catch (Exception $e) {
+        // StudentListParser only ever throws pre-written, user-safe messages
+        // (e.g. "File too large", "Unsupported file type") — never raw paths
+        // or internal detail — so surfacing $e->getMessage() here is safe.
+        // Still logged server-side in case a future change to that contract
+        // introduces something less safe.
+        error_log('AIQuizAPI generate-from-module-docs: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => $e->getMessage() ?: 'Could not read the uploaded document']);
         return;
     }
@@ -166,11 +190,22 @@ function generateFromModuleDocs(array $input): void {
         'wrap_up_quiz'           => 'Wrap Up Quiz',
     ][$component];
 
-    $prompt = buildModuleExtractionPrompt($sasText, $tgText, $sectionLabel);
-    $result = callAiChatCompletion(
-        'You extract real activity items from a student activity sheet and pair them with answers from a teaching guide. You respond ONLY with strict JSON — a single array, no prose, no markdown fences.',
-        $prompt, 3000, 0.2, $apiKey
-    );
+    // Let's Practice / Reflection are extraction-only — those items are
+    // already written in the SAS, and inventing new ones would drift from
+    // what the student actually saw. Wrap Up Quiz is different: it's a
+    // synthesized review covering the whole module, not copied from one
+    // labeled section, so it gets its own generation prompt (standard count
+    // of items, sourced from the Teaching Guide's content) instead of an
+    // extraction prompt that would return empty whenever the SAS has no
+    // section literally titled "Wrap Up Quiz".
+    if ($component === 'wrap_up_quiz') {
+        $prompt = buildWrapUpQuizGenerationPrompt($sasText, $tgText);
+        $systemMsg = 'You write a short review quiz covering one module of a college course, based only on the material given to you. You respond ONLY with strict JSON — a single array, no prose, no markdown fences.';
+    } else {
+        $prompt = buildModuleExtractionPrompt($sasText, $tgText, $sectionLabel);
+        $systemMsg = 'You extract real activity items from a student activity sheet and pair them with answers from a teaching guide. You respond ONLY with strict JSON — a single array, no prose, no markdown fences.';
+    }
+    $result = callAiChatCompletion($systemMsg, $prompt, 3000, 0.2, $apiKey, AI_TIMEOUT_LONGFORM);
     if (!$result['success']) {
         echo json_encode(['success' => false, 'message' => $result['error'] ?? 'AI extraction failed']);
         return;
@@ -204,6 +239,8 @@ STUDENT ACTIVITY SHEET:
 
 TASK: Find the actual items that belong to the "{$sectionLabel}" section of the Student Activity Sheet — do NOT invent new questions, only extract what is really written there. For each item, find the matching expected answer or grading rubric note from the Teaching Guide (or a reasonable model answer if the Teaching Guide doesn't cover it).
 
+SKIP anything that is a "matching" exercise (e.g. "Match Column A to Column B", pairing terms with definitions, or any item that only makes sense with two side-by-side lists) — that format cannot be represented as short answer, essay, multiple choice, or true/false, so do NOT force it into one of those types. Leave it out entirely rather than inventing a multiple-choice question with the matching targets as nonsensical "options".
+
 Return STRICT JSON only — a single JSON array, no prose before or after, no markdown fences:
 [
   {
@@ -218,6 +255,204 @@ Return STRICT JSON only — a single JSON array, no prose before or after, no ma
 Only include "options"/"correct_index" for "multiple_choice" items. Omit them otherwise.
 If the "{$sectionLabel}" section does not clearly exist in the activity sheet, return an empty array: []
 PROMPT;
+}
+
+/**
+ * Wrap Up Quiz is a synthesized end-of-module review, not a section copied
+ * verbatim off the SAS (that's what buildModuleExtractionPrompt() is for) —
+ * so this asks the AI to WRITE a standard-length quiz covering the module's
+ * key concepts, with the Teaching Guide as the authoritative source for
+ * every correct answer (per the Teaching Guide always being the answer key
+ * standard for AI-checked module quizzes), falling back to the SAS's own
+ * content only when no Teaching Guide has been uploaded yet.
+ */
+function buildWrapUpQuizGenerationPrompt(string $sasText, string $tgText): string {
+    $sourceBlock = $tgText !== ''
+        ? "TEACHING GUIDE (the authoritative source for every correct answer):\n\"\"\"\n{$tgText}\n\"\"\"\n\nSTUDENT ACTIVITY SHEET (context only — do not treat as the answer key):\n\"\"\"\n{$sasText}\n\"\"\"\n"
+        : "TEACHING GUIDE: not uploaded yet — base every question and answer on the Student Activity Sheet below instead:\n\"\"\"\n{$sasText}\n\"\"\"\n";
+
+    $n = WRAP_UP_QUIZ_STANDARD_ITEM_COUNT;
+
+    return <<<PROMPT
+You are writing a "Wrap Up Quiz" — a short end-of-module review quiz for one college course module.
+
+{$sourceBlock}
+
+TASK: Write exactly {$n} quiz items covering the KEY CONCEPTS of this module (a module with unusually rich content may warrant a few more than {$n}, but never fewer). Use a mix of "multiple_choice", "true_false", and "short_answer" types. Every question and its correct answer must be strictly supported by the material above — never invent facts it doesn't cover.
+
+Return STRICT JSON only — a single JSON array, no prose before or after, no markdown fences:
+[
+  {
+    "question": "the quiz item text",
+    "type": "short_answer" | "multiple_choice" | "true_false",
+    "options": ["A", "B", "C", "D"],
+    "correct_index": 0,
+    "answer": "the expected answer (for short_answer/true_false)",
+    "points": 1
+  }
+]
+Only include "options"/"correct_index" for "multiple_choice" items. Omit them otherwise.
+PROMPT;
+}
+
+/**
+ * POST ?action=convert-to-fill-blank
+ * Body: { question, answer }
+ * Turns an existing short-answer question into a fill-in-the-blank one — the
+ * instructor picks "Fill in the Blank" for an item in the Module Quiz
+ * Builder and the AI rewrites it (blanks out the key word/phrase in the
+ * question text, keeps everything else) rather than the instructor having
+ * to hand-carve a ___ into the sentence and re-derive the expected answer
+ * themselves.
+ */
+function convertToFillBlank(array $input): void {
+    $question = trim($input['question'] ?? '');
+    $answer   = trim($input['answer'] ?? '');
+    if ($question === '') {
+        echo json_encode(['success' => false, 'message' => 'Question text is required']);
+        return;
+    }
+
+    $apiKey = getAiApiKey();
+    if (!$apiKey) {
+        echo json_encode(['success' => false, 'message' => 'Hugging Face API key not configured. Add it in Settings, or write the blank in yourself.']);
+        return;
+    }
+
+    $answerBlock = $answer !== '' ? "The currently expected answer is: \"{$answer}\"\n" : '';
+    $prompt = <<<PROMPT
+Turn this short-answer quiz question into a fill-in-the-blank STATEMENT.
+
+QUESTION:
+"{$question}"
+{$answerBlock}
+Most short-answer questions are phrased as a question ("What is...", "Explain...", "Identify..."). You must REWRITE it into a DECLARATIVE SENTENCE that states the fact, with the key word or short phrase removed and replaced by a blank written as exactly three underscores: ___ — placed naturally in the middle of the sentence where that word belongs, never just tacked onto the end.
+
+Example:
+  Question: "What layer of the OSI model does a router operate at?"
+  Answer: "Layer 3, the Network Layer"
+  Correct conversion: "A router operates at ___ of the OSI model." with answer "Layer 3, the Network Layer"
+  Wrong conversion (do NOT do this): "What layer of the OSI model does a router operate at ___?"
+
+Return STRICT JSON only, no prose, no markdown fences:
+{"question": "the rewritten declarative sentence with ___ in the middle where the answer belongs", "answer": "the word or phrase that fills the blank"}
+PROMPT;
+
+    $result = callAiChatCompletion(
+        'You convert short-answer quiz questions into fill-in-the-blank format. You respond ONLY with strict JSON — a single object, no prose, no markdown fences.',
+        $prompt, 500, 0.2, $apiKey
+    );
+    if (!$result['success']) {
+        echo json_encode(['success' => false, 'message' => $result['error'] ?? 'AI conversion failed']);
+        return;
+    }
+
+    $text = trim($result['text']);
+    $text = preg_replace('/^```(json)?/i', '', $text);
+    $text = preg_replace('/```$/', '', $text);
+    $start = strpos($text, '{');
+    $end = strrpos($text, '}');
+    $parsed = ($start !== false && $end !== false && $end >= $start)
+        ? json_decode(substr($text, $start, $end - $start + 1), true)
+        : null;
+
+    if (!is_array($parsed) || empty($parsed['question'])) {
+        echo json_encode(['success' => false, 'message' => 'Could not read the AI response. Please try again.']);
+        return;
+    }
+
+    // The AI occasionally forgets the blank even when told to include it —
+    // never hand back a "fill in the blank" question with no blank in it.
+    $convertedQuestion = trim((string)$parsed['question']);
+    if (!preg_match('/_{3,}/', $convertedQuestion)) {
+        $convertedQuestion = rtrim($convertedQuestion, '.') . ' ___.';
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'question' => $convertedQuestion,
+            'answer'   => trim((string)($parsed['answer'] ?? $answer)),
+        ],
+    ]);
+}
+
+/**
+ * POST ?action=convert-to-multiple-choice
+ * Body: { question, answer }
+ * Turns an existing short-answer/essay/fill-blank question into multiple
+ * choice — the instructor switches an AI-generated item's type dropdown to
+ * Multiple Choice and the AI writes four options (the real answer plus
+ * three plausible wrong ones) instead of leaving four empty option fields
+ * for the instructor to fill in and mark correct by hand.
+ */
+function convertToMultipleChoice(array $input): void {
+    $question = trim($input['question'] ?? '');
+    $answer   = trim($input['answer'] ?? '');
+    if ($question === '') {
+        echo json_encode(['success' => false, 'message' => 'Question text is required']);
+        return;
+    }
+
+    $apiKey = getAiApiKey();
+    if (!$apiKey) {
+        echo json_encode(['success' => false, 'message' => 'Hugging Face API key not configured. Add it in Settings, or write the options in yourself.']);
+        return;
+    }
+
+    $answerBlock = $answer !== '' ? "The correct answer is: \"{$answer}\"\n" : '';
+    $prompt = <<<PROMPT
+Turn this question into a multiple-choice question with exactly four options.
+
+QUESTION:
+"{$question}"
+{$answerBlock}
+TASK: Write four answer options. Exactly ONE must be the correct answer (rephrased concisely if needed to read like a short option, not a full sentence). The other three must be plausible but clearly wrong distractors — related to the same topic, not random or silly, and not obviously wrong at a glance. Keep every option short (a few words to one short phrase) and roughly the same length as the others.
+
+Return STRICT JSON only, no prose, no markdown fences:
+{"options": ["option A", "option B", "option C", "option D"], "correct_index": 0}
+
+"correct_index" is the 0-based position (0, 1, 2, or 3) of the correct option within the "options" array.
+PROMPT;
+
+    $result = callAiChatCompletion(
+        'You write multiple-choice options for quiz questions. You respond ONLY with strict JSON — a single object, no prose, no markdown fences.',
+        $prompt, 500, 0.3, $apiKey
+    );
+    if (!$result['success']) {
+        echo json_encode(['success' => false, 'message' => $result['error'] ?? 'AI conversion failed']);
+        return;
+    }
+
+    $text = trim($result['text']);
+    $text = preg_replace('/^```(json)?/i', '', $text);
+    $text = preg_replace('/```$/', '', $text);
+    $start = strpos($text, '{');
+    $end = strrpos($text, '}');
+    $parsed = ($start !== false && $end !== false && $end >= $start)
+        ? json_decode(substr($text, $start, $end - $start + 1), true)
+        : null;
+
+    if (!is_array($parsed) || empty($parsed['options']) || !is_array($parsed['options'])) {
+        echo json_encode(['success' => false, 'message' => 'Could not read the AI response. Please try again.']);
+        return;
+    }
+
+    // Always hand back exactly 4 non-empty options and a valid index —
+    // never a half-built multiple-choice question with blank option slots.
+    $options = array_values(array_filter(array_map(fn($o) => trim((string)$o), $parsed['options']), fn($o) => $o !== ''));
+    while (count($options) < 4) $options[] = '';
+    $options = array_slice($options, 0, 4);
+    $correctIndex = (int)($parsed['correct_index'] ?? 0);
+    if ($correctIndex < 0 || $correctIndex > 3) $correctIndex = 0;
+
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'options'       => $options,
+            'correct_index' => $correctIndex,
+        ],
+    ]);
 }
 
 /** Parse the strict-JSON extraction response into saveQuiz()-compatible question rows. */
@@ -239,6 +474,16 @@ function parseModuleExtractionResponse(string $text): array {
     $items = [];
     foreach ($decoded as $raw) {
         if (!is_array($raw) || empty($raw['question'])) continue;
+        // Defense in depth — the prompt already tells the AI to leave
+        // matching exercises out entirely, but if one slips through anyway
+        // it's better dropped here than saved as a nonsensical "multiple
+        // choice" question whose "options" are really the other column's
+        // match targets (e.g. options like ["JDK","JRE","JVM","Class"] for
+        // "Match the term to its definition" — none of those are actually
+        // wrong-but-plausible distractors, they're just other terms).
+        if (preg_match('/\bmatch(?:ing)?\b.{0,40}\bcolumn\b|\bcolumn\s*a\b.{0,60}\bcolumn\s*b\b|\bmatch(?:ing)?\b.{0,40}\b(?:term|definition|pair)\b|\b(?:term|definition)\b.{0,40}\bmatch(?:ing)?\b/i', (string)$raw['question'])) {
+            continue;
+        }
         $type = in_array($raw['type'] ?? '', $allowedTypes, true) ? $raw['type'] : 'short_answer';
         $item = [
             'type'     => $type,
@@ -319,7 +564,7 @@ function generateQuestions($input) {
     try {
         $response = callAiChatCompletion(
             'You are an educational quiz generator. Generate well-formatted quiz questions based on the provided content. Follow the exact format specified in the user prompt.',
-            $prompt, 4000, 0.7, $apiKey
+            $prompt, 4000, 0.7, $apiKey, AI_TIMEOUT_LONGFORM
         );
 
         if (!$response['success']) {
@@ -618,6 +863,13 @@ function saveQuiz($input, $userId) {
     $gradebookComponent = in_array($input['gradebook_component'] ?? '', $validComponents, true) ? $input['gradebook_component'] : null;
     $sourceDocId = !empty($input['source_doc_id']) ? (int)$input['source_doc_id'] : null;
 
+    // Let's Practice / Reflection are meant to be answered at the student's
+    // own pace — no clock pressure — while Wrap Up Quiz is the one Global
+    // Gradebook component that's timed. A regular (non-component) quiz keeps
+    // the existing 30-minute default.
+    $untimedComponents = ['lets_practice', 'lets_practice_optional', 'reflection'];
+    $timeLimit = in_array($gradebookComponent, $untimedComponents, true) ? null : 30;
+
     // DDL must run outside transactions (MySQL implicit commit)
     ensureQuizSectionTable();
     ensureQuizScheduleColumns();
@@ -634,9 +886,49 @@ function saveQuiz($input, $userId) {
 
         if ($linkedQuizId) {
             $quizId = $linkedQuizId;
-            // Bump total_points on the existing quiz
-            $pdo->prepare("UPDATE quiz SET total_points = total_points + ?, updated_at = NOW() WHERE quiz_id = ?")
-                ->execute([$totalPoints, $quizId]);
+            // Editing an already-built quiz (Module Quiz Builder's "Edit" on
+            // a component that already has questions) replaces its question
+            // set wholesale rather than appending on top of it — the old
+            // behavior here only ever supported adding MORE questions to a
+            // quiz, so re-opening an existing Let's Practice/Reflection/Wrap
+            // Up Quiz and saving again silently piled up a second copy of
+            // every question instead of letting the instructor actually
+            // change anything.
+            if (!empty($input['replace_questions'])) {
+                $oldQuestionIds = array_column(
+                    db()->fetchAll("SELECT questions_id FROM quiz_questions WHERE quiz_id = ?", [$quizId]),
+                    'questions_id'
+                );
+                if ($oldQuestionIds) {
+                    $ph = implode(',', array_fill(0, count($oldQuestionIds), '?'));
+                    $pdo->prepare("DELETE FROM question_option WHERE quiz_question_id IN ($ph)")->execute($oldQuestionIds);
+                    $pdo->prepare("DELETE FROM quiz_questions WHERE quiz_id = ?")->execute([$quizId]);
+                    $pdo->prepare("DELETE FROM questions WHERE questions_id IN ($ph)")->execute($oldQuestionIds);
+                }
+                $pdo->prepare("UPDATE quiz SET total_points = ?, updated_at = NOW() WHERE quiz_id = ?")
+                    ->execute([$totalPoints, $quizId]);
+            } else {
+                // Bump total_points on the existing quiz
+                $pdo->prepare("UPDATE quiz SET total_points = total_points + ?, updated_at = NOW() WHERE quiz_id = ?")
+                    ->execute([$totalPoints, $quizId]);
+            }
+
+            // The instructor can change the deadline while editing. Independent
+            // of the question rewrite above, and sent as an explicit flag so an
+            // omitted field is never mistaken for "clear the due date".
+            if (!empty($input['update_due_date'])) {
+                // Same normalisation the create path uses (parseQuizPublishInput):
+                // keep the chosen time, and treat a bare date as end of day.
+                $due = str_replace('T', ' ', trim((string)($input['due_date'] ?? '')));
+                $dueVal = null;
+                if ($due !== '' && ($ts = strtotime($due)) !== false) {
+                    $dueVal = preg_match('/\d{1,2}:\d{2}/', $due)
+                        ? date('Y-m-d H:i:s', $ts)
+                        : date('Y-m-d 23:59:59', $ts);
+                }
+                $pdo->prepare("UPDATE quiz SET due_date = ?, updated_at = NOW() WHERE quiz_id = ?")
+                    ->execute([$dueVal, $quizId]);
+            }
         } else {
             $pub = parseQuizPublishInput($input);
 
@@ -655,7 +947,7 @@ function saveQuiz($input, $userId) {
                 $subjectId,
                 $quizTitle,
                 'Generated by AI',
-                30,
+                $timeLimit,
                 60,
                 parseQuizMaxAttempts(array_merge($input, [
                     'max_attempts' => $input['max_attempts'] ?? ($quizType === 'pre_test' ? 1 : 3),

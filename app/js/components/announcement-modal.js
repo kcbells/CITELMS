@@ -3,6 +3,7 @@
  */
 import { Api } from '../api.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const MODAL_STYLES = `
     .ann-m-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
         display:flex; align-items:center; justify-content:center; z-index:2500; padding:20px; animation:annFadeIn .2s ease; }
@@ -26,7 +27,7 @@ const MODAL_STYLES = `
     .ann-m-input:focus, .ann-m-select:focus, .ann-m-textarea:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 3px rgba(0,70,27,.12); }
     .ann-m-textarea { resize:vertical; min-height:110px; }
     .ann-m-select:disabled { background:#f3f4f6; color:#6b7280; cursor:not-allowed; }
-    .ann-m-alert { background:#FEE2E2; color:#B91C1C; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
+    .ann-m-alert { background:#7F1D1D; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
     .ann-m-btn-cancel { background:#fff; color:#374151; border:1px solid #e5e7eb; padding:10px 18px; border-radius:10px; font-weight:600; cursor:pointer; }
     .ann-m-btn-save { background:#00461B; color:#fff; border:none; padding:10px 22px; border-radius:10px; font-weight:700; cursor:pointer; }
     .ann-m-btn-save:hover { background:#006428; }
@@ -49,11 +50,8 @@ const MODAL_STYLES = `
     .ann-sec-empty { font-size:12px; color:#9ca3af; padding:8px 0; margin:0; }
 `;
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function sectionTargetHtml(sections, ann = null) {
     const selectedIds = ann?.section_ids || [];

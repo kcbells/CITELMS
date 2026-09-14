@@ -206,7 +206,35 @@ function handleUnreadCount() {
         "SELECT COUNT(*) AS c FROM messages WHERE receiver_id = ? AND is_read = 0",
         [$me]
     );
-    echo json_encode(['success' => true, 'count' => (int)($row['c'] ?? 0)]);
+    $count = (int)($row['c'] ?? 0) + groupChatUnreadCount($me);
+    echo json_encode(['success' => true, 'count' => $count]);
+}
+
+/**
+ * Unread items waiting in the user's group chats.
+ *
+ * A group the user has never opened counts as 1 on its own, so that simply
+ * being added to a group already shows up in the Messages badge, even before
+ * anyone has posted a message in it.
+ */
+function groupChatUnreadCount($me) {
+    try {
+        $row = db()->fetchOne(
+            "SELECT
+                 SUM(CASE WHEN gcm.last_read IS NULL THEN 1 ELSE 0 END) AS new_groups,
+                 SUM((SELECT COUNT(*) FROM group_messages gm
+                       WHERE gm.group_id   = gcm.group_id
+                         AND gm.sender_id != ?
+                         AND gm.created_at > IFNULL(gcm.last_read, '1970-01-01'))) AS new_messages
+             FROM group_chat_members gcm
+             WHERE gcm.user_id = ?",
+            [$me, $me]
+        );
+        return (int)($row['new_groups'] ?? 0) + (int)($row['new_messages'] ?? 0);
+    } catch (Exception $e) {
+        // Group chat tables not created yet — nothing to count.
+        return 0;
+    }
 }
 
 // ─── Send a message ────────────────────────────────────────────────────────

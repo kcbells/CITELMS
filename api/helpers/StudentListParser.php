@@ -155,6 +155,17 @@ class StudentListParser {
         $mime = self::detectMime($path);
 
         $text = self::extractTextByType($path, $ext, $mime);
+        // extractFromPlainText() already sanitizes its own output, but the
+        // PDF/DOCX/binary-office extractors below don't — a PDF's literal
+        // strings can carry raw non-ASCII bytes (UTF-16 text, or just
+        // leftover binary from the regex-based extraction) straight through
+        // untouched, which breaks JSON-encoding this text later (see
+        // AiProvider.php) once it's handed to the AI. Applied uniformly
+        // here so every extractor gets it, not just the ones that remembered.
+        if (!mb_check_encoding($text, 'UTF-8')) {
+            $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            $text = $converted !== false ? $converted : preg_replace('/[^\x09\x0A\x0D\x20-\x7E]/', '', $text);
+        }
         $text = trim(preg_replace("/\r\n?/", "\n", $text) ?? $text);
 
         if ($text === '') {
@@ -406,20 +417,15 @@ class StudentListParser {
         return implode("\n", array_unique($parts));
     }
 
-    private static function extractFromPdf($path) {
-        $content = file_get_contents($path) ?: '';
-        $parts = [];
-        // Text in parentheses (PDF literal strings)
+    /** Pulls PDF literal-string text (parenthesized Tj strings + TJ arrays)
+     *  out of one block of PDF content-stream syntax, appending onto $parts. */
+    private static function extractPdfLiteralText(string $content, array &$parts): void {
         if (preg_match_all('/\((?:\\\\.|[^\\\\\)]){2,120}\)/', $content, $m)) {
             foreach ($m[0] as $lit) {
-                $s = trim($lit, '()');
-                $s = stripcslashes($s);
-                if (strlen($s) >= 3) {
-                    $parts[] = $s;
-                }
+                $s = stripcslashes(trim($lit, '()'));
+                if (strlen($s) >= 3) $parts[] = $s;
             }
         }
-        // TJ arrays
         if (preg_match_all('/\[(.*?)\]\s*TJ/s', $content, $tj)) {
             foreach ($tj[1] as $block) {
                 if (preg_match_all('/\((?:\\\\.|[^\\\\\)])*\)/', $block, $inner)) {
@@ -429,9 +435,86 @@ class StudentListParser {
                 }
             }
         }
-        preg_match_all('/[\x20-\x7E]{4,}/', $content, $m2);
-        $parts = array_merge($parts, $m2[0] ?? []);
-        return implode("\n", array_unique(array_filter($parts)));
+    }
+
+    /** Absolute path to a working `pdftotext` binary, or '' if none is
+     *  available — checked once per request. Real PDF text extraction (this
+     *  ships with Poppler, and happens to already be present via Git for
+     *  Windows on this machine) correctly handles compressed streams AND
+     *  CID-keyed/font-subsetted text, which a growing share of real-world
+     *  PDFs use — e.g. anything exported from Google Docs or a browser's
+     *  "Print to PDF" — and which NO regex-based extractor can ever read,
+     *  because the actual glyph-to-character mapping lives in the font's
+     *  embedded CMap, not in the content stream as plain text at all. Purely
+     *  an enhancement: every other environment this runs in without
+     *  pdftotext installed just keeps using the regex fallback below. */
+    private static function findPdfToText(): string {
+        static $checked = false;
+        static $path = '';
+        if ($checked) return $path;
+        $checked = true;
+        $candidates = [];
+        $whereOut = @shell_exec('where pdftotext 2>NUL');
+        if ($whereOut) {
+            $first = trim(strtok($whereOut, "\r\n"));
+            if ($first !== '') $candidates[] = $first;
+        }
+        $candidates[] = 'C:\\Program Files\\Git\\mingw64\\bin\\pdftotext.exe';
+        foreach ($candidates as $c) {
+            if (is_file($c)) { $path = $c; break; }
+        }
+        return $path;
+    }
+
+    private static function extractFromPdf($path) {
+        $pdftotext = self::findPdfToText();
+        if ($pdftotext !== '' && function_exists('shell_exec')) {
+            $cmd = escapeshellarg($pdftotext) . ' -layout ' . escapeshellarg($path) . ' - 2>NUL';
+            $out = @shell_exec($cmd);
+            if (is_string($out) && trim($out) !== '') {
+                return $out;
+            }
+            // Falls through to the regex extractor below on any failure —
+            // missing binary, unreadable/encrypted PDF, empty output, etc.
+        }
+
+        $content = file_get_contents($path) ?: '';
+        $parts = [];
+
+        // A PDF's actual text almost always lives inside content streams
+        // compressed with FlateDecode (zlib) — the file's raw bytes are
+        // unreadable binary. This used to run the literal-string regexes
+        // directly against those raw compressed bytes, which mostly finds
+        // nothing real; whatever "text" it turned up was overwhelmingly
+        // noise from a catch-all "any run of printable-ASCII bytes" scan
+        // over compressed/binary data — noise that happened to fall in the
+        // printable range purely by chance. That noise, once fed to the AI
+        // as if it were the module's real content, produced slow, messy,
+        // sometimes-hallucinated question generation. Decompress every
+        // `stream ... endstream` block first and extract from THAT instead.
+        if (preg_match_all('/stream\r?\n(.*?)endstream/s', $content, $streams)) {
+            foreach ($streams[1] as $raw) {
+                $raw = rtrim($raw, "\r\n");
+                $decoded = @zlib_decode($raw);
+                self::extractPdfLiteralText($decoded !== false ? $decoded : $raw, $parts);
+            }
+        }
+        // Some (usually older/simpler) PDFs store text uncompressed directly
+        // in the object body rather than inside a stream at all.
+        self::extractPdfLiteralText($content, $parts);
+
+        $parts = array_values(array_unique(array_filter($parts, fn($p) => strlen(trim($p)) >= 2)));
+
+        // Last resort only — a PDF this couldn't parse via streams/literals
+        // at all (unusual structure, encryption, etc.). Same crude scan as
+        // before, but now only reached when everything else came back empty,
+        // instead of always contributing the bulk of the "extracted" text.
+        if (empty($parts)) {
+            preg_match_all('/[\x20-\x7E]{4,}/', $content, $m2);
+            $parts = array_unique($m2[0] ?? []);
+        }
+
+        return implode("\n", $parts);
     }
 
     private static function extractFromImage($path) {

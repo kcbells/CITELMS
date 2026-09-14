@@ -45,6 +45,9 @@ switch ($action) {
     case 'struggling-students':
         handleStrugglingStudents();
         break;
+    case 'struggling-trend':
+        handleStrugglingTrend();
+        break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -214,14 +217,16 @@ function handleAdminReport() {
  *   - 'good'     — at or above cutoff — counted in the section's totals but
  *                  not included in the per-student flagged list.
  */
-function handleStrugglingStudents() {
+/**
+ * Shared role scope resolution for both the Struggling Students report and
+ * the per-period trend below — same rule everywhere: instructor sees only
+ * their own subjects, program head sees their program + dean-assigned year
+ * range, dean sees every program in their department, admin sees everything
+ * (or one explicit program via ?program_id=). Returns null when the caller
+ * should respond with the "unscoped" empty-state instead of running a query.
+ */
+function resolveReportScope(): ?array {
     $role = Auth::role();
-    if (!in_array($role, ['program_head', 'dean', 'admin', 'instructor'], true)) {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Not available for this role']);
-        return;
-    }
-
     $programIds = [];
     $yearFrom = null;
     $yearTo   = null;
@@ -234,10 +239,7 @@ function handleStrugglingStudents() {
             "SELECT program_id, year_level_from, year_level_to FROM users WHERE users_id = ?",
             [Auth::id()]
         );
-        if (empty($me['program_id'])) {
-            echo json_encode(['success' => true, 'data' => ['subjects' => [], 'totals' => null, 'unscoped' => true]]);
-            return;
-        }
+        if (empty($me['program_id'])) return null;
         $programIds = [(int)$me['program_id']];
         $yearFrom = $me['year_level_from'] !== null ? (int)$me['year_level_from'] : null;
         $yearTo   = $me['year_level_to']   !== null ? (int)$me['year_level_to']   : null;
@@ -253,10 +255,25 @@ function handleStrugglingStudents() {
         if ($requested) $programIds = [$requested];
     }
 
-    if ($role !== 'admin' && $role !== 'instructor' && !$programIds) {
+    if ($role !== 'admin' && $role !== 'instructor' && !$programIds) return null;
+
+    return ['programIds' => $programIds, 'yearFrom' => $yearFrom, 'yearTo' => $yearTo, 'teacherId' => $teacherId];
+}
+
+function handleStrugglingStudents() {
+    $role = Auth::role();
+    if (!in_array($role, ['program_head', 'dean', 'admin', 'instructor'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Not available for this role']);
+        return;
+    }
+
+    $scope = resolveReportScope();
+    if ($scope === null) {
         echo json_encode(['success' => true, 'data' => ['subjects' => [], 'totals' => null, 'unscoped' => true]]);
         return;
     }
+    ['programIds' => $programIds, 'yearFrom' => $yearFrom, 'yearTo' => $yearTo, 'teacherId' => $teacherId] = $scope;
 
     $where  = ["u.role = 'student'", "u.status = 'active'"];
     $params = [];
@@ -284,7 +301,11 @@ function handleStrugglingStudents() {
             ROUND(AVG(CASE WHEN sqa.status = 'completed' THEN sqa.percentage END), 1) AS quiz_avg,
             COUNT(DISTINCT CASE WHEN sqa.status = 'completed' THEN sqa.attempt_id END) AS quiz_attempts,
             ROUND(AVG(gmg.wrap_up_quiz), 1) AS module_avg,
-            COUNT(DISTINCT gmg.grade_id) AS module_entries
+            COUNT(DISTINCT CASE WHEN gmg.wrap_up_quiz IS NOT NULL THEN gmg.grade_id END) AS scored_entries,
+            COUNT(DISTINCT CASE WHEN gmg.soc1 IS NOT NULL OR gmg.soc2 IS NOT NULL
+                                   OR gmg.lets_practice IS NOT NULL OR gmg.lets_practice_optional IS NOT NULL
+                                   OR gmg.reflection IS NOT NULL OR gmg.wrap_up_quiz IS NOT NULL
+                              THEN gmg.grade_id END) AS engaged_entries
          FROM users u
          JOIN student_subject ss  ON ss.user_student_id = u.users_id AND ss.status = 'enrolled'
          JOIN subject_offered so  ON so.subject_offered_id = ss.subject_offered_id
@@ -292,7 +313,7 @@ function handleStrugglingStudents() {
          LEFT JOIN section sec               ON sec.section_id = ss.section_id
          LEFT JOIN quiz q                    ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
-         LEFT JOIN global_module_grades gmg  ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id AND gmg.wrap_up_quiz IS NOT NULL
+         LEFT JOIN global_module_grades gmg  ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id
          WHERE $whereSql
          GROUP BY u.users_id, s.subject_id, so.subject_offered_id, ss.section_id",
         $params
@@ -303,21 +324,30 @@ function handleStrugglingStudents() {
     $totals = ['enrolled' => 0, 'submitted' => 0, 'lacking' => 0, 'flagged' => 0];
 
     foreach ($rows as $r) {
-        $hasModule = (int)$r['module_entries'] > 0;
-        $hasQuiz   = (int)$r['quiz_attempts'] > 0;
-        $hasData   = $hasModule || $hasQuiz;
+        $hasScore      = (int)$r['scored_entries'] > 0;
+        $hasQuiz       = (int)$r['quiz_attempts'] > 0;
+        // Attendance (soc1/soc2) and the other rubric fields count as real
+        // engagement too — a student attending every session but not yet at
+        // the Wrap Up Quiz stage of a module was being wrongly flagged
+        // "Lacking" before, since only wrap_up_quiz was ever checked.
+        $hasEngagement = (int)$r['engaged_entries'] > 0;
+        $hasData       = $hasScore || $hasQuiz;
 
         $score = null; $source = null; $status = 'lacking';
         if ($hasData) {
-            $score  = $hasModule ? (float)$r['module_avg'] : (float)$r['quiz_avg'];
-            $source = $hasModule ? 'grade' : 'quiz';
+            $score  = $hasScore ? (float)$r['module_avg'] : (float)$r['quiz_avg'];
+            $source = $hasScore ? 'grade' : 'quiz';
             // Global Gradebook subjects use an 80% cutoff (its mastery-based
             // grading norm runs higher than a plain quiz score), quiz-only
             // subjects (Raw Score offerings, no separate stored grade) keep 60%.
-            $cutoff = $hasModule ? 80 : 60;
+            $cutoff = $hasScore ? 80 : 60;
             if ($score >= $cutoff) $status = 'good';
             elseif ($score >= $cutoff - 20) $status = 'at_risk';
             else $status = 'critical';
+        } elseif ($hasEngagement) {
+            // Attendance/rubric activity recorded but no graded score yet —
+            // genuinely "in progress", not lacking and not yet scoreable.
+            $status = 'good';
         }
 
         $subjId = (int)$r['subject_id'];
@@ -344,7 +374,7 @@ function handleStrugglingStudents() {
         $sec = &$subjects[$subjId]['sections'][$secId];
         $sec['enrolled_count']++;
         $totals['enrolled']++;
-        if ($hasData) { $sec['submitted_count']++; $totals['submitted']++; }
+        if ($hasData || $hasEngagement) { $sec['submitted_count']++; $totals['submitted']++; }
         else { $sec['lacking_count']++; $totals['lacking']++; }
 
         if ($status !== 'good') {
@@ -392,4 +422,113 @@ function handleStrugglingStudents() {
             ],
         ]
     ]);
+}
+
+/**
+ * Flagged-student trend across grading periods (P1 Midterms / P2 Prefinals /
+ * P3 Finals) for the same scope Struggling Students uses. Not a stored
+ * historical snapshot — each point is computed live from the SAME
+ * cumulative data Struggling Students already uses, just narrowed to only
+ * the modules/quizzes that belong to that period so far:
+ *   - Global Gradebook: wrap_up_quiz average over modules 1-4 (P1), 1-9
+ *     (P2), 1-14 (P3) — matches grading-engine.js's PERIOD_MODULES exactly
+ *     (its "Final" is this endpoint's "P3").
+ *   - Raw Score: quiz average over quizzes tagged grading_period P1, P1+P2,
+ *     or P1+P2+P3 respectively (cumulative, since a period's work doesn't
+ *     stop counting once the next period starts).
+ * "Flagged" here folds critical + at_risk + lacking into one count (a
+ * single trend line), matching Struggling Students' own cutoffs (80%/60%).
+ */
+function handleStrugglingTrend(): void {
+    $role = Auth::role();
+    if (!in_array($role, ['program_head', 'dean', 'admin', 'instructor'], true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Not available for this role']);
+        return;
+    }
+
+    $scope = resolveReportScope();
+    if ($scope === null) {
+        echo json_encode(['success' => true, 'data' => ['periods' => [], 'unscoped' => true]]);
+        return;
+    }
+
+    $periodDefs = [
+        ['code' => 'P1', 'label' => 'P1 (Midterms)', 'modules' => [1, 2, 3, 4],   'quizPeriods' => ['P1']],
+        ['code' => 'P2', 'label' => 'P2 (Prefinals)', 'modules' => range(1, 9),   'quizPeriods' => ['P1', 'P2']],
+        ['code' => 'P3', 'label' => 'P3 (Finals)',    'modules' => range(1, 14),  'quizPeriods' => ['P1', 'P2', 'P3']],
+    ];
+
+    $periods = [];
+    foreach ($periodDefs as $def) {
+        $snap = computeStrugglingSnapshot($scope, $def['modules'], $def['quizPeriods']);
+        $periods[] = [
+            'period'   => $def['code'],
+            'label'    => $def['label'],
+            'enrolled' => $snap['enrolled'],
+            'flagged'  => $snap['flagged'],
+            'pct'      => $snap['enrolled'] > 0 ? round($snap['flagged'] / $snap['enrolled'] * 100, 1) : 0,
+        ];
+    }
+
+    echo json_encode(['success' => true, 'data' => ['periods' => $periods]]);
+}
+
+/** One period's {enrolled, flagged} snapshot for handleStrugglingTrend() — see that function's docblock for the exact cumulative-range rule. */
+function computeStrugglingSnapshot(array $scope, array $moduleRange, array $quizPeriods): array {
+    ['programIds' => $programIds, 'yearFrom' => $yearFrom, 'yearTo' => $yearTo, 'teacherId' => $teacherId] = $scope;
+
+    $where  = ["u.role = 'student'", "u.status = 'active'"];
+    $params = [];
+    if ($teacherId !== null) { $where[] = "so.user_teacher_id = ?"; $params[] = $teacherId; }
+    if ($programIds) {
+        $ph = implode(',', array_fill(0, count($programIds), '?'));
+        $where[] = "s.program_id IN ($ph)";
+        $params = array_merge($params, $programIds);
+    }
+    if ($yearFrom !== null) { $where[] = "(u.year_level IS NULL OR u.year_level >= ?)"; $params[] = $yearFrom; }
+    if ($yearTo   !== null) { $where[] = "(u.year_level IS NULL OR u.year_level <= ?)"; $params[] = $yearTo; }
+    $whereSql = implode(' AND ', $where);
+
+    $quizPh   = implode(',', array_fill(0, count($quizPeriods), '?'));
+    $modulePh = implode(',', array_fill(0, count($moduleRange), '?'));
+
+    $rows = db()->fetchAll(
+        "SELECT
+            u.users_id, s.subject_id, so.subject_offered_id,
+            ROUND(AVG(CASE WHEN sqa.status = 'completed' THEN sqa.percentage END), 1) AS quiz_avg,
+            COUNT(DISTINCT CASE WHEN sqa.status = 'completed' THEN sqa.attempt_id END) AS quiz_attempts,
+            ROUND(AVG(gmg.wrap_up_quiz), 1) AS module_avg,
+            COUNT(DISTINCT CASE WHEN gmg.wrap_up_quiz IS NOT NULL THEN gmg.grade_id END) AS scored_entries,
+            COUNT(DISTINCT CASE WHEN gmg.soc1 IS NOT NULL OR gmg.soc2 IS NOT NULL
+                                   OR gmg.lets_practice IS NOT NULL OR gmg.lets_practice_optional IS NOT NULL
+                                   OR gmg.reflection IS NOT NULL OR gmg.wrap_up_quiz IS NOT NULL
+                              THEN gmg.grade_id END) AS engaged_entries
+         FROM users u
+         JOIN student_subject ss  ON ss.user_student_id = u.users_id AND ss.status = 'enrolled'
+         JOIN subject_offered so  ON so.subject_offered_id = ss.subject_offered_id
+         JOIN subject s           ON s.subject_id = so.subject_id
+         LEFT JOIN quiz q ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id AND q.grading_period IN ($quizPh)
+         LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
+         LEFT JOIN global_module_grades gmg ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id AND gmg.module_number IN ($modulePh)
+         WHERE $whereSql
+         GROUP BY u.users_id, s.subject_id, so.subject_offered_id",
+        array_merge($quizPeriods, $moduleRange, $params)
+    );
+
+    $enrolled = count($rows);
+    $flagged = 0;
+    foreach ($rows as $r) {
+        $hasScore      = (int)$r['scored_entries'] > 0;
+        $hasQuiz       = (int)$r['quiz_attempts'] > 0;
+        $hasEngagement = (int)$r['engaged_entries'] > 0;
+        if (!$hasScore && !$hasQuiz) {
+            if (!$hasEngagement) $flagged++; // truly nothing at all — flagged; attendance-only is "in progress", not flagged
+            continue;
+        }
+        $score  = $hasScore ? (float)$r['module_avg'] : (float)$r['quiz_avg'];
+        $cutoff = $hasScore ? 80 : 60;
+        if ($score < $cutoff) $flagged++;
+    }
+    return ['enrolled' => $enrolled, 'flagged' => $flagged];
 }

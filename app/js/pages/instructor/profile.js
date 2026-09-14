@@ -5,6 +5,7 @@ import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { bindPasswordChangeOtp, attachStrengthMeter, attachEyeToggle } from '../../utils/password-change-otp.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     const user = Auth.user();
     renderShell(container, user, [
@@ -18,7 +19,8 @@ export async function render(container) {
     bindPassword(container);
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'; }
 
 function renderShell(container, user, details) {
@@ -170,7 +172,7 @@ function profileStyles() {
         .p-identity { text-align:center; padding:14px 20px 16px; }
         .p-name { font-size:18px; font-weight:800; color:#1f2937; }
         .p-role {
-            display:inline-block; background:#f0fdf4; color:#00461B;
+            display:inline-block; background:#00461B; color:#fff;
             border:1px solid #bbf7d0;
             padding:4px 14px; border-radius:20px;
             font-size:12px; font-weight:700; text-transform:capitalize;
@@ -225,8 +227,8 @@ function profileStyles() {
 
         /* Alerts */
         .p-alert { padding:12px 16px; border-radius:10px; font-size:13.5px; font-weight:500; }
-        .p-alert-ok  { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
-        .p-alert-err { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+        .p-alert-ok  { background:#00461B; color:#fff; border:1px solid #bbf7d0; }
+        .p-alert-err { background:#7F1D1D; color:#fff; border:1px solid #fecaca; }
 
         @media(max-width:860px) {
             .p-layout { grid-template-columns:1fr; }

@@ -3,8 +3,10 @@
  * Professional quiz-taking interface with timer, navigator, and submit
  */
 import { Api, BASE_URL } from '../../api.js';
+import { Auth } from '../../auth.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { subjectHash } from './quizzes.js';
+import { esc } from '../../utils/classroom-ui.js';
 import {
     setQuizProctoring,
     clearQuizProctoring,
@@ -22,7 +24,7 @@ function injectPreQuizStyles() {
     el.textContent = `
         .tq-pre { max-width:640px; margin:32px auto 48px; }
         .tq-pre-hero { background:#fff; border:1px solid #E5E7EB; border-radius:20px 20px 0 0; padding:28px 32px 24px; color:#111; text-align:center; }
-        .tq-pre-hero-badge { display:inline-flex; align-items:center; gap:6px; background:#E8F5EC; color:#00461B; border:none; padding:5px 14px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:14px; }
+        .tq-pre-hero-badge { display:inline-flex; align-items:center; gap:6px; background:#00461B; color:#fff; border:none; padding:5px 14px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; margin-bottom:14px; }
         .tq-pre-hero h2 { font-size:24px; font-weight:800; margin:0 0 6px; letter-spacing:-.3px; color:#111; }
         .tq-pre-hero p { font-size:14px; color:#6B7280; margin:0; line-height:1.5; }
         .tq-pre-card { background:#fff; border:none; border-top:none; border-radius:0 0 20px 20px; box-shadow:none; overflow:hidden; }
@@ -67,7 +69,7 @@ function injectPreQuizStyles() {
         .tq-cd-warn-strip { display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 16px; background:#fef3c7; border:1px solid #fcd34d; border-radius:10px; font-size:12.5px; font-weight:600; color:#92400e; margin-top:8px; }
         .tq-notice { max-width:520px; margin:48px auto; text-align:center; }
         .tq-notice-icon { width:72px; height:72px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 18px; font-size:32px; }
-        .tq-notice-icon.warn { background:#fef3c7; color:#b45309; border:2px solid #fcd34d; }
+        .tq-notice-icon.warn { background:#B45309; color:#fff; border:2px solid #fcd34d; }
         .tq-notice-icon.danger { background:#fdf2f4; color:#6B0F1A; border:2px solid #d4a0a8; }
         .tq-notice-icon.info { background:#ecfdf5; color:#1B4D3E; border:2px solid #86efac; }
         .tq-notice h3 { font-size:20px; font-weight:800; color:#1a1a1a; margin:0 0 10px; }
@@ -193,7 +195,16 @@ export async function render(container) {
             content_id: parseInt(quiz.quiz_id, 10),
         }).catch(() => {});
     }
-    const isProctored = quiz.is_proctored ?? (quiz.quiz_type !== 'practice');
+    // Three modes, not two:
+    //   practice — nothing restricted
+    //   relaxed  — the Global Gradebook answer sheets (Let's Practice,
+    //              Reflection, Wrap Up Quiz). Students answer these in their
+    //              own time, anywhere, so leaving the tab is NOT a violation
+    //              and never auto-submits — but the content itself is still
+    //              protected (no copy/paste, right-click, or screenshots).
+    //   proctored — full lockdown, where leaving the tab is a violation.
+    const isRelaxed   = !!quiz.gradebook_component && quiz.quiz_type !== 'practice';
+    const isProctored = !isRelaxed && (quiz.is_proctored ?? (quiz.quiz_type !== 'practice'));
     const isPractice  = quiz.quiz_type === 'practice';
     setQuizProctoring(isProctored, {
         practice: isPractice,
@@ -227,7 +238,14 @@ export async function render(container) {
         return;
     }
 
-    let timeLeft = (quiz.time_limit || 30) * 60;
+    // Let's Practice / Reflection quizzes are saved with time_limit = NULL
+    // on purpose (no clock pressure, answer at your own pace) — an
+    // EXPLICIT null, distinct from the field simply being absent/0, which
+    // still falls back to the 30-minute default as before. Checking
+    // strictly for null (not undefined too) keeps any other response shape
+    // that omits this field entirely defaulting to timed, same as always.
+    const isUntimed = quiz.time_limit === null;
+    let timeLeft = isUntimed ? 0 : (quiz.time_limit || 30) * 60;
     let timerInterval;
     let startTime = 0;
     const totalPoints = questions.reduce((s, q) => s + (parseInt(q.points) || 1), 0);
@@ -237,7 +255,9 @@ export async function render(container) {
     function renderQuiz() {
         container.innerHTML = `
             <style>
-                .tq-wrap { max-width:960px; margin:0 auto; }
+                /* position:relative so the identity watermark below can pin
+                   itself to the quiz rather than the viewport. */
+                .tq-wrap { max-width:960px; margin:0 auto; position:relative; }
 
                 /* Header */
                 .tq-header { background:#00461B; border-radius:16px; padding:20px 28px; color:#fff; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
@@ -246,6 +266,7 @@ export async function render(container) {
                 .tq-timer { background:rgba(0,0,0,.2); padding:10px 18px; border-radius:12px; font-size:24px; font-weight:800; font-family:'Courier New',monospace; letter-spacing:2px; min-width:90px; text-align:center; }
                 .tq-timer.warn { color:#FCD34D; }
                 .tq-timer.danger { color:#FCA5A5; animation:tq-pulse 1s infinite; }
+                .tq-timer.tq-timer--untimed { font-size:13px; font-family:inherit; letter-spacing:normal; display:flex; align-items:center; gap:6px; font-weight:700; min-width:0; }
                 @keyframes tq-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 
                 /* Progress */
@@ -255,15 +276,26 @@ export async function render(container) {
                 /* Layout */
                 .tq-body { display:grid; grid-template-columns:1fr 220px; gap:20px; align-items:start; }
 
-                /* Question Card */
-                .tq-question { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:28px; user-select:none; -webkit-user-select:none; }
+                /* Question Card — flashcard-style: a deck with peeking cards behind it and a slide transition between questions */
+                .tq-card-deck { position:relative; }
+                .tq-card-peek { position:absolute; left:0; right:0; top:0; border-radius:24px; background:#fff; border:1px solid #e5e7eb; pointer-events:none; }
+                /* Fixed-pixel insets (not scale()) so the peeking sliver stays a
+                   constant size no matter how tall the current question's card is. */
+                .tq-card-peek-1 { left:9px; right:9px; bottom:-9px; opacity:.7; z-index:1; }
+                .tq-card-peek-2 { left:18px; right:18px; bottom:-18px; opacity:.4; z-index:0; }
+                .tq-question { position:relative; z-index:2; background:#fff; border:1px solid #e5e7eb; border-radius:24px; padding:34px 34px 28px; box-shadow:0 12px 30px rgba(0,70,27,.08); user-select:none; -webkit-user-select:none; transition:transform .22s cubic-bezier(.2,.8,.3,1), opacity .22s ease; }
                 /* Allow typing inside inputs/textareas but not selecting question text */
                 .tq-question input, .tq-question textarea { user-select:text; -webkit-user-select:text; }
+                .tq-card-exit-next { transform:translateX(-28px) scale(.98); opacity:0; }
+                .tq-card-exit-prev { transform:translateX(28px) scale(.98); opacity:0; }
+                .tq-card-enter-next { transition:none; transform:translateX(28px) scale(.98); opacity:0; }
+                .tq-card-enter-prev { transition:none; transform:translateX(-28px) scale(.98); opacity:0; }
+                .tq-card-enter-active { transform:translateX(0) scale(1); opacity:1; }
                 .tq-q-badge { display:inline-flex; align-items:center; gap:6px; margin-bottom:14px; }
                 .tq-q-num { background:#1B4D3E; color:#fff; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
                 .tq-q-of { font-size:13px; color:#737373; }
                 .tq-q-type { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; text-transform:capitalize; margin-left:8px; }
-                .tq-q-text { font-size:16px; font-weight:600; color:#1a1a1a; line-height:1.6; margin-bottom:8px; }
+                .tq-q-text { font-size:19px; font-weight:700; color:#1a1a1a; line-height:1.55; margin-bottom:8px; }
                 .tq-q-points { font-size:12px; color:#737373; margin-bottom:20px; }
 
                 /* Options */
@@ -293,7 +325,7 @@ export async function render(container) {
                 .tq-nav-num { width:100%; aspect-ratio:1; border-radius:8px; border:1.5px solid #e5e7eb; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; cursor:pointer; background:#fff; color:#6b7280; transition:all .15s; }
                 .tq-nav-num:hover { border-color:#93c5b8; }
                 .tq-nav-num.current { background:#1B4D3E; color:#fff; border-color:#1B4D3E; }
-                .tq-nav-num.answered { background:#dcfce7; color:#166534; border-color:#86efac; }
+                .tq-nav-num.answered { background:#00461B; color:#fff; border-color:#86efac; }
                 .tq-nav-num.answered.current { background:#1B4D3E; color:#fff; border-color:#1B4D3E; }
 
                 .tq-nav-stats { margin-bottom:16px; }
@@ -318,9 +350,9 @@ export async function render(container) {
                 .tq-essay { min-height:200px; }
                 .tq-char-count { font-size:11px; color:#9ca3af; text-align:right; margin-top:2px; }
                 .tq-type-hint { display:flex; align-items:flex-start; gap:8px; padding:10px 14px; border-radius:8px; font-size:12.5px; margin-bottom:16px; }
-                .tq-type-hint.fill  { background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; }
-                .tq-type-hint.short { background:#F0FDF4; color:#166534; border:1px solid #BBF7D0; }
-                .tq-type-hint.essay { background:#FEF9C3; color:#854D0E; border:1px solid #FDE68A; }
+                .tq-type-hint.fill  { background:#1D4ED8; color:#fff; border:1px solid #BFDBFE; }
+                .tq-type-hint.short { background:#00461B; color:#fff; border:1px solid #BBF7D0; }
+                .tq-type-hint.essay { background:#B45309; color:#fff; border:1px solid #FDE68A; }
                 .tq-inline-blank { display:inline-block; border:none; border-bottom:2.5px solid #1B4D3E; outline:none; padding:2px 10px; font-size:16px; font-weight:700; color:#1B4D3E; min-width:130px; max-width:260px; background:rgba(27,77,62,.07); border-radius:4px 4px 0 0; text-align:center; transition:background .15s; vertical-align:middle; margin:0 4px; }
                 .tq-inline-blank:focus { background:rgba(27,77,62,.14); }
 
@@ -338,23 +370,51 @@ export async function render(container) {
 
                 /* Tab-switch warning banner */
                 .tq-tabwarn { position:fixed; top:0; left:0; right:0; z-index:9999; padding:13px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:13.5px; font-weight:600; animation:tq-slidein .3s ease forwards; }
-                .tq-tabwarn.mild   { background:#FEF3C7; color:#92400E; border-bottom:2px solid #FCD34D; }
-                .tq-tabwarn.danger { background:#FEE2E2; color:#991B1B; border-bottom:2px solid #FCA5A5; }
+                .tq-tabwarn.mild   { background:#B45309; color:#fff; border-bottom:2px solid #FCD34D; }
+                .tq-tabwarn.danger { background:#7F1D1D; color:#fff; border-bottom:2px solid #FCA5A5; }
                 @keyframes tq-slidein { from{transform:translateY(-100%)} to{transform:translateY(0)} }
                 .tq-tabwarn-msg { display:flex; align-items:center; gap:10px; }
                 .tq-tabwarn-close { background:none; border:none; cursor:pointer; font-size:18px; color:inherit; padding:0 4px; line-height:1; }
                 /* Tab-switch count badge in sidebar */
                 .tq-switch-badge { display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:4px 0; margin-top:4px; }
                 .tq-switch-badge-label { color:#B45309; font-weight:600; }
-                .tq-switch-badge-val   { background:#FEF3C7; color:#B45309; border-radius:12px; padding:1px 9px; font-weight:800; font-size:11px; }
+                .tq-switch-badge-val   { background:#B45309; color:#fff; border-radius:12px; padding:1px 9px; font-weight:800; font-size:11px; }
                 .tq-switch-badge.danger .tq-switch-badge-label { color:#b91c1c; }
-                .tq-switch-badge.danger .tq-switch-badge-val   { background:#FEE2E2; color:#b91c1c; }
+                .tq-switch-badge.danger .tq-switch-badge-val   { background:#7F1D1D; color:#fff; }
 
                 /* Screenshot / capture deterrent */
                 .tq-wrap.tq-blurred, .tq-pre.tq-blurred { filter:blur(18px); pointer-events:none; user-select:none; }
                 body.tq-secure-mode { -webkit-touch-callout:none; }
                 body.tq-secure-mode .tq-wrap { -webkit-user-select:none; user-select:none; }
                 @media print { body.tq-secure-mode #page-content, body.tq-secure-mode .tq-wrap { display:none !important; } }
+                /* Identity watermark. A phone screenshot can't be blocked by
+                   any website — the OS never tells the page it happened — so
+                   the realistic defence is to make a leaked capture traceable
+                   to whoever took it, which is what discourages passing
+                   answers around. Sits above the content but ignores clicks. */
+                .tq-watermark {
+                    position:absolute; inset:0; z-index:3; pointer-events:none; overflow:hidden;
+                    display:flex; flex-wrap:wrap; align-content:space-around; justify-content:space-around;
+                    opacity:.10; transform:rotate(-24deg) scale(1.35);
+                }
+                .tq-watermark span {
+                    font-size:12px; font-weight:800; color:#00461B;
+                    white-space:nowrap; padding:16px 22px;
+                }
+                @media (max-width:640px) {
+                    .tq-watermark span { font-size:10px; padding:12px 14px; }
+                }
+                /* Applied the instant focus/visibility is lost, so an OS-level
+                   screen capture grabs a covered page instead of the questions. */
+                body.tq-capture-blank .tq-wrap,
+                body.tq-capture-blank .tq-pre { filter:blur(22px); pointer-events:none; user-select:none; }
+                body.tq-capture-blank::after {
+                    content:'Quiz hidden while this window is not in focus';
+                    position:fixed; inset:0; z-index:99999;
+                    background:#00461B; color:#fff;
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:15px; font-weight:700; text-align:center; padding:24px;
+                }
 
                 @media(max-width:768px) {
                     .tq-body { grid-template-columns:1fr; }
@@ -365,6 +425,7 @@ export async function render(container) {
             </style>
 
             <div class="tq-wrap">
+                ${watermarkHtml()}
                 <div class="tq-header">
                     <div class="tq-header-left">
                         <h3>${esc(quiz.title)}</h3>
@@ -373,13 +434,19 @@ export async function render(container) {
                             ? 'Stay on this tab. Switching tabs asks you to confirm — leaving may submit this attempt.'
                             : 'Switching tabs or pages asks you to confirm before you leave.'}</p>
                     </div>
-                    <div class="tq-timer" id="tq-timer">${formatTime(timeLeft)}</div>
+                    ${isUntimed
+                        ? `<div class="tq-timer tq-timer--untimed" id="tq-timer" title="No time limit — answer at your own pace">${icon('clock', inl)} No time limit</div>`
+                        : `<div class="tq-timer" id="tq-timer">${formatTime(timeLeft)}</div>`}
                 </div>
 
                 <div class="tq-progress"><div class="tq-progress-fill" id="tq-progress-fill" style="width:0%"></div></div>
 
                 <div class="tq-body">
-                    <div class="tq-question" id="tq-question"></div>
+                    <div class="tq-card-deck">
+                        <div class="tq-card-peek tq-card-peek-2" aria-hidden="true"></div>
+                        <div class="tq-card-peek tq-card-peek-1" aria-hidden="true"></div>
+                        <div class="tq-question" id="tq-question"></div>
+                    </div>
                     <div class="tq-nav">
                         ${oneAtATime ? `
                         <div class="tq-nav-title">Progress</div>
@@ -422,6 +489,10 @@ export async function render(container) {
         startTimer();
         if (isProctored) {
             startProctoring();
+        } else if (isRelaxed) {
+            // Content protection only — no leave guard, so the student can
+            // step away and come back without penalty.
+            startRelaxedGuard();
         } else {
             startLeaveConfirmationGuard();
         }
@@ -430,8 +501,7 @@ export async function render(container) {
         if (!oneAtATime) {
             container.querySelectorAll('.tq-nav-num').forEach(n => {
                 n.addEventListener('click', () => {
-                    currentQ = parseInt(n.dataset.idx);
-                    showQuestion(currentQ);
+                    navigateToQuestion(parseInt(n.dataset.idx));
                 });
             });
         }
@@ -472,6 +542,36 @@ export async function render(container) {
                 submitQuiz('', { auto: true });
             }
         }, 500);
+    }
+
+    // Slides the flashcard out, swaps its content, then slides the new one
+    // in from the opposite edge — showQuestion() itself only rebuilds
+    // #tq-question's innerHTML (same DOM node), so classes added here
+    // survive the rebuild and must be cleared before the enter animation.
+    let navigating = false;
+    function navigateToQuestion(newIdx) {
+        if (navigating || newIdx === currentQ || newIdx < 0 || newIdx >= questions.length) return;
+        const panel = container.querySelector('#tq-question');
+        if (!panel) { showQuestion(newIdx); return; }
+        navigating = true;
+        const direction = newIdx > currentQ ? 'next' : 'prev';
+        panel.classList.add(direction === 'next' ? 'tq-card-exit-next' : 'tq-card-exit-prev');
+        setTimeout(() => {
+            showQuestion(newIdx);
+            const freshPanel = container.querySelector('#tq-question');
+            if (!freshPanel) { navigating = false; return; }
+            freshPanel.classList.remove('tq-card-exit-next', 'tq-card-exit-prev');
+            freshPanel.classList.add(direction === 'next' ? 'tq-card-enter-next' : 'tq-card-enter-prev');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    freshPanel.classList.add('tq-card-enter-active');
+                });
+            });
+            setTimeout(() => {
+                freshPanel.classList.remove('tq-card-enter-next', 'tq-card-enter-prev', 'tq-card-enter-active');
+                navigating = false;
+            }, 260);
+        }, 160);
     }
 
     function showQuestion(idx) {
@@ -721,9 +821,9 @@ export async function render(container) {
             });
         }
 
-        panel.querySelector('#tq-prev')?.addEventListener('click', () => { if (idx > 0) showQuestion(idx - 1); });
+        panel.querySelector('#tq-prev')?.addEventListener('click', () => { if (idx > 0) navigateToQuestion(idx - 1); });
         panel.querySelector('#tq-next')?.addEventListener('click', () => {
-            if (idx < questions.length - 1) showQuestion(idx + 1);
+            if (idx < questions.length - 1) navigateToQuestion(idx + 1);
         });
         wireInlineSubmit(panel);
 
@@ -759,6 +859,7 @@ export async function render(container) {
     }
 
     function startTimer() {
+        if (isUntimed) return; // no countdown, no auto-submit-on-time-up — the header already shows "No time limit"
         const timerEl = container.querySelector('#tq-timer');
         timerInterval = setInterval(() => {
             timeLeft--;
@@ -809,6 +910,7 @@ export async function render(container) {
 
         clearInterval(timerInterval);
         cleanupProctoring();
+        cleanupRelaxedGuard();
         clearQuizProctoring();
         Api.post('/QuizAttemptsAPI.php?action=proctor-unlock', {}).catch(() => {});
 
@@ -954,11 +1056,18 @@ export async function render(container) {
         },
         navigation: {
             confirmAction: 'leave this quiz',
-            exitQuestion: 'Are you sure you want to leave the quiz?',
-            preventHint: '',
-            leaveLabel: 'Yes, leave quiz',
-            stayLabel: 'No, continue quiz',
-            leaveMsg: 'You left the quiz. Your attempt has been submitted.'
+            exitQuestion: 'Are you sure you want to exit?',
+            // An answer sheet is never auto-submitted, so the warning has to
+            // say what actually happens: unsaved answers are lost, and they
+            // can come back and continue any time before the due date.
+            preventHint: isRelaxed
+                ? 'Any answers you have typed but not submitted will be lost. You can come back and answer again before the due date.'
+                : '',
+            leaveLabel: 'Yes, exit',
+            stayLabel: 'No, stay on this page',
+            leaveMsg: isRelaxed
+                ? 'You exited without submitting. Your answers were not saved.'
+                : 'You left the quiz. Your attempt has been submitted.'
         },
         paste: {
             confirmAction: 'paste into your answer',
@@ -1316,17 +1425,147 @@ export async function render(container) {
         document.addEventListener('paste', onProctorPaste, true);
         document.addEventListener('copy', onProctorCopy, true);
         document.addEventListener('cut', onProctorPaste, true);
+        startScreenshotHardening();
     }
 
     function cleanupProctoring() {
         document.body.classList.remove('tq-secure-mode');
         cleanupLeaveConfirmationGuard();
+        stopScreenshotHardening();
         document.removeEventListener('keydown', onProctorGuardKey, true);
         document.removeEventListener('paste', onProctorPaste, true);
         document.removeEventListener('copy', onProctorCopy, true);
         document.removeEventListener('cut', onProctorPaste, true);
         document.getElementById('tq-violation-flash')?.remove();
         document.getElementById('tq-ended-overlay')?.remove();
+    }
+
+    // ── Relaxed mode (answer sheets) ──────────────────────────────────────
+    // Same content protection as proctoring, but deliberately WITHOUT
+    // startLeaveConfirmationGuard() — that's the piece that turns a tab
+    // switch into a violation and auto-submits. Blocked actions here just
+    // get refused with a toast; they never end the attempt.
+
+    const onRelaxedBlockCopy = (e) => {
+        if (e.target?.closest?.('.tq-question input, .tq-question textarea')) {
+            // Let a student copy their own draft answer back out.
+            if (e.type === 'copy' || e.type === 'cut') return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        showActionNotice(
+            e.type === 'paste' ? 'Pasting is turned off' : 'Copying is turned off',
+            'Answer this in your own words. You can leave and come back anytime before the due date.'
+        );
+    };
+
+    const onRelaxedContextMenu = (e) => {
+        e.preventDefault();
+        showActionNotice('Right-click is turned off', 'The menu is disabled while answering this sheet.');
+    };
+
+    const onRelaxedGuardKey = (e) => {
+        const key = (e.key || '').toLowerCase();
+        const isScreenshot = key === 'printscreen'
+            || ((e.metaKey || e.ctrlKey) && e.shiftKey && ['3', '4', '5', 's'].includes(key));
+        if (isScreenshot) {
+            e.preventDefault();
+            e.stopPropagation();
+            navigator.clipboard?.writeText('').catch(() => {});
+            showActionNotice('Screenshots are turned off', 'This answer sheet can\'t be captured.');
+            return;
+        }
+        // Copy/paste via the keyboard, caught here as well as via the events
+        // above so the shortcut is refused even where the event doesn't fire.
+        if ((e.ctrlKey || e.metaKey) && ['v', 'c', 'x'].includes(key)) {
+            const inAnswer = e.target?.closest?.('.tq-question input, .tq-question textarea');
+            if (key === 'v' || !inAnswer) {
+                e.preventDefault();
+                e.stopPropagation();
+                showActionNotice(
+                    key === 'v' ? 'Pasting is turned off' : 'Copying is turned off',
+                    'Answer this in your own words.'
+                );
+            }
+        }
+    };
+
+    // ── Screenshot hardening, shared by proctored and relaxed modes ───────
+    //
+    // Why blanking on focus-loss matters more than the keydown handler:
+    // Windows swallows Print Screen at the OS level, so `keydown` frequently
+    // never reaches the page at all — which is why blocking the key alone
+    // still let screenshots through. Win+Shift+S and the Snipping Tool are
+    // worse: they open an OS overlay and the page only ever learns about it
+    // as a lost focus. So the reliable defence is to blank the questions the
+    // instant focus or visibility is lost, and restore when it comes back —
+    // whatever the OS captures is already covered.
+    //
+    // In relaxed mode this is purely visual: leaving is still allowed and is
+    // never treated as a violation, nothing auto-submits.
+
+    let screenshotBlankTimer = null;
+
+    const blankForCapture = () => {
+        document.body.classList.add('tq-capture-blank');
+        clearTimeout(screenshotBlankTimer);
+        // Safety net in case the focus event never pairs up.
+        screenshotBlankTimer = setTimeout(unblankAfterCapture, 10000);
+    };
+    const unblankAfterCapture = () => {
+        clearTimeout(screenshotBlankTimer);
+        document.body.classList.remove('tq-capture-blank');
+    };
+
+    const onCaptureBlur = () => blankForCapture();
+    const onCaptureFocus = () => unblankAfterCapture();
+    const onCaptureVisibility = () => {
+        if (document.hidden) blankForCapture();
+        else unblankAfterCapture();
+    };
+    // keyup fires for Print Screen in browsers where keydown doesn't.
+    const onCaptureKeyUp = (e) => {
+        if ((e.key || '').toLowerCase() === 'printscreen') {
+            navigator.clipboard?.writeText('').catch(() => {});
+            blankForCapture();
+            setTimeout(unblankAfterCapture, 1200);
+            showActionNotice('Screenshots are turned off', 'The quiz is hidden while a capture is attempted.');
+        }
+    };
+
+    function startScreenshotHardening() {
+        window.addEventListener('blur', onCaptureBlur);
+        window.addEventListener('focus', onCaptureFocus);
+        document.addEventListener('visibilitychange', onCaptureVisibility);
+        document.addEventListener('keyup', onCaptureKeyUp, true);
+    }
+
+    function stopScreenshotHardening() {
+        window.removeEventListener('blur', onCaptureBlur);
+        window.removeEventListener('focus', onCaptureFocus);
+        document.removeEventListener('visibilitychange', onCaptureVisibility);
+        document.removeEventListener('keyup', onCaptureKeyUp, true);
+        unblankAfterCapture();
+    }
+
+    function startRelaxedGuard() {
+        document.body.classList.add('tq-secure-mode');
+        document.addEventListener('keydown', onRelaxedGuardKey, true);
+        document.addEventListener('paste', onRelaxedBlockCopy, true);
+        document.addEventListener('copy', onRelaxedBlockCopy, true);
+        document.addEventListener('cut', onRelaxedBlockCopy, true);
+        document.addEventListener('contextmenu', onRelaxedContextMenu, true);
+        startScreenshotHardening();
+    }
+
+    function cleanupRelaxedGuard() {
+        document.body.classList.remove('tq-secure-mode');
+        document.removeEventListener('keydown', onRelaxedGuardKey, true);
+        document.removeEventListener('paste', onRelaxedBlockCopy, true);
+        document.removeEventListener('copy', onRelaxedBlockCopy, true);
+        document.removeEventListener('cut', onRelaxedBlockCopy, true);
+        document.removeEventListener('contextmenu', onRelaxedContextMenu, true);
+        stopScreenshotHardening();
     }
 
     function showActionNotice(title, detail, variant = 'warn') {
@@ -1384,7 +1623,7 @@ export async function render(container) {
                         <div class="tq-pre-meta">
                             <div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${questions.length}</span><span class="tq-pre-meta-lbl">Questions</span></div>
                             <div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${totalPoints}</span><span class="tq-pre-meta-lbl">Points</span></div>
-                            <div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${timeMins} min</span><span class="tq-pre-meta-lbl">Time Limit</span></div>
+                            <div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${quiz.time_limit === null ? 'None' : timeMins + ' min'}</span><span class="tq-pre-meta-lbl">Time Limit</span></div>
                             <div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${quiz.passing_rate}%</span><span class="tq-pre-meta-lbl">To Pass</span></div>
                             ${quiz.attempts_remaining != null
                                 ? `<div class="tq-pre-meta-item"><span class="tq-pre-meta-val">${quiz.attempts_remaining}</span><span class="tq-pre-meta-lbl">Attempts Left</span></div>`
@@ -1599,6 +1838,11 @@ export async function render(container) {
     }
 
     function beginQuizSession() {
+        // Armed for answer sheets too, so Back / sidebar navigation asks
+        // "Are you sure you want to exit?" instead of silently discarding
+        // whatever the student has typed. It only confirms — an answer sheet
+        // is never auto-submitted on leaving (see onConfirmedExit, which
+        // submits for proctored attempts only).
         if (!isProctored) armQuizLeaveProtection();
         startTime = Date.now();
     renderQuiz();
@@ -1614,6 +1858,27 @@ export async function render(container) {
     }
 }
 
+/**
+ * Tiled "name · ID · timestamp" watermark laid over the quiz.
+ *
+ * Deliberately not a screenshot blocker — a website cannot stop a phone
+ * screenshot, since the OS never notifies the page. This makes any capture
+ * that does get taken traceable to the student who took it, which is the part
+ * that actually deters sharing answers.
+ */
+function watermarkHtml() {
+    const me = Auth.user() || {};
+    const name = me.name
+        || `${me.first_name || ''} ${me.last_name || ''}`.trim()
+        || 'Student';
+    const id = me.student_id || me.users_id || '';
+    const stamp = new Date().toLocaleString();
+    const label = esc(`${name} · ${id} · ${stamp}`);
+    return `<div class="tq-watermark" aria-hidden="true">${
+        Array.from({ length: 28 }, () => `<span>${label}</span>`).join('')
+    }</div>`;
+}
+
 function cleanQuestionText(text) {
     // Remove AI-generated prefixes like [1]:, [2]:, MC1:, TF1:, etc.
     return (text || '').replace(/^\s*\[?\d+\]?\s*[:.]?\s*/, '').replace(/^(MC|TF|FIB|SA|ESSAY)\d*\s*[:.]?\s*/i, '').trim();
@@ -1625,4 +1890,5 @@ function formatTime(seconds) {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

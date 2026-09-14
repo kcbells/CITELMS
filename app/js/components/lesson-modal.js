@@ -2,8 +2,9 @@
  * Shared lesson modal — section targeting, attachments, optional content bank
  */
 import { Api } from '../api.js';
-import { gradingPeriodSelectHtml } from '../utils/gradebook-periods.js';
+import { gradingPeriodSelectHtml, gradingPeriodTableCss } from '../utils/gradebook-periods.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const MAX_FILE_MB = 10;
 const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'zip', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
 
@@ -27,7 +28,7 @@ const MODAL_STYLES = `
         font-size:14px; box-sizing:border-box; font-family:inherit; }
     .lsn-m-input:focus, .lsn-m-select:focus, .lsn-m-textarea:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 3px rgba(0,70,27,.12); }
     .lsn-m-textarea { resize:vertical; min-height:90px; }
-    .lsn-m-alert { background:#FEE2E2; color:#B91C1C; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
+    .lsn-m-alert { background:#7F1D1D; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
     .lsn-m-btn-cancel { background:#fff; color:#374151; border:1px solid #e5e7eb; padding:10px 18px; border-radius:10px; font-weight:600; cursor:pointer; }
     .lsn-m-btn-save { background:#00461B; color:#fff; border:none; padding:10px 22px; border-radius:10px; font-weight:700; cursor:pointer; }
     .lsn-m-btn-save:disabled { opacity:.6; cursor:not-allowed; }
@@ -48,7 +49,7 @@ const MODAL_STYLES = `
     .lsn-att-actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
     .lsn-att-btn { padding:8px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;
         border:1px solid #e5e7eb; background:#fff; color:#374151; display:inline-flex; align-items:center; gap:6px; }
-    .lsn-att-btn.green { background:#E8F5EC; color:#00461B; border-color:#C5D9CB; }
+    .lsn-att-btn.green { background:#00461B; color:#fff; border-color:#C5D9CB; }
     .lsn-att-list { display:flex; flex-direction:column; gap:6px; }
     .lsn-att-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
         background:#fff; border:1px solid #e5e7eb; border-radius:8px; font-size:12px; }
@@ -58,13 +59,10 @@ const MODAL_STYLES = `
     .lsn-link-row { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
     .lsn-link-row input { flex:1; min-width:140px; padding:8px 10px; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; }
     .lsn-subj-badge { padding:11px 14px; background:#E8F5EC; border-radius:10px; font-size:14px; font-weight:700; color:#00461B; }
-`;
+` + gradingPeriodTableCss();
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function formatSize(bytes) {
     if (!bytes) return '0 B';

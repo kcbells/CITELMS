@@ -39,9 +39,24 @@ class NotificationEmailHelper {
         );
     }
 
+    /** Global Gradebook components (Let's Practice / Reflection / Wrap Up
+     *  Quiz) aren't "a quiz" the way a student expects that word — labeling
+     *  every one of them "New quiz" in a notification is confusing/wrong.
+     *  Falls back to "Quiz" for a normal graded/practice quiz that has no
+     *  gradebook_component set. */
+    private static function quizKindLabel(?string $component): string {
+        return match ($component) {
+            'lets_practice'          => "Let's Practice",
+            'lets_practice_optional' => "Let's Practice (Optional)",
+            'reflection'             => 'Reflection',
+            'wrap_up_quiz'           => 'Wrap Up Quiz',
+            default                  => 'Quiz',
+        };
+    }
+
     public static function queueNewQuiz(int $quizId) {
         $quiz = db()->fetchOne(
-            "SELECT q.quiz_id, q.quiz_title, q.subject_id, q.due_date, s.subject_code, s.subject_name
+            "SELECT q.quiz_id, q.quiz_title, q.subject_id, q.due_date, q.gradebook_component, s.subject_code, s.subject_name
              FROM quiz q
              JOIN subject s ON s.subject_id = q.subject_id
              WHERE q.quiz_id = ? AND q.status = 'published'
@@ -52,9 +67,10 @@ class NotificationEmailHelper {
             return 0;
         }
 
+        $kindLabel = self::quizKindLabel($quiz['gradebook_component'] ?? null);
         $dueDetail = !empty($quiz['due_date'])
             ? 'Due ' . date('M j, Y', strtotime($quiz['due_date']))
-            : 'New quiz available';
+            : "New {$kindLabel} available";
 
         return self::notifyStudents(
             self::fetchTargetStudents((int)$quiz['subject_id'], 'quiz', $quizId),
@@ -62,13 +78,13 @@ class NotificationEmailHelper {
                 'kind' => 'new_quiz',
                 'ref_type' => 'quiz',
                 'ref_id' => $quizId,
-                'title' => $quiz['quiz_title'] ?? 'Quiz',
+                'title' => $quiz['quiz_title'] ?? $kindLabel,
                 'subject_code' => $quiz['subject_code'] ?? '',
                 'detail_text' => $dueDetail,
                 'link_url' => self::quizLink($quizId),
-                'email_subject' => 'New quiz: ' . ($quiz['quiz_title'] ?? 'Quiz'),
-                'headline' => 'New quiz available',
-                'body_html' => self::quizBody($quiz),
+                'email_subject' => "New {$kindLabel}: " . ($quiz['quiz_title'] ?? $kindLabel),
+                'headline' => "New {$kindLabel} available",
+                'body_html' => self::quizBody($quiz, $kindLabel),
             ]
         );
     }
@@ -294,14 +310,15 @@ class NotificationEmailHelper {
             . '<p style="margin:0;font-size:15px;color:#111827;"><strong>' . $title . '</strong></p>';
     }
 
-    private static function quizBody(array $quiz) {
-        $title = htmlspecialchars($quiz['quiz_title'] ?? 'Quiz', ENT_QUOTES, 'UTF-8');
+    private static function quizBody(array $quiz, string $kindLabel = 'Quiz') {
+        $title = htmlspecialchars($quiz['quiz_title'] ?? $kindLabel, ENT_QUOTES, 'UTF-8');
         $code = htmlspecialchars($quiz['subject_code'] ?? '', ENT_QUOTES, 'UTF-8');
+        $kindLower = htmlspecialchars(mb_strtolower($kindLabel), ENT_QUOTES, 'UTF-8');
         $due = !empty($quiz['due_date'])
             ? '<br><strong>Due:</strong> ' . htmlspecialchars(date('M j, Y', strtotime($quiz['due_date'])), ENT_QUOTES, 'UTF-8')
             : '';
         return '<p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#4b5563;">'
-            . 'A new quiz is available in <strong>' . $code . '</strong>.'
+            . 'A new ' . $kindLower . ' is available in <strong>' . $code . '</strong>.'
             . '</p>'
             . '<p style="margin:0;font-size:15px;color:#111827;"><strong>' . $title . '</strong>' . $due . '</p>';
     }

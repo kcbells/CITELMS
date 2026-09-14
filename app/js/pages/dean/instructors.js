@@ -8,6 +8,7 @@ import { validatePassword, attachStrengthMeter } from '../../utils/password-chan
 import { mountBulkImportUI, bulkImportCss } from '../../components/bulk-import-ui.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let allInstructors = [];
@@ -32,7 +33,7 @@ export async function render(container) {
         <style>
             .di-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .di-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
-            .di-count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .di-count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
 
             .di-header-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
             .btn-add-instructor { background:#1B4D3E; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; }
@@ -46,9 +47,9 @@ export async function render(container) {
             .di-filters input { min-width:260px; }
             .di-filters select { min-width:180px; }
 
-            .di-table-wrap { background:#fff; border:2px solid #111; border-radius:14px; overflow:hidden; }
+            .di-table-wrap { background:#fff; border:2px solid #111; border-radius:14px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
             .di-table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
-            .di-table th { background:#F9FAFB; color:#374151; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:12px 16px; border-bottom:2px solid #111; border-right:1px solid #111; text-align:left; }
+            .di-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:12px 16px; border-bottom:2px solid #111; border-right:1px solid #111; text-align:left; }
             .di-table th:last-child { border-right:none; }
             .di-table tbody tr { border-bottom:1px solid #F3F4F6; transition:background .15s; }
             .di-table tbody tr:last-child { border-bottom:none; }
@@ -67,11 +68,11 @@ export async function render(container) {
             .div-year-title { font-size:12px; font-weight:800; color:#1B4D2E; text-transform:uppercase; letter-spacing:.5px; margin:0 0 8px; display:flex; align-items:center; gap:8px; }
             .div-year-title::after { content:''; flex:1; height:1px; background:#E5E7EB; }
             .div-subj-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid #E5E7EB; border-radius:10px; margin-bottom:8px; background:#fff; }
-            .div-subj-code { font-family:monospace; font-size:12px; font-weight:700; color:#1B4D2E; background:#E8F5E9; padding:3px 8px; border-radius:6px; flex-shrink:0; }
+            .div-subj-code { font-family:monospace; font-size:12px; font-weight:700; color:#fff; background:#00461B; padding:3px 8px; border-radius:6px; flex-shrink:0; }
             .div-subj-name { font-size:13.5px; color:#262626; font-weight:600; flex:1; min-width:0; }
             .div-subj-units { font-size:11.5px; color:#9CA3AF; flex-shrink:0; }
             .div-subj-prog { font-size:10.5px; color:#5B21B6; background:#EDE9FE; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
-            .div-subj-section { font-size:10.5px; color:#1B4D3E; background:#E8F5E9; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
+            .div-subj-section { font-size:10.5px; color:#fff; background:#00461B; padding:2px 7px; border-radius:6px; font-weight:700; flex-shrink:0; }
             .div-empty { text-align:center; padding:36px 20px; color:#a0a0a0; }
             .div-empty-icon { font-size:32px; margin-bottom:8px; }
             .di-av { width:38px; height:38px; border-radius:50%; background:#00461B; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
@@ -80,21 +81,21 @@ export async function render(container) {
             .di-empid { font-family:monospace; font-size:13px; color:#404040; }
             .di-prog { display:inline-block; padding:3px 10px; border-radius:8px; font-size:11px; font-weight:600; background:#EDE9FE; color:#5B21B6; }
             .di-prog.none { background:#f5f5f5; color:#a0a0a0; }
-            .di-campus { font-size:11px; color:#1B4D3E; background:#E8F5E9; padding:2px 8px; border-radius:8px; font-weight:600; }
+            .di-campus { font-size:11px; color:#fff; background:#00461B; padding:2px 8px; border-radius:8px; font-weight:600; }
             .di-role-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
             .di-role-badge.instructor { background:#DBEAFE; color:#1E40AF; }
             .di-role-badge.program_head { background:#FFE4D6; color:#9A3412; }
 
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:capitalize; }
-            .badge-active { background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-            .badge-inactive { background:#fee2e2; color:#b91c1c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-            .badge-pending { background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-active { background:#00461B; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-inactive { background:#7F1D1D; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+            .badge-pending { background:#B45309; color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
 
             .di-actions { display:flex; gap:6px; }
             .btn-row { border:none; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; font-weight:600; }
-            .btn-row-danger { background:#FEE2E2; color:#b91c1c; }
+            .btn-row-danger { background:#7F1D1D; color:#fff; }
             .btn-row-danger:hover { background:#FECACA; }
-            .btn-row-success { background:#E8F5E9; color:#1B4D3E; }
+            .btn-row-success { background:#00461B; color:#fff; }
             .btn-row-success:hover { background:#C6F6D5; }
             .btn-row-edit { background:#F3F4F6; color:#374151; }
             .btn-row-edit:hover { background:#E5E7EB; }
@@ -123,7 +124,7 @@ export async function render(container) {
             .fac-role-row { display:flex; gap:10px; margin-bottom:20px; }
             .fac-role-pill { flex:1; padding:12px 8px; border:1.5px solid #e5e7eb; border-radius:10px; background:#f9fafb; cursor:pointer; text-align:center; font-size:13px; font-weight:700; color:#4b5563; transition:all .15s; }
             .fac-role-pill:hover { border-color:#c9ccd1; }
-            .fac-role-pill.active { border-color:#1B4D2E; background:#E8F5E9; color:#1B4D2E; }
+            .fac-role-pill.active { border-color:#1B4D2E; background:#00461B; color:#fff; }
 
             .di-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
             .di-form-group { margin-bottom:16px; }
@@ -149,8 +150,8 @@ export async function render(container) {
             .fac-year-pill.checked { border-color:#B45309; background:#B45309; color:#fff; }
 
             .di-alert { padding:11px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.5; display:none; }
-            .di-alert.di-alert-success { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; display:block; }
-            .di-alert.di-alert-error { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; display:block; }
+            .di-alert.di-alert-success { background:#00461B; color:#fff; border:1px solid #bbf7d0; display:block; }
+            .di-alert.di-alert-error { background:#7F1D1D; color:#fff; border:1px solid #fecaca; display:block; }
             .di-btn-secondary { background:transparent; color:#4b5563; border:1.5px solid #d1d5db; border-radius:8px; padding:11px 20px; font-weight:600; cursor:pointer; font-size:13.5px; }
             .di-btn-secondary:hover { background:#f3f4f6; }
             .di-btn-primary { flex:1; background:#1B4D2E; color:#fff; border:none; border-radius:8px; padding:11px 20px; font-size:14px; font-weight:700; cursor:pointer; transition:background .15s; }
@@ -159,7 +160,7 @@ export async function render(container) {
 
             @media(max-width:768px) {
                 .di-filters { flex-direction:column; }
-                .di-filters input, .di-filters select { min-width:100%; }
+                .di-filters input, .di-filters select { width:100%; min-width:0; box-sizing:border-box; }
                 .di-form-grid { grid-template-columns:1fr; }
             }
 
@@ -689,7 +690,8 @@ export async function render(container) {
                     <div class="di-modal-header-icon">${icon('cloudUpload', { size: 20 })}</div>
                     <div class="di-modal-header-text">
                         <h3>Upload Faculty List</h3>
-                        <p>Creates or updates instructor accounts in your department</p>
+                        <p>Creates or updates instructor accounts in your department &middot;
+                            <a href="#" id="diu-template-link" style="color:#1B4D2E;font-weight:700;">Download blank template</a></p>
                     </div>
                     <button class="di-modal-close" id="diu-close-modal">&times;</button>
                 </div>
@@ -705,18 +707,6 @@ export async function render(container) {
 
         mountBulkImportUI(overlay.querySelector('#diu-import-host'), {
             importAction: 'faculty-list-import',
-            helpHtml: `
-                <ul>
-                    <li>Accepted files: <strong>Excel (.xlsx)</strong>, <strong>CSV/text (.csv, .txt)</strong>,
-                        a <strong>Word table (.docx)</strong>, or a clear <strong>photo (.jpg, .png)</strong> — listing your faculty</li>
-                    <li>Needs <strong>Last Name, First Name</strong> (or a combined Name column), <strong>Employee ID</strong>,
-                        and ideally <strong>Email</strong>; anything else in the file is ignored —
-                        <a href="#" id="diu-template-link" style="color:#1B4D2E;font-weight:700;">download a blank template</a></li>
-                    <li>Every row becomes an instructor account in <strong>your own department</strong> — this never
-                        creates or changes subjects, sections, or students</li>
-                    <li>Accounts that don't exist yet log in with just their Employee ID (no password needed) and are
-                        asked to set one on first login</li>
-                </ul>`,
             renderResult: renderFacultyListResult,
             onImported: () => { reload(); },
         });
@@ -879,11 +869,8 @@ function renderRows(list) {
     }).join('');
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function ordinal(n) {
     const s = ['th', 'st', 'nd', 'rd'], v = n % 100;

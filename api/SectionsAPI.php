@@ -8,6 +8,9 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/StudentListParser.php';
+require_once __DIR__ . '/helpers/ClassCodeHelper.php';
+
+backfillMissingSectionSubjectCodes();
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -517,9 +520,9 @@ function handleAddSubject() {
 
     try {
         pdo()->prepare(
-            "INSERT INTO section_subject (section_id, subject_offered_id, schedule, room, status)
-             VALUES (?, ?, ?, ?, 'active')"
-        )->execute([$sectionId, $offeredId, $schedule ?: null, $room ?: null]);
+            "INSERT INTO section_subject (section_id, subject_offered_id, schedule, room, status, enrollment_code)
+             VALUES (?, ?, ?, ?, 'active', ?)"
+        )->execute([$sectionId, $offeredId, $schedule ?: null, $room ?: null, generateUniqueClassCode()]);
         echo json_encode(['success' => true, 'message' => 'Subject added to section']);
     } catch (Exception $e) {
         error_log('Add subject to section: ' . $e->getMessage());
@@ -695,9 +698,9 @@ function handleBulkAddSubjects() {
         );
         if (!$exists) {
             db()->execute(
-                "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at)
-                 VALUES (?, ?, 'active', NOW())",
-                [$sectionId, $offeredId]
+                "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at, enrollment_code)
+                 VALUES (?, ?, 'active', NOW(), ?)",
+                [$sectionId, $offeredId, generateUniqueClassCode()]
             );
             $added++;
         }
@@ -712,9 +715,9 @@ function handleBulkAddSubjects() {
         );
         if (!$exists) {
             db()->execute(
-                "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at)
-                 VALUES (?, ?, 'active', NOW())",
-                [$sectionId, $offeredId]
+                "INSERT INTO section_subject (section_id, subject_offered_id, status, created_at, enrollment_code)
+                 VALUES (?, ?, 'active', NOW(), ?)",
+                [$sectionId, $offeredId, generateUniqueClassCode()]
             );
             $added++;
         }
@@ -877,20 +880,45 @@ function handleInstructorClasses() {
     foreach ($bySubject as &$sub) {
         $ids = $sub['subject_offered_ids'];
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        // Group strictly by the physical section (sec.section_id), not also by
+        // ss.subject_offered_id/section_subject_id — a section can legitimately
+        // be linked to MORE THAN ONE of this instructor's subject_offered rows
+        // for the same subject (the very scenario this whole function exists
+        // to merge into one card, see comment above). Grouping by the offering
+        // columns too fragmented that one section into a duplicate row per
+        // offering it's linked to — same section, same enrollment_code, shown
+        // twice, which is exactly the "two classes share a code" symptom this
+        // was mistaken for. grading_type is already guaranteed identical across
+        // every offering of a subject (see SubjectOfferingsAPI.php's
+        // handleUpdate() propagation), so MIN() here is just a safe way to
+        // select it without re-fragmenting the group.
+        // enrollment_code here is the PER-SUBJECT code (section_subject.enrollment_code),
+        // not the section-wide one — every subject_offered_id in $ids is an
+        // offering of this SAME subject (that's how $bySubject was grouped
+        // above), so MIN(ss.enrollment_code) is scoped to just this subject
+        // and is safe/correct even when a section is linked to more than one
+        // of this teacher's offerings of it. section.enrollment_code is kept
+        // under a distinct name only for callers that still need the legacy
+        // whole-section code.
         $sub['sections'] = db()->fetchAll(
-            "SELECT sec.section_id, sec.section_name, sec.enrollment_code,
+            "SELECT sec.section_id, sec.section_name,
+                    sec.enrollment_code AS section_wide_code,
                     sec.max_students, sec.status,
-                    ss.section_subject_id, ss.subject_offered_id, ss.schedule, ss.room,
+                    MIN(ss.section_subject_id) AS section_subject_id,
+                    MIN(ss.subject_offered_id) AS subject_offered_id,
+                    MIN(ss.enrollment_code) AS enrollment_code,
+                    MIN(ss.schedule) AS schedule, MIN(ss.room) AS room,
+                    MIN(so.grading_type) AS grading_type,
                     COUNT(DISTINCT st.user_student_id) AS student_count
              FROM section_subject ss
              JOIN section sec ON sec.section_id = ss.section_id
+             JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
              LEFT JOIN student_subject st ON st.section_id = sec.section_id
                   AND st.subject_offered_id = ss.subject_offered_id
                   AND st.status = 'enrolled'
              WHERE ss.subject_offered_id IN ($placeholders) AND ss.status = 'active'
-             GROUP BY ss.section_subject_id, ss.subject_offered_id, sec.section_id, sec.section_name,
-                      sec.enrollment_code, sec.max_students, sec.status,
-                      ss.schedule, ss.room
+             GROUP BY sec.section_id, sec.section_name, sec.enrollment_code,
+                      sec.max_students, sec.status
              ORDER BY sec.section_name",
             $ids
         );
@@ -1003,6 +1031,7 @@ function handleCreateForSubject() {
     }
 
     $code = generateEnrollmentCode();
+    $classCode = generateUniqueClassCode();
 
     try {
         $pdo = pdo();
@@ -1016,9 +1045,9 @@ function handleCreateForSubject() {
         $sectionId = (int)$pdo->lastInsertId();
 
         $pdo->prepare(
-            "INSERT INTO section_subject (section_id, subject_offered_id, schedule, room, status)
-             VALUES (?, ?, ?, ?, 'active')"
-        )->execute([$sectionId, $subjectOfferedId, $schedule, $room]);
+            "INSERT INTO section_subject (section_id, subject_offered_id, schedule, room, status, enrollment_code)
+             VALUES (?, ?, ?, ?, 'active', ?)"
+        )->execute([$sectionId, $subjectOfferedId, $schedule, $room, $classCode]);
 
         $sectionSubjectId = (int)$pdo->lastInsertId();
         $pdo->commit();
@@ -1028,7 +1057,7 @@ function handleCreateForSubject() {
             'message' => 'Section created',
             'data' => [
                 'section_id'         => $sectionId,
-                'enrollment_code'    => $code,
+                'enrollment_code'    => $classCode,
                 'section_subject_id' => $sectionSubjectId,
             ]
         ]);

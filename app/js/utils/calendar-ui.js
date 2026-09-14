@@ -94,6 +94,17 @@ export function renderMonthCalendar(state, allEvents, opts = {}) {
         </div>`;
     }
 
+    const FILTERS = [
+        { key: 'all',          label: 'All' },
+        { key: 'lesson',       label: 'Lessons' },
+        { key: 'quiz',         label: 'Quizzes' },
+        { key: 'announcement', label: 'Announcements' },
+    ];
+    const filterBar = FILTERS.map(f => `
+        <button type="button" class="mcal-filter mcal-filter--${f.key}${filter === f.key ? ' is-active' : ''}" data-cal-filter="${f.key}">
+            <span class="mcal-filter-dot"></span>${esc(f.label)}
+        </button>`).join('');
+
     return `
     <div class="mcal-wrap">
         <div class="mcal-toolbar">
@@ -105,6 +116,7 @@ export function renderMonthCalendar(state, allEvents, opts = {}) {
                 </div>
                 <span class="mcal-month">${esc(monthLabel)}</span>
             </div>
+            <div class="mcal-filters">${filterBar}</div>
         </div>
         <div class="mcal-weekdays">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => `<span>${w}</span>`).join('')}</div>
         <div class="mcal-grid">${cells}</div>
@@ -192,6 +204,12 @@ export function bindMonthCalendar(container, state, allEvents, { renderPage, onO
         state.calMonth = t.getMonth();
         renderPage();
     });
+    container.querySelectorAll('[data-cal-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.calFilter = btn.dataset.calFilter;
+            renderPage();
+        });
+    });
     container.querySelectorAll('[data-cal-kind]').forEach(el => {
         el.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -237,38 +255,60 @@ export function bindMonthCalendar(container, state, allEvents, { renderPage, onO
 
 export function monthCalendarCss() {
     return `
-.mcal-wrap{background:#fff;border:1px solid #111;border-radius:14px;overflow:hidden}
-.mcal-toolbar{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid #F0F0F0}
+.mcal-wrap{background:#fff;border:1px solid #E2E5E3;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(16,24,20,.04)}
+.mcal-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;border-bottom:1px solid #EEF1EF}
 .mcal-nav{display:flex;align-items:center;gap:14px}
-.mcal-today-btn{padding:7px 16px;border:1px solid #DADCE0;border-radius:20px;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:#374151;transition:all .12s}
-.mcal-today-btn:hover{border-color:#00461B;color:#00461B;background:#F8FDF9}
-.mcal-nav-arrows{display:flex;align-items:center;border:1px solid #E8EAED;border-radius:20px;overflow:hidden}
-.mcal-nav-btn{width:32px;height:32px;border:none;background:#fff;cursor:pointer;font-size:18px;color:#5F6368;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit;transition:background .12s}
-.mcal-nav-btn:hover{background:#F1F3F4;color:#202124}
-.mcal-nav-arrows .mcal-nav-btn:first-child{border-right:1px solid #E8EAED}
-.mcal-month{font-size:18px;font-weight:800;color:#202124}
-.mcal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid #111}
-.mcal-weekdays span{text-align:center;font-size:11px;font-weight:700;color:#6B7280;padding:8px 0;text-transform:uppercase;letter-spacing:.4px}
-.mcal-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr}
-.mcal-day{min-height:110px;border-right:1px solid #111;border-bottom:1px solid #111;padding:6px;display:flex;flex-direction:column;gap:3px;cursor:pointer;transition:background .12s}
-.mcal-day:hover{background:#FAFBFC}
+.mcal-today-btn{padding:7px 16px;border:1.5px solid #DDE2DE;border-radius:20px;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:#374151;transition:all .15s}
+.mcal-today-btn:hover{border-color:#00461B;color:#00461B;background:#F3FAF5}
+.mcal-nav-arrows{display:flex;align-items:center;gap:2px}
+.mcal-nav-btn{width:30px;height:30px;border:none;border-radius:50%;background:transparent;cursor:pointer;font-size:18px;color:#5F6368;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit;transition:background .15s,color .15s}
+.mcal-nav-btn:hover{background:#EFF6F1;color:#00461B}
+.mcal-month{font-size:17px;font-weight:800;color:#1A1F1C;letter-spacing:-.01em}
+.mcal-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mcal-filter{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #E5E9E6;border-radius:20px;background:#fff;
+    padding:5px 12px 5px 10px;font-size:11.5px;font-weight:700;color:#5B6560;cursor:pointer;font-family:inherit;transition:all .15s}
+.mcal-filter-dot{width:7px;height:7px;border-radius:50%;background:#C6CDC8;flex-shrink:0;transition:background .15s}
+.mcal-filter:hover{border-color:#C9D4CC;color:#1A1F1C}
+.mcal-filter.is-active{border-color:transparent;color:#fff}
+.mcal-filter--all.is-active{background:#00461B}
+.mcal-filter--all .mcal-filter-dot{background:linear-gradient(135deg,#00461B 33%,#1A73E8 33% 66%,#9334E6 66%)}
+.mcal-filter--lesson.is-active{background:#00461B}
+.mcal-filter--lesson .mcal-filter-dot{background:#00461B}
+.mcal-filter--quiz.is-active{background:#9334E6}
+.mcal-filter--quiz .mcal-filter-dot{background:#9334E6}
+.mcal-filter--announcement.is-active{background:#1A73E8}
+.mcal-filter--announcement .mcal-filter-dot{background:#1A73E8}
+.mcal-filter.is-active .mcal-filter-dot{background:#fff}
+.mcal-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:#FAFBFA;border-bottom:1px solid #EEF1EF}
+.mcal-weekdays span{text-align:center;font-size:10.5px;font-weight:800;color:#8B9690;padding:10px 0;text-transform:uppercase;letter-spacing:.6px}
+.mcal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:1fr}
+.mcal-day{min-width:0;min-height:112px;border-right:1px solid #EEF1EF;border-bottom:1px solid #EEF1EF;padding:7px;display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:background .15s;position:relative}
+.mcal-day:hover{background:#FAFCFB}
 .mcal-grid .mcal-day:nth-child(7n){border-right:none}
-.mcal-other-month{background:#FAFAFA}
-.mcal-other-month .mcal-daynum{color:#C4C6CA}
-.mcal-daynum{font-size:12px;font-weight:600;color:#374151;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%}
-.mcal-daynum--today{background:#00461B;color:#fff}
+.mcal-grid .mcal-day:nth-last-child(-n+7){border-bottom:none}
+.mcal-other-month{background:#FCFCFB}
+.mcal-other-month .mcal-daynum{color:#C4CAC5}
+.mcal-today{background:#F3FAF5}
+.mcal-today:hover{background:#EAF7EE}
+.mcal-daynum{font-size:12px;font-weight:700;color:#374151;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0}
+.mcal-daynum--today{background:#00461B;color:#fff;box-shadow:0 0 0 3px rgba(0,70,27,.12)}
 .mcal-chips{display:flex;flex-direction:column;gap:3px;overflow:hidden}
-.mcal-chip{border:none;border-radius:4px;padding:3px 6px;font-size:11px;font-weight:700;color:#fff;text-align:left;cursor:pointer;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;width:100%}
+.mcal-chip{display:flex;align-items:center;gap:5px;border:none;border-radius:6px;padding:3px 7px;font-size:10.5px;font-weight:700;color:#fff;text-align:left;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;width:100%;transition:filter .1s,transform .1s}
+.mcal-chip:hover{filter:brightness(1.08)}
+.mcal-chip:active{transform:scale(.98)}
 .mcal-chip--lesson{background:#00461B}
 .mcal-chip--announcement{background:#1A73E8}
 .mcal-chip--quiz{background:#9334E6}
 .mcal-chip--done{opacity:.5;text-decoration:line-through}
-.mcal-more{border:none;background:none;font-size:11px;font-weight:600;color:#6B7280;cursor:pointer;text-align:left;padding:2px 6px;font-family:inherit}
+.mcal-more{border:none;background:none;font-size:10.5px;font-weight:700;color:#8B9690;cursor:pointer;text-align:left;padding:2px 7px;font-family:inherit}
 .mcal-more:hover{color:#00461B}
 @media(max-width:768px){
-    .mcal-day{min-height:70px}
+    .mcal-day{min-height:74px;padding:4px}
+    .mcal-chip{padding:2px 4px;font-size:9.5px}
     .mcal-weekdays span{font-size:9px}
+    .mcal-filters{width:100%;justify-content:flex-start}
+    .mcal-toolbar{padding:14px 16px}
 }
 
 /* Day modal */

@@ -4,6 +4,7 @@
 import { Api } from '../api.js';
 import { gradingOptionsHtml, readGradingPayload, ensureGradingOptionStyles } from '../utils/quiz-grading-options.js';
 
+import { esc } from '../utils/classroom-ui.js';
 const MODAL_STYLES = `
     .qz-m-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
         display:flex; align-items:center; justify-content:center; z-index:2500; padding:20px; }
@@ -44,7 +45,7 @@ const MODAL_STYLES = `
         box-shadow:0 0 0 3px rgba(0,70,27,.12); }
     .qz-m-textarea { resize:vertical; min-height:70px; }
     .qz-m-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-    .qz-m-alert { background:#FEE2E2; color:#B91C1C; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
+    .qz-m-alert { background:#7F1D1D; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; margin-bottom:14px; }
     .qz-m-btn-back { background:#fff; color:#374151; border:1px solid #e5e7eb; padding:10px 18px;
         border-radius:10px; font-weight:600; cursor:pointer; font-size:14px; }
     .qz-m-btn-next { background:#00461B; color:#fff; border:none; padding:10px 22px; border-radius:10px;
@@ -83,11 +84,8 @@ const MODAL_STYLES = `
         .qz-step-label { display:none; } .qz-step-arrow { margin:0 4px; } }
 `;
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function sectionTargetHtml(sections, presetSectionId = null, quiz = null) {
     if (sections.length === 0) {

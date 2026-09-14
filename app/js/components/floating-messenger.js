@@ -11,6 +11,7 @@ import {
 } from '../utils/message-ui.js';
 import { icon } from '../utils/icons.js';
 import { notify } from '../utils/notify.js';
+import { esc } from '../utils/classroom-ui.js';
 
 const G  = '#00461B';
 const G2 = '#006428';
@@ -25,12 +26,8 @@ let pendingFile   = null;
 let isOpen        = false;
 let view          = 'threads'; // 'threads' | 'chat' | 'contacts'
 
-function esc(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc() now imported from classroom-ui.js — the DOM-based version there also
+// correctly escapes single quotes, which this file's old regex-based copy did not.
 
 function initials(name) {
     return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -95,6 +92,11 @@ function setView(next) {
 }
 
 function expand() {
+    // Only one topbar popover open at a time. The messenger's own button calls
+    // stopPropagation(), so topbar.js's document-level "close dropdowns" handler
+    // never fires for it — close the notification / profile dropdowns here.
+    document.querySelectorAll('.dropdown.active').forEach(d => d.classList.remove('active'));
+
     isOpen = true;
     rootEl?.classList.add('fm-open');
     document.getElementById('fm-topbar-btn')?.classList.add('active');

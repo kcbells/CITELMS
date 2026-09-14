@@ -1,3 +1,4 @@
+import { esc } from './classroom-ui.js';
 /**
  * notify.js — system-wide popup notifications
  *
@@ -208,11 +209,8 @@ function alertModal(message, { title = '', type = 'info', okText = 'OK' } = {}) 
     });
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 export const notify = {
     success: (msg, ms) => toast('success', msg, ms),

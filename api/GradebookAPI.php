@@ -40,6 +40,9 @@ switch ($action) {
     case 'save-score-override':
         handleSaveScoreOverride();
         break;
+    case 'my-lacking-work':
+        handleMyLackingWork();
+        break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -159,6 +162,74 @@ function handleSaveScoreOverride(): void {
         error_log('save-score-override: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to save override']);
     }
+}
+
+/**
+ * GET ?action=my-lacking-work
+ * The system-side counterpart to the instructor's manual "Message" nudge on
+ * the Reports page — automatically surfaces a student's own overdue,
+ * not-yet-done quizzes/exams and lessons across every subject they're
+ * enrolled in, without an instructor having to notice and message them
+ * first. Consumed by topbar.js's notification dropdown. "Overdue" = has a
+ * due_date that has already passed and no completed attempt/progress
+ * exists — same missing-item definition as isItemMissing() in
+ * gradebook-periods.js, just evaluated from the student's own side instead
+ * of the instructor's class record.
+ */
+function handleMyLackingWork(): void {
+    if (Auth::role() !== 'student') {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Students only']);
+        return;
+    }
+    $studentId = (int)Auth::id();
+
+    $lackingQuizzes = db()->fetchAll(
+        "SELECT DISTINCT q.quiz_id, q.quiz_title, q.due_date, s.subject_id, s.subject_code
+         FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         JOIN subject s ON s.subject_id = so.subject_id
+         JOIN quiz q ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
+         WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+           AND q.status = 'published' AND q.due_date IS NOT NULL AND q.due_date < NOW()
+           AND (
+             NOT EXISTS (SELECT 1 FROM quiz_section qs WHERE qs.quiz_id = q.quiz_id)
+             OR EXISTS (SELECT 1 FROM quiz_section qs WHERE qs.quiz_id = q.quiz_id AND qs.section_id = ss.section_id)
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM student_quiz_attempts sqa
+             WHERE sqa.quiz_id = q.quiz_id AND sqa.user_student_id = ss.user_student_id AND sqa.status = 'completed'
+           )
+         ORDER BY q.due_date DESC
+         LIMIT 20",
+        [$studentId]
+    );
+
+    $lackingLessons = db()->fetchAll(
+        "SELECT DISTINCT l.lessons_id, l.lesson_title, l.due_date, s.subject_id, s.subject_code
+         FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         JOIN subject s ON s.subject_id = so.subject_id
+         JOIN lessons l ON l.subject_id = s.subject_id AND l.user_teacher_id = so.user_teacher_id
+         WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
+           AND l.status = 'published' AND l.due_date IS NOT NULL AND l.due_date < NOW()
+           AND (
+             NOT EXISTS (SELECT 1 FROM lesson_section ls WHERE ls.lessons_id = l.lessons_id)
+             OR EXISTS (SELECT 1 FROM lesson_section ls WHERE ls.lessons_id = l.lessons_id AND ls.section_id = ss.section_id)
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM student_progress sp
+             WHERE sp.lessons_id = l.lessons_id AND sp.user_student_id = ss.user_student_id AND sp.status = 'completed'
+           )
+         ORDER BY l.due_date DESC
+         LIMIT 20",
+        [$studentId]
+    );
+
+    echo json_encode(['success' => true, 'data' => [
+        'quizzes' => $lackingQuizzes,
+        'lessons' => $lackingLessons,
+    ]]);
 }
 
 /**

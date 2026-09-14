@@ -431,6 +431,10 @@ function getQuestions() {
                     'subject_name'  => $quiz['subject_name'] ?? '',
                     'quiz_type'     => $quizType,
                     'is_proctored'  => isQuizProctoredType($quizType),
+                    // Let's Practice / Reflection / Wrap Up Quiz answer sheets.
+                    // The student page uses this to pick the relaxed lockdown
+                    // (copy/paste blocked, but leaving the tab is fine).
+                    'gradebook_component' => $quiz['gradebook_component'] ?? null,
                     'time_limit'    => $quiz['time_limit'],
                     'passing_rate'  => $quiz['passing_rate'],
                     'max_attempts'  => (int)($quiz['max_attempts'] ?? 0),
@@ -738,7 +742,8 @@ function uploadQuestionMedia() {
     $file = $_FILES['file'];
 
     // Extended allowed types — browsers & OS report slightly different MIME strings
-    $allowedImage = ['image/jpeg','image/jpg','image/pjpeg','image/png','image/gif','image/webp','image/svg+xml','image/bmp'];
+    // SVG deliberately excluded — it can carry <script>/event-handler XSS.
+    $allowedImage = ['image/jpeg','image/jpg','image/pjpeg','image/png','image/gif','image/webp','image/bmp'];
     $allowedAudio = ['audio/mpeg','audio/mp3','audio/wav','audio/ogg','audio/aac','audio/x-m4a','audio/mp4','audio/webm','video/ogg'];
     $allowed = $mediaType === 'audio' ? $allowedAudio : $allowedImage;
 

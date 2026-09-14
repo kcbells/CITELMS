@@ -4,10 +4,13 @@
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 import { subjectHash } from './quizzes.js';
+import { armScreenshotGuard, disarmScreenshotGuard } from '../../utils/screenshot-guard.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+
 
 function fmtDate(str) {
     if (!str) return null;
@@ -50,6 +53,24 @@ export async function render(container) {
     const duration   = fmtDuration(parseInt(attempt.time_spent || 0));
     const dateStr    = fmtDate(attempt.submitted_at || attempt.created_at);
 
+    // Let's Practice/Reflection/Wrap Up Quiz are Global Gradebook components —
+    // show the same raw score the gradebook records (0-3 rubric, or a %)
+    // instead of this attempt's own points/percentage, so this page always
+    // matches what the instructor's gradebook shows (which can differ from
+    // one attempt once an instructor overrides it).
+    const rubricComponents = ['lets_practice', 'lets_practice_optional', 'reflection'];
+    const gbComponent = data.gradebook_component;
+    const rawGbScore  = data.raw_gradebook_score;
+    const isRubric     = rubricComponents.includes(gbComponent);
+    const isWrapUp      = gbComponent === 'wrap_up_quiz';
+    const ringPct = isRubric && rawGbScore != null ? (rawGbScore / 3 * 100)
+        : (isWrapUp && rawGbScore != null ? rawGbScore : pct);
+    const ringLabel = isRubric && rawGbScore != null ? `${rawGbScore}<span class="qr-ring-sym">/3</span>`
+        : `${ringPct.toFixed(isRubric || isWrapUp ? 0 : 1)}<span class="qr-ring-sym">%</span>`;
+    const gbStatVal = isRubric
+        ? `${rawGbScore ?? '—'}<span class="qr-stat-denom">/3</span>`
+        : `${rawGbScore != null ? Math.round(rawGbScore) : '—'}<span class="qr-stat-denom">%</span>`;
+
     const wrongAnswers   = answers.filter(a => a.is_wrong);
     const pendingAnswers = answers.filter(a => a.is_pending);
     const hasPending     = pendingAnswers.length > 0;
@@ -64,10 +85,10 @@ export async function render(container) {
                     <svg class="qr-ring-svg" viewBox="0 0 120 120">
                         <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="10"/>
                         <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="10"
-                            stroke-dasharray="${(pct / 100 * 314).toFixed(1)} 314"
+                            stroke-dasharray="${(ringPct / 100 * 314).toFixed(1)} 314"
                             stroke-linecap="round" transform="rotate(-90 60 60)"/>
                     </svg>
-                    <div class="qr-ring-pct">${pct.toFixed(1)}<span class="qr-ring-sym">%</span></div>
+                    <div class="qr-ring-pct">${ringLabel}</div>
                 </div>
                 <div class="qr-hero-info">
                     <div class="qr-verdict">${passed ? 'Congratulations! 🎉' : 'Keep it up!'}</div>
@@ -79,6 +100,11 @@ export async function render(container) {
 
             <!-- Stats strip -->
             <div class="qr-stats">
+                ${(isRubric || isWrapUp) ? `
+                <div class="qr-stat">
+                    <div class="qr-stat-val">${gbStatVal}</div>
+                    <div class="qr-stat-lbl">Gradebook Score</div>
+                </div>` : `
                 <div class="qr-stat">
                     <div class="qr-stat-val">${attempt.earned_points}<span class="qr-stat-denom">/${attempt.total_points}</span></div>
                     <div class="qr-stat-lbl">Points</div>
@@ -86,7 +112,7 @@ export async function render(container) {
                 <div class="qr-stat">
                     <div class="qr-stat-val">${pct.toFixed(1)}<span class="qr-stat-denom">%</span></div>
                     <div class="qr-stat-lbl">Score</div>
-                </div>
+                </div>`}
                 <div class="qr-stat ${wrongAnswers.length > 0 ? 'qr-stat--bad' : wrongAnswers.length === 0 && answers.length > 0 ? 'qr-stat--good' : ''}">
                     <div class="qr-stat-val">${wrongAnswers.length}</div>
                     <div class="qr-stat-lbl">Wrong</div>
@@ -136,6 +162,12 @@ export async function render(container) {
             </div>` : '<div class="qr-no-review">Answer review is not available for this quiz.</div>'}
         </div>
     `;
+
+    const wrap = container.querySelector('.qr-wrap');
+    if (wrap) {
+        armScreenshotGuard(wrap);
+        window.addEventListener('hashchange', disarmScreenshotGuard, { once: true });
+    }
 
     // Initial filter: show only wrong by default (or all if no wrong answers)
     const allCards = [...container.querySelectorAll('.qr-card')];

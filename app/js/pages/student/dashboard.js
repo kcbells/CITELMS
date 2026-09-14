@@ -6,6 +6,7 @@ import { Auth } from '../../auth.js';
 import { subjectColor } from '../../utils/subject-colors.js';
 import { icon } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G  = '#00461B';
 const G2 = '#006428';
@@ -79,7 +80,7 @@ export async function render(container) {
             .sd-chip--muted { color:#374151; border-color:${BORDER}; }
 
             .sd-academic {
-                display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+                display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;
                 padding-top:16px; border-top:1px solid ${BORDER}; margin-top:16px;
             }
             .sd-academic-item { background:#fff; border:1px solid ${BORDER}; border-radius:8px; padding:12px 14px; }
@@ -87,7 +88,7 @@ export async function render(container) {
                 display:block; font-size:10px; font-weight:700; text-transform:uppercase;
                 letter-spacing:.8px; color:#9CA3AF; margin-bottom:4px;
             }
-            .sd-academic-value { display:block; font-size:14px; font-weight:700; color:${G}; line-height:1.35; }
+            .sd-academic-value { display:block; font-size:14px; font-weight:700; color:${G}; line-height:1.35; overflow-wrap:anywhere; }
 
             /* ── To-Do compact boxes ── */
             .sd-todo-section {
@@ -514,7 +515,8 @@ function subjCard(s, annBySubject) {
     </a>`;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+
 function truncate(s, n) { const t = (s||'').replace(/\s+/g,' ').trim(); return t.length > n ? t.slice(0,n)+'…' : t; }
 function formatDate(dt) {
     if (!dt) return '';

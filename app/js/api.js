@@ -23,7 +23,12 @@ const API_URL = BASE_URL + '/api';
 
 // ── Cache constants ────────────────────────────────────────────
 const DEFAULT_TTL   = 45_000;   // 45 seconds
-const NO_CACHE_APIS = ['MessagingAPI', 'ChatAPI', 'AuthAPI', 'VideoAPI'];
+// ModuleDocumentsAPI is here because publish state has to be live: the
+// auto-invalidation on Api.post() only clears the cache of the browser that
+// published. A student's browser has its own cache, so an instructor
+// publishing a SAS or a quiz wouldn't show up on the student's side for up to
+// DEFAULT_TTL — long enough for them to think it's broken, or miss a deadline.
+const NO_CACHE_APIS = ['MessagingAPI', 'GroupChatAPI', 'ChatAPI', 'AuthAPI', 'VideoAPI', 'ModuleDocumentsAPI'];
 
 // endpoint string → { data, expiresAt }
 const _cache = new Map();
@@ -35,23 +40,10 @@ export const Api = {
         return localStorage.getItem('jwt_token') || null;
     },
 
-    // CSRF guard token — handed out fresh by AuthAPI's login/check/me
-    // responses (see setCsrfToken()) and echoed back on every mutating
-    // request via the X-CSRF-Token header. Kept in memory only (not
-    // localStorage): it's meaningless to anyone but the same tab that
-    // received it alongside the session cookie.
-    _csrfToken: null,
-
-    /** Called by auth.js whenever a login/check/me response carries a fresh token. */
-    setCsrfToken(token) {
-        if (token) this._csrfToken = token;
-    },
-
     _authHeaders(extra = {}) {
         const headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...extra };
         const token = this._getToken();
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        if (this._csrfToken) headers['X-CSRF-Token'] = this._csrfToken;
         const lease = getTabLease();
         if (lease) headers['X-Tab-Lease'] = lease;
         return headers;
@@ -164,9 +156,26 @@ export const Api = {
         const raw = await response.text();
         // Strip UTF-8 BOM (﻿) if a PHP file was saved with BOM encoding
         const body = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+        // An empty body used to silently become `{}` here — success/message
+        // both undefined, no error surfaced anywhere, so a caller's own
+        // generic "something went wrong" fallback text was all a user ever
+        // saw, with zero diagnostic trail. A genuinely empty response is
+        // always a real failure (a connection cut mid-request — e.g. a slow
+        // AI call outliving a proxy/server timeout after headers were
+        // already sent as 200 — never a legitimate empty-but-successful
+        // response), so treat it as one explicitly instead of guessing {}.
+        if (body === '') {
+            console.error('[API] Empty response body, HTTP', response.status);
+            return {
+                success: false,
+                message: 'The server closed the connection before finishing (this usually means the request took too long). Please try again.',
+                _emptyResponse: true,
+            };
+        }
+
         let data;
         try {
-            data = body ? JSON.parse(body) : {};
+            data = JSON.parse(body);
         } catch {
             console.error('[API] Non-JSON response:', raw.slice(0, 300));
             return {
@@ -189,7 +198,6 @@ export const Api = {
             const superseded = data?.code === 'SESSION_SUPERSEDED';
             if (!superseded) {
                 localStorage.removeItem('jwt_token');
-                this._csrfToken = null;
             }
             const onLandingPage = /\/index\.html$|\/COC_LMS\(2\)\/?$/i.test(window.location.pathname);
             if (!onLandingPage) {

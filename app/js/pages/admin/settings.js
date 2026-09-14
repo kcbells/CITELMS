@@ -31,7 +31,7 @@ export async function render(container) {
                 font-size: 13.5px; font-weight: 500; color: #525252;
             }
             .set-nav-item:hover { background: #f5faf7; color: #00461B; }
-            .set-nav-item.active { background: #f0fdf4; color: #00461B; font-weight: 700; }
+            .set-nav-item.active { background:#00461B; color:#fff; font-weight: 700; }
             .set-nav-item .nav-icon { font-size: 16px; width: 22px; text-align: center; }
             .set-nav-divider { height: 1px; background: #f0f0f0; margin: 6px 0; }
 
@@ -125,7 +125,7 @@ export async function render(container) {
             .btn-primary:hover { box-shadow: 0 3px 10px rgba(0,70,27,.35); }
             .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
             .btn-danger {
-                background: #FEE2E2; color: #b91c1c;
+                background:#7F1D1D; color:#fff;
                 border: none; padding: 9px 22px;
                 border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer;
                 transition: background .18s;
@@ -140,7 +140,7 @@ export async function render(container) {
                 animation: slideIn .25s ease;
             }
             .set-toast.success { background: #D1FAE5; color: #065F46; border: 1px solid #6EE7B7; }
-            .set-toast.error   { background: #FEE2E2; color: #b91c1c; border: 1px solid #FCA5A5; }
+            .set-toast.error   { background:#7F1D1D; color:#fff; border: 1px solid #FCA5A5; }
             @keyframes slideIn { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:translateY(0); } }
 
             /* ── System Overview ── */
@@ -518,7 +518,7 @@ export async function render(container) {
                     .sov-tbl { width:100%;border-collapse:collapse; }
                     .sov-tbl thead th {
                         text-align:left;padding:8px 12px;font-size:11px;font-weight:700;
-                        color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;
+                        color:#fff;background:#00461B;text-transform:uppercase;letter-spacing:.5px;
                         border-bottom:1px solid #f0f0f0;
                     }
                     .sov-tbl tbody tr:hover { background:#fafafa; }
@@ -692,7 +692,7 @@ export async function render(container) {
                 .act-table-wrap { border:1px solid #e8e8e8; border-radius:12px; overflow:auto; }
                 .act-table { width:100%; border-collapse:collapse; font-size:12.5px; }
                 .act-table th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
-                    color:#6b7280; background:#f9fafb; padding:10px 14px; border-bottom:1px solid #e8e8e8; white-space:nowrap; }
+                    color:#fff; background:#00461B; padding:10px 14px; border-bottom:1px solid #e8e8e8; white-space:nowrap; }
                 .act-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
                 .act-table tr:last-child td { border-bottom:none; }
                 .act-table tr:nth-child(even) td { background:#fafafa; }

@@ -5,6 +5,7 @@ import { Api } from '../../api.js';
 import { notify } from '../../utils/notify.js';
 import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let campuses = [];
 let activeTab = 'departments';
 let activeCampusId = null;
@@ -52,7 +53,7 @@ function renderShell(container) {
             /* Header */
             .dp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .dp-title  { font-size:22px; font-weight:700; color:#262626; }
-            .dp-count  { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .dp-count  { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
 
             /* Buttons */
             .btn-primary   { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; display:inline-flex; align-items:center; gap:7px; }
@@ -62,11 +63,11 @@ function renderShell(container) {
 
             /* ===== Clean table ===== */
             .table-wrap {
-                background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow:hidden;
+                background:#fff; border:1px solid #e5e7eb; border-radius:14px; overflow-x:auto; -webkit-overflow-scrolling:touch;
             }
             .data-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
             .data-table th {
-                background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
+                background:#00461B; color:#fff; font-size:11px; font-weight:700;
                 text-transform:uppercase; letter-spacing:0.05em; padding:13px 20px;
                 border-bottom:1px solid #e5e7eb; text-align:left;
             }
@@ -93,7 +94,7 @@ function renderShell(container) {
             .dean-add-btn:hover { background:#dcfce7; }
 
             .status-pill { font-size:11.5px; font-weight:700; padding:4px 12px; border-radius:20px; display:inline-block; }
-            .status-pill.active   { background:#dcfce7; color:#15803d; }
+            .status-pill.active   { background:#00461B; color:#fff; }
             .status-pill.inactive { background:#f3f4f6; color:#6b7280; }
 
             .status-tabs { display:flex; gap:4px; margin-bottom:16px; }
@@ -111,7 +112,7 @@ function renderShell(container) {
                 background:#fff; color:#374151; border:1.5px solid #e5e7eb; padding:7px 16px;
                 border-radius:8px; font-weight:600; font-size:12.5px; cursor:pointer; transition:all .15s;
             }
-            .btn-edit-tbl:hover { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .btn-edit-tbl:hover { border-color:#00461B; color:#fff; background:#00461B; }
             .btn-actions  { background:none; border:1px solid #e0e0e0; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:18px; display:inline-flex; align-items:center; justify-content:center; margin-left:8px; vertical-align:middle; }
             .btn-actions:hover { background:#f5f5f5; }
             .actions-dropdown { display:none; position:fixed; background:#fff; border:1px solid #e8e8e8; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.15); min-width:170px; z-index:9999; overflow:hidden; }
@@ -159,8 +160,8 @@ function renderShell(container) {
             .btn-modal-cancel:hover { background:#f3f4f6; }
             /* alerts */
             .modal-alert { padding:10px 14px; border-radius:8px; font-size:13px; line-height:1.5; margin-bottom:14px; }
-            .modal-alert.err { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
-            .modal-alert.ok  { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
+            .modal-alert.err { background:#7F1D1D; color:#fff; border:1px solid #fecaca; }
+            .modal-alert.ok  { background:#00461B; color:#fff; border:1px solid #bbf7d0; }
 
 
             /* Campus filter pills */
@@ -170,7 +171,7 @@ function renderShell(container) {
                 cursor:pointer; border:1.5px solid #e5e7eb; background:#fff; color:#6b7280;
                 transition:all .15s; white-space:nowrap;
             }
-            .campus-pill:hover { border-color:#00461B; color:#00461B; background:#f0fdf4; }
+            .campus-pill:hover { border-color:#00461B; color:#fff; background:#00461B; }
             .campus-pill.active { border-color:#00461B; color:#fff; background:#00461B; }
 
             .empty-state { text-align:center; padding:48px; color:#9ca3af; }
@@ -491,7 +492,7 @@ function openDeanModal(container, info) {
             .cs-campus-check input[type=checkbox] { accent-color:#1B4D2E; width:15px; height:15px; flex-shrink:0; }
             .cs-multi-hint { margin-top:8px; font-size:12px; font-weight:600; padding:6px 10px; border-radius:6px; }
             .cs-multi-hint.warn { background:#fef9ec; color:#92400e; }
-            .cs-multi-hint.ok   { background:#dcfce7; color:#15803d; }
+            .cs-multi-hint.ok   { background:#00461B; color:#fff; }
             .dean-warn-note { background:#fef9ec; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:#92400e; line-height:1.5; }
             .dean-src-box  { border:1.5px solid #e5e7eb; border-radius:8px; overflow:hidden; margin-bottom:16px; }
             .dean-src-row  { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; font-size:14px; color:#374151; transition:background .12s; }
@@ -1039,11 +1040,8 @@ function showAlert(el, msg, type) {
     el.innerHTML = `<div class="modal-alert ${type}">${esc(msg)}</div>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function deptInitials(str) {
     return (str || '?').trim().slice(0, 2).toUpperCase();

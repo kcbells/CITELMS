@@ -199,48 +199,76 @@ HTML;
         $cta = '';
         if ($ctaUrl) {
             $href = htmlspecialchars($ctaUrl, ENT_QUOTES, 'UTF-8');
-            $cta = '<div style="text-align:center;margin:24px 0 8px;">'
-                . '<a href="' . $href . '" style="display:inline-block;background:#00461B;color:#fff;text-decoration:none;'
-                . 'padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open in COC-LMS</a>'
-                . '</div>';
+            $cta = '<tr><td align="center" style="padding:8px 0 4px;">'
+                . '<a href="' . $href . '" style="display:inline-block;background:#00461B;color:#ffffff;text-decoration:none;'
+                . 'padding:11px 22px;border-radius:4px;font-weight:700;font-size:13px;">Open COC-LMS</a>'
+                . '</td></tr>';
         }
 
         return <<<HTML
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f4f6f5;font-family:'Segoe UI',Arial,sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f5;padding:32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,70,27,0.10);">
-        <tr>
-          <td style="background:linear-gradient(135deg,#00461B 0%,#1B4D3E 100%);padding:24px 32px;text-align:center;">
-            <img src="{$logo}" alt="PHINMA Cagayan de Oro College" width="64" height="64" style="display:block;margin:0 auto 12px;border-radius:12px;background:#fff;padding:6px;">
-            <div style="color:#fff;font-size:17px;font-weight:700;">PHINMA COC-LMS</div>
-            <div style="color:rgba(255,255,255,0.85);font-size:12px;margin-top:4px;">{$school}</div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:28px 32px;">
-            <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#1B4D3E;text-transform:uppercase;letter-spacing:0.5px;">{$title}</p>
-            <p style="margin:0 0 16px;font-size:15px;color:#374151;">Hello <strong>{$name}</strong>,</p>
-            {$bodyHtml}
-            {$cta}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px 32px 24px;border-top:1px solid #f0f0f0;">
-            <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">&copy; {$year} {$school} — automated notification</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{$title}</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;">
+    <tr>
+      <td align="center" style="padding:24px 16px 40px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;">
+
+          <tr>
+            <td align="right" style="padding:0 0 24px;">
+              <span style="font-size:12px;color:#9ca3af;">Hello, {$name}</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 0 20px;">
+              <img src="{$logo}" alt="{$school}" width="40" height="40" style="display:inline-block;">
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:0 24px 20px;">
+              <div style="font-size:24px;font-weight:800;color:#111827;line-height:1.35;">{$title}</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 4px 20px;">
+              {$bodyHtml}
+            </td>
+          </tr>
+
+          {$cta}
+
+          <tr>
+            <td style="border-top:1px solid #e5e7eb;padding:20px 0 0;"></td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:16px 12px 4px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;">Please don't reply to this email. This is an automated message.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:12px 12px 0;">
+              <p style="margin:0;font-size:11px;color:#c1c5cb;">&copy; {$year} {$school}. All rights reserved.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
   </table>
 </body>
 </html>
 HTML;
     }
-
     public static function canSendMore() {
         $cap = (int)MAIL_DAILY_LIMIT;
         if ($cap <= 0) {

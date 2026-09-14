@@ -5,6 +5,7 @@ import { Api } from '../api.js';
 import { icon } from './icons.js';
 import { normalizeSubjectCode, startQrScanner, stopQrScanner } from './qr-utils.js';
 
+import { esc } from './classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export function enrollmentFormStyles(compact = false) {
@@ -47,11 +48,11 @@ export function enrollmentFormStyles(compact = false) {
         }
         .enr-btn-secondary:hover { background: #ebebeb; }
         .enr-alert { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; }
-        .enr-alert-success { background: #E8F5E9; color: #1B4D3E; }
-        .enr-alert-error { background: #FEE2E2; color: #b91c1c; }
+        .enr-alert-success { background:#00461B; color:#fff; }
+        .enr-alert-error { background:#7F1D1D; color:#fff; }
         .enr-preview-section { font-size: 18px; font-weight: 800; color: #1a1a1a; margin-bottom: 4px; }
         .enr-preview-code {
-            display: inline-block; background: #E8F5E9; color: #1B4D3E;
+            display: inline-block; background:#00461B; color:#fff;
             font-family: monospace; font-size: 15px; font-weight: 700;
             padding: 4px 12px; border-radius: 6px; margin-bottom: 12px;
         }
@@ -69,8 +70,7 @@ export function enrollmentFormStyles(compact = false) {
         .enr-preview-row.new { background: #F2F8F2; border: 1px solid #d4edda; }
         .enr-preview-row.done { opacity: .55; }
         .enr-psrow-code {
-            font-family: monospace; font-size: 11px; font-weight: 700; color: #1B4D3E;
-            background: #E8F5E9; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 3px;
+            font-family: monospace; font-size: 11px; font-weight: 700; color:#fff; background:#00461B; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 3px;
         }
         .enr-psrow-name { font-size: 13px; font-weight: 600; color: #1a1a1a; }
         .enr-psrow-meta { font-size: 11px; color: #737373; margin-top: 2px; }
@@ -88,11 +88,8 @@ export function enrollmentFormStyles(compact = false) {
     `;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 function entryHtml() {
     return `
@@ -130,12 +127,18 @@ function bindCodeInput(root) {
 // change still have the older XXX-9999 code — both are valid unique class codes.
 const ENROLLMENT_CODE_RE = /^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/;
 
-function joinPayload(code, sectionId = 0) {
+function joinPayload(code, sectionId = 0, subjectIdHint = 0) {
     // A bare class code with no section context is a unique per-section code;
     // anything else (or a code paired with a known section) is a shared subject code.
     const clean = String(code || '').toUpperCase().replace(/\s+/g, '');
     if (!sectionId && ENROLLMENT_CODE_RE.test(clean)) {
-        return { enrollment_code: clean };
+        const payload = { enrollment_code: clean };
+        // A class code plain by itself joins every subject taught to that
+        // section — surprising when it came from one specific subject's own
+        // QR (e.g. scanned off an instructor's Classwork page). When we know
+        // which subject that was, scope the join to just that one.
+        if (subjectIdHint) payload.subject_id = subjectIdHint;
+        return payload;
     }
     const payload = { subject_code: normalizeSubjectCode(code) };
     if (sectionId) payload.section_id = sectionId;
@@ -171,7 +174,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         if (mode === 'scan') {
             try {
                 await startQrScanner('enr-qr-reader', (params) => {
-                    applyJoinAndCheck(params.enrollment_code || params.subject_code, params.section_id);
+                    applyJoinAndCheck(params.enrollment_code || params.subject_code, params.section_id, params.subject_id);
                 });
             } catch (_) {
                 const alert = bodyEl.querySelector('#enr-alert');
@@ -222,7 +225,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         }
     }
 
-    async function applyJoinAndCheck(rawCode, sectionId = 0) {
+    async function applyJoinAndCheck(rawCode, sectionId = 0, subjectIdHint = 0) {
         const subjectCode = normalizeSubjectCode(rawCode);
         if (!subjectCode || subjectCode.length < 2) {
             const alert = bodyEl.querySelector('#enr-alert');
@@ -235,10 +238,10 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         if (activeMode === 'scan') await setMode('type');
         const input = bodyEl.querySelector('#enr-code');
         if (input) input.value = subjectCode;
-        await checkJoin(subjectCode, sectionId);
+        await checkJoin(subjectCode, sectionId, subjectIdHint);
     }
 
-    async function checkJoin(subjectCode, sectionId = 0) {
+    async function checkJoin(subjectCode, sectionId = 0, subjectIdHint = 0) {
         const btn = bodyEl.querySelector('#enr-check');
         const alert = bodyEl.querySelector('#enr-alert');
         if (btn) {
@@ -250,7 +253,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
 
         let res;
         try {
-            res = await Api.post('/EnrollmentAPI.php?action=preview', joinPayload(subjectCode, sectionId));
+            res = await Api.post('/EnrollmentAPI.php?action=preview', joinPayload(subjectCode, sectionId, subjectIdHint));
         } catch (_) {
             res = { success: false, message: 'Could not reach the server. Please try again.' };
         }
@@ -272,7 +275,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
             showSectionPicker(res.data);
             return;
         }
-        showPreview(res.data, subjectCode, sectionId || res.data.section_id);
+        showPreview(res.data, subjectCode, sectionId || res.data.section_id, subjectIdHint);
     }
 
     function showSectionPicker(data) {
@@ -305,7 +308,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
         });
     }
 
-    function showPreview(data, subjectCode, sectionId) {
+    function showPreview(data, subjectCode, sectionId, subjectIdHint = 0) {
         const {
             section_name, subject_code, subject_name, max_students,
             current_enrollment, subjects, new_count,
@@ -376,7 +379,7 @@ export function mountEnrollmentForm(bodyEl, opts = {}) {
             confirmBtn.textContent = 'Joining...';
             backBtn.disabled = true;
 
-            const res = await Api.post('/EnrollmentAPI.php?action=enroll', joinPayload(code, sid));
+            const res = await Api.post('/EnrollmentAPI.php?action=enroll', joinPayload(code, sid, subjectIdHint));
 
             if (res.success) {
                 alert.innerHTML = `<div class="enr-alert enr-alert-success">${esc(res.message)}</div>`;

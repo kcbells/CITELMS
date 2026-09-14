@@ -7,8 +7,8 @@
  * BACKGROUND SYNC — outgoing messages queued in IndexedDB, flushed on reconnect
  */
 
-const SHELL_VER = 'coc-shell-v81';
-const DATA_VER  = 'coc-data-v81';
+const SHELL_VER = 'coc-shell-v92';
+const DATA_VER  = 'coc-data-v92';
 
 // Static shell — precached on install
 const SHELL_FILES = [
@@ -137,7 +137,16 @@ self.addEventListener('fetch', e => {
     // All other PHP (auth, enrollment, admin) → network-only
     if (path.endsWith('.php')) return;
 
-    // Static assets → stale-while-revalidate
+    // App code → network-first. stale-while-revalidate served the previous copy
+    // on every load, so a JS/CSS change only appeared on the *second* reload and
+    // looked like the change had not been applied at all. Images and fonts keep
+    // stale-while-revalidate — they are big and they rarely change.
+    if (/\.(js|css)$/i.test(path)) {
+        e.respondWith(networkFirstAsset(req, SHELL_VER));
+        return;
+    }
+
+    // Everything else static → stale-while-revalidate
     e.respondWith(staleWhileRevalidate(req, SHELL_VER));
 });
 
@@ -165,6 +174,22 @@ async function networkFirst(request, cacheName) {
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
+    }
+}
+
+/**
+ * Network-first for app code: always take the freshest file when online, fall
+ * back to the cached copy offline. Unlike networkFirst() above it never invents
+ * a JSON body — a script tag must get a script or nothing.
+ */
+async function networkFirstAsset(request, cacheName) {
+    const cache = await caches.open(cacheName);
+    try {
+        const response = await fetch(request);
+        if (response.ok) cache.put(request, response.clone());
+        return response;
+    } catch {
+        return (await cache.match(request)) || offlineFallback(request, cache);
     }
 }
 

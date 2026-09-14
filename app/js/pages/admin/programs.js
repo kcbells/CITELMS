@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let departments  = [];
@@ -32,7 +33,7 @@ async function renderList(container) {
             /* ── Page Header ── */
             .page-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; margin:0; }
-            .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .count-badge { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:7px; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
@@ -83,8 +84,8 @@ async function renderList(container) {
 
             /* ── Program Table — same visual as dean checklist ── */
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-active   { background:#E8F5E9; color:#1B4D3E; }
-            .badge-inactive { background:#FEE2E2; color:#b91c1c; }
+            .badge-active   { background:#00461B; color:#fff; }
+            .badge-inactive { background:#7F1D1D; color:#fff; }
 
             .prog-table-wrap { overflow-x:auto; }
             .prog-table {
@@ -101,7 +102,7 @@ async function renderList(container) {
             }
             /* Column header row */
             .prog-table .pt-th {
-                background:#2d6a4f; color:#fff;
+                background:#00461B; color:#fff;
                 font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
                 text-align:center; padding:8px 10px;
                 border:1px solid #155534; vertical-align:middle; white-space:nowrap;
@@ -155,7 +156,7 @@ async function renderList(container) {
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .btn-secondary:hover { background:#e8e8e8; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; border:1px solid #FECACA; }
+            .alert-error { background:#7F1D1D; color:#fff; border:1px solid #FECACA; }
             @media(max-width:768px) { .form-grid{grid-template-columns:1fr;} .programs-grid{grid-template-columns:1fr;} .filter-bar{flex-direction:column;align-items:stretch;} }
         </style>
 
@@ -454,8 +455,5 @@ function openModal(container, prog = null, preselect = null) {
     });
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

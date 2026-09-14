@@ -163,7 +163,8 @@ function handleAddTrack() {
         );
         echo json_encode(['success' => true, 'message' => 'Track added', 'track_id' => (int)$row['track_id']]);
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'Failed: ' . $e->getMessage()]);
+        error_log('ElectiveAPI add-track: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to add track. It may already exist.']);
     }
 }
 
@@ -193,7 +194,8 @@ function handleAddSubject() {
              ->execute([$trackId, $subjectId]);
         echo json_encode(['success' => true, 'message' => 'Subject added to track']);
     } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'Failed: ' . $e->getMessage()]);
+        error_log('ElectiveAPI add-subject: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to add subject to track.']);
     }
 }
 

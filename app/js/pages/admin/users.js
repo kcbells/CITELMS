@@ -7,8 +7,8 @@ import { L } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
 import { icon } from '../../utils/icons.js';
-import { mountBulkImportUI, bulkImportCss } from '../../components/bulk-import-ui.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let departments = [];
 let programs = [];
 let campuses = [];
@@ -62,35 +62,28 @@ async function renderList(container, filters = {}) {
             .up-btn:hover:not(:disabled) { border-color:#00461B; color:#00461B; background:#f0fdf4; }
             .up-btn:disabled { opacity:.4; cursor:not-allowed; }
 
-            /* No overflow:hidden here on purpose — it was silently clipping the "⋮"
-               actions dropdown, which is position:absolute and renders below the
-               wrap's edge for most rows. Clicking "⋮" was toggling it open
-               correctly the whole time; it was just invisible. (Putting
-               overflow:hidden on the <table> instead doesn't fix it either — the
-               dropdown lives inside a <td>, so it would still get clipped one
-               level down.) The corner-rounding this was doing is a minor cosmetic
-               nicety, not worth trading away a working menu for. */
-            .table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:14px; }
-            .users-table { width:100%; border-collapse:collapse; font-size:13.5px; background:#fff; }
+            /* Table look shared with the Dean's Faculty table (dean/instructors.js
+               .di-table) so "list of user" tables read as the same component
+               everywhere in the system — dark-green header, 2px outer border,
+               row dividers, visible row-action buttons instead of a kebab menu. */
+            .table-wrap { background:#fff; border:2px solid #111; border-radius:14px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            .users-table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
             .users-table th {
-                background:#fafbfc; color:#9ca3af; font-size:11px; font-weight:700;
-                text-transform:uppercase; letter-spacing:0.05em; padding:13px 20px;
-                border-bottom:1px solid #e5e7eb; text-align:left;
+                background:#00461B; color:#fff; font-size:11px; font-weight:700;
+                text-transform:uppercase; letter-spacing:0.4px; padding:12px 16px;
+                border-bottom:2px solid #111; border-right:1px solid #111; text-align:left;
             }
-            .users-table tbody tr { border-bottom:1px solid #f0f0f0; transition:background .12s; }
+            .users-table th:last-child { border-right:none; }
+            .users-table tbody tr { border-bottom:1px solid #F3F4F6; transition:background .15s; }
             .users-table tbody tr:last-child { border-bottom:none; }
-            .users-table tbody tr:hover { background:#fafbfc; }
-            .users-table td { padding:14px 20px; vertical-align:middle; color:#374151; }
+            .users-table tbody tr:hover { background:#F9FAFB; }
+            .users-table td { padding:12px 16px; vertical-align:middle; font-size:13px; color:#374151; border-right:1px solid #E5E7EB; }
+            .users-table td:last-child { border-right:none; }
 
             .user-cell { display:flex; align-items:center; gap:12px; }
-            .user-av { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
-            .user-av.admin { background:#D1FAE5; color:#065F46; }
-            .user-av.dean { background:#FEF3C7; color:#92400E; }
-            .user-av.program_head { background:#FFE4D6; color:#9A3412; }
-            .user-av.instructor { background:#DBEAFE; color:#1E40AF; }
-            .user-av.student { background:#EDE9FE; color:#5B21B6; }
+            .user-av { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; background:none; color:#6B7280; }
             .user-name { font-weight:600; color:#262626; display:block; }
-            .user-email { font-size:12px; color:#737373; display:block; }
+            .user-email { font-size:12px; color:#a0a0a0; display:block; margin-top:1px; }
 
             .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:capitalize; }
             .badge-admin { background:#D1FAE5; color:#065F46; }
@@ -102,15 +95,14 @@ async function renderList(container, filters = {}) {
             .badge-inactive { background:#fee2e2; color:#b91c1c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
             .badge-pending { background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
 
-            .actions-cell { position:relative; }
-            .btn-actions { background:none; border:1px solid #e0e0e0; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
-            .btn-actions:hover { background:#f5f5f5; }
-            .actions-dropdown { display:none; position:absolute; right:0; top:100%; background:#fff; border:1px solid #e8e8e8; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); min-width:160px; z-index:50; overflow:hidden; }
-            .actions-dropdown.show { display:block; }
-            .actions-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#404040; cursor:pointer; text-decoration:none; }
-            .actions-dropdown a:hover { background:#f5f5f5; }
-            .actions-dropdown a.danger { color:#b91c1c; }
-            .actions-dropdown .divider { height:1px; background:#f0f0f0; margin:4px 0; }
+            .actions-cell { display:flex; gap:6px; }
+            .btn-row { border:none; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; font-weight:600; }
+            .btn-row-danger { background:#FEE2E2; color:#b91c1c; }
+            .btn-row-danger:hover { background:#FECACA; }
+            .btn-row-success { background:#E8F5E9; color:#1B4D3E; }
+            .btn-row-success:hover { background:#C6F6D5; }
+            .btn-row-edit { background:#F3F4F6; color:#374151; }
+            .btn-row-edit:hover { background:#E5E7EB; }
 
             /* Modal */
             .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:1000; }
@@ -143,9 +135,6 @@ async function renderList(container, filters = {}) {
         </style>
 
         <div class="users-header">
-            <button class="btn-secondary" id="btn-import-excel">${icon('document',{size:14,className:'ui-icon-inline'})} Import Excel</button>
-            <button class="btn-secondary" id="btn-export-csv">${icon('download',{size:14,className:'ui-icon-inline'})} Export CSV</button>
-            <button class="btn-secondary" id="btn-export-pdf">${icon('download',{size:14,className:'ui-icon-inline'})} Export PDF</button>
             <button class="btn-primary" id="btn-add-user">+ Add User</button>
         </div>
 
@@ -163,7 +152,6 @@ async function renderList(container, filters = {}) {
                 <option value="">All Status</option>
                 <option value="active" ${filters.status==='active'?'selected':''}>Active</option>
                 <option value="inactive" ${filters.status==='inactive'?'selected':''}>Inactive</option>
-                <option value="pending" ${filters.status==='pending'?'selected':''}>Pending</option>
             </select>
             ${(filters.search || filters.role || filters.status) ? '<span class="clear-btn" id="clear-filters">Clear filters</span>' : ''}
         </div>
@@ -178,45 +166,49 @@ async function renderList(container, filters = {}) {
                     <th>Dept / Program</th>
                     <th>Status</th>
                     <th>Created</th>
-                    <th></th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 ${users.length === 0 ? '<tr><td colspan="7"><div class="empty-state-sm">No users found</div></td></tr>' :
                   users.map(u => {
-                    const initials = ((u.first_name||'?')[0] + (u.last_name||'?')[0]).toUpperCase();
                     const id = u.employee_id || u.student_id || '—';
                     const campusLabel = u.role === 'dean' && u.campus_name
                         ? `<span title="${esc(u.campus_name)}" style="font-size:11px;color:#6B7280;display:block;">${esc(u.campus_name)}</span>`
                         : '';
-                    const deptProg = u.department_name || u.program_code || '—';
+                    // Spell the program out — the sheet a user was imported from
+                    // often carries only the short code ("BSIT"), but the table
+                    // should read as the full program name.
+                    const deptProg = u.department_name || u.program_name || u.program_code || '—';
                     const date = new Date(u.created_at).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
-                    // Distinct from u.status (which gates login entirely — always 'active' on
-                    // creation): this is whether the person has actually SET their own password
-                    // yet, i.e. logged in and engaged with the account at all, vs still sitting
-                    // on the system-issued temp password (NULL password = true first-login-by-ID-
-                    // only case; must_change_password=1 = bulk-import temp-password case).
+                    // Whether the person has actually set their own password yet — logged in
+                    // and engaged with the account — vs still sitting on the system-issued
+                    // temp password (NULL password = first-login-by-ID-only case;
+                    // must_change_password=1 = bulk-import temp-password case). This takes
+                    // priority over the raw account status: an account an admin marked
+                    // 'active' that the person has never actually logged into is still,
+                    // from anyone reading this table, "not activated" — showing both at
+                    // once read as two contradictory statuses on the same row.
                     const notActivated = (u.never_logged_in == 1 || u.never_logged_in === true) || (u.on_temp_password == 1 || u.on_temp_password === true);
-                    const activationBadge = notActivated
+                    const isActive = u.status === 'active';
+                    const statusBadge = notActivated
                         ? `<span class="badge badge-pending" title="Hasn't logged in and set a real password yet">Not activated</span>`
-                        : `<span class="badge badge-active" title="Has logged in and set their own password">Active</span>`;
+                        : `<span class="badge badge-${u.status}">${u.status}</span>`;
                     return `
                         <tr>
-                            <td><div class="user-cell"><div class="user-av ${u.role}">${initials}</div><div><span class="user-name">${esc(u.first_name+' '+u.last_name)}</span><span class="user-email">${esc(u.email)}</span></div></div></td>
+                            <td><div class="user-cell"><div class="user-av ${u.role}">${icon('user', { size: 18 })}</div><div><span class="user-name">${esc(u.first_name+' '+u.last_name)}</span><span class="user-email">${esc(u.email)}</span></div></div></td>
                             <td>${esc(id)}</td>
                             <td><span class="badge badge-${u.role}">${u.role === 'program_head' ? 'Program Head' : u.role}</span></td>
                             <td>${esc(deptProg)}${campusLabel}</td>
-                            <td><span class="badge badge-${u.status}">${u.status}</span> ${activationBadge}</td>
+                            <td>${statusBadge}</td>
                             <td style="color:#737373;font-size:13px">${date}</td>
                             <td class="actions-cell">
-                                <button class="btn-actions" data-id="${u.users_id}">⋮</button>
-                                <div class="actions-dropdown" data-dropdown="${u.users_id}">
-                                    ${u.status === 'pending' ? `<a href="#" data-activate="${u.users_id}" data-name="${esc(u.first_name+' '+u.last_name)}" style="color:#B45309">✓ Activate Account</a><div class="divider"></div>` : ''}
-                                    <a href="#" data-edit="${u.users_id}">${L.editUser}</a>
-                                    <a href="#" data-chpw="${u.users_id}" data-name="${esc(u.first_name+' '+u.last_name)}">${icon('key',{size:14,className:'ui-icon-inline'})} Change Password</a>
-                                    <div class="divider"></div>
-                                    <a href="#" class="danger" data-delete="${u.users_id}" data-name="${esc(u.first_name+' '+u.last_name)}">${L.deactivate}</a>
-                                </div>
+                                <button class="btn-row btn-row-edit" data-edit="${u.users_id}">${L.editUser}</button>
+                                <button class="btn-row btn-row-edit" data-chpw="${u.users_id}" data-name="${esc(u.first_name+' '+u.last_name)}" title="Change Password">${icon('key',{size:12,className:'ui-icon-inline'})}</button>
+                                <button class="btn-row ${isActive ? 'btn-row-danger' : 'btn-row-success'}"
+                                    data-toggle="${u.users_id}" data-active="${isActive}" data-name="${esc(u.first_name+' '+u.last_name)}">
+                                    ${isActive ? L.deactivate : 'Activate'}
+                                </button>
                             </td>
                         </tr>`;
                   }).join('')}
@@ -236,13 +228,6 @@ async function renderList(container, filters = {}) {
 
     // Event: Add user
     container.querySelector('#btn-add-user').addEventListener('click', () => openModal(container));
-
-    // Event: Bulk import from Excel
-    container.querySelector('#btn-import-excel').addEventListener('click', () => openImportModal(container, filters));
-
-    // Event: Export CSV / PDF (exports every filtered row, not just the current page)
-    container.querySelector('#btn-export-csv').addEventListener('click', () => exportUsers('csv', filters));
-    container.querySelector('#btn-export-pdf').addEventListener('click', () => exportUsers('pdf', filters));
 
     // Event: Filters
     // renderList() rebuilds the whole container (including a brand-new
@@ -291,56 +276,28 @@ async function renderList(container, filters = {}) {
         renderList(container, filters);
     });
 
-    // Event: Actions dropdowns
-    container.querySelectorAll('.btn-actions').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const id = btn.dataset.id;
-            container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-            container.querySelector(`[data-dropdown="${id}"]`).classList.toggle('show');
-        });
-    });
-    // renderList() re-runs on every filter/page change, so guard against
-    // stacking up a fresh document-level listener on every single one of
-    // those (the previous `{ once: true }` avoided that leak, but at the
-    // cost of "click outside to close" only ever working the very first
-    // time it fired, then silently doing nothing for the rest of the page's
-    // life — worse trade-off than one idempotent listener kept for good).
-    if (!container.dataset.dropdownCloserAttached) {
-        container.dataset.dropdownCloserAttached = '1';
-        document.addEventListener('click', () => {
-            container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-        });
-    }
-
     // Event: Edit
-    container.querySelectorAll('[data-edit]').forEach(a => {
-        a.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const res = await Api.get('/UsersAPI.php?action=get&id=' + a.dataset.edit);
+    container.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const res = await Api.get('/UsersAPI.php?action=get&id=' + btn.dataset.edit);
             if (res.success) openModal(container, res.data);
         });
     });
 
-    // Event: Delete
-    container.querySelectorAll('[data-delete]').forEach(a => {
-        a.addEventListener('click', async (e) => {
-            e.preventDefault();
-            if (!await notify.confirm(`Deactivate user "${a.dataset.name}"?`, { danger: true, confirmText: 'Deactivate' })) return;
-            const res = await Api.post('/UsersAPI.php?action=delete', { users_id: parseInt(a.dataset.delete) });
+    // Event: Activate / Deactivate toggle (same UsersAPI.php?action=deactivate
+    // endpoint the Dean's Faculty table uses — it flips `status` either way,
+    // so it also covers reactivating a pending or previously-inactive account).
+    container.querySelectorAll('[data-toggle]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const active = btn.dataset.active === 'true';
+            const verb = active ? 'Deactivate' : 'Activate';
+            if (!await notify.confirm(`${verb} user "${btn.dataset.name}"?`, { danger: active, confirmText: verb })) return;
+            btn.disabled = true;
+            const res = await Api.post('/UsersAPI.php?action=deactivate', {
+                users_id: parseInt(btn.dataset.toggle), status: active ? 'inactive' : 'active'
+            });
             if (res.success) renderList(container, filters);
-            else notify.error(res.message);
-        });
-    });
-
-    // Event: Activate
-    container.querySelectorAll('[data-activate]').forEach(a => {
-        a.addEventListener('click', async (e) => {
-            e.preventDefault();
-            if (!await notify.confirm(`Activate account for "${a.dataset.name}"? They will be able to log in with their Student ID.`, { confirmText: 'Activate' })) return;
-            const res = await Api.post('/UsersAPI.php?action=activate', { users_id: parseInt(a.dataset.activate) });
-            if (res.success) renderList(container, filters);
-            else notify.error(res.message);
+            else { notify.error(res.message); btn.disabled = false; }
         });
     });
 
@@ -462,7 +419,6 @@ function openModal(container, user = null) {
                         <select class="form-select" id="m-status">
                             <option value="active"   ${user?.status==='active'  ?'selected':''}>Active</option>
                             <option value="inactive" ${user?.status==='inactive'?'selected':''}>Inactive</option>
-                            <option value="pending"  ${user?.status==='pending' ?'selected':''}>Pending</option>
                         </select>
                     </div>
                     <div class="form-group" id="emp-id-group">
@@ -735,144 +691,5 @@ function openChangePasswordModal(container, userId, userName) {
         } else {
             alertEl.innerHTML = `<div class="alert alert-error">${res.message}</div>`;
         }
-    });
-}
-
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
-
-// ── Export (CSV / PDF) ──────────────────────────────────────────────────────
-// Fetches every row matching the current filters (not just the current page)
-// and exports it as a downloadable CSV or a print-ready PDF.
-
-async function fetchAllFilteredUsers(filters) {
-    const params = new URLSearchParams();
-    if (filters.search) params.set('search', filters.search);
-    if (filters.role) params.set('role', filters.role);
-    if (filters.status) params.set('status', filters.status);
-    params.set('export', '1');
-
-    const res = await Api.get('/UsersAPI.php?action=list&' + params.toString());
-    return res.success ? res.data.users : [];
-}
-
-function userRowLabel(u) {
-    return {
-        name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
-        id: u.employee_id || u.student_id || '—',
-        role: u.role === 'program_head' ? 'Program Head' : (u.role || '').charAt(0).toUpperCase() + (u.role || '').slice(1),
-        deptProg: u.department_name || u.program_code || '—',
-        date: u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—',
-    };
-}
-
-async function exportUsers(format, filters) {
-    const users = await fetchAllFilteredUsers(filters);
-    if (!users.length) { notify.error('No users to export.'); return; }
-
-    if (format === 'csv') {
-        const headers = ['Name', 'Email', 'ID', 'Role', 'Department/Program', 'Status', 'Created'];
-        const rows = users.map(u => {
-            const r = userRowLabel(u);
-            return [r.name, u.email || '', r.id, r.role, r.deptProg, u.status || '', r.date];
-        });
-        const csv = [headers, ...rows]
-            .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-            .join('\r\n');
-        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `users_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        return;
-    }
-
-    // PDF: open a print-formatted view and trigger the browser's print dialog
-    // (Save as PDF), so the exported file is a clean, structured document.
-    const rowsHtml = users.map(u => {
-        const r = userRowLabel(u);
-        return `<tr>
-            <td>${esc(r.name)}</td>
-            <td>${esc(u.email || '')}</td>
-            <td>${esc(r.id)}</td>
-            <td>${esc(r.role)}</td>
-            <td>${esc(r.deptProg)}</td>
-            <td>${esc(u.status || '')}</td>
-            <td>${esc(r.date)}</td>
-        </tr>`;
-    }).join('');
-
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) { notify.error('Please allow pop-ups to export as PDF.'); return; }
-    win.document.write(`
-        <!doctype html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Users Export — ${new Date().toLocaleDateString()}</title>
-            <style>
-                body { font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #1f2937; }
-                h1 { font-size: 18px; margin: 0 0 4px; }
-                p.meta { font-size: 12px; color: #6b7280; margin: 0 0 20px; }
-                table { width: 100%; border-collapse: collapse; font-size: 11px; }
-                th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
-                th { background: #f3f4f6; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
-                tr:nth-child(even) { background: #fafbfc; }
-                @media print { body { margin: 12mm; } }
-            </style>
-        </head>
-        <body>
-            <h1>COC LMS — User Accounts</h1>
-            <p class="meta">Generated ${new Date().toLocaleString()} &middot; ${users.length} record${users.length !== 1 ? 's' : ''}</p>
-            <table>
-                <thead>
-                    <tr><th>Name</th><th>Email</th><th>ID</th><th>Role</th><th>Department/Program</th><th>Status</th><th>Created</th></tr>
-                </thead>
-                <tbody>${rowsHtml}</tbody>
-            </table>
-        </body>
-        </html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 250);
-}
-
-// ── Bulk Import from Excel ──────────────────────────────────────────────
-// Admin uploads one .xlsx sheet; BulkImportAPI.php extracts instructor /
-// student accounts, subjects, sections, and class assignments from it.
-// New accounts log in with employee_id/student_id + their last name as a
-// temp password, and must set a real one on first login (config/auth.php +
-// AuthAPI.php's existing first-login flow, reused for this).
-
-function openImportModal(container, filters) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-        <div class="modal" style="max-width:640px;">
-            <div class="modal-header">
-                <h3>${icon('document',{size:16,className:'ui-icon-inline'})} Import from Excel</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body" id="bi-host"></div>
-            <div class="modal-footer">
-                <button class="btn-secondary modal-cancel">Close</button>
-            </div>
-        </div>
-        <style>${bulkImportCss()}</style>`;
-    document.body.appendChild(overlay);
-
-    const close = () => overlay.remove();
-    overlay.querySelector('.modal-close').addEventListener('click', close);
-    overlay.querySelector('.modal-cancel').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-
-    mountBulkImportUI(overlay.querySelector('#bi-host'), {
-        onImported: () => renderList(container, filters),
     });
 }

@@ -5,6 +5,7 @@ import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 import { bindPasswordChangeOtp, attachStrengthMeter, attachEyeToggle } from '../../utils/password-change-otp.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     const user = Auth.user();
 
@@ -16,7 +17,7 @@ export async function render(container) {
                     <div class="p-avatar">${Auth.initials()}</div>
                     <div class="p-identity">
                         <div class="p-name">${esc(user.first_name)} ${esc(user.last_name)}</div>
-                        <div class="p-role" style="background:#fef3c7;color:#92400e;border-color:#fde68a;">System Administrator</div>
+                        <div class="p-role" style="background:#B45309; color:#fff;border-color:#fde68a;">System Administrator</div>
                     </div>
                     <div class="p-details">
                         <div class="p-detail">
@@ -139,7 +140,8 @@ export async function render(container) {
     attachEyeToggle(container.querySelector('#f-confirmpw'));
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'; }
 function mkAlert(msg, type) { return `<div class="p-alert p-alert-${type}" style="margin-bottom:14px;">${esc(msg)}</div>`; }
 
@@ -152,7 +154,7 @@ function sharedStyles() {
         .p-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:#00461B; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; border:4px solid #fff; box-shadow:0 4px 14px rgba(0,0,0,.13); margin:-38px auto 0; position:relative; z-index:1; }
         .p-identity { text-align:center; padding:14px 20px 16px; }
         .p-name { font-size:18px; font-weight:800; color:#1f2937; }
-        .p-role { display:inline-block; background:#f0fdf4; color:#00461B; border:1px solid #bbf7d0; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; text-transform:capitalize; margin-top:6px; }
+        .p-role { display:inline-block; background:#00461B; color:#fff; border:1px solid #bbf7d0; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; text-transform:capitalize; margin-top:6px; }
         .p-details { border-top:1px solid #f3f4f6; padding:8px 0 12px; }
         .p-detail { display:flex; justify-content:space-between; align-items:flex-start; padding:10px 20px; gap:12px; }
         .p-detail + .p-detail { border-top:1px solid #f9fafb; }
@@ -177,8 +179,8 @@ function sharedStyles() {
         .p-btn-danger { background:#b91c1c; }
         .p-btn-danger:hover { box-shadow:0 4px 14px rgba(185,28,28,.3); }
         .p-alert { padding:12px 16px; border-radius:10px; font-size:13.5px; font-weight:500; }
-        .p-alert-ok  { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
-        .p-alert-err { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+        .p-alert-ok  { background:#00461B; color:#fff; border:1px solid #bbf7d0; }
+        .p-alert-err { background:#7F1D1D; color:#fff; border:1px solid #fecaca; }
         @media(max-width:860px) { .p-layout { grid-template-columns:1fr; } .p-sidebar { position:static; } .p-form-grid { grid-template-columns:1fr; } }
     </style>`;
 }

@@ -22,6 +22,16 @@ import {
 import { Api } from './api.js';
 import { icon, iconLg } from './utils/icons.js';
 
+// Cache-bust for dynamically-imported page modules — bump this on every deploy
+// (same convention as this file's own ?v= in dashboard.html and css/style.css).
+// Was previously `?v=${Date.now()}` (a fresh, unique URL on every single page
+// load), which meant the service worker's stale-while-revalidate caching could
+// never get a cache hit for any lazily-loaded page — every visit re-fetched
+// the module from the network. A fixed version string lets the browser and
+// service worker actually cache these between visits, while still forcing a
+// fresh fetch whenever this constant is bumped at deploy time.
+const PAGE_MODULE_VER = '202606241500';
+
 // ── Page-transition spinner (used only for the very first paint of a
 //    page, when there's nothing on screen yet) ───────────────────
 function pagePencilHTML() {
@@ -58,6 +68,7 @@ const PAGE_PERMISSIONS = {
     'dean/instructors':          null,
     'dean/reports':              null,
     'dean/subject-offered':      null,
+    'dean/archive':              null,
     // Instructor
     'instructor/departments':    'departments.view',
     'instructor/programs':       'programs.view',
@@ -127,6 +138,8 @@ const PAGE_ALIASES = {
     'program_head/messages':        'instructor/messages',
     'program_head/calendar':        'instructor/calendar',
     'program_head/sections':        'dean/sections',
+    // Same archive page; ArchiveAPI narrows what's visible to their program.
+    'program_head/archive':         'dean/archive',
     // Student accessing shared modules if granted
     // (student/announcements has its own page — no alias needed)
 };
@@ -293,7 +306,7 @@ async function loadCurrentPage() {
     } else {
         // Try to dynamically import the page module (use resolved role/page)
         try {
-            const module = await import(`./pages/${resolvedRole}/${resolvedPage}.js?v=${Date.now()}`);
+            const module = await import(`./pages/${resolvedRole}/${resolvedPage}.js?v=${PAGE_MODULE_VER}`);
             if (!module.render) {
                 throw new Error(`Page module has no render export: ${pageKey}`);
             }

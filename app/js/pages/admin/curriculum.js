@@ -7,6 +7,7 @@ import { Auth } from '../../auth.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let currentProgramId = '';
@@ -860,8 +861,5 @@ function openCreateSectionModal(subject, offering, semesterId, onSuccess) {
     });
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

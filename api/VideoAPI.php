@@ -55,6 +55,9 @@ switch ($action) {
 }
 
 function ensureVideoSchema() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS video_presence (
             room_key     VARCHAR(128) NOT NULL,

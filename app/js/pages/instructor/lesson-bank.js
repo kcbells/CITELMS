@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let mySubjects = [];
@@ -39,8 +40,8 @@ export async function render(container) {
             .lb-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
             .lb-card-title { font-size:15px; font-weight:700; color:#222; line-height:1.3; flex:1; }
             .lb-vis-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:5px; white-space:nowrap; flex-shrink:0; }
-            .lb-vis-badge.public  { background:#E8F5E9; color:#1B4D3E; }
-            .lb-vis-badge.private { background:#FEF3C7; color:#B45309; }
+            .lb-vis-badge.public  { background:#00461B; color:#fff; }
+            .lb-vis-badge.private { background:#B45309; color:#fff; }
             .lb-card-desc { font-size:13px; color:#666; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
             .lb-card-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
             .lb-subject-tag { background:#1B4D3E; color:#fff; font-size:10px; font-weight:700; padding:3px 8px; border-radius:5px; }
@@ -56,9 +57,9 @@ export async function render(container) {
             .lb-btn-copy:hover { background:#2D6A4F; }
             .lb-btn-view   { background:#f3f4f6; color:#333; border:1px solid #e0e0e0; }
             .lb-btn-view:hover { background:#eee; }
-            .lb-btn-delete { background:#FEE2E2; color:#b91c1c; }
+            .lb-btn-delete { background:#7F1D1D; color:#fff; }
             .lb-btn-delete:hover { background:#fca5a5; }
-            .lb-btn-edit   { background:#FEF3C7; color:#B45309; }
+            .lb-btn-edit   { background:#B45309; color:#fff; }
             .lb-btn-edit:hover { background:#fde68a; }
 
             .lb-empty { text-align:center; padding:60px 20px; background:#fafafa; border:1px dashed #ddd; border-radius:12px; }
@@ -453,13 +454,10 @@ function showToast(msg) {
 
 function alertHtml(type, msg) {
     const styles = type === 'error'
-        ? 'background:#FEE2E2;color:#991b1b;'
+        ? 'background:#7F1D1D; color:#fff;'
         : 'background:#d1fae5;color:#065f46;';
     return `<div style="${styles}padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;font-weight:600;">${esc(msg)}</div>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

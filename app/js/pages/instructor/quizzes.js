@@ -8,6 +8,7 @@ import { openQuizModal } from '../../components/quiz-modal.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects          = [];
@@ -33,11 +34,11 @@ async function renderList(container, filterSubject = '') {
             .qz-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
             .qz-banner-sub { font-size:14px; color:#6B7280; margin:0; }
             .qz-banner-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-            .qz-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .qz-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#00461B; color:#fff; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
             .qz-back-btn:hover { background:#d9efe0; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px; cursor:pointer; transition:all .15s; }
             .btn-primary:hover { background:#00351a; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.15); }
-            .btn-ai { background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; padding:9px 18px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
+            .btn-ai { background:#00461B; color:#fff; border:1px solid #E5E7EB; padding:9px 18px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .15s; }
             .btn-ai:hover { background:#d9efe0; }
 
             .qz-filter-bar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
@@ -50,10 +51,10 @@ async function renderList(container, filterSubject = '') {
             .quiz-top { padding:18px 20px; display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #f8fafc; }
             .quiz-title { font-size:16px; font-weight:700; color:#111827; margin-bottom:4px; }
             .quiz-subject { font-size:12px; color:#9ca3af; }
-            .quiz-subject .code { background:#E8F5E9; color:#1B4D3E; padding:2px 6px; border-radius:4px; font-family:monospace; font-size:11px; margin-right:4px; }
+            .quiz-subject .code { background:#00461B; color:#fff; padding:2px 6px; border-radius:4px; font-family:monospace; font-size:11px; margin-right:4px; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-published { background:#dcfce7; color:#16a34a; }
-            .badge-draft { background:#FEF3C7; color:#B45309; }
+            .badge-published { background:#00461B; color:#fff; }
+            .badge-draft { background:#B45309; color:#fff; }
 
             .quiz-stats { display:grid; grid-template-columns:repeat(4,1fr); padding:14px 20px; gap:8px; }
             .qs-item { text-align:center; background:#f8fafc; padding:10px 4px; border-radius:10px; border:1px solid #f1f5f9; }
@@ -86,7 +87,7 @@ async function renderList(container, filterSubject = '') {
             .form-input:focus, .form-select:focus { outline:none; border-color:#00461B; }
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; }
+            .alert-error { background:#7F1D1D; color:#fff; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
             @media(max-width:768px) { .quizzes-grid { grid-template-columns:1fr; } .form-grid { grid-template-columns:1fr; } .quiz-stats { grid-template-columns:1fr 1fr; } }
         </style>
@@ -195,4 +196,5 @@ async function renderList(container, filterSubject = '') {
     });
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

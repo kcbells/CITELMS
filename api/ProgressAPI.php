@@ -173,7 +173,11 @@ function getGrades() {
                 "SELECT l.lessons_id, l.lesson_title, l.grading_period, l.due_date,
                     (SELECT sp.status FROM student_progress sp
                      WHERE sp.lessons_id = l.lessons_id AND sp.user_student_id = ?
-                     ORDER BY sp.updated_at DESC LIMIT 1) AS progress_status
+                     -- student_progress has no updated_at; last_accessed is the
+                     -- column that actually tracks recency here. Ordering by a
+                     -- non-existent column made this whole SELECT fail, so every
+                     -- lesson came back with progress_status = null.
+                     ORDER BY sp.last_accessed DESC, sp.progress_id DESC LIMIT 1) AS progress_status
                  FROM lessons l
                  WHERE l.subject_id = ? AND l.status = 'published'
                  ORDER BY l.lesson_order, l.lessons_id",
@@ -317,7 +321,7 @@ function getStudentQuizzes() {
         $quizzes = db()->fetchAll(
             "SELECT q.quiz_id, q.quiz_title, q.quiz_description, q.quiz_type, q.time_limit,
                 q.passing_rate, q.max_attempts, q.subject_id, q.due_date, q.availability_start,
-                q.status, q.created_at, q.updated_at,
+                q.status, q.created_at, q.updated_at, q.gradebook_component, q.module_number,
                 s.subject_code, s.subject_name,
                 COALESCE(
                     NULLIF(q.total_points, 0),
@@ -664,7 +668,7 @@ function getQuizResult() {
     try {
         $attempt = db()->fetchOne(
             "SELECT sqa.*, q.quiz_title, q.passing_rate, q.show_answers, q.quiz_type,
-                q.subject_id, s.subject_code, s.subject_name
+                q.subject_id, q.gradebook_component, q.module_number, s.subject_code, s.subject_name
              FROM student_quiz_attempts sqa
              JOIN quiz q ON sqa.quiz_id = q.quiz_id
              JOIN subject s ON q.subject_id = s.subject_id
@@ -777,6 +781,33 @@ function getQuizResult() {
             $linkedLessonTitle = $linkedLesson['lesson_title'];
         }
 
+        // Let's Practice/Reflection/Wrap Up Quiz are Global Gradebook
+        // components — pull the actual raw score recorded there (0-3 rubric,
+        // or a %) instead of showing this attempt's own points/percentage,
+        // so the review screen always matches what the gradebook has (which
+        // can differ from a single attempt once an instructor overrides it).
+        $component = $attempt['gradebook_component'] ?? null;
+        $rawGradebookScore = null;
+        if ($component && !empty($attempt['module_number'])) {
+            $offering = db()->fetchOne(
+                "SELECT ss.subject_offered_id FROM student_subject ss
+                 JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+                 WHERE so.subject_id = ? AND ss.user_student_id = ? AND ss.status = 'enrolled' LIMIT 1",
+                [$subjectId, $userId]
+            );
+            if ($offering) {
+                $gradeRow = db()->fetchOne(
+                    "SELECT lets_practice, reflection, wrap_up_quiz FROM global_module_grades
+                     WHERE subject_offered_id = ? AND student_id = ? AND module_number = ?",
+                    [$offering['subject_offered_id'], $userId, (int)$attempt['module_number']]
+                );
+                if ($gradeRow) {
+                    $key = $component === 'reflection' ? 'reflection' : ($component === 'wrap_up_quiz' ? 'wrap_up_quiz' : 'lets_practice');
+                    $rawGradebookScore = $gradeRow[$key] !== null ? (float)$gradeRow[$key] : null;
+                }
+            }
+        }
+
         echo json_encode([
             'success' => true,
             'data' => [
@@ -787,6 +818,8 @@ function getQuizResult() {
                 'show_answers'   => $showAnswers,
                 'lessons_id'     => $linkedLessonsId,
                 'lesson_title'   => $linkedLessonTitle,
+                'gradebook_component'  => $component,
+                'raw_gradebook_score'  => $rawGradebookScore,
             ]
         ]);
     } catch (Exception $e) {

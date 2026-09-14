@@ -31,7 +31,6 @@ export const Auth = {
                     u.name = (u.first_name + ' ' + (u.last_name || '')).trim();
                 }
                 this._user = u;
-                Api.setCsrfToken(result.data?.csrf_token);
                 this._serverTabLease = result.data?.tab_lease || null;
                 if (result.data?.tab_lease) applyLoginLease(result.data.tab_lease);
                 return this._user;
@@ -55,7 +54,6 @@ export const Auth = {
                     u.name = (u.first_name + ' ' + (u.last_name || '')).trim();
                 }
                 this._user = u;
-                Api.setCsrfToken(result.data?.csrf_token);
                 return this._user;
             }
             return null;

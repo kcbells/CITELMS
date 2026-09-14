@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassCodeHelper.php';
 
 header('Content-Type: application/json');
 
@@ -175,7 +176,8 @@ function previewCode() {
     // Legacy: enrollment_code still supported
     $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
     if ($legacy !== '' && preg_match('/^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/', $legacy)) {
-        previewByEnrollmentCode($userId, $legacy);
+        $subjectIdHint = (int)($input['subject_id'] ?? 0);
+        previewByEnrollmentCode($userId, $legacy, $subjectIdHint);
         return;
     }
 
@@ -221,13 +223,26 @@ function previewBySubjectCode($userId, $subjectCode, $sectionId) {
     ]);
 }
 
-function previewByEnrollmentCode($userId, $code) {
+function previewByEnrollmentCode($userId, $code, $subjectId = 0) {
+    // The code itself is unique per (section, subject) pairing now — resolve
+    // that FIRST, which is inherently unambiguous. Only a code minted before
+    // this existed falls through to the legacy section-wide lookup below.
+    $resolved = resolveClassCode($code);
+    if (!$resolved) {
+        echo json_encode(['success' => false, 'message' => 'Invalid or inactive enrollment code']);
+        return;
+    }
+    if ($resolved['type'] === 'subject' && $resolved['subject_offered_id']) {
+        $offering = db()->fetchOne("SELECT subject_id FROM subject_offered WHERE subject_offered_id = ?", [$resolved['subject_offered_id']]);
+        $subjectId = $offering ? (int)$offering['subject_id'] : 0;
+    }
+
     $section = db()->fetchOne(
         "SELECT section_id, section_name, max_students, program_id,
                 (SELECT COUNT(DISTINCT user_student_id) FROM student_subject
                  WHERE section_id = section.section_id AND status = 'enrolled') AS current_enrollment
-         FROM section WHERE enrollment_code = ? AND status = 'active'",
-        [$code]
+         FROM section WHERE section_id = ? AND status = 'active'",
+        [$resolved['section_id']]
     );
 
     if (!$section) {
@@ -243,6 +258,13 @@ function previewByEnrollmentCode($userId, $code) {
         }
     }
 
+    // A LEGACY section-wide code (resolveClassCode() found no per-subject
+    // match) otherwise joins EVERY subject taught to that section at once.
+    // $subjectId here is either the ONE subject the new per-subject code
+    // resolved to, or — for an old code paired with a subject_id hint from
+    // before this fix existed — still scopes down to just that subject.
+    $subjectFilter = $subjectId ? 'AND s.subject_id = ?' : '';
+    $subjectParams = $subjectId ? [$section['section_id'], $subjectId] : [$section['section_id']];
     $rawSubjects = db()->fetchAll(
         "SELECT ss.subject_offered_id, ss.schedule, ss.room,
                 s.subject_id, s.subject_code, s.subject_name, s.units,
@@ -251,9 +273,9 @@ function previewByEnrollmentCode($userId, $code) {
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON s.subject_id = so.subject_id
          LEFT JOIN users u ON u.users_id = so.user_teacher_id
-         WHERE ss.section_id = ? AND ss.status = 'active'
+         WHERE ss.section_id = ? AND ss.status = 'active' {$subjectFilter}
          ORDER BY s.subject_code, (so.user_teacher_id IS NOT NULL) DESC",
-        [$section['section_id']]
+        $subjectParams
     );
 
     $seen = [];
@@ -305,7 +327,8 @@ function enrollByCode() {
 
     $legacy = strtoupper(trim($input['enrollment_code'] ?? ''));
     if ($legacy !== '' && preg_match('/^([A-Z0-9]{8}|[A-Z0-9]{3}-[A-Z0-9]{4})$/', $legacy)) {
-        enrollByLegacyCode($userId, $legacy);
+        $subjectIdHint = (int)($input['subject_id'] ?? 0);
+        enrollByLegacyCode($userId, $legacy, $subjectIdHint);
         return;
     }
 
@@ -421,15 +444,28 @@ function cancelPendingJoin() {
     echo json_encode(['success' => true, 'message' => 'Join request cancelled']);
 }
 
-function enrollByLegacyCode($userId, $code) {
+function enrollByLegacyCode($userId, $code, $subjectId = 0) {
     $pdo = null;
     try {
+        // Same resolution order as previewByEnrollmentCode(): the unique
+        // per-subject code first (unambiguous by construction), the old
+        // section-wide code only as a fallback for codes minted before it.
+        $resolved = resolveClassCode($code);
+        if (!$resolved) {
+            echo json_encode(['success' => false, 'message' => 'Invalid enrollment code']);
+            return;
+        }
+        if ($resolved['type'] === 'subject' && $resolved['subject_offered_id']) {
+            $offering = db()->fetchOne("SELECT subject_id FROM subject_offered WHERE subject_offered_id = ?", [$resolved['subject_offered_id']]);
+            $subjectId = $offering ? (int)$offering['subject_id'] : 0;
+        }
+
         $section = db()->fetchOne(
             "SELECT section_id, section_name, max_students, program_id,
                     (SELECT COUNT(DISTINCT user_student_id) FROM student_subject
                      WHERE section_id = section.section_id AND status = 'enrolled') AS current_enrollment
-             FROM section WHERE enrollment_code = ? AND status = 'active'",
-            [$code]
+             FROM section WHERE section_id = ? AND status = 'active'",
+            [$resolved['section_id']]
         );
 
         if (!$section) {
@@ -450,14 +486,19 @@ function enrollByLegacyCode($userId, $code) {
             return;
         }
 
+        // See the matching comment in previewByEnrollmentCode() — scope to one
+        // subject when we know which subject's own QR this code came from,
+        // instead of requesting every subject taught to the section at once.
+        $subjectFilter = $subjectId ? 'AND s.subject_id = ?' : '';
+        $subjectParams = $subjectId ? [$section['section_id'], $subjectId] : [$section['section_id']];
         $rawSubjects = db()->fetchAll(
             "SELECT ss.subject_offered_id, so.subject_id, s.subject_code
              FROM section_subject ss
              JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
              JOIN subject s ON s.subject_id = so.subject_id
-             WHERE ss.section_id = ? AND ss.status = 'active'
+             WHERE ss.section_id = ? AND ss.status = 'active' {$subjectFilter}
              ORDER BY (so.user_teacher_id IS NOT NULL) DESC",
-            [$section['section_id']]
+            $subjectParams
         );
 
         $seen = [];

@@ -24,9 +24,15 @@ if (!ob_get_level()) {
 $_cors_origin  = $_SERVER['HTTP_ORIGIN'] ?? '';
 $_cors_allowed = false;
 
+// Extra allowed hosts for a real deploy — comma-separated, e.g.
+// CORS_ALLOWED_HOSTS="phinma-cdo.edu.ph,lms.phinma-cdo.edu.ph" — set via .env
+// so going live doesn't require remembering to edit this file by hand.
+$_cors_extra_hosts = array_filter(array_map('trim', explode(',', getenv('CORS_ALLOWED_HOSTS') ?: '')));
+
 if ($_cors_origin !== '') {
     $_cors_host = parse_url($_cors_origin, PHP_URL_HOST) ?: '';
-    $_cors_allowed = in_array($_cors_host, ['localhost', '127.0.0.1', '::1'], true);
+    $_cors_allowed = in_array($_cors_host, ['localhost', '127.0.0.1', '::1'], true)
+        || in_array($_cors_host, $_cors_extra_hosts, true);
 }
 
 if ($_cors_allowed) {
@@ -83,4 +89,4 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 }
 
-unset($_cors_origin, $_cors_allowed, $_cors_host);
+unset($_cors_origin, $_cors_allowed, $_cors_host, $_cors_extra_hosts);

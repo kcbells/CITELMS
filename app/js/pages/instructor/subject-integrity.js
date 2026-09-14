@@ -7,6 +7,7 @@
  */
 import { Api } from '../../api.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const VIOLATION_LABELS = {
     tab_switch_count: { label: 'tab switches',        singular: 'tab switch' },
     paste_count:      { label: 'paste attempts',      singular: 'paste attempt' },
@@ -27,11 +28,11 @@ export async function mountQuizIntegrityTab(host, subjectId) {
             .sqi-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
             .sqi-header h3 { font-size:16px; font-weight:800; color:#1B4D2E; margin:0; }
             .sqi-header p { font-size:12.5px; color:#737373; margin:3px 0 0; }
-            .sqi-count { background:#FEE2E2; color:#B91C1C; padding:5px 14px; border-radius:20px; font-size:12.5px; font-weight:700; }
+            .sqi-count { background:#7F1D1D; color:#fff; padding:5px 14px; border-radius:20px; font-size:12.5px; font-weight:700; }
 
             .sqi-table-wrap { background:#fff; border:1px solid #E5E7EB; border-radius:14px; overflow:hidden; }
             .sqi-table { width:100%; border-collapse:collapse; font-size:13px; }
-            .sqi-table th { background:#FAFBFC; color:#9CA3AF; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:12px 18px; border-bottom:1px solid #E5E7EB; text-align:left; }
+            .sqi-table th { background:#00461B; color:#fff; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:12px 18px; border-bottom:1px solid #E5E7EB; text-align:left; }
             .sqi-table tbody tr { border-bottom:1px solid #F3F4F6; }
             .sqi-table tbody tr:last-child { border-bottom:none; }
             .sqi-table tbody tr:hover { background:#FAFBFC; }
@@ -45,8 +46,8 @@ export async function mountQuizIntegrityTab(host, subjectId) {
             .sqi-quiz { font-weight:600; color:#262626; }
 
             .sqi-actions-list { display:flex; flex-wrap:wrap; gap:5px; }
-            .sqi-action-pill { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; background:#FEF3C7; color:#92400E; white-space:nowrap; }
-            .sqi-action-pill.severe { background:#FEE2E2; color:#B91C1C; }
+            .sqi-action-pill { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; background:#B45309; color:#fff; white-space:nowrap; }
+            .sqi-action-pill.severe { background:#7F1D1D; color:#fff; }
 
             .sqi-score { font-weight:700; color:#374151; }
             .sqi-date { color:#9CA3AF; font-size:12px; }
@@ -122,8 +123,4 @@ function renderRow(a) {
         </tr>`;
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str ?? '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)

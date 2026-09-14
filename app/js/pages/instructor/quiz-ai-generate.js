@@ -8,6 +8,7 @@ import { openQuizModal } from '../../components/quiz-modal.js';
 import { showMcPopup } from '../../utils/mc-popup.js';
 import { gradingOptionsHtml, readGradingPayload, ensureGradingOptionStyles } from '../../utils/quiz-grading-options.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 // Modal shell styles (for openAiQuizModal)
@@ -155,7 +156,7 @@ export async function render(container, params = {}) {
             .diff-group { display:flex; gap:8px; margin-top:16px; }
             .diff-btn { flex:1; padding:10px; border:2px solid #e8e8e8; border-radius:8px; text-align:center; cursor:pointer; font-size:13px; font-weight:600; background:#fff; transition:all .15s; }
             .diff-btn:hover { border-color:#1B4D3E; }
-            .diff-btn.selected { border-color:#1B4D3E; background:#E8F5E9; color:#1B4D3E; }
+            .diff-btn.selected { border-color:#1B4D3E; background:#00461B; color:#fff; }
             .total-strip { display:flex; justify-content:space-between; align-items:center; background:#E8F5E9; padding:10px 16px; border-radius:8px; margin-top:16px; font-size:14px; font-weight:700; color:#1B4D3E; }
 
             .q-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:18px; margin-bottom:14px; }
@@ -163,10 +164,10 @@ export async function render(container, params = {}) {
             .q-card-num { font-size:12px; font-weight:700; color:#1B4D3E; }
             .q-card-type { font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:12px; }
             .q-card-type.mc { background:#DBEAFE; color:#1E40AF; }
-            .q-card-type.tf { background:#FEF3C7; color:#B45309; }
-            .q-card-type.fib { background:#E8F5E9; color:#1B4D3E; }
-            .q-card-type.sa { background:#FEE2E2; color:#b91c1c; }
-            .q-card-type.essay { background:#E8F5E9; color:#2D6A4F; }
+            .q-card-type.tf { background:#B45309; color:#fff; }
+            .q-card-type.fib { background:#00461B; color:#fff; }
+            .q-card-type.sa { background:#7F1D1D; color:#fff; }
+            .q-card-type.essay { background:#00461B; color:#fff; }
             .q-card textarea { width:100%; border:1px solid #e8e8e8; border-radius:8px; padding:10px; font-size:14px; resize:vertical; min-height:50px; font-family:inherit; }
             .q-card textarea:focus { border-color:#1B4D3E; outline:none; }
             .q-card .opt-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
@@ -1176,17 +1177,17 @@ export async function openAiQuizModal(options = {}) {
                     .diff-group { display:flex; gap:8px; margin-top:14px; }
                     .diff-btn { flex:1; padding:9px; border:2px solid #e8e8e8; border-radius:8px; text-align:center; cursor:pointer; font-size:13px; font-weight:600; background:#fff; transition:all .15s; }
                     .diff-btn:hover { border-color:#1B4D3E; }
-                    .diff-btn.selected { border-color:#1B4D3E; background:#E8F5E9; color:#1B4D3E; }
+                    .diff-btn.selected { border-color:#1B4D3E; background:#00461B; color:#fff; }
                     .total-strip { display:flex; justify-content:space-between; align-items:center; background:#E8F5E9; padding:10px 14px; border-radius:8px; margin-top:14px; font-size:14px; font-weight:700; color:#1B4D3E; }
                     .q-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:16px; margin-bottom:12px; }
                     .q-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
                     .q-card-num { font-size:12px; font-weight:700; color:#1B4D3E; }
                     .q-card-type { font-size:10px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:12px; }
                     .q-card-type.mc { background:#DBEAFE; color:#1E40AF; }
-                    .q-card-type.tf { background:#FEF3C7; color:#B45309; }
-                    .q-card-type.fib { background:#E8F5E9; color:#1B4D3E; }
-                    .q-card-type.sa { background:#FEE2E2; color:#b91c1c; }
-                    .q-card-type.essay { background:#E8F5E9; color:#2D6A4F; }
+                    .q-card-type.tf { background:#B45309; color:#fff; }
+                    .q-card-type.fib { background:#00461B; color:#fff; }
+                    .q-card-type.sa { background:#7F1D1D; color:#fff; }
+                    .q-card-type.essay { background:#00461B; color:#fff; }
                     .q-card textarea { width:100%; border:1px solid #e8e8e8; border-radius:8px; padding:9px; font-size:13px; resize:vertical; min-height:46px; font-family:inherit; box-sizing:border-box; }
                     .q-card textarea:focus { border-color:#1B4D3E; outline:none; }
                     .q-card .opt-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
@@ -1270,7 +1271,7 @@ function openManualAddModal(container, subjects) {
             .mam-type-sel:focus { outline:none;border-color:#00461B; }
             .mam-media-tab { display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;border:1.5px solid #e0e0e0;font-size:12px;font-weight:600;color:#5f6368;cursor:pointer;background:#fff;transition:all .15s; }
             .mam-media-tab:hover { border-color:#00461B;color:#00461B; }
-            .mam-media-tab.act { border-color:#00461B;color:#00461B;background:#E8F5EC; }
+            .mam-media-tab.act { border-color:#00461B;color:#fff; background:#00461B; }
             .mam-opt-row { display:flex;align-items:center;gap:10px;padding:6px 4px;border-radius:8px; }
             .mam-opt-row:hover { background:#f8f9fa; }
             .mam-opt-dot { width:20px;height:20px;flex-shrink:0;border-radius:50%;border:2px solid #dadce0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .15s; }
@@ -1285,7 +1286,7 @@ function openManualAddModal(container, subjects) {
             .mam-answer-ta { width:100%;border:none;border-bottom:1.5px solid #bbf7d0;padding:6px 4px;font-size:14px;font-family:inherit;background:transparent;resize:none;outline:none;min-height:44px;color:#202124;box-sizing:border-box; }
             .mam-answer-ta:focus { border-bottom-color:#00461B; }
             .mam-text-hint { padding:12px 16px;background:#f8f9fa;border:1.5px dashed #dadce0;border-radius:8px;font-size:13px;color:#9aa0a6;font-style:italic;margin-bottom:12px; }
-            .mam-alert { background:#FEE2E2;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:10px; }
+            .mam-alert { background:#7F1D1D; color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:10px; }
             .mam-btn-cancel { background:#fff;color:#5f6368;border:1.5px solid #dadce0;padding:9px 20px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer; }
             .mam-btn-save { background:#00461B;color:#fff;border:none;padding:9px 22px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer; }
             .mam-btn-save:hover { background:#006428; }
@@ -1553,4 +1554,5 @@ function updateStepper(container) {
     });
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

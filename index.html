@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#00461B">
     <link rel="apple-touch-icon" href="assets/images/pwa-icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -35,7 +35,7 @@
             --shadow-lg:   0 16px 48px rgba(0,0,0,.14);
         }
         html { scroll-behavior: smooth; }
-        body { font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: var(--gray-900); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+        body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: var(--gray-900); line-height: 1.6; -webkit-font-smoothing: antialiased; }
         img { display: block; max-width: 100%; }
         a { text-decoration: none; }
 
@@ -220,39 +220,6 @@
         .center-block .sec-kicker { justify-content: center; }
         .center-block .sec-desc   { margin: 0 auto; }
         .gold-divider { width: 56px; height: 3px; background: var(--gold); border-radius: 2px; margin: 18px auto 0; }
-
-        /* ── MOBILE APP PREVIEW ──────────────────────── */
-        .mobile-preview { background: linear-gradient(180deg, #fbfaf5 0%, var(--cream) 100%); overflow: hidden; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200); }
-        .mobile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
-        .mp-text .sec-kicker { color: var(--gold-dark); }
-        .mp-text .sec-title { color: var(--gray-900); }
-        .mp-text .sec-title em { color: var(--green); }
-        .mp-text .sec-desc { color: var(--gray-600); }
-        .mp-points { margin-top: 28px; display: flex; flex-direction: column; gap: 16px; }
-        .mp-point { display: flex; gap: 14px; align-items: flex-start; }
-        .mp-point-icon { width: 36px; height: 36px; border-radius: 9px; background: #fff; border: 1.5px solid var(--gray-200); color: var(--green); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,.04); }
-        .mp-point strong { display: block; font-size: 14px; color: var(--gray-900); margin-bottom: 2px; }
-        .mp-point span { font-size: 13px; color: var(--gray-500); }
-        .mp-visual { display: flex; align-items: center; justify-content: center; }
-        .phone-mockup {
-            width: 240px; background: #111; border-radius: 34px; padding: 12px 10px;
-            box-shadow: 0 30px 70px rgba(0,0,0,.45);
-        }
-        .phone-notch { width: 70px; height: 18px; background: #111; border-radius: 0 0 12px 12px; margin: 0 auto 8px; position: relative; z-index: 2; }
-        .phone-screen { background: #fff; border-radius: 22px; overflow: hidden; margin-top: -18px; }
-        .phone-topbar { background: var(--green); padding: 22px 14px 12px; }
-        .phone-topbar span { display: block; height: 8px; width: 70%; background: rgba(255,255,255,.85); border-radius: 4px; margin-bottom: 6px; }
-        .phone-topbar small { display: block; height: 6px; width: 40%; background: rgba(255,255,255,.45); border-radius: 3px; }
-        .phone-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-        .phone-card { background: var(--gray-100); border-radius: 10px; padding: 10px; display: flex; align-items: center; gap: 8px; }
-        .phone-card-icon { width: 26px; height: 26px; border-radius: 7px; background: var(--gold); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .phone-card-lines { flex: 1; display: flex; flex-direction: column; gap: 5px; }
-        .phone-card-lines span { display: block; height: 5px; border-radius: 3px; background: var(--gray-300); }
-        .phone-card-lines span:last-child { width: 55%; }
-        .phone-nav { display: flex; justify-content: space-around; padding: 12px 8px; border-top: 1px solid var(--gray-100); }
-        .phone-nav span { width: 20px; height: 20px; border-radius: 6px; background: var(--gray-200); display: block; }
-        .phone-nav span.active { background: var(--green); }
-        @media (max-width: 860px) { .mobile-grid { grid-template-columns: 1fr; gap: 40px; text-align: center; } .mp-point { text-align: left; } }
 
         /* â”€â”€ ABOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .about { background: #fff; }
@@ -579,7 +546,7 @@
            floated awkwardly over a card that would mostly cover it. */
         #signin-backdrop .si-brand-content, #signin-backdrop .si-brand-footer { display:none; }
 
-        #signin-backdrop .si-form-side { position:relative; z-index:1; width:100%; max-width:440px; padding:0; }
+        #signin-backdrop .si-form-side { position:relative; z-index:1; width:100%; max-width:440px; min-width:0; padding:0; }
         #signin-backdrop .si-form-side .reg-modal {
             max-width:none; background:#fff; border-radius:18px;
             box-shadow:0 24px 64px rgba(0,0,0,.35); animation:modalSlide .25s cubic-bezier(.4,0,.2,1);
@@ -803,58 +770,6 @@
             </div>
         </div>
     </div>
-    </div>
-</section>
-
-<!-- MOBILE APP PREVIEW -->
-<section class="section mobile-preview">
-    <div class="sec-inner">
-        <div class="mobile-grid">
-            <div class="mp-text" data-anim="left">
-                <div class="sec-kicker"><span class="sec-kicker-line"></span> Take It With You</div>
-                <h2 class="sec-title">Learning That <em>Goes With You</em></h2>
-                <p class="sec-desc">Phinmaed Learning brings lessons, quizzes, grades, enrollment, and messaging together in one connected system — so students, instructors, and admins can teach, learn, and track progress from anywhere, on any device.</p>
-                <div class="mp-points">
-                    <div class="mp-point">
-                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
-                        <div><strong>Works on Any Device</strong><span>Phone, tablet, or desktop — same account, same data.</span></div>
-                    </div>
-                    <div class="mp-point">
-                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
-                        <div><strong>Instant Notifications</strong><span>Never miss an announcement, quiz, or message.</span></div>
-                    </div>
-                    <div class="mp-point">
-                        <div class="mp-point-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-                        <div><strong>Works Offline Too</strong><span>Keep learning even with a spotty connection.</span></div>
-                    </div>
-                </div>
-            </div>
-            <div class="mp-visual" data-anim="right">
-                <div class="phone-mockup">
-                    <div class="phone-notch"></div>
-                    <div class="phone-screen">
-                        <div class="phone-topbar"><span></span><small></small></div>
-                        <div class="phone-body">
-                            <div class="phone-card">
-                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
-                                <div class="phone-card-lines"><span></span><span></span></div>
-                            </div>
-                            <div class="phone-card">
-                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
-                                <div class="phone-card-lines"><span></span><span></span></div>
-                            </div>
-                            <div class="phone-card">
-                                <span class="phone-card-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></span>
-                                <div class="phone-card-lines"><span></span><span></span></div>
-                            </div>
-                        </div>
-                        <div class="phone-nav">
-                            <span class="active"></span><span></span><span></span><span></span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </section>
 
@@ -1279,7 +1194,7 @@
         </div>
     </div>
     <div class="si-form-side">
-    <div class="reg-modal" style="max-width:760px;">
+    <div class="reg-modal">
         <div class="modal-hdr">
             <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
@@ -1328,7 +1243,7 @@
                         <div class="si-captcha-box">
                             <span id="si-captcha-eq"></span>
                             <input class="si-captcha-inline-input" type="text" id="si-captcha-ans"
-                                   autocomplete="off" inputmode="numeric" maxlength="3" required
+                                   autocomplete="off" inputmode="numeric" pattern="[0-9]*" maxlength="3" required
                                    oninput="checkSiCaptchaLive()" aria-label="Captcha answer">
                         </div>
                         <button type="button" class="si-captcha-reload" onclick="siGenCaptcha()" aria-label="Refresh captcha">
@@ -1884,6 +1799,12 @@
     function checkSiCaptchaLive() {
         const inp = document.getElementById('si-captcha-ans');
         if (!inp) return;
+        // The answer is always two positive numbers added together, so letters
+        // and symbols can only be typos — strip them as they're typed.
+        // inputmode="numeric" on the field only hints the phone keyboard; it
+        // doesn't stop desktop typing or pasting.
+        const digitsOnly = inp.value.replace(/\D/g, '');
+        if (digitsOnly !== inp.value) inp.value = digitsOnly;
         const raw = inp.value.trim();
         if (raw === '') { inp.classList.remove('si-error','si-ok'); return; }
         const val = parseInt(raw, 10);

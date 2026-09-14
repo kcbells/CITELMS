@@ -551,6 +551,29 @@ function handleUpdate() {
         if ($gradingType !== null) {
             pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, grading_type = ?, updated_at = NOW() WHERE subject_offered_id = ?")
                 ->execute([$status, $batch, $gradingType, $id]);
+
+            // grading_type is a subject-wide academic policy ("this subject
+            // uses raw-score or Global/14-module grading"), not a
+            // per-teacher preference — but a subject can have SEVERAL
+            // subject_offered rows, one per assigned teacher (e.g. the same
+            // subject taught by 3 different instructors each gets their own
+            // offering row). The Subject Offered checklist only shows/edits
+            // ONE representative offering per subject, so without this, a
+            // dean flipping that one checkbox would silently leave every
+            // OTHER teacher's offering of the same subject on the old
+            // setting — their gradebook keeps showing the wrong table even
+            // though the change reported success. Propagate to every other
+            // non-cancelled offering of the same subject so all of them
+            // agree, regardless of which one the checklist happened to
+            // update.
+            $row = db()->fetchOne("SELECT subject_id FROM subject_offered WHERE subject_offered_id = ?", [$id]);
+            $subjectId = $row ? (int)$row['subject_id'] : 0;
+            if ($subjectId) {
+                pdo()->prepare(
+                    "UPDATE subject_offered SET grading_type = ?, updated_at = NOW()
+                     WHERE subject_id = ? AND subject_offered_id != ? AND status != 'cancelled'"
+                )->execute([$gradingType, $subjectId, $id]);
+            }
         } else {
             pdo()->prepare("UPDATE subject_offered SET status = ?, batch = ?, updated_at = NOW() WHERE subject_offered_id = ?")
                 ->execute([$status, $batch, $id]);
@@ -850,7 +873,7 @@ function handleSubjectSectionInstructors() {
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN section sec ON sec.section_id = ss.section_id
          LEFT JOIN users u ON u.users_id = so.user_teacher_id
-         WHERE so.subject_id = ? AND so.semester_id = ? AND so.status != 'cancelled' AND ss.status != 'cancelled'
+         WHERE so.subject_id = ? AND so.semester_id = ? AND so.status != 'cancelled' AND ss.status = 'active'
          ORDER BY sec.section_name",
         [$subjectId, $semId]
     );

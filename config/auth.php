@@ -31,7 +31,7 @@ if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_secure', $isHttps ? 1 : 0); // Auto-detects HTTP vs HTTPS
     ini_set('session.cookie_samesite', 'Lax');  // Prevents CSRF via cross-site form submissions
     ini_set('session.gc_maxlifetime', 7200);    // Session lifetime: 2 hours
-    
+
     session_start();
 }
 

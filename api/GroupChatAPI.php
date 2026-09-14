@@ -41,6 +41,9 @@ switch ($action) {
 // ─── Schema setup ──────────────────────────────────────────────────────────
 
 function ensureGroupSchema() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
     try {
         pdo()->exec("CREATE TABLE IF NOT EXISTS group_chats (
             group_id    INT AUTO_INCREMENT PRIMARY KEY,
@@ -83,7 +86,8 @@ function handleMyGroups() {
                 (SELECT gm2.content FROM group_messages gm2 WHERE gm2.group_id = g.group_id ORDER BY gm2.created_at DESC LIMIT 1) AS last_message,
                 (SELECT gm3.created_at FROM group_messages gm3 WHERE gm3.group_id = g.group_id ORDER BY gm3.created_at DESC LIMIT 1) AS last_at,
                 (SELECT COUNT(*) FROM group_messages gm4 WHERE gm4.group_id = g.group_id AND gm4.sender_id != ? AND gm4.created_at > IFNULL((SELECT gcm2.last_read FROM group_chat_members gcm2 WHERE gcm2.group_id = g.group_id AND gcm2.user_id = ?), '1970-01-01')) AS unread,
-                (SELECT COUNT(*) FROM group_chat_members gcm3 WHERE gcm3.group_id = g.group_id) AS member_count
+                (SELECT COUNT(*) FROM group_chat_members gcm3 WHERE gcm3.group_id = g.group_id) AS member_count,
+                (gcm.last_read IS NULL) AS is_new
          FROM group_chats g
          JOIN group_chat_members gcm ON gcm.group_id = g.group_id AND gcm.user_id = ?
          ORDER BY last_at DESC, g.created_at DESC",

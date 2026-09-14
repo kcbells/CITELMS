@@ -5,6 +5,7 @@ import { Api } from '../../api.js';
 import { icon, iconLg } from '../../utils/icons.js';
 import { bindQuizReviewTriggers } from '../../components/student-quiz-review-modal.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 /** Build hash for a subject page */
@@ -119,7 +120,7 @@ function quizStyles() {
             margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #F3F4F6;
         }
         .qp-group-pill {
-            background:#E8F5EC; color:#00461B; padding:4px 12px; border-radius:6px;
+            background:#00461B; color:#fff; padding:4px 12px; border-radius:6px;
             font-size:12px; font-weight:800; font-family:ui-monospace,monospace;
         }
         .qp-group-name { font-size:15px; font-weight:700; color:#111827; }
@@ -147,8 +148,8 @@ function quizStyles() {
         .qp-badge.quiz { background:#F3F4F6; color:#374151; }
         .qp-badge.pre { background:#DBEAFE; color:#1D4ED8; }
         .qp-badge.post { background:#EDE9FE; color:#6D28D9; }
-        .qp-badge.passed { background:#DCFCE7; color:#15803D; }
-        .qp-badge.attempted { background:#FEF3C7; color:#92400E; }
+        .qp-badge.passed { background:#00461B; color:#fff; }
+        .qp-badge.attempted { background:#B45309; color:#fff; }
         .qp-badge.available { background:#DBEAFE; color:#1D4ED8; }
         .qp-badge.locked { background:#F3F4F6; color:#9CA3AF; }
         .qp-title { font-size:15px; font-weight:700; color:#111827; margin-bottom:6px; }
@@ -175,8 +176,8 @@ function quizStyles() {
             border:none; cursor:pointer; text-decoration:none; white-space:nowrap;
         }
         .qp-btn.take { background:#00461B; color:#fff; }
-        .qp-btn.retake { background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; }
-        .qp-btn.done { background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; pointer-events:none; }
+        .qp-btn.retake { background:#B45309; color:#fff; border:1px solid #FCD34D; }
+        .qp-btn.done { background:#00461B; color:#fff; border:1px solid #86EFAC; pointer-events:none; }
         .qp-btn.locked { background:#F3F4F6; color:#9CA3AF; pointer-events:none; }
         .qp-empty {
             display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -271,8 +272,5 @@ function renderQuizCard(q) {
         </div>`;
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

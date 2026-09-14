@@ -8,6 +8,7 @@ import { openAnnouncementModal } from '../../components/announcement-modal.js';
 import { openLessonModal } from '../../components/lesson-modal.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { buildStudentJoinUrl, buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G = '#00461B';
 const G2 = '#006428';
@@ -248,14 +249,32 @@ function renderSubjectSections(container, subject) {
         });
     });
 
-    container.querySelectorAll('[data-qr-url]').forEach(async (el) => {
+    const drawQr = async (el) => {
         const url = el.dataset.qrUrl;
-        if (!url) return;
+        if (!url || el.dataset.qrDrawn) return;
+        el.dataset.qrDrawn = '1';
         try {
             await renderQrInto(el, url, 160);
         } catch (_) {
             el.innerHTML = '<span class="mc-class-code-hint">QR unavailable</span>';
         }
+    };
+    // QR codes on section cards start hidden to save space; the small QR button
+    // beside the class code shows one, and it is only drawn the first time.
+    container.querySelectorAll('[data-qr-toggle]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const panel = container.querySelector('#' + btn.dataset.qrToggle);
+            if (!panel) return;
+            const open = panel.hidden;
+            panel.hidden = !open;
+            btn.setAttribute('aria-expanded', String(open));
+            btn.title = open ? 'Hide QR code' : 'Show QR code';
+            if (open) panel.querySelectorAll('[data-qr-url]').forEach(drawQr);
+        });
+    });
+    container.querySelectorAll('[data-qr-url]').forEach((el) => {
+        if (!el.closest('.mc-qr-panel')) drawQr(el);
     });
 
     container.querySelectorAll('[data-manage]').forEach(btn => {
@@ -321,25 +340,30 @@ function subjectCard(s) {
 function sectionCard(subject, sec) {
     const openUrl = `#instructor/subject?subject_id=${subject.subject_id}&section_id=${sec.section_id}`;
     const classCode = sec.enrollment_code || '';
-    const joinUrl = buildStudentJoinUrlByEnrollmentCode(classCode);
+    const joinUrl = buildStudentJoinUrlByEnrollmentCode(classCode, subject.subject_id);
 
     return `
         <article class="mc-sec-card">
             <div class="mc-sec-head">
-                <div>
-                    <h3 class="mc-sec-name">${esc(sec.section_name)}</h3>
-                    <div class="mc-class-code-box">
-                        <span class="mc-class-code-label">Class code</span>
-                        <button type="button" class="mc-enroll-code" data-copy="${esc(classCode)}" title="Copy class code for students">
-                            ${esc(classCode)}
-                            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                        </button>
-                        <div class="mc-qr-box" data-qr-url="${esc(joinUrl)}" id="mc-qr-${sec.section_id}"></div>
-                        <span class="mc-class-code-hint">Students scan QR or enter <strong>${esc(classCode)}</strong> to join <strong>${esc(sec.section_name)}</strong></span>
-                    </div>
-                </div>
+                <h3 class="mc-sec-name">${esc(sec.section_name)}</h3>
                 <span class="mc-sec-badge">${esc(sec.status || 'active')}</span>
+            </div>
+            <div class="mc-class-code-box">
+                <span class="mc-class-code-label">Class code</span>
+                <div class="mc-code-row">
+                    <button type="button" class="mc-enroll-code" data-copy="${esc(classCode)}" title="Copy class code for students">
+                        ${esc(classCode)}
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    </button>
+                    <button type="button" class="mc-qr-btn" data-qr-toggle="mc-qr-panel-${sec.section_id}" aria-expanded="false" title="Show QR code">
+                        ${icon('qrCode', { size: 14 })}<span>QR</span>${icon('chevronDown', { size: 12, className: 'mc-qr-caret' })}
+                    </button>
                 </div>
+                <div class="mc-qr-panel" id="mc-qr-panel-${sec.section_id}" hidden>
+                    <div class="mc-qr-box" data-qr-url="${esc(joinUrl)}" id="mc-qr-${sec.section_id}"></div>
+                    <span class="mc-class-code-hint">Students scan QR or enter <strong>${esc(classCode)}</strong> to join <strong>${esc(sec.section_name)}</strong></span>
+                </div>
+            </div>
             <div class="mc-sec-meta">
                 ${sec.schedule ? `<div>${icon('clock', inl)} ${esc(sec.schedule)}</div>` : ''}
                 ${sec.room ? `<div>${icon('pin', inl)} ${esc(sec.room)}</div>` : ''}
@@ -464,7 +488,7 @@ function openCreateSectionModal(container, subject) {
 async function openManageStudentsModal(container, subject, sectionInfo) {
     const { sectionId, sectionName, subjectCode, enrollmentCode, subjectOfferedId } = sectionInfo;
     const code = enrollmentCode || subjectCode || subject.subject_code || '';
-    const joinUrl = enrollmentCode ? buildStudentJoinUrlByEnrollmentCode(enrollmentCode) : buildStudentJoinUrl(code, sectionId);
+    const joinUrl = enrollmentCode ? buildStudentJoinUrlByEnrollmentCode(enrollmentCode, subject.subject_id) : buildStudentJoinUrl(code, sectionId);
     const offeredId = String(subjectOfferedId || subject.subject_offered_id || '');
     const [res, pendingRes] = await Promise.all([
         Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId),
@@ -1064,6 +1088,15 @@ function styles() {
             letter-spacing:.3px; color:#6B7280; margin-bottom:2px; }
         .mc-class-code-hint { display:block; font-size:9px; color:#9CA3AF; margin-top:2px; }
         .mc-qr-box { margin-top:4px; text-align:center; }
+        .mc-code-row { display:flex; align-items:center; flex-wrap:nowrap; gap:5px; }
+        .mc-class-code-box { margin-bottom:6px; }
+        .mc-qr-btn { display:inline-flex; align-items:center; gap:3px; font-family:inherit;
+            font-size:10px; font-weight:700; color:${G}; background:#fff; border:1px solid #111;
+            border-radius:5px; padding:3px 6px; cursor:pointer; line-height:1; }
+        .mc-qr-btn:hover { background:#F9FAFB; }
+        .mc-qr-caret { transition:transform .15s ease; }
+        .mc-qr-btn[aria-expanded="true"] .mc-qr-caret { transform:rotate(180deg); }
+        .mc-qr-panel { margin-top:4px; }
         .mc-qr-box canvas,
         .mc-qr-box img.enr-qr-canvas { border-radius:6px; border:1px solid #e5e7eb; width:120px; height:120px; }
         .mc-enroll-code { font-family:monospace; font-size:10px; font-weight:800; color:${G};
@@ -1095,7 +1128,7 @@ function styles() {
         .mc-preview-table { width:100%; border-collapse:collapse; margin-top:4px; font-size:13px; background:#fff;
             border:1px solid #E5E7EB; border-radius:8px; overflow:hidden; }
         .mc-preview-table th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
-            color:#6B7280; background:#F3F4F6; padding:8px 12px; border-bottom:1px solid #E5E7EB; }
+            color:#fff; background:#00461B; padding:8px 12px; border-bottom:1px solid #E5E7EB; }
         .mc-preview-table td { padding:7px 12px; color:#374151; border-bottom:1px solid #F3F4F6; }
         .mc-preview-table tr:last-child td { border-bottom:none; }
         .mc-preview-table td:first-child { font-weight:700; color:${G}; white-space:nowrap; }
@@ -1114,7 +1147,7 @@ function styles() {
         .mc-btn-ghost { background:#fff; color:#374151; border:1px solid ${BORDER}; padding:8px 14px; border-radius:10px;
             font-size:12px; font-weight:600; cursor:pointer; }
         .mc-btn-danger { color:#B91C1C; border-color:#FECACA; }
-        .mc-btn-danger-sm { font-size:11px; font-weight:700; color:#B91C1C; background:#FEE2E2; border:none;
+        .mc-btn-danger-sm { font-size:11px; font-weight:700; color:#fff; background:#7F1D1D; border:none;
             padding:6px 10px; border-radius:6px; cursor:pointer; }
         .mc-btn-approve-sm { font-size:11px; font-weight:700; color:${G}; background:${GL}; border:none;
             padding:6px 10px; border-radius:6px; cursor:pointer; }
@@ -1183,7 +1216,7 @@ function styles() {
         .mc-max-wrap { display:flex; flex-direction:column; gap:4px; }
         .mc-field-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
         .mc-modal-hint { font-size:13px; color:#6B7280; margin-bottom:16px; }
-        .mc-alert { background:#FEE2E2; color:#B91C1C; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+        .mc-alert { background:#7F1D1D; color:#fff; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:12px; }
         .mc-student-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f0f0f0; }
         .mc-student-id { display:block; font-size:11px; color:#9CA3AF; }
         .mc-popup-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
@@ -1201,7 +1234,7 @@ function styles() {
         .mc-popup-section { margin:12px 0; padding:12px; background:#F9FAFB; border-radius:10px; font-size:13px; }
         .mc-popup-section strong { display:block; margin-bottom:6px; color:#111; }
         .mc-popup-list { margin:0; padding-left:18px; color:#374151; }
-        .mc-popup-warn { background:#FFFBEB; color:#92400E; }
+        .mc-popup-warn { background:#B45309; color:#fff; }
         .mc-popup-warn strong { color:#B45309; }
 
         @media(max-width:768px) {
@@ -1221,6 +1254,7 @@ function styles() {
             .mc-qr-box canvas,
             .mc-qr-box img.enr-qr-canvas { width:150px; height:150px; }
             .mc-enroll-code { font-size:13px; padding:6px 12px; }
+            .mc-qr-btn { font-size:12px; padding:6px 10px; }
             .mc-sec-meta { font-size:12px; gap:5px; }
             .mc-btn-manage-people { width:40px; height:40px; }
         }
@@ -1236,8 +1270,5 @@ function applyPageBg(container) {
     }
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

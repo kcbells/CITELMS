@@ -4,6 +4,7 @@
 import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
@@ -272,7 +273,7 @@ function css() {
         border: 1.5px solid #e5e7eb; color: #6b7280; background: #fff;
         cursor: pointer; transition: all .15s;
     }
-    .lp-tab:hover  { border-color: #1B4D3E; color: #1B4D3E; background: #f0fdf4; }
+    .lp-tab:hover  { border-color: #1B4D3E; color:#fff; background:#00461B; }
     .lp-tab.active { background: #1B4D3E; color: #fff; border-color: #1B4D3E; }
 
     /* Subject group */
@@ -357,9 +358,9 @@ function css() {
     .lp-card-meta  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .lp-card-desc  { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lp-meta-chip  { font-size: 11px; font-weight: 600; color: #6b7280; background: #f3f4f6; padding: 2px 8px; border-radius: 10px; }
-    .diff-beginner     { background: #dcfce7; color: #15803d; }
-    .diff-intermediate { background: #fef3c7; color: #b45309; }
-    .diff-advanced     { background: #fee2e2; color: #b91c1c; }
+    .diff-beginner     { background:#00461B; color:#fff; }
+    .diff-intermediate { background:#B45309; color:#fff; }
+    .diff-advanced     { background:#7F1D1D; color:#fff; }
     .lp-lock-msg { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: #b45309; margin-top: 6px; }
 
     .lp-card-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
@@ -368,9 +369,9 @@ function css() {
         display: inline-flex; align-items: center; gap: 5px;
         padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
     }
-    .lp-status-badge.done   { background: #dcfce7; color: #15803d; }
+    .lp-status-badge.done   { background:#00461B; color:#fff; }
     .lp-status-badge.locked { background: #f3f4f6; color: #9ca3af; }
-    .lp-status-badge.quiz   { background: #fef3c7; color: #b45309; }
+    .lp-status-badge.quiz   { background:#B45309; color:#fff; }
     .lp-date { font-size: 11px; color: #9ca3af; }
     .lp-open-arrow { font-size: 16px; color: #1B4D3E; font-weight: 700; }
 
@@ -401,4 +402,5 @@ function css() {
     `;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

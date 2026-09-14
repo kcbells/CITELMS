@@ -7,6 +7,7 @@ import { Auth } from '../../auth.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 import { renderMaterialAttachment, bindMaterialAttachments, materialAttachmentCss } from '../../utils/material-files.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 export async function render(container) {
@@ -60,7 +61,7 @@ function renderPage(container, allAnn, subjects, filterSubject) {
             .an-filter-wrap svg { position:absolute; right:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:#6b7280; }
             .an-filter-select { width:100%; padding:9px 36px 9px 14px; border:1.5px solid #e5e7eb; border-radius:10px; font-size:13px; font-weight:600; color:#111827; background:#fff; appearance:none; -webkit-appearance:none; cursor:pointer; outline:none; transition:border-color .15s; }
             .an-filter-select:focus { border-color:#1B4D3E; box-shadow:0 0 0 3px rgba(27,77,62,.08); }
-            .an-count-chip { margin-left:auto; background:#E8F5E9; color:#1B4D3E; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
+            .an-count-chip { margin-left:auto; background:#00461B; color:#fff; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
 
             /* Cards */
             .an-list { display:flex; flex-direction:column; gap:12px; }
@@ -75,9 +76,9 @@ function renderPage(container, allAnn, subjects, filterSubject) {
             .an-badge { padding:3px 9px; border-radius:20px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
             .an-badge-subject { background:#DBEAFE; color:#1E40AF; }
             .an-badge-all     { background:#f3f4f6; color:#6b7280; }
-            .an-badge-new     { background:#E8F5E9; color:#15803D; }
-            .an-badge-urgent  { background:#FEE2E2; color:#B91C1C; }
-            .an-badge-reminder{ background:#FEF3C7; color:#B45309; }
+            .an-badge-new     { background:#00461B; color:#fff; }
+            .an-badge-urgent  { background:#7F1D1D; color:#fff; }
+            .an-badge-reminder{ background:#B45309; color:#fff; }
             .an-badge-event   { background:#EDE9FE; color:#6D28D9; }
             .an-badge-pinned  { background:#1B4D3E; color:#fff; }
 
@@ -205,4 +206,5 @@ function isNew(a) {
     return a.created_at && (Date.now() - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000;
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

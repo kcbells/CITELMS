@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let subjects = [];
@@ -44,21 +45,24 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
         <style>
             .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .page-header .count { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
-            .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; }
+            .page-header .count { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .filters { display:flex; gap:12px; margin-bottom:20px; align-items:center; flex-wrap:wrap; }
+            .filters input, .filters select { max-width:100%; box-sizing:border-box; }
+            .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+            @media (max-width:640px) { .filters input, .filters select { min-width:0; flex:1 1 100%; } }
             .filters select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:14px; background:#fff; min-width:220px; }
 
             .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
             .data-table tbody tr:nth-child(even) { background:#f9fafb; }
             .data-table tbody tr:hover { background:#f0fdf4; }
             .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
 
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; margin-right:8px; }
+            .subj-code { background:#00461B; color:#fff; padding:3px 8px; border-radius:4px; font-family:monospace; font-size:12px; font-weight:600; margin-right:8px; }
             .meta-badge { background:#f3f4f6; color:#404040; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; display:inline-block; margin-right:4px; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:capitalize; }
-            .badge-open { background:#E8F5E9; color:#1B4D3E; }
-            .badge-closed { background:#FEE2E2; color:#b91c1c; }
+            .badge-open { background:#00461B; color:#fff; }
+            .badge-closed { background:#7F1D1D; color:#fff; }
             .badge-cancelled { background:#f3f4f6; color:#737373; }
 
             .actions-cell { position:relative; }
@@ -89,7 +93,7 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             .radio-group label { display:flex; align-items:center; gap:6px; font-size:14px; cursor:pointer; }
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .alert { padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; border:1px solid #FECACA; }
+            .alert-error { background:#7F1D1D; color:#fff; border:1px solid #FECACA; }
             .batch-badge { background:#DBEAFE; color:#1E40AF; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
             .empty-state-sm { text-align:center; padding:40px; color:#737373; }
 
@@ -131,7 +135,7 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
             </select>
         </div>
 
-        <table class="data-table">
+        <div class="tbl-scroll"><table class="data-table">
             <thead><tr><th>Subject</th><th>Semester</th><th>Year Level</th><th>Units</th><th>Sections</th><th>Students</th><th>Status</th><th>Grading</th><th></th></tr></thead>
             <tbody>
                 ${offerings.length === 0 ? '<tr><td colspan="9"><div class="empty-state-sm">No offerings found</div></td></tr>' :
@@ -166,7 +170,7 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
                     </tr>
                   `).join('')}
             </tbody>
-        </table>
+        </table></div>
     `;
 
     function getFilters() {
@@ -188,7 +192,16 @@ async function renderList(container, semFilter = '', batchFilter = '', programFi
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show'));
-            container.querySelector(`[data-dropdown="${btn.dataset.id}"]`).classList.toggle('show');
+            const dd = container.querySelector(`[data-dropdown="${btn.dataset.id}"]`);
+            dd.classList.toggle('show');
+            // The table scrolls sideways on small screens, which would clip a menu
+            // anchored inside it — pin the open menu to the screen under its button.
+            if (dd.classList.contains('show')) {
+                const r = btn.getBoundingClientRect();
+                Object.assign(dd.style, { position: 'fixed', right: 'auto', zIndex: '1000', top: `${r.bottom + 4}px` });
+                dd.style.left = `${Math.max(8, Math.min(r.right - dd.offsetWidth, window.innerWidth - dd.offsetWidth - 8))}px`;
+                window.addEventListener('scroll', () => dd.classList.remove('show'), { once: true, capture: true });
+            }
         });
     });
     document.addEventListener('click', () => container.querySelectorAll('.actions-dropdown').forEach(d => d.classList.remove('show')), { once: true });
@@ -402,8 +415,5 @@ function openEditBatchModal(container, id, currentBatch, currentStatus, semFilte
     });
 }
 
-function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

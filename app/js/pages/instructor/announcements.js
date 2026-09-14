@@ -5,6 +5,7 @@ import { Api } from '../../api.js';
 import { openAnnouncementModal } from '../../components/announcement-modal.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 let subjects = [];
 let classesData = [];
 
@@ -44,8 +45,8 @@ async function renderList(container, filterSubject = '', filterStatus = '') {
             .ann-title { font-size:16px; font-weight:700; color:#111827; }
             .ann-badges { display:flex; gap:6px; flex-wrap:wrap; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-            .badge-published { background:#dcfce7; color:#16a34a; }
-            .badge-draft { background:#FEF3C7; color:#B45309; }
+            .badge-published { background:#00461B; color:#fff; }
+            .badge-draft { background:#B45309; color:#fff; }
             .badge-subject { background:#DBEAFE; color:#1E40AF; }
             .ann-content { font-size:14px; color:#374151; line-height:1.6; margin-bottom:12px; max-height:80px; overflow:hidden; }
             .ann-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
@@ -146,4 +147,5 @@ async function renderList(container, filterSubject = '', filterStatus = '') {
     });
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

@@ -5,6 +5,7 @@
 import { Api } from '../../api.js';
 import { Auth } from '../../auth.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 export async function render(container) {
     // Get instructor's classes first
     const classRes = await Api.get('/DashboardAPI.php?action=instructor');
@@ -18,7 +19,7 @@ export async function render(container) {
             .st-banner-inner { display:flex; align-items:center; justify-content:flex-end; gap:16px; flex-wrap:wrap; position:relative; z-index:1; }
             .st-banner-title { font-size:26px; font-weight:800; color:#111; margin:0 0 4px; }
             .st-banner-sub { font-size:14px; color:#6B7280; margin:0; }
-            .st-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#E8F5EC; color:#00461B; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+            .st-back-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#00461B; color:#fff; border:1px solid #E5E7EB; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
             .st-back-btn:hover { background:#d9efe0; }
 
             .st-filter-bar { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
@@ -28,12 +29,12 @@ export async function render(container) {
 
             .subject-group { margin-bottom:28px; }
             .subject-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #f1f5f9; }
-            .subj-code { background:#E8F5E9; color:#1B4D3E; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:700; font-size:13px; }
+            .subj-code { background:#00461B; color:#fff; padding:4px 10px; border-radius:6px; font-family:monospace; font-weight:700; font-size:13px; }
             .subj-name { font-size:16px; font-weight:700; color:#111827; }
             .subj-count { font-size:13px; color:#9ca3af; }
 
             .data-table { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1.5px solid #374151; }
-            .data-table th { background:#2d6a4f; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
+            .data-table th { background:#00461B; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:8px 14px; border:1px solid #155534; text-align:left; }
             .data-table tbody tr:nth-child(even) { background:#f9fafb; }
             .data-table tbody tr:hover { background:#f0fdf4; }
             .data-table td { border:1px solid #d1d5db; padding:8px 12px; vertical-align:middle; font-size:13px; color:#374151; }
@@ -47,8 +48,8 @@ export async function render(container) {
             .progress-text { font-size:12px; color:#9ca3af; }
 
             .score-badge { padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600; }
-            .score-pass { background:#dcfce7; color:#16a34a; }
-            .score-fail { background:#FEE2E2; color:#b91c1c; }
+            .score-pass { background:#00461B; color:#fff; }
+            .score-fail { background:#7F1D1D; color:#fff; }
             .score-na { background:#f1f5f9; color:#9ca3af; }
 
             .empty-state-sm { text-align:center; padding:40px; color:#9ca3af; }
@@ -164,4 +165,5 @@ export async function render(container) {
     loadStudents();
 }
 
-function esc(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+// esc() imported from classroom-ui.js (see import above)
+

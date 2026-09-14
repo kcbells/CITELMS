@@ -6,6 +6,7 @@ import { Auth } from '../../auth.js';
 import { subjectColor } from '../../utils/subject-colors.js';
 import { icon } from '../../utils/icons.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G = '#00461B';
 const G2 = '#006428';
@@ -254,8 +255,5 @@ function clamp(n) {
     return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

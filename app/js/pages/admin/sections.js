@@ -6,6 +6,7 @@ import { Api } from '../../api.js';
 import { L, icon } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
 
+import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
 let _semesters      = [];
@@ -59,7 +60,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
         <style>
             .page-header { display:flex; justify-content:flex-end; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
             .page-header h2 { font-size:22px; font-weight:700; color:#262626; }
-            .count-badge { background:#E8F5E9; color:#1B4D3E; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
+            .count-badge { background:#00461B; color:#fff; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; margin-left:8px; }
             .btn-primary { background:#00461B; color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:600; font-size:14px; cursor:pointer; transition:all .2s; }
             .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,70,27,.3); }
 
@@ -87,8 +88,8 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .enrollment-code { background:#1B4D3E; color:#fff; padding:6px 12px; border-radius:8px; font-family:monospace; font-size:14px; font-weight:700; letter-spacing:1px; cursor:pointer; }
             .enrollment-code:hover { background:#006428; }
             .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-            .badge-active { background:#E8F5E9; color:#1B4D3E; }
-            .badge-inactive { background:#FEE2E2; color:#b91c1c; }
+            .badge-active { background:#00461B; color:#fff; }
+            .badge-inactive { background:#7F1D1D; color:#fff; }
 
             .kebab-wrap { position:relative; }
             .btn-kebab { width:32px; height:32px; border-radius:8px; border:1px solid #e8e8e8; background:#fff; cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center; color:#737373; line-height:1; }
@@ -107,8 +108,8 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .section-ctx { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
             .ctx-pill { padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; }
             .ctx-sem  { background:#DBEAFE; color:#1E40AF; }
-            .ctx-prog { background:#E8F5E9; color:#1B4D3E; }
-            .ctx-year { background:#FEF3C7; color:#B45309; }
+            .ctx-prog { background:#00461B; color:#fff; }
+            .ctx-year { background:#B45309; color:#fff; }
 
             .subjects-block { border-top:1px solid #f0f0f0; padding-top:12px; }
             .subjects-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
@@ -118,7 +119,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
 
             .subj-row { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #fafafa; }
             .subj-row:last-child { border-bottom:none; }
-            .subj-code-tag { background:#E8F5E9; color:#1B4D3E; padding:2px 7px; border-radius:4px; font-family:monospace; font-size:11px; font-weight:700; flex-shrink:0; margin-top:2px; }
+            .subj-code-tag { background:#00461B; color:#fff; padding:2px 7px; border-radius:4px; font-family:monospace; font-size:11px; font-weight:700; flex-shrink:0; margin-top:2px; }
             .subj-info { flex:1; min-width:0; }
             .subj-name { font-size:13px; font-weight:600; color:#262626; }
             .subj-detail { font-size:11px; color:#737373; margin-top:2px; display:flex; gap:8px; flex-wrap:wrap; }
@@ -126,7 +127,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .btn-remove-subj:hover { background:#fef2f2; }
             .btn-edit-subj { width:22px; height:22px; border-radius:5px; border:1px solid #e8e8e8; background:#fff; color:#737373; cursor:pointer; font-size:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; margin-top:2px; }
             .btn-edit-subj:hover { background:#f5f5f5; border-color:#ccc; }
-            .no-sched { font-size:10px; color:#d97706; background:#FEF3C7; padding:1px 5px; border-radius:3px; }
+            .no-sched { font-size:10px; color:#fff; background:#B45309; padding:1px 5px; border-radius:3px; }
             .bm-row:hover { background:#f9fafb; }
             .bm-chk { width:16px; height:16px; cursor:pointer; accent-color:#1B4D3E; flex-shrink:0; }
             .no-subjects { font-size:13px; color:#9ca3af; text-align:center; padding:12px 0; }
@@ -149,7 +150,7 @@ async function renderList(container, semesterId = '', programId = '', deptId = '
             .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
             .btn-secondary { background:#f5f5f5; color:#404040; border:1px solid #e0e0e0; padding:9px 18px; border-radius:8px; font-weight:500; cursor:pointer; font-size:14px; }
             .alert { padding:10px 16px; border-radius:8px; margin-bottom:12px; font-size:13px; }
-            .alert-error { background:#FEE2E2; color:#b91c1c; }
+            .alert-error { background:#7F1D1D; color:#fff; }
             .empty-state { text-align:center; padding:60px 20px; color:#737373; }
             .copied-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1B4D3E; color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:9999; }
             @media(max-width:768px) { .sections-grid { grid-template-columns:1fr; } .form-row { grid-template-columns:1fr; } .workflow-banner { gap:6px; } }
@@ -575,14 +576,14 @@ async function openBulkSubjectModal(container, sectionId, currentFilters = {}) {
                    ${s.offerings.map(o => `<option value="${o.id}">${esc(o.name || 'No instructor')}</option>`).join('')}
                </select>`
             : s.offerings[0].name
-                ? `<span style="font-size:11px;color:#1B4D3E;background:#E8F5E9;padding:2px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;">${icon('user', inl)} ${esc(s.offerings[0].name)}</span>`
+                ? `<span style="font-size:11px;color:#fff; background:#00461B;padding:2px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;">${icon('user', inl)} ${esc(s.offerings[0].name)}</span>`
                 : `<span style="font-size:11px;color:#9ca3af;flex-shrink:0">No instructor</span>`;
 
         return `<div class="bm-row" data-code="${esc(s.subject_code)}" data-name="${esc(s.subject_name)}"
                      style="display:flex;align-items:center;gap:10px;padding:11px 20px;border-bottom:1px solid #f5f5f5;transition:background .1s;">
                     <input type="checkbox" class="bm-chk" value="${s.subject_id}"
                            style="width:16px;height:16px;cursor:pointer;accent-color:#1B4D3E;flex-shrink:0;">
-                    <span style="background:#E8F5E9;color:#1B4D3E;padding:2px 7px;border-radius:4px;font-family:monospace;font-size:11px;font-weight:700;flex-shrink:0;">${esc(s.subject_code)}</span>
+                    <span style="background:#00461B; color:#fff;padding:2px 7px;border-radius:4px;font-family:monospace;font-size:11px;font-weight:700;flex-shrink:0;">${esc(s.subject_code)}</span>
                     <span style="flex:1;font-size:13px;font-weight:500;color:#262626;min-width:0;">${esc(s.subject_name)}</span>
                     ${instrHtml}
                 </div>`;
@@ -780,10 +781,10 @@ async function openManageStudentsModal(container, sectionId, sectionName) {
                                 ${st.subjects.map(subj => `
                                     <div style="display:flex;justify-content:space-between;align-items:center;background:#fafafa;border-radius:7px;padding:8px 10px;">
                                         <span style="font-size:12px;color:#555;">
-                                            <span style="background:#E8F5E9;color:#1B4D3E;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">${esc(subj.subject_code)}</span>
+                                            <span style="background:#00461B; color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">${esc(subj.subject_code)}</span>
                                             ${esc(subj.subject_name)}
                                         </span>
-                                        <button class="btn-unenroll" data-ssid="${subj.student_subject_id}" data-stid="${st.user_student_id}" style="padding:4px 10px;font-size:11px;font-weight:700;color:#b91c1c;background:#FEE2E2;border:none;border-radius:6px;cursor:pointer;">Unenroll</button>
+                                        <button class="btn-unenroll" data-ssid="${subj.student_subject_id}" data-stid="${st.user_student_id}" style="padding:4px 10px;font-size:11px;font-weight:700;color:#fff; background:#7F1D1D;border:none;border-radius:6px;cursor:pointer;">Unenroll</button>
                                     </div>
                                 `).join('')}
                             </div>
@@ -819,8 +820,5 @@ async function openManageStudentsModal(container, sectionId, sectionName) {
     });
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+

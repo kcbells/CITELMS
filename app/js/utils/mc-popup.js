@@ -1,3 +1,4 @@
+import { esc } from './classroom-ui.js';
 /**
  * In-app modal popups (replaces browser alert/confirm in instructor flows).
  */
@@ -25,11 +26,8 @@ function injectStyles() {
     document.head.appendChild(style);
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 export function showMcPopup(message, { title = 'Notice', type = 'info', onClose } = {}) {
     injectStyles();

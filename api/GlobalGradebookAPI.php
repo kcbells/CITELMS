@@ -14,6 +14,7 @@ require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/SemesterArchiveHelper.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -294,6 +295,15 @@ function handleSaveField(): void
     $allowed = ['soc1', 'soc2', 'lets_practice', 'lets_practice_optional', 'reflection', 'wrap_up_quiz'];
     if (!$offeredId || !$studentId || $modNum < 1 || $modNum > 14 || !in_array($field, $allowed)) {
         echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        return;
+    }
+
+    // A gradebook from an archived semester is the academic record for a term
+    // that's already closed — it stays readable, but an edit needs an admin to
+    // unlock that semester first.
+    if (areGradesLockedForOffering($offeredId)) {
+        echo json_encode(['success' => false, 'message' =>
+            'This semester has been archived, so its grades are locked. Ask an admin to unlock it if a correction is needed.']);
         return;
     }
 

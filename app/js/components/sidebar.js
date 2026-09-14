@@ -9,34 +9,22 @@ import { Auth } from '../auth.js';
 import { Api, BASE_URL } from '../api.js';
 import { subjectColor } from '../utils/subject-colors.js';
 
-// Google Material Symbols name per legacy icon key
-const MS_ICONS = {
+import { esc } from '../utils/classroom-ui.js';
+import { icon } from '../utils/icons.js';
+
+// Menu entries use legacy icon keys; map the few that differ onto the shared
+// Lucide set in icons.js, so the sidebar matches the icons used on every page.
+const NAV_ICON_KEYS = {
     dashboard: 'home',
-    building:  'apartment',
-    user:      'person',
-    users:     'group',
-    settings:  'settings',
-    messages:  'chat',
-    book:      'menu_book',
-    clipboard: 'assignment',
-    gradebook: 'grading',
-    chart:     'bar_chart',
-    bank:      'library_books',
-    archive:   'archive',
-    school:    'school',
-    calendar:  'calendar_month',
-    upload:    'upload_file',
+    upload:    'fileUp',
 };
 
-function msIcon(name) {
-    return `<span class="material-symbols-outlined">${MS_ICONS[name] || 'circle'}</span>`;
+function navIcon(name, size = 18) {
+    return icon(NAV_ICON_KEYS[name] || name, { size }) || icon('folder', { size });
 }
 
-function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str ?? '';
-    return d.innerHTML;
-}
+// esc() imported from classroom-ui.js (see import above)
+
 
 const menus = {
     admin: [
@@ -78,6 +66,7 @@ const menus = {
         ]},
         { items: [
             { icon: 'chart', text: 'Reports', page: 'sections', permission: null },
+            { icon: 'archive', text: 'Archive', page: 'archive', permission: null },
         ]},
         { items: [
             { icon: 'user', text: 'Manage Faculty', page: 'instructors', permission: null },
@@ -100,6 +89,7 @@ const menus = {
         ]},
         { items: [
             { icon: 'chart', text: 'Reports', page: 'sections', permission: null },
+            { icon: 'archive', text: 'Archive', page: 'archive', permission: null },
         ]},
         { items: [
             { icon: 'gradebook', text: 'Gradebook', page: 'gradebook', permission: null },
@@ -150,7 +140,12 @@ const menus = {
     ],
 };
 
-const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed';
+// The collapsible icon rail was removed: on phones it turned the drawer into a
+// 68px strip with no labels. Clear the leftover preference and strip the classes
+// from anyone who still has them applied from a previous visit.
+try { localStorage.removeItem('sidebar_collapsed'); } catch (_) {}
+document.querySelector('.sidebar')?.classList.remove('sidebar--collapsed');
+document.querySelector('.main-content')?.classList.remove('sidebar--collapsed-ml');
 
 function groupOpenKey(role, key) {
     return `nav_open_${role}_${key}`;
@@ -192,27 +187,10 @@ export function renderSidebar(container) {
     let currentPage = (window.location.hash.replace('#', '').split('/')[1] || 'dashboard').split('?')[0];
     if (role === 'student' && currentPage === 'quizzes') currentPage = 'my-subjects';
 
-    // Restore collapsed state
-    const isCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
-    if (isCollapsed) {
-        container.closest('.sidebar')?.classList.add('sidebar--collapsed');
-        document.querySelector('.main-content')?.classList.add('sidebar--collapsed-ml');
-    } else {
-        container.closest('.sidebar')?.classList.remove('sidebar--collapsed');
-        document.querySelector('.main-content')?.classList.remove('sidebar--collapsed-ml');
-    }
-
     const currentHash = window.location.hash.split('#')[1] || '';
 
     let html = `
         <div class="sidebar-header">
-            <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
-                    <line x1="3" y1="12" x2="21" y2="12"/>
-                    <line x1="3" y1="6"  x2="21" y2="6"/>
-                    <line x1="3" y1="18" x2="21" y2="18"/>
-                </svg>
-            </button>
             <a href="#${role}/dashboard" class="logo">
                 <img src="${BASE_URL}/assets/images/app-icon.png" alt="PHINMA Education" class="logo-img">
                 <span class="logo-text">PHINMA Cagayan de Oro College - Carmen</span>
@@ -241,7 +219,7 @@ export function renderSidebar(container) {
                         return `
                             <a href="#${role}/${child.page}" class="nav-item nav-subitem ${active ? 'active' : ''}"
                                data-page="${child.page}" data-tooltip="${child.text}">
-                                <span class="nav-sub-ico material-symbols-outlined">${MS_ICONS[child.icon] || 'circle'}</span>
+                                <span class="nav-sub-ico">${navIcon(child.icon, 16)}</span>
                                 <span class="nav-text">${child.text}</span>
                             </a>`;
                     }).join('');
@@ -256,13 +234,13 @@ export function renderSidebar(container) {
                     subHtml = `
                         <a href="#${role}/${listPage}" class="nav-item nav-subitem ${listActive ? 'active' : ''}"
                            data-page="${listPage}" data-tooltip="All Subjects">
-                            <span class="nav-sub-ico material-symbols-outlined">grid_view</span>
+                            <span class="nav-sub-ico">${navIcon('dashboard', 16)}</span>
                             <span class="nav-text">All Subjects</span>
                         </a>
                         <div class="nav-sub-dynamic" data-subjects-dropdown></div>
                         <a href="#${archHref}" class="nav-item nav-subitem ${archActive ? 'active' : ''}"
                            data-page="${listPage}" data-tooltip="Archived">
-                            <span class="nav-sub-ico material-symbols-outlined">archive</span>
+                            <span class="nav-sub-ico">${navIcon('archive', 16)}</span>
                             <span class="nav-text">Archived</span>
                         </a>`;
                 }
@@ -270,9 +248,9 @@ export function renderSidebar(container) {
                 html += `
                     <div class="nav-group ${open ? 'open' : ''}">
                         <button type="button" class="nav-item nav-group-toggle" data-group-key="${item.key}" data-tooltip="${item.text}">
-                            <span class="nav-icon">${msIcon(item.icon)}</span>
+                            <span class="nav-icon">${navIcon(item.icon)}</span>
                             <span class="nav-text">${item.text}</span>
-                            <span class="nav-group-caret material-symbols-outlined">expand_more</span>
+                            <span class="nav-group-caret">${icon('chevronDown', { size: 16 })}</span>
                         </button>
                         <div class="nav-sub">${subHtml}</div>
                     </div>`;
@@ -296,7 +274,7 @@ export function renderSidebar(container) {
 
             html += `
                 <a href="#${fullPage}" class="nav-item ${isActive ? 'active' : ''}" data-page="${item.page}" data-tooltip="${item.text}">
-                    <span class="nav-icon">${msIcon(item.icon)}</span>
+                    <span class="nav-icon">${navIcon(item.icon)}</span>
                     <span class="nav-text">${item.text}</span>
                     ${badgeHtml}
                 </a>
@@ -312,15 +290,6 @@ export function renderSidebar(container) {
     `;
 
     container.innerHTML = html;
-
-    // Sidebar collapse toggle
-    document.getElementById('sidebar-collapse-btn')?.addEventListener('click', () => {
-        const sidebar = container.closest('.sidebar');
-        const mainContent = document.querySelector('.main-content');
-        const collapsed = sidebar?.classList.toggle('sidebar--collapsed');
-        mainContent?.classList.toggle('sidebar--collapsed-ml', collapsed);
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
-    });
 
     // Dropdown group toggles — one open at a time: opening a group closes
     // any other currently-open group (e.g. a role with both "My Subjects"

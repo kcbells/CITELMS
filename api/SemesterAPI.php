@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/SemesterArchiveHelper.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -23,6 +24,30 @@ switch ($action) {
     case 'delete':     handleDelete();     break;
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+// ─── Archive whatever semester is being switched away from ────────────────
+// Called immediately BEFORE the outgoing semester is flipped to 'inactive',
+// so its lesson materials, quizzes and announcements are captured and its
+// gradebook frozen. See helpers/SemesterArchiveHelper.php for what each kind
+// of content does. Never blocks the switch: if archiving fails it's logged and
+// the semester change still goes through, since leaving the school unable to
+// start a new term would be the worse failure.
+function archiveOutgoingActiveSemesters(?int $exceptSemesterId): void
+{
+    $sql    = "SELECT semester_id FROM semester WHERE status = 'active'";
+    $params = [];
+    if ($exceptSemesterId) {
+        $sql .= " AND semester_id != ?";
+        $params[] = $exceptSemesterId;
+    }
+    foreach (db()->fetchAll($sql, $params) as $row) {
+        try {
+            archiveSemester((int)$row['semester_id'], Auth::id());
+        } catch (Throwable $e) {
+            error_log('SemesterAPI: archiving semester ' . $row['semester_id'] . ' failed: ' . $e->getMessage());
+        }
+    }
 }
 
 // ─── Auto-activate semester by today's date ───────────────────────────────
@@ -55,6 +80,11 @@ function autoActivateSemester() {
 
 function handleList() {
     autoActivateSemester();
+    // Catches terms that simply ran out (1st sem, 2nd sem, summer) rather than
+    // waiting for someone to switch the active semester by hand. This action is
+    // hit on dashboard loads, so it runs often enough to be dependable without
+    // needing a cron job. It's a no-op once a semester is already archived.
+    archiveEndedSemesters();
 
     // GROUP BY deduplicates rows from old migrations that ran multiple times.
     // Promotes 'active' status if any duplicate has it; keeps MIN semester_id.
@@ -121,8 +151,9 @@ function handleCreate() {
         return;
     }
 
-    // If setting as active, deactivate others
+    // If setting as active, archive then deactivate whatever was active before
     if ($status === 'active') {
+        archiveOutgoingActiveSemesters(null);
         pdo()->prepare("UPDATE semester SET status = 'inactive' WHERE status = 'active'")->execute([]);
     }
 
@@ -162,8 +193,9 @@ function handleUpdate() {
         return;
     }
 
-    // If setting as active, deactivate all others first
+    // If setting as active, archive then deactivate all others first
     if ($status === 'active') {
+        archiveOutgoingActiveSemesters($id);
         pdo()->prepare("UPDATE semester SET status = 'inactive' WHERE status = 'active' AND semester_id != ?")->execute([$id]);
     }
 
