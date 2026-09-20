@@ -12,10 +12,14 @@
 
 import { getTabLease } from './utils/tab-lease-store.js';
 
-// Auto-detect project folder from URL (works for /COC_LMS(2), /COC-LMS, etc.)
+// Derive the project root from this module's own URL rather than from the page
+// path: this file is always served as <base>/app/js/api.js, so stripping that
+// suffix gives the real base no matter what the project folder is called, how
+// deep the current page sits, or whether the app is served from the web root
+// (in which case the base is an empty string).
 function detectBaseUrl() {
-    const match = window.location.pathname.match(/^\/([^/]+)/);
-    return match ? '/' + match[1] : '/COC-LMS';
+    const here = new URL(import.meta.url).pathname;
+    return here.replace(/\/app\/js\/api\.js$/, '');
 }
 
 const BASE_URL = detectBaseUrl();
@@ -199,7 +203,9 @@ export const Api = {
             if (!superseded) {
                 localStorage.removeItem('jwt_token');
             }
-            const onLandingPage = /\/index\.html$|\/COC_LMS\(2\)\/?$/i.test(window.location.pathname);
+            const landingPage = (BASE_URL + '/index.html').toLowerCase();
+            const here = window.location.pathname.toLowerCase();
+            const onLandingPage = here === landingPage || here === BASE_URL.toLowerCase() + '/' || here === BASE_URL.toLowerCase();
             if (!onLandingPage) {
                 window.location.href = BASE_URL + '/index.html';
             }

@@ -648,7 +648,16 @@ function addTopbarStyles() {
         .topbar-user-role { font-size: 12px; color: var(--gray-500); }
         .dropdown-arrow { font-size: 10px; color: var(--gray-400); margin-left: 4px; }
         .user-dropdown { width: 200px; }
-        @media (max-width: 768px) { .topbar-user-info, .dropdown-arrow { display: none; } }
+        /* Below 768px the name and caret are hidden, so .topbar-user's 12px
+           side padding was reserving 24px for a label that is not rendered —
+           width the topbar cannot spare on a 360px phone. This override lives
+           here rather than in style.css because this <style> is injected into
+           the head at runtime, i.e. after the stylesheet, and would otherwise
+           win on source order. */
+        @media (max-width: 768px) {
+            .topbar-user-info, .dropdown-arrow { display: none; }
+            .topbar-user { padding: 0; gap: 0; }
+        }
     `;
     document.head.appendChild(style);
 }

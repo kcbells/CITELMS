@@ -132,7 +132,7 @@ export function curriculumTableCss() {
         }
         .gc-th-info::after {
             content:''; position:absolute; top:0; bottom:0; left:100%;
-            width:14px; background:${G};
+            width:2px; background:${G};
         }
         .gc-cur-table .td-name {
             position:sticky; left:0; z-index:2;
@@ -142,10 +142,30 @@ export function curriculumTableCss() {
         }
         .gc-cur-table .td-name::after {
             content:''; position:absolute; top:0; bottom:0; left:100%;
-            width:14px; background:#fff;
+            width:2px; background:#fff;
         }
         .gc-cur-table tbody tr:nth-child(even) .td-name { background:#f9fafb; }
         .gc-cur-table tbody tr:hover .td-name { background:#f0fdf4; }
+
+        /* ── Why the frozen column is dropped on phones ──────────────────────
+           A sticky cell with left:0 pins to the SCROLL CONTAINER's left edge, not
+           to its own column. In every table using this CSS the Name is the
+           THIRD column (after # and Student ID), so the pinned cell detaches
+           from its column and parks on top of the two beside it — which is why
+           the rank and student ID are never visible and the name looks like it
+           is covering whatever scrolls past. On a 360px phone the 160px frozen
+           cell also swallows nearly half the usable width. Until the whole
+           identity group (#, Student ID, Name) is pinned as one contiguous
+           block, not freezing is the honest behaviour: every column lines up
+           with its own header and the full width stays scrollable. */
+        @media (max-width: 640px) {
+            .gc-th-info,
+            .gc-cur-table .td-name {
+                position:static; width:auto; box-shadow:none;
+            }
+            .gc-th-info::after,
+            .gc-cur-table .td-name::after { content:none; }
+        }
         .gc-cur-table .td-pass { text-align:center; }
         .gc-cur-badge-pass { font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:#E6F4EA; color:#137333; }
         .gc-cur-badge-fail { font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:#FCE8E6; color:#C5221F; }

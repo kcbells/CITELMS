@@ -1,5 +1,9 @@
 /**
  * Floating Join Subject panel — student only (Messenger-style)
+ *
+ * The bubble can be dragged anywhere on screen and stays where it was parked.
+ * Because of that the panel can no longer be a simple bottom/right child of
+ * the root — see placePanel().
  */
 import { enrollmentFormStyles, mountEnrollmentForm } from '../utils/enrollment-ui.js';
 import { icon } from '../utils/icons.js';
@@ -7,9 +11,26 @@ import { icon } from '../utils/icons.js';
 const G = '#00461B';
 const G2 = '#006428';
 
+/** Where the user parked the bubble. Survives navigation and reloads. */
+const POS_KEY = 'sef_fab_pos';
+/** How far the pointer must travel before a press counts as a drag, not a tap. */
+const DRAG_SLOP = 6;
+/** Keeps the bubble clear of the screen edges. */
+const EDGE = 8;
+/** Keeps the panel clear of the screen edges. */
+const GUTTER = 16;
+/** Space between the bubble and the panel. */
+const GAP = 10;
+
 let rootEl = null;
 let isOpen = false;
 let formApi = null;
+let drag = null;
+let suppressClick = false;
+let panelObserver = null;
+let rafId = 0;
+
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 function getEl(id) {
     return rootEl?.querySelector('#' + id) ?? null;
@@ -20,6 +41,7 @@ function expand(skipReset = false) {
     rootEl?.classList.add('sef-open');
     getEl('sef-panel')?.setAttribute('aria-hidden', 'false');
     if (!skipReset) formApi?.resetForm();
+    placePanel();
 }
 
 function minimize() {
@@ -43,6 +65,158 @@ function onEnrollSuccess() {
     }
 }
 
+/* ── Panel placement ─────────────────────────────────────────────────────────
+ * The panel used to hang off the root at `bottom: 72px; right: 0`, which only
+ * ever works while the root is pinned to the bottom-right corner. Now that the
+ * bubble can be parked anywhere, the panel is positioned in viewport
+ * coordinates instead: it sits above the bubble when there is room and drops
+ * below it when there is not, and both axes are clamped so no edge can leave
+ * the screen. The CSS keeps a sane corner default for the moment before this
+ * first runs.
+ * ─────────────────────────────────────────────────────────────────────────── */
+function placePanel() {
+    const panel = getEl('sef-panel');
+    const fab = getEl('sef-fab');
+    if (!panel || !fab || !isOpen) return;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const f = fab.getBoundingClientRect();
+
+    const width = Math.min(360, vw - GUTTER * 2);
+    const height = panel.offsetHeight;
+
+    // Line the panel's right edge up with the bubble's, then pull it back on
+    // screen if that pushed it past either side.
+    const left = clamp(f.right - width, GUTTER, vw - width - GUTTER);
+
+    const above = f.top - GAP - height;
+    const below = f.bottom + GAP;
+    const openDown = above < GUTTER && below + height <= vh - GUTTER;
+    const top = clamp(openDown ? below : above, GUTTER, vh - height - GUTTER);
+
+    panel.style.position = 'fixed';
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.width = width + 'px';
+    panel.style.maxWidth = 'none';
+    // Make the pop animation grow out of the bubble wherever it happens to be.
+    panel.style.transformOrigin =
+        (f.left + f.width / 2 - left) + 'px ' + (openDown ? 0 : height) + 'px';
+}
+
+/* ── Dragging ─────────────────────────────────────────────────────────────── */
+
+/** Move the bubble, keeping it fully on screen. */
+function moveTo(x, y) {
+    const fab = getEl('sef-fab');
+    if (!rootEl || !fab) return;
+    // The panel is position:fixed, so the root's box is just the bubble's.
+    const w = fab.offsetWidth;
+    const h = fab.offsetHeight;
+    rootEl.style.left = clamp(x, EDGE, window.innerWidth - w - EDGE) + 'px';
+    rootEl.style.top = clamp(y, EDGE, window.innerHeight - h - EDGE) + 'px';
+    rootEl.style.right = 'auto';
+    rootEl.style.bottom = 'auto';
+}
+
+function savePos() {
+    if (!rootEl) return;
+    try {
+        const r = rootEl.getBoundingClientRect();
+        localStorage.setItem(POS_KEY, JSON.stringify({ x: r.left, y: r.top }));
+    } catch { /* storage blocked (private mode) — the spot just will not persist */ }
+}
+
+function restorePos() {
+    let saved = null;
+    try {
+        saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+    } catch { /* ignore */ }
+    if (typeof saved?.x !== 'number' || typeof saved?.y !== 'number') return;
+    moveTo(saved.x, saved.y);
+}
+
+function onPointerDown(e) {
+    if (e.button > 0) return;
+    const fab = getEl('sef-fab');
+    if (!fab) return;
+    // Clear any flag left over from a drag whose click never arrived, so a
+    // stale suppression cannot eat this gesture's tap.
+    suppressClick = false;
+    const r = fab.getBoundingClientRect();
+    drag = {
+        id: e.pointerId,
+        offX: e.clientX - r.left,
+        offY: e.clientY - r.top,
+        x0: e.clientX,
+        y0: e.clientY,
+        x: r.left,
+        y: r.top,
+        moved: false,
+    };
+    fab.setPointerCapture?.(e.pointerId);
+}
+
+function onPointerMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < DRAG_SLOP) return;
+    if (!drag.moved) {
+        drag.moved = true;
+        rootEl?.classList.add('sef-dragging');
+    }
+    drag.x = e.clientX - drag.offX;
+    drag.y = e.clientY - drag.offY;
+    // Coalesce pointermove bursts into one write per frame.
+    if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+            rafId = 0;
+            if (!drag) return;
+            moveTo(drag.x, drag.y);
+            placePanel();
+        });
+    }
+}
+
+function endDrag(e, cancelled = false) {
+    if (!drag || e.pointerId !== drag.id) return;
+    getEl('sef-fab')?.releasePointerCapture?.(e.pointerId);
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+    }
+    if (drag.moved) {
+        moveTo(drag.x, drag.y);
+        placePanel();
+        savePos();
+        // A click fires right after the drag ends; swallow it so parking the
+        // bubble does not also open the panel.
+        if (!cancelled) suppressClick = true;
+    }
+    rootEl?.classList.remove('sef-dragging');
+    drag = null;
+}
+
+function onFabClick() {
+    if (suppressClick) {
+        suppressClick = false;
+        return;
+    }
+    toggle();
+}
+
+function onWindowResize() {
+    // Only re-clamp if the bubble has actually been dragged; otherwise the CSS
+    // corner default is still in charge and should stay that way.
+    if (rootEl?.style.left) {
+        const r = rootEl.getBoundingClientRect();
+        moveTo(r.left, r.top);
+    }
+    placePanel();
+}
+
 function injectStyles() {
     if (document.getElementById('sef-styles')) return;
     const style = document.createElement('style');
@@ -61,19 +235,32 @@ function injectStyles() {
             box-shadow: 0 6px 28px rgba(0,0,0,.18);
             display: flex; align-items: center; justify-content: center;
             transition: transform .2s, box-shadow .2s;
+            /* Without this the browser claims the touch for scrolling and no
+               pointermove ever reaches the drag handler. */
+            touch-action: none;
+            user-select: none; -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .sef-fab:hover { transform: scale(1.05); box-shadow: 0 8px 32px rgba(0,0,0,.24); }
-        .sef-fab svg { width: 28px; height: 28px; }
+        .sef-fab svg { width: 28px; height: 28px; pointer-events: none; }
+        #sef-root.sef-dragging .sef-fab {
+            cursor: grabbing; transform: scale(1.1);
+            box-shadow: 0 12px 36px rgba(0,0,0,.3);
+            transition: none;
+        }
+        /* Corner default only — placePanel() takes over in viewport
+           coordinates as soon as the panel is opened. */
         .sef-panel {
-            position: absolute; bottom: 72px; right: 0;
+            position: fixed; bottom: 96px; right: 16px;
             width: 360px; max-width: calc(100vw - 32px);
             background: #fff; border-radius: 16px;
             box-shadow: 0 12px 48px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.06);
             display: none; flex-direction: column; overflow: hidden;
-            transform-origin: bottom right;
             animation: sef-pop .22s ease;
         }
         #sef-root.sef-open .sef-panel { display: flex; }
+        /* The panel must not jump around under the finger mid-drag. */
+        #sef-root.sef-dragging .sef-panel { animation: none; }
         @keyframes sef-pop {
             from { opacity: 0; transform: scale(.92) translateY(8px); }
             to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -96,15 +283,28 @@ function injectStyles() {
         .sef-body { padding: 18px 16px 20px; overflow-y: auto; max-height: min(420px, calc(100vh - 200px)); }
         @media (max-width: 640px) {
             #sef-root { bottom: 16px; right: 88px; }
-            .sef-panel { bottom: 68px; width: calc(100vw - 32px); }
         }
     `;
     document.head.appendChild(style);
 }
 
 function bindEvents() {
-    getEl('sef-fab')?.addEventListener('click', toggle);
+    const fab = getEl('sef-fab');
+    fab?.addEventListener('click', onFabClick);
+    fab?.addEventListener('pointerdown', onPointerDown);
+    fab?.addEventListener('pointermove', onPointerMove);
+    fab?.addEventListener('pointerup', endDrag);
+    fab?.addEventListener('pointercancel', (e) => endDrag(e, true));
     getEl('sef-close')?.addEventListener('click', minimize);
+    window.addEventListener('resize', onWindowResize);
+
+    // The panel grows and shrinks as the form moves between steps (code entry →
+    // class preview → section picker); keep it anchored to the bubble as it does.
+    const panel = getEl('sef-panel');
+    if (panel && typeof ResizeObserver !== 'undefined') {
+        panelObserver = new ResizeObserver(() => placePanel());
+        panelObserver.observe(panel);
+    }
 }
 
 export function mountStudentEnrollFab() {
@@ -124,17 +324,27 @@ export function mountStudentEnrollFab() {
             </div>
             <div class="sef-body enr-body" id="sef-body"></div>
         </div>
-        <button type="button" class="sef-fab" id="sef-fab" aria-label="Join subject" title="Join Subject">
+        <button type="button" class="sef-fab" id="sef-fab" aria-label="Join subject" title="Join Subject — drag to move">
             ${icon('plus', { size: 28 })}
         </button>
     `;
 
     document.body.appendChild(rootEl);
     bindEvents();
+    restorePos();
     formApi = mountEnrollmentForm(getEl('sef-body'), { onSuccess: onEnrollSuccess });
 }
 
 export function unmountStudentEnrollFab() {
+    window.removeEventListener('resize', onWindowResize);
+    panelObserver?.disconnect();
+    panelObserver = null;
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+    }
+    drag = null;
+    suppressClick = false;
     rootEl?.remove();
     rootEl = null;
     isOpen = false;

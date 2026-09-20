@@ -1,7 +1,7 @@
 /**
  * Class composer — announcement modal + upload-lesson modal triggered from a compose bar.
  */
-import { Api } from '../api.js';
+import { Api, BASE_URL } from '../api.js';
 import { icon } from '../utils/icons.js';
 
 import { esc } from '../utils/classroom-ui.js';
@@ -337,8 +337,7 @@ async function loadStudentPicker(root, pfx, subjectId) {
 }
 
 function detectApiBase() {
-    const m = window.location.pathname.match(/^\/([^/]+)/);
-    return (m ? '/' + m[1] : '') + '/api';
+    return BASE_URL + '/api';
 }
 
 function wireAudiencePanel(root, pfx, subjectId) {

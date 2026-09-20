@@ -1,7 +1,7 @@
 <?php
 /**
  * One-time Gmail SMTP setup for COC-LMS.
- * Open in browser: http://localhost/COC_LMS(2)/tools/mail-setup.php
+ * Open in browser: http://localhost/CITELMS/tools/mail-setup.php
  * Localhost only — saves config/email.local.php and sends a test email.
  */
 declare(strict_types=1);

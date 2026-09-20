@@ -67,7 +67,10 @@ export function groupStudentSubmissions(files) {
             });
         }
         const g = map.get(key);
-        g.files.push(f);
+        // file_id === null marks a turn-in carrying no attachment (see
+        // getSubmissions in ClassroomAPI.php) — it still counts as a
+        // submission, there is just nothing to link to.
+        if (f.file_id != null) g.files.push(f);
         if (f.submitted_at && (!g.submitted_at || f.submitted_at < g.submitted_at)) {
             g.submitted_at = f.submitted_at;
         }
@@ -93,7 +96,7 @@ export function renderStudentSubmissionRow(group, index) {
                     <span class="gc-work-attach-name">${esc(name)}</span>
                 </span>
             </a>`;
-    }).join('');
+    }).join('') || `<p class="gc-work-attach-none" style="margin:4px 0;font-size:12px;color:#6B7280;font-style:italic;">Turned in with no attachment</p>`;
 
     return `
         <article class="gc-student-submission">
@@ -133,7 +136,7 @@ export function renderDetailSubmissionRow(group, index, totalPoints) {
                 </div>
                 ${pointsEarned !== '' ? `<span class="gc-sub-row-grade-badge">${pointsEarned}${totalPoints != null ? '/' + totalPoints : ''} pts</span>` : ''}
             </div>
-            ${filesHtml ? `<div class="gc-sub-row-files">${filesHtml}</div>` : ''}
+            <div class="gc-sub-row-files">${filesHtml || `<p class="gc-work-attach-none" style="margin:4px 0;font-size:12px;color:#6B7280;font-style:italic;">Turned in with no attachment</p>`}</div>
             <div class="gc-sub-row-grade-row">
                 <input type="number" class="gc-sub-grade-input" min="0"
                     ${totalPoints != null ? `max="${totalPoints}"` : ''}

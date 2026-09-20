@@ -76,6 +76,12 @@
 
 html {
     scroll-behavior: smooth;
+    /* Chrome on Android "font boosts" text inside wide blocks, inflating sizes
+       well past what the CSS asks for. DevTools device emulation does NOT do
+       this, which is why a layout can look right on the laptop and wrong on the
+       actual phone. Pinning the adjust to 100% makes the two agree. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 /* A <select> is as wide as its longest option; cap it so a long subject or
@@ -1432,6 +1438,17 @@ tr:last-child td {
     
     .topbar {
         padding: 0 16px;
+    }
+
+    /* At 42px per button + 16px gaps the row needs 368px of topbar before it
+       runs out of room. A 414px DevTools frame has 46px to spare, but a real
+       360px Android viewport is 8px SHORT: space-between then has no free space
+       to distribute, so the icons pack tight and the last one is pushed against
+       (or past) the right edge. Trimming the gap and the user chip's dead
+       padding brings the minimum to 320px, so every phone keeps a real gap
+       after the hamburger instead of collapsing. */
+    .topbar-right {
+        gap: 10px;
     }
     
     .page-title {

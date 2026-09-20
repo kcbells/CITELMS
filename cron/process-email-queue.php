@@ -6,7 +6,7 @@
  *   php cron/process-email-queue.php
  *
  * HTTP (Windows Task Scheduler):
- *   http://localhost/COC_LMS(2)/cron/process-email-queue.php?token=YOUR_MAIL_CRON_TOKEN
+ *   http://localhost/CITELMS/cron/process-email-queue.php?token=YOUR_MAIL_CRON_TOKEN
  */
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/email.php';

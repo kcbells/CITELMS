@@ -220,7 +220,7 @@ function handleRegister() {
 
         if (db()->fetchOne("SELECT users_id FROM users WHERE email = ? LIMIT 1", [$email])) {
             incrementLoginAttempts();
-            jsonResponse(false, 'This email is already registered.');
+            jsonResponse(false, 'This email address is already registered.');
         }
 
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -904,7 +904,7 @@ function handleUpdateProfile() {
             [$email, $userId]
         );
         if ($existing) {
-            jsonResponse(false, 'Email is already in use');
+            jsonResponse(false, 'This email address is already registered.');
         }
 
         db()->execute(

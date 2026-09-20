@@ -475,6 +475,29 @@ function addComment() {
     }
 }
 
+/**
+ * Activity grades for turn-ins that carry no attachment.
+ *
+ * points_earned already exists on student_work_files, but a student who turns
+ * work in without attaching a file has no row there at all, so a grade had
+ * nowhere to live. student_progress always has a row for a turn-in, so it
+ * holds the authoritative activity grade; gradeSubmission() writes both so
+ * the two never disagree.
+ */
+function ensureProgressGradeColumn() {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $col = db()->fetchOne("SHOW COLUMNS FROM student_progress LIKE 'points_earned'");
+        if (!$col) {
+            pdo()->exec("ALTER TABLE student_progress ADD COLUMN points_earned DECIMAL(8,2) NULL DEFAULT NULL");
+        }
+    } catch (Exception $e) {
+        error_log('student_progress points_earned column: ' . $e->getMessage());
+    }
+}
+
 function ensureSubmissionGradeColumn() {
     static $done = false;
     if ($done) return;
@@ -570,6 +593,60 @@ function getSubmissions() {
              ORDER BY $orderBy",
             array_merge([$userId], $params)
         );
+
+        // A turn-in is recorded in student_progress; attachments live in
+        // student_work_files. A student who turned in without attaching a file
+        // has no row in the latter, which made this endpoint return nothing and
+        // the instructor panel say "No students have turned in work yet" — even
+        // though the classwork badge and the class record both counted the
+        // turn-in from student_progress. Fold those in so every turn-in is
+        // visible and gradeable, attachment or not.
+        if ($isInstructor && $lessonsId) {
+            ensureProgressGradeColumn();
+            $turnIns = db()->fetchAll(
+                "SELECT sp.user_student_id, sp.completed_at, sp.points_earned,
+                        CONCAT(u.first_name, ' ', u.last_name) AS student_name, u.student_id
+                 FROM student_progress sp
+                 JOIN users u ON u.users_id = sp.user_student_id
+                 WHERE sp.subject_id = ? AND sp.lessons_id = ? AND sp.status = 'completed'",
+                [$subjectId, $lessonsId]
+            );
+
+            $seen = [];
+            foreach ($files as $f) { $seen[(int)$f['user_student_id']] = true; }
+
+            foreach ($turnIns as $t) {
+                $sid = (int)$t['user_student_id'];
+                if (isset($seen[$sid])) continue;
+                $files[] = [
+                    'file_id'         => null,
+                    'user_student_id' => $sid,
+                    'subject_id'      => $subjectId,
+                    'lessons_id'      => $lessonsId,
+                    'quiz_id'         => null,
+                    'file_name'       => null,
+                    'original_name'   => null,
+                    'file_path'       => null,
+                    'file_type'       => null,
+                    'file_size'       => null,
+                    'is_submitted'    => 1,
+                    'submitted_at'    => $t['completed_at'],
+                    'created_at'      => $t['completed_at'],
+                    'points_earned'   => $t['points_earned'],
+                    'student_name'    => $t['student_name'],
+                    'student_id'      => $t['student_id'],
+                    'is_mine'         => ($sid === (int)$userId) ? 1 : 0,
+                ];
+            }
+
+            // Appending breaks the SQL ordering, so restore "first turned in first".
+            usort($files, function ($a, $b) {
+                $ta = $a['submitted_at'] ?: $a['created_at'];
+                $tb = $b['submitted_at'] ?: $b['created_at'];
+                return strcmp((string)$ta, (string)$tb)
+                    ?: ((int)$a['user_student_id'] <=> (int)$b['user_student_id']);
+            });
+        }
 
         echo json_encode(['success' => true, 'data' => $files]);
     } catch (Exception $e) {
@@ -751,10 +828,33 @@ function gradeSubmission() {
         }
 
         ensureSubmissionGradeColumn();
+        ensureProgressGradeColumn();
+
+        // Attachments may or may not exist; the progress row always does for a
+        // turn-in, so write both and let student_progress be the one that a
+        // no-attachment submission is read back from.
         pdo()->prepare(
             "UPDATE student_work_files SET points_earned = ?
              WHERE subject_id = ? AND lessons_id = ? AND user_student_id = ?"
         )->execute([$pointsEarned, $subjectId, $lessonsId, $studentId]);
+
+        $graded = pdo()->prepare(
+            "UPDATE student_progress SET points_earned = ?
+             WHERE subject_id = ? AND lessons_id = ? AND user_student_id = ?"
+        );
+        $graded->execute([$pointsEarned, $subjectId, $lessonsId, $studentId]);
+        if ($graded->rowCount() === 0) {
+            $exists = db()->fetchOne(
+                "SELECT 1 FROM student_progress WHERE user_student_id = ? AND lessons_id = ?",
+                [$studentId, $lessonsId]
+            );
+            if (!$exists) {
+                http_response_code(400);
+                ob_clean();
+                echo json_encode(['success' => false, 'message' => 'That student has not turned in this activity yet']);
+                return;
+            }
+        }
 
         ob_clean();
         echo json_encode(['success' => true, 'points_earned' => $pointsEarned]);

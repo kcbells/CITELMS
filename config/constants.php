@@ -19,9 +19,26 @@ if (!defined('BASE_URL')) {
     // ============================================================
 
     /**
-     * Base URL — set via .env BASE_URL, falls back to '/COC_LMS(2)'
+     * Base URL — set via .env BASE_URL, otherwise derived from where the
+     * project actually sits under the web root. Deriving it (instead of
+     * hardcoding a folder name) means renaming the project folder does not
+     * silently break login redirects, avatars and e-mail links.
      */
-    define('BASE_URL', getenv('BASE_URL') ?: '/COC_LMS(2)');
+    if (!function_exists('cit_detect_base_url')) {
+        function cit_detect_base_url(): string {
+            $projectRoot = str_replace('\\', '/', realpath(__DIR__ . '/..') ?: dirname(__DIR__));
+            $docRoot     = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? '') ?: '');
+
+            // Served from inside the web root: use the sub-path ('' if it IS the root).
+            if ($docRoot !== '' && stripos($projectRoot, $docRoot) === 0) {
+                return rtrim(substr($projectRoot, strlen($docRoot)), '/');
+            }
+            // CLI (cron) or an aliased vhost: assume /<folder-name>.
+            return '/' . basename($projectRoot);
+        }
+    }
+
+    define('BASE_URL', getenv('BASE_URL') ?: cit_detect_base_url());
     
     /**
      * Application Information

@@ -1,9 +1,13 @@
 Options -Indexes
 DirectoryIndex index.html
 
-# Force fresh JS/CSS so auth redirects are never served from cache
+# Force fresh JS/CSS/HTML so auth redirects are never served from cache.
+# HTML is included because dashboard.html was otherwise a plain static file with
+# only Last-Modified/ETag: after logout, the browser's back button repainted the
+# cached dashboard shell for a moment before the first API call 401'd and
+# bounced to the landing page. no-store stops the shell coming back at all.
 <IfModule mod_headers.c>
-    <FilesMatch "\.(js|css)$">
+    <FilesMatch "\.(js|css|html)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
         Header set Expires "0"

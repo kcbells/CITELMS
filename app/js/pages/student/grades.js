@@ -527,7 +527,7 @@ function renderClassRecordTable(subject, record, { embedded = false } = {}) {
         <div class="gc-cur-wrap">
             <div class="gc-cur-label">CLASS RECORD — ${esc(subject.subject_code)}${subject.section_name ? ` / ${esc(subject.section_name)}` : ''}</div>
             <div class="gb-table-scroll">
-                <table class="gc-cur-table gb-record-table gb-period-table">
+                <table class="gc-cur-table gb-record-table gb-period-table sg-solo">
                     <thead>
                         <tr>${periodRow}</tr>
                         <tr>${itemRow}</tr>
@@ -576,7 +576,7 @@ function renderGlobalSummaryTable(subject, myName, myStudentId) {
         <div class="gc-cur-wrap">
             <div class="gc-cur-label">SUMMARY &amp; REMARKS — ${esc(subject.subject_code)}${subject.section_name ? ` / ${esc(subject.section_name)}` : ''}</div>
             <div class="gb-table-scroll">
-                <table class="gc-cur-table ggb-summary-table">
+                <table class="gc-cur-table ggb-summary-table sg-solo">
                     <thead>
                         <tr>
                             <th rowspan="2" class="gc-th-info">#</th>
@@ -772,6 +772,22 @@ function pageCss() {
         .sg-cell-link:hover { text-decoration:underline; }
         .gb-table-scroll { overflow-x:auto; padding:0 20px; }
         .gb-record-table { min-width:640px; }
+
+        /* Both tables on this page show exactly ONE row — the student
+           themself — so a frozen Name column buys nothing and actively breaks
+           the layout. Class Record: the header cells never got the matching
+           .gc-th-info, so the body's sticky name slid left to the container
+           edge while its header stayed in place, and the two columns stopped
+           lining up. Summary: the opposite problem — #, Student ID and Name
+           are ALL .gc-th-info pinned to left:0, so they stack on each other.
+           The compound selector is needed to outrank .gc-cur-table .td-name,
+           which curriculumTableCss() appends after this block. */
+        .gc-cur-table.sg-solo .td-name,
+        .gc-cur-table.sg-solo .gc-th-info {
+            position:static; width:auto; box-shadow:none;
+        }
+        .gc-cur-table.sg-solo .td-name::after,
+        .gc-cur-table.sg-solo .gc-th-info::after { content:none; }
 
         /* Global (EL/Mastery) summary table */
         .ggb-summary-table { min-width:900px; }

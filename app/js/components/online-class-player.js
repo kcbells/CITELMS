@@ -1089,8 +1089,18 @@ export async function openOnlineClass(opts) {
     updateShellHeader(subjectName, subjectCode, displayName, role);
     showLoading(isHostRole(role) ? 'Starting class…' : 'Joining class…');
 
+    /* getUserMedia is gated on a SECURE CONTEXT: over plain http:// from a LAN
+       or hotspot address navigator.mediaDevices is simply undefined, however
+       capable the browser is. The old wording blamed the browser and sent
+       people hunting for a different one, when the thing that has to change is
+       the URL. Same restriction that shaped randomLease() in
+       utils/tab-lease-store.js. */
     if (!navigator.mediaDevices?.getUserMedia) {
-        showError('Your browser does not support camera/microphone access.');
+        showError(window.isSecureContext
+            ? 'Your browser does not support camera/microphone access.'
+            : 'Camera and microphone need a secure connection. This page is open '
+              + 'over ' + location.protocol + '//' + location.host + ' - reopen it '
+              + 'using https:// (or on localhost) and join again.');
         return;
     }
 

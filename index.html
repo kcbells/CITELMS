@@ -1892,6 +1892,11 @@
             if (!json.success) {
                 msg.textContent = json.message || 'Login failed. Please check your credentials.';
                 msg.classList.add('error');
+                // Clear the password so a failed attempt never leaves a typed
+                // password sitting in the field on a shared or lab machine, and
+                // so the retry starts from a known-empty state.
+                const pwField = document.getElementById('si-pw');
+                if (pwField) { pwField.value = ''; pwField.focus(); }
                 siGenCaptcha();
                 return;
             }

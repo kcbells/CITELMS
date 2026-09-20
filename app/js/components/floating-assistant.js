@@ -92,15 +92,15 @@ function injectStyles() {
             object-fit: cover; object-position: top center; background: #fff;
         }
         .fa-head-av-fallback { display: none; align-items: center; justify-content: center; }
-        .fa-head { cursor: grab; }
 
         .fa-panel {
             display: none; flex-direction: column;
             position: absolute; top: 0; right: 0;
-            width: 360px; max-width: calc(100vw - 32px);
-            height: 480px; max-height: calc(100dvh - 120px);
+            width: 380px; max-width: calc(100vw - 32px);
+            height: 520px; max-height: calc(100dvh - 110px);
             background: #fff; border-radius: 16px;
-            box-shadow: 0 12px 48px rgba(0,0,0,.18);
+            box-shadow: 0 16px 48px -8px rgba(15,23,42,.22),
+                        0 0 0 1px rgba(15,23,42,.04);
             overflow: hidden;
             border: 1px solid #e5e7eb;
         }
@@ -112,19 +112,26 @@ function injectStyles() {
 
         .fa-head {
             background: #fff;
-            color: #111827; padding: 14px 16px;
+            color: #111827; padding: 12px 14px;
             border-bottom: 1px solid #e5e7eb;
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            flex-shrink: 0;
         }
-        .fa-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .fa-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+        /* Was a bare <div>, so the two text lines had no width constraint and
+           a long context chip could shove the minimise button off the edge. */
+        .fa-head-text { min-width: 0; display: flex; flex-direction: column; }
         .fa-head-av {
             width: 36px; height: 36px; border-radius: 50%;
             background: ${GL};
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
         .fa-head-av-fallback { color: ${G}; }
-        .fa-head-title { font-size: 15px; font-weight: 700; margin: 0; color: #111827; }
-        .fa-head-sub { font-size: 11px; opacity: .7; margin: 2px 0 0; color: #4b5563; }
+        .fa-head-title { font-size: 15px; font-weight: 700; margin: 0; color: #111827; line-height: 1.25; }
+        .fa-head-sub {
+            font-size: 11.5px; margin: 1px 0 0; color: #6b7280; line-height: 1.35;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .fa-context-chip {
             display: block; margin-top: 6px; max-width: 200px;
             font-size: 10px; font-weight: 600; line-height: 1.3;
@@ -133,21 +140,30 @@ function injectStyles() {
         }
         .fa-context-chip[hidden] { display: none !important; }
         .fa-icon-btn {
-            background: #f3f4f6; border: none; color: #374151;
-            width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
-            font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center;
+            background: #f3f4f6; border: none; color: #4b5563;
+            width: 32px; height: 32px; border-radius: 9px; cursor: pointer; flex-shrink: 0;
+            font-size: 20px; line-height: 1; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: background .15s, color .15s, transform .1s;
         }
-        .fa-icon-btn:hover { background: #e5e7eb; }
+        .fa-icon-btn:hover { background: #e5e7eb; color: #111827; }
+        .fa-icon-btn:active { transform: scale(.94); }
 
         .fa-body {
-            flex: 1; overflow-y: auto; padding: 16px;
+            flex: 1; min-height: 0; overflow-y: auto; padding: 16px;
             display: flex; flex-direction: column; gap: 12px;
             background: #f9fafb;
+            overscroll-behavior: contain;
         }
+        /* Empty state gets centred in the panel - it used to hang at the top
+           with a tall blank gap under it. Only while there are no messages;
+           once the thread starts, content flows from the top again. */
+        .fa-body.fa-empty { justify-content: center; gap: 18px; }
         .fa-welcome {
-            text-align: center; padding: 24px 12px; color: #6b7280; font-size: 13px; line-height: 1.5;
+            text-align: center; color: #6b7280; font-size: 13px; line-height: 1.6;
+            max-width: 268px; margin: 0 auto; text-wrap: balance;
         }
-        .fa-welcome strong { display: block; color: ${G}; font-size: 15px; margin-bottom: 6px; }
+        .fa-welcome strong { display: block; color: ${G}; font-size: 16px; margin-bottom: 8px; }
 
         .fa-msg { max-width: 88%; display: flex; flex-direction: column; gap: 4px; }
         .fa-msg.user { align-self: flex-end; align-items: flex-end; }
@@ -169,12 +185,14 @@ function injectStyles() {
 
         .fa-footer {
             padding: 12px; border-top: 1px solid #e5e7eb; background: #fff;
-            display: flex; gap: 8px; align-items: flex-end;
+            display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0;
         }
         .fa-input {
-            flex: 1; border: 1px solid #e5e7eb; border-radius: 12px;
-            padding: 10px 12px; font-size: 14px; font-family: inherit;
-            resize: none; max-height: 100px; outline: none; line-height: 1.4;
+            flex: 1; min-width: 0; border: 1px solid #e5e7eb; border-radius: 12px;
+            padding: 11px 14px; font-size: 14px; font-family: inherit;
+            resize: none; min-height: 44px; max-height: 100px; outline: none; line-height: 1.45;
+            color: #111827; background: #fff;
+            transition: border-color .15s, box-shadow .15s;
             -webkit-appearance: none; appearance: none;
         }
         .fa-input:focus { border-color: ${G}; box-shadow: 0 0 0 3px rgba(0,70,27,.08); }
@@ -203,7 +221,7 @@ function injectStyles() {
 
         .fa-greeting strong { font-weight: 600; color: #1f2937; }
         .fa-quick-actions {
-            padding: 4px 16px 12px;
+            width: 100%; max-width: 300px; margin: 0 auto;
         }
         .fa-quick-label {
             font-size: 11px; font-weight: 600; color: #9ca3af;
@@ -225,26 +243,37 @@ function injectStyles() {
 
         @media (max-width: 640px) {
             #fa-root { top: 60px; right: 10px; }
+            /* Pin to the viewport with EQUAL left/right insets. The old rule
+               set width: calc(100vw - 20px) on a panel offset by right: -4px,
+               so width and offset fought each other and left a 4px gutter on
+               one side against a 16px gutter on the other - that lean is what
+               made the panel look off-centre. left+right with width:auto
+               cannot drift. */
             .fa-panel {
-                width: calc(100vw - 20px); right: -4px;
-                height: calc(100dvh - 80px); max-height: none;
+                position: fixed;
+                top: 56px; left: 10px; right: 10px;
+                bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+                width: auto; max-width: none;
+                height: auto; max-height: none;
+                border-radius: 18px;
             }
             .fa-topbar-img { width: 22px; height: 22px; }
             .fa-send {
                 min-width: 48px; min-height: 48px; width: 48px; height: 48px;
             }
             .fa-input {
-                padding: 12px 14px; font-size: 16px;
+                padding: 13px 14px; font-size: 16px; min-height: 48px;
             }
         }
         @media (max-width: 480px) {
             #fa-root { top: 56px; right: 6px; }
             .fa-panel {
-                width: calc(100vw - 12px); right: -2px;
+                top: 52px; left: 8px; right: 8px;
+                bottom: calc(8px + env(safe-area-inset-bottom, 0px));
             }
-            .fa-send {
-                min-width: 48px; min-height: 48px;
-            }
+            .fa-head   { padding: 11px 12px; }
+            .fa-body   { padding: 14px 12px; }
+            .fa-footer { padding: 10px; }
         }
     `;
     document.head.appendChild(style);
@@ -253,6 +282,8 @@ function injectStyles() {
 function renderMessages() {
     const body = getEl('fa-body');
     if (!body) return;
+
+    body.classList.toggle('fa-empty', history.length === 0);
 
     if (history.length === 0) {
         const ctx = getAssistantContext();
@@ -420,7 +451,10 @@ function bindEvents() {
     // Auto-resize textarea
     input?.addEventListener('input', () => {
         input.style.height = 'auto';
-        input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+        // Floor at the send button height so the two stay flush - the bare
+        // scrollHeight came in a few px short and left them misaligned.
+        const floor = window.innerWidth <= 640 ? 48 : 44;
+        input.style.height = Math.min(Math.max(input.scrollHeight, floor), 100) + 'px';
     });
 
     // Handle Enter key (Shift+Enter for new line)
@@ -476,7 +510,7 @@ export function mountFloatingAssistant() {
                              onerror="this.style.display='none';this.parentElement.querySelector('.fa-head-av-fallback').style.display='inline-flex'">
                         <span class="fa-head-av-fallback">${icon('robot', { size: 20 })}</span>
                     </div>
-                    <div>
+                    <div class="fa-head-text">
                         <p class="fa-head-title">Ali</p>
                         <p class="fa-head-sub">Your AI study helper</p>
                         <span class="fa-context-chip" id="fa-context-chip" hidden></span>
