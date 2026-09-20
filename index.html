@@ -1899,6 +1899,11 @@
             if (json.data && json.data.token) {
                 localStorage.setItem('jwt_token', json.data.token);
             }
+            if (json.data && json.data.tab_lease){
+                sessionStorage.setItem('coc_tab_lease', json.data.tab_lease);
+                localStorage.setItem('coc_active_tab_lease', json.data.tab_lease);
+            }
+
             if (json.data && json.data.csrf_token) {
                 _csrfToken = json.data.csrf_token;
             }

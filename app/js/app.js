@@ -32,6 +32,18 @@ import { icon, iconLg } from './utils/icons.js';
 // fresh fetch whenever this constant is bumped at deploy time.
 const PAGE_MODULE_VER = '202606241500';
 
+// Phones suspend the app in the background. If it was away for a while, drop the
+// cached API responses so the next page shown is current — otherwise a student
+// can come back to a class that was updated while they were away and still see
+// the old one until the 45s cache expires.
+const STALE_AFTER_MS = 60_000;
+let hiddenSince = 0;
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { hiddenSince = Date.now(); return; }
+    if (hiddenSince && Date.now() - hiddenSince > STALE_AFTER_MS) Api.invalidateAll();
+    hiddenSince = 0;
+});
+
 // ── Page-transition spinner (used only for the very first paint of a
 //    page, when there's nothing on screen yet) ───────────────────
 function pagePencilHTML() {

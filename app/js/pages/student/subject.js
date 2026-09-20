@@ -35,6 +35,67 @@ function syncHashQuiet(hash) {
 
 let activeRenderGen = 0;
 
+// ── Live class stream ────────────────────────────────────────────────────────
+// Students sit on this page while the teacher posts. Rather than make them pull
+// to refresh, ask the server for a small fingerprint of the class stream every
+// so often (and the moment they come back to the tab/app) and re-render only
+// when it actually changed. The check is a few bytes, so it is cheap on data.
+const STREAM_POLL_MS = 30_000;
+let streamPollTimer = null;
+let streamVersion = null;
+
+function stopStreamWatch() {
+    clearInterval(streamPollTimer);
+    streamPollTimer = null;
+    streamVersion = null;
+    document.removeEventListener('visibilitychange', onStreamVisible);
+    window.removeEventListener('focus', onStreamVisible);
+}
+
+let streamCtx = null;
+function onStreamVisible() {
+    if (document.visibilityState === 'visible') checkStream();
+}
+
+async function fetchStreamVersion() {
+    if (!streamCtx) return null;
+    const { subjectId, offeringId } = streamCtx;
+    // cache-busted: a 45s cached answer would defeat the point of polling
+    const res = await Api.get(`/ClassroomAPI.php?action=stream-version&subject_id=${subjectId}&offering_id=${offeringId}&_t=${Date.now()}`);
+    return res?.success ? res.data.version : null;
+}
+
+/** True when re-rendering now would yank something out from under the student. */
+function streamRefreshWouldInterrupt() {
+    if (document.querySelector('.gc-modal-overlay, .mc-modal-overlay, .sc-modal-overlay, .notify-overlay, [data-modal-open]')) return true;
+    const el = document.activeElement;
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+
+async function checkStream() {
+    if (!streamCtx || document.visibilityState !== 'visible') return;
+    try {
+        const v = await fetchStreamVersion();
+        if (!v || v === streamVersion) return;
+        if (streamRefreshWouldInterrupt()) return;   // try again on the next tick
+        streamVersion = v;
+        const { container, params } = streamCtx;
+        if (!container.isConnected) return stopStreamWatch();
+        const y = window.scrollY;
+        await render(container, params);
+        window.scrollTo(0, y);
+    } catch (_) { /* offline or a hiccup — just try again next tick */ }
+}
+
+function startStreamWatch(container, params, subjectId, offeringId) {
+    stopStreamWatch();
+    streamCtx = { container, params, subjectId, offeringId };
+    fetchStreamVersion().then(v => { streamVersion = v; });
+    streamPollTimer = setInterval(checkStream, STREAM_POLL_MS);
+    document.addEventListener('visibilitychange', onStreamVisible);
+    window.addEventListener('focus', onStreamVisible);
+}
+
 export async function render(container, params) {
     const renderGen = ++activeRenderGen;
     const subjectId = params?.subject_id
@@ -65,6 +126,9 @@ export async function render(container, params) {
 
     const lessonsRes = await Api.get('/LessonsAPI.php?action=list&subject_id=' + subject.subject_offered_id);
     const classmatesRes = await Api.get('/ClassroomAPI.php?action=classmates&subject_id=' + subjectId);
+
+    // Keep this page in step with the teacher without a manual refresh.
+    startStreamWatch(container, params, subjectId, subject.subject_offered_id);
 
     const classroom = classRes.success ? classRes.data : {};
     const teacher   = classroom.teacher || null;

@@ -172,7 +172,9 @@ function ensureImportBatchTables(): void
  */
 function startImportBatch(string $importType): int
 {
-    $fileName = $_FILES['file']['name'] ?? null;
+    // With a reused (previewed) upload there is no $_FILES entry — fall back to
+    // the name readAndMapUpload() resolved, so undo history still names the file.
+    $fileName = $_FILES['file']['name'] ?? ($GLOBALS['__importSourceName'] ?? null);
     pdo()->prepare("INSERT INTO import_batches (import_type, created_by, file_name) VALUES (?, ?, ?)")
          ->execute([$importType, Auth::id(), $fileName]);
     $id = (int)pdo()->lastInsertId();
@@ -449,18 +451,83 @@ function readRowsForUpload(array $file): array
  * @return array{header:array,colMap:array,headerRowIdx:int,dataRows:array}|null
  *         null means an error was already echoed and the caller should stop.
  */
+/**
+ * Where a previewed upload is parked so the import step can reuse it.
+ * storage/ is blocked from the web by the root .htaccess.
+ */
+function uploadCacheDir(): string
+{
+    $dir = __DIR__ . '/../storage/import-cache';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    return $dir;
+}
+
+/** Drops cached uploads older than 30 minutes. */
+function pruneUploadCache(): void
+{
+    foreach (glob(uploadCacheDir() . '/*') ?: [] as $path) {
+        if (is_file($path) && filemtime($path) < time() - 1800) @unlink($path);
+    }
+}
+
+/**
+ * Keeps the previewed file server-side and returns a token for it, so the
+ * import does not have to upload the same file a second time — on mobile data
+ * that second upload was about half the total wait.
+ */
+function stashUploadForReuse(array $file): ?string
+{
+    pruneUploadCache();
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if ($ext === '' || !preg_match('/^[a-z0-9]{1,5}$/', $ext)) return null;
+    try { $token = bin2hex(random_bytes(16)); } catch (Throwable $e) { return null; }
+    $dest = uploadCacheDir() . '/' . $token . '.' . $ext;
+    if (!@copy($file['tmp_name'], $dest)) return null;
+    @file_put_contents($dest . '.name', (string)$file['name']);
+    return $token;
+}
+
+/** The previewed file for this request's upload_token, in $_FILES shape. */
+function cachedUploadFile(): ?array
+{
+    $token = (string)($_POST['upload_token'] ?? '');
+    if (!preg_match('/^[a-f0-9]{32}$/', $token)) return null;
+    foreach (glob(uploadCacheDir() . '/' . $token . '.*') ?: [] as $path) {
+        if (substr($path, -5) === '.name' || !is_file($path)) continue;
+        $name = @file_get_contents($path . '.name');
+        return [
+            'name'     => ($name !== false && $name !== '') ? $name : basename($path),
+            'tmp_name' => $path,
+            'size'     => filesize($path) ?: 0,
+            'type'     => '',
+            'error'    => UPLOAD_ERR_OK,
+        ];
+    }
+    return null;
+}
+
 function readAndMapUpload(): ?array
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         echo json_encode(['success' => false, 'message' => 'POST required']);
         return null;
     }
-    if (!isset($_FILES['file']) || $_FILES['file']['error'] === UPLOAD_ERR_NO_FILE) {
+
+    // Reuse the file the preview step already uploaded when the browser sends its
+    // token — no second upload. Falls back to a normal upload if it has expired.
+    $reused = cachedUploadFile();
+    $noNewFile = !isset($_FILES['file']) || $_FILES['file']['error'] === UPLOAD_ERR_NO_FILE;
+    if ($reused === null && $noNewFile && !empty($_POST['upload_token'])) {
+        echo json_encode(['success' => false, 'code' => 'upload_expired', 'message' => 'That upload expired. Sending the file again.']);
+        return null;
+    }
+    if ($reused === null && $noNewFile) {
         echo json_encode(['success' => false, 'message' => 'No file uploaded']);
         return null;
     }
 
-    $file = $_FILES['file'];
+    $file = $reused ?? $_FILES['file'];
+    $GLOBALS['__importSourceName'] = $file['name'] ?? null;
     if ($file['error'] !== UPLOAD_ERR_OK) {
         echo json_encode(['success' => false, 'message' => 'Upload failed (error code: ' . $file['error'] . ')']);
         return null;
@@ -568,11 +635,18 @@ function handlePreview(): void
 
     $totalDataRows = count(array_filter($dataRows, fn($r) => !isBlankRow($r)));
 
+    // Park the file we just read so the import step can reuse it instead of
+    // uploading the very same file again (null = fall back to a re-upload).
+    $reuseToken = isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK
+        ? stashUploadForReuse($_FILES['file'])
+        : (((string)($_POST['upload_token'] ?? '')) ?: null);
+
     echo json_encode(['success' => true, 'data' => [
         'header_row'      => $headerRowIdx + 1,
         'columns'         => $columns,
         'sample_rows'     => $sampleRows,
         'total_data_rows' => $totalDataRows,
+        'upload_token'    => $reuseToken,
         // Read from a photo via OCR instead of a real file — the frontend
         // shows an extra "double-check this" warning, since OCR mistakes
         // (a misread digit in an ID, a merged/split column) are much more

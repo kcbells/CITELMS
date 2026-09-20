@@ -160,8 +160,7 @@ function openImportProgressModal(fileName, opts = {}) {
             title.textContent = 'Import complete';
             phase.textContent = counts?.total ? `${counts.done.toLocaleString()} / ${counts.total.toLocaleString()} rows` : 'Done';
             pct.textContent = '100%';
-            hint.textContent = 'Finishing up…';
-            await new Promise(r => setTimeout(r, 750));
+            hint.textContent = 'Done';
         },
         close() {
             overlay.remove();
@@ -301,11 +300,13 @@ export function mountBulkImportUI(host, opts = {}) {
 
     let selectedFile = null;
     let previewOk = false;
+    let uploadToken = null;   // server-side handle on the previewed file, so the import skips re-uploading it
     let knownTotalRows = 0; // from the preview response — lets the import step show a real "0 / N" the instant it starts, instead of waiting on the first streamed progress line (which can arrive too late to see on a fast/small import)
 
     const setFile = (file) => {
         selectedFile = file || null;
         previewOk = false;
+        uploadToken = null;   // a different file means the parked one is no longer ours
         knownTotalRows = 0;
         resultEl.innerHTML = '';
         runBtn.disabled = true;
@@ -342,6 +343,9 @@ export function mountBulkImportUI(host, opts = {}) {
             }
 
             previewEl.innerHTML = renderPreview(res.data);
+            // The server kept the file we just uploaded; the import can point at
+            // it by token instead of uploading the same bytes a second time.
+            uploadToken = res.data.upload_token || null;
             previewOk = true;
             knownTotalRows = res.data.total_data_rows || 0;
             runBtn.disabled = false;
@@ -389,10 +393,19 @@ export function mountBulkImportUI(host, opts = {}) {
         let lastRowProgress = null;
 
         try {
-            const fd = new FormData();
-            fd.append('file', selectedFile);
-            Object.entries(extraFields).forEach(([k, v]) => fd.append(k, v));
-            const res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, fd, {
+            // Reuse the previewed upload when we have its token: the request is
+            // then a few hundred bytes instead of the whole file, which on mobile
+            // data roughly halves the total wait. If the token has expired the
+            // server says so and we retry below with the real file attached.
+            const buildForm = (withFile) => {
+                const fd = new FormData();
+                if (withFile) fd.append('file', selectedFile);
+                else fd.append('upload_token', uploadToken);
+                Object.entries(extraFields).forEach(([k, v]) => fd.append(k, v));
+                return fd;
+            };
+            let usedToken = !!uploadToken;
+            let res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, buildForm(!usedToken), {
                 onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
                 // The file itself is fully sent — from here on the server is
                 // parsing rows and writing to the database. We already know
@@ -405,6 +418,16 @@ export function mountBulkImportUI(host, opts = {}) {
                 onRowProgress: (done, total) => { lastRowProgress = { done, total }; modal.setRowProgress(done, total); },
             });
 
+            if (usedToken && res && res.code === 'upload_expired') {
+                modal.setProgress(0, 'Uploading…');
+                usedToken = false;
+                res = await postFormWithProgress(`/BulkImportAPI.php?action=${importAction}`, buildForm(true), {
+                    onProgress: (pct) => modal.setProgress(pct, 'Uploading…'),
+                    onUploadDone: () => knownTotalRows > 0 ? modal.setRowProgress(0, knownTotalRows) : modal.setIndeterminate('Processing rows…'),
+                    onRowProgress: (done, total) => { lastRowProgress = { done, total }; modal.setRowProgress(done, total); },
+                });
+            }
+
             // Bypassing Api.postForm() for the progress events above means its
             // usual auto-invalidation doesn't run — do it ourselves so stale
             // Users/Dashboard data doesn't linger after a bulk write. Every
@@ -412,9 +435,10 @@ export function mountBulkImportUI(host, opts = {}) {
             // both), so the admin Users page's cached ?action=list must be
             // purged too — otherwise "just uploaded, but the new accounts
             // aren't in the Users table yet" for up to the cache's 45s TTL.
-            Api.invalidate('BulkImportAPI');
-            Api.invalidate('UsersAPI');
-            Api.invalidate('DashboardAPI');
+            // An import writes accounts, enrolments, sections and offerings at
+            // once, so anything cached is potentially stale — clear the lot and
+            // let the page refresh itself below. Nobody should have to reload.
+            Api.invalidateAll();
 
             if (!res.success) {
                 modal.close(); // no success beat on failure — straight to the error

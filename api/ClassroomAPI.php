@@ -35,6 +35,7 @@ switch ($action) {
     case 'record-view':       recordContentView(); break;
     case 'content-views':     getContentViews();  break;
     case 'view-summary':      getViewSummary();   break;
+    case 'stream-version':    getStreamVersion(); break;
     case 'new-replies':       getNewCommentReplies();    break;
     case 'enrolled-students': getEnrolledStudents();     break;
     case 'grade-submission':  gradeSubmission();          break;
@@ -1153,4 +1154,45 @@ function getEnrolledStudents() {
     );
     ob_clean();
     echo json_encode(['success' => true, 'data' => $students ?: []]);
+}
+
+/**
+ * A tiny fingerprint of everything that appears in a class stream, so a
+ * student's open page can ask "has anything changed?" every half minute
+ * without re-downloading the whole feed. Changes whenever the teacher posts,
+ * edits, publishes or deletes a lesson, quiz, announcement or module file.
+ *
+ * GET ?action=stream-version&subject_id=<subject>&offering_id=<subject_offered>
+ */
+function getStreamVersion(): void
+{
+    $subjectId  = (int)($_GET['subject_id'] ?? 0);
+    $offeringId = (int)($_GET['offering_id'] ?? 0);
+    if (!$subjectId && !$offeringId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id required']);
+        return;
+    }
+
+    $parts = [];
+    $stamp = function (string $sql, array $args) use (&$parts) {
+        try {
+            $r = db()->fetchOne($sql, $args);
+            $parts[] = ($r['n'] ?? 0) . ':' . ($r['t'] ?? '');
+        } catch (Throwable $e) {
+            $parts[] = '?';   // a missing table must never break the poll
+        }
+    };
+
+    // lessons + quizzes hang off the offering; students only ever see published ones
+    $stamp("SELECT COUNT(*) n, MAX(GREATEST(COALESCE(updated_at,'1970-01-01'), COALESCE(created_at,'1970-01-01'))) t
+             FROM lessons WHERE subject_id = ? AND status = 'published'", [$offeringId ?: $subjectId]);
+    $stamp("SELECT COUNT(*) n, MAX(GREATEST(COALESCE(updated_at,'1970-01-01'), COALESCE(created_at,'1970-01-01'))) t
+             FROM quiz WHERE subject_id = ? AND status = 'published'", [$offeringId ?: $subjectId]);
+    $stamp("SELECT COUNT(*) n, MAX(GREATEST(COALESCE(updated_at,'1970-01-01'), COALESCE(created_at,'1970-01-01'))) t
+             FROM announcement WHERE (subject_offered_id = ? OR subject_offered_id IS NULL) AND is_published = 1", [$offeringId]);
+    // module documents are keyed by the subject itself, not the offering
+    $stamp("SELECT COUNT(*) n, MAX(GREATEST(COALESCE(updated_at,'1970-01-01'), COALESCE(uploaded_at,'1970-01-01'))) t
+             FROM subject_module_documents WHERE subject_id = ? AND is_published = 1", [$subjectId]);
+
+    echo json_encode(['success' => true, 'data' => ['version' => md5(implode('|', $parts))]]);
 }
