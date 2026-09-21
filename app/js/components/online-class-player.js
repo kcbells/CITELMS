@@ -21,6 +21,10 @@ const ICONS = {
     minimize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>',
     fullscreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
     shrink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
+    // Distinct from `fullscreen` on purpose: this one means "back to the
+    // normal window", not "take over the whole display".
+    expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6M10 14L21 3M9 21H3v-6M3 21l7-7"/></svg>',
+    grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.7"/><circle cx="15" cy="5" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="19" r="1.7"/><circle cx="15" cy="19" r="1.7"/></svg>',
     video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
 };
@@ -114,7 +118,11 @@ function injectStyles() {
     const s = document.createElement('style');
     s.id = 'ocp-styles';
     s.textContent = `
-        #ocp-root { position:fixed; z-index:980; pointer-events:none; }
+        /* Must clear the app sidebar (z-index 1000, pinned to the left edge)
+           while staying under .modal-overlay (2000). Parked at 980, the
+           minimized player sat UNDERNEATH the nav drawer with its header
+           sliced off. */
+        #ocp-root { position:fixed; z-index:1200; pointer-events:none; }
         #ocp-root.ocp-active { pointer-events:auto; }
         .ocp-backdrop {
             position:fixed; inset:0; background:rgba(0,0,0,.5);
@@ -135,14 +143,51 @@ function injectStyles() {
         #ocp-root.ocp-fullscreen .ocp-shell {
             inset:0; width:100%; height:100%; border-radius:0; transform:none;
         }
+        /* Bottom-RIGHT by default: the left edge belongs to the sidebar, and
+           parking here meant the mini player opened on top of the nav every
+           time. Drag moves it via inline left/top, which override these. */
         #ocp-root.ocp-minimized .ocp-shell {
-            bottom:96px; left:24px; right:auto; top:auto; transform:none;
-            width:min(320px, calc(100vw - 48px)); height:200px;
-            border-radius:12px; border:2px solid #00461B;
+            bottom:24px; right:24px; left:auto; top:auto; transform:none;
+            width:min(340px, calc(100vw - 32px)); height:212px;
+            border-radius:14px; border:2px solid #00461B;
+            box-shadow:0 14px 36px rgba(0,0,0,.45);
         }
+        /* The header is the drag handle. At 340px the full toolbar does not
+           fit -- it used to wrap and shear the window apart (End Class spilling
+           out mid-word), so the controls that need room are hidden until the
+           player is expanded again. */
+        #ocp-root.ocp-minimized .ocp-head {
+            padding:6px 8px; min-height:34px; cursor:grab; touch-action:none;
+            transition:background .15s;
+        }
+        /* Nothing about a plain title bar says "you can drag me", so the grip
+           dots and a lift in the background do the telling on hover. */
+        #ocp-root.ocp-minimized .ocp-head:hover { background:#252525; }
+        #ocp-root.ocp-minimized.ocp-dragging .ocp-head { cursor:grabbing; background:#2d2d2d; }
+        .ocp-grip { display:none; }
+        #ocp-root.ocp-minimized .ocp-grip {
+            display:inline-flex; align-items:center; justify-content:center;
+            flex-shrink:0; width:13px; height:20px; margin-right:1px;
+            color:rgba(255,255,255,.3); transition:color .15s;
+        }
+        #ocp-root.ocp-minimized .ocp-grip svg { width:13px; height:20px; }
+        #ocp-root.ocp-minimized .ocp-head:hover .ocp-grip,
+        #ocp-root.ocp-minimized.ocp-dragging .ocp-grip { color:rgba(255,255,255,.85); }
+        #ocp-root.ocp-minimized .ocp-head-text h3 { font-size:11.5px; }
+        #ocp-root.ocp-minimized .ocp-head-text p,
+        #ocp-root.ocp-minimized .ocp-id-badge { display:none; }
+        #ocp-root.ocp-minimized .ocp-actions { flex-wrap:nowrap; gap:3px; }
+        #ocp-root.ocp-minimized .ocp-btn { padding:5px 7px; font-size:11px; }
+        #ocp-root.ocp-minimized #ocp-share,
+        #ocp-root.ocp-minimized #ocp-chat-toggle,
+        #ocp-root.ocp-minimized #ocp-fs,
+        #ocp-root.ocp-minimized #ocp-end { display:none; }
+        #ocp-root.ocp-minimized .ocp-chat { display:none; }
+        /* Dragging must track the pointer exactly, not ease behind it. */
+        #ocp-root.ocp-dragging .ocp-shell { transition:none; }
         @media(max-width:640px) {
             #ocp-root.ocp-minimized .ocp-shell {
-                bottom:80px; left:16px; width:min(280px, calc(100vw - 32px)); height:168px;
+                bottom:16px; right:16px; width:min(280px, calc(100vw - 32px)); height:176px;
             }
             #ocp-root.ocp-normal .ocp-shell { width:100vw; height:100vh; border-radius:0; }
         }
@@ -259,14 +304,6 @@ function injectStyles() {
             font-size:12px; font-weight:700; display:none; align-items:center; gap:8px;
         }
         .ocp-waiting.visible { display:flex; }
-        .ocp-pip-bar {
-            display:none; position:fixed; bottom:96px; left:24px; z-index:979;
-            background:#00461B; color:#fff; border-radius:50px;
-            padding:10px 16px; font-size:12px; font-weight:700;
-            box-shadow:0 4px 20px rgba(0,70,27,.4); cursor:pointer; border:none;
-        }
-        .ocp-pip-bar.visible { display:flex; align-items:center; gap:8px; }
-        .ocp-pip-bar svg { width:16px; height:16px; flex-shrink:0; }
         .ocp-toast-host {
             position:fixed; top:20px; right:20px; z-index:10001;
             display:flex; flex-direction:column; gap:8px; pointer-events:none;
@@ -358,22 +395,29 @@ class WebRtcSession {
     async start() {
         this.active = true;
 
-        // Request permissions before accessing media
-        try {
-            const { requestMediaPermissions } = await import('../utils/media-permissions.js');
-            const hasPermissions = await requestMediaPermissions();
-            if (!hasPermissions) {
-                this.active = false;
-                throw new Error('Camera and microphone permissions are required to join the class');
-            }
-        } catch (err) {
-            console.warn('Permission check failed:', err);
+        // ONE permission request for both devices, and we keep the stream it
+        // returns. The previous flow asked for video, then audio, then both --
+        // three getUserMedia calls, so up to three prompts and three camera
+        // activations before the first frame. It also swallowed its own
+        // "permissions are required" error in the very catch below it, so the
+        // check could never actually stop a join; it always fell through.
+        const { acquireClassMedia, showMediaHelpDialog } = await import('../utils/media-permissions.js');
+        const media = await acquireClassMedia();
+
+        if (!media.stream) {
+            this.active = false;
+            showMediaHelpDialog(media.reason, media.message);
+            throw new Error(media.message || 'Camera and microphone are unavailable.');
         }
 
-        this.localStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: true,
-        });
+        // A missing or busy webcam drops us to audio-only rather than failing
+        // the join -- being heard in class matters more than being seen.
+        if (!media.video) {
+            this.videoEnabled = false;
+            showToast(media.message || 'Joining with audio only - your camera is unavailable.', 'warn');
+        }
+
+        this.localStream = media.stream;
         this.cameraTrack = this.localStream.getVideoTracks()[0] || null;
         this.attachLocalVideo();
 
@@ -855,7 +899,93 @@ function setMode(mode) {
     if (!rootEl) return;
     rootEl.className = '';
     if (mode !== 'closed') rootEl.classList.add('ocp-active', `ocp-${mode}`);
-    document.getElementById('ocp-pip-restore')?.classList.toggle('visible', mode === 'minimized');
+    // The minimize button doubles as "expand" once we are already small --
+    // at 340px wide there is no room for a separate restore control.
+    const minBtn = rootEl.querySelector('#ocp-min');
+    if (minBtn) {
+        setBtnIcon(minBtn, mode === 'minimized' ? ICONS.expand : ICONS.minimize);
+        minBtn.title = mode === 'minimized' ? 'Expand to full window' : 'Minimize';
+    }
+    const head = rootEl.querySelector('.ocp-head');
+    if (head) head.title = mode === 'minimized' ? 'Drag to move · double-click to expand' : '';
+    applyMiniPos();
+}
+
+// ── Minimized window: drag to reposition ────────────────────────────────
+// Where the instructor wants the mini player depends on what is underneath
+// it, which we cannot guess -- so it starts in the bottom-right corner and
+// they can put it wherever they like from there. The position survives
+// minimize/expand cycles but is deliberately not persisted across a rejoin.
+let miniPos = null;   // {left, top} in px; null = the CSS default corner
+
+/** Keep the window fully on screen -- a resize or rotate must not strand it. */
+function clampMiniPos(pos, shell) {
+    const m = 8;
+    const w = shell.offsetWidth  || 340;
+    const h = shell.offsetHeight || 212;
+    return {
+        left: Math.min(Math.max(pos.left, m), Math.max(m, window.innerWidth  - w - m)),
+        top:  Math.min(Math.max(pos.top,  m), Math.max(m, window.innerHeight - h - m)),
+    };
+}
+
+function applyMiniPos() {
+    const shell = rootEl?.querySelector('.ocp-shell');
+    if (!shell) return;
+    if (state.mode !== 'minimized' || !miniPos) {
+        // Hand the geometry back to the stylesheet in every other mode,
+        // otherwise a dragged position would pin the expanded window too.
+        shell.style.left = shell.style.top = shell.style.right = shell.style.bottom = '';
+        return;
+    }
+    miniPos = clampMiniPos(miniPos, shell);
+    shell.style.left   = `${miniPos.left}px`;
+    shell.style.top    = `${miniPos.top}px`;
+    shell.style.right  = 'auto';
+    shell.style.bottom = 'auto';
+}
+
+function enableMiniDrag(shell) {
+    const head = shell?.querySelector('.ocp-head');
+    if (!head) return;
+    let drag = null;
+
+    head.addEventListener('pointerdown', (e) => {
+        if (state.mode !== 'minimized') return;
+        // Buttons stay buttons; only the bare strip of header drags.
+        if (e.target.closest('.ocp-btn')) return;
+        const r = shell.getBoundingClientRect();
+        drag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+        head.setPointerCapture?.(e.pointerId);
+        rootEl.classList.add('ocp-dragging');
+        e.preventDefault();
+    });
+
+    head.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        miniPos = { left: drag.left + (e.clientX - drag.x), top: drag.top + (e.clientY - drag.y) };
+        applyMiniPos();
+    });
+
+    const endDrag = (e) => {
+        if (!drag) return;
+        head.releasePointerCapture?.(e.pointerId);
+        drag = null;
+        rootEl.classList.remove('ocp-dragging');
+    };
+    head.addEventListener('pointerup', endDrag);
+    head.addEventListener('pointercancel', endDrag);
+
+    // Double-clicking a title bar to restore the window is the convention
+    // everywhere else, so honour it here too.
+    head.addEventListener('dblclick', (e) => {
+        if (state.mode !== 'minimized' || e.target.closest('.ocp-btn')) return;
+        restore();
+    });
+
+    window.addEventListener('resize', () => {
+        if (state.mode === 'minimized') applyMiniPos();
+    });
 }
 
 function toggleFullscreen() {
@@ -886,7 +1016,7 @@ function closePlayer() {
     document.exitFullscreen?.().catch(() => {});
     rootEl?.remove();
     rootEl = null;
-    document.getElementById('ocp-pip-restore')?.remove();
+    miniPos = null;
 }
 
 function showLoading(msg = 'Joining class…') {
@@ -923,6 +1053,7 @@ function ensureDom(isHost) {
         <div class="ocp-backdrop" aria-hidden="true"></div>
         <div class="ocp-shell" role="dialog" aria-label="Online class">
             <div class="ocp-head">
+                <span class="ocp-grip" aria-hidden="true">${ICONS.grip}</span>
                 <div class="ocp-head-text">
                     <h3 id="ocp-title">Online Class</h3>
                     <p id="ocp-sub">Live class</p>
@@ -972,17 +1103,10 @@ function ensureDom(isHost) {
     `;
     document.body.appendChild(rootEl);
 
-    if (!document.getElementById('ocp-pip-restore')) {
-        const pip = document.createElement('button');
-        pip.type = 'button';
-        pip.id = 'ocp-pip-restore';
-        pip.className = 'ocp-pip-bar';
-        pip.innerHTML = `${ICONS.video}<span>Online class — tap to expand</span>`;
-        pip.addEventListener('click', restore);
-        document.body.appendChild(pip);
-    }
-
-    rootEl.querySelector('#ocp-min')?.addEventListener('click', minimize);
+    rootEl.querySelector('#ocp-min')?.addEventListener('click', () => {
+        if (state.mode === 'minimized') restore(); else minimize();
+    });
+    enableMiniDrag(rootEl.querySelector('.ocp-shell'));
     rootEl.querySelector('#ocp-fs')?.addEventListener('click', toggleFullscreen);
     rootEl.querySelector('#ocp-leave')?.addEventListener('click', () => closePlayer());
     rootEl.querySelector('.ocp-backdrop')?.addEventListener('click', minimize);

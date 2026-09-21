@@ -39,6 +39,7 @@ switch ($_GET['action'] ?? '') {
     case 'semesters': handleSemesters(); break;
     case 'subjects':  handleSubjects();  break;
     case 'subject':   handleSubject();   break;
+    case 'archived-subjects': handleArchivedSubjects(); break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -144,6 +145,56 @@ function handleSubjects(): void
         'docs'         => (int)$r['docs'],
         'quizzes'      => (int)$r['quizzes'],
     ], $rows)]);
+}
+
+/**
+ * GET ?action=archived-subjects — subjects retired from the curriculum.
+ *
+ * This is a DIFFERENT kind of archive from the semester capture above, and the
+ * two were never joined up. A semester archive is automatic: it snapshots
+ * materials when the admin switches the active semester. This one is manual -
+ * someone pressed Archive on a subject in the curriculum, which flips
+ * subject.status to 'inactive' (CurriculumAPI's ?action=archive).
+ *
+ * Until now that second kind went nowhere visible: the subject dropped out of
+ * the curriculum and appeared in no archive, so the only way to find one again
+ * was to read the database. Same program scoping as everything else here.
+ */
+function handleArchivedSubjects(): void
+{
+    $programIds = archiveProgramScope();
+    [$clause, $params] = archiveScopeClause($programIds);
+
+    $rows = db()->fetchAll(
+        "SELECT s.subject_id, s.subject_code, s.subject_name, s.units,
+                s.year_level, s.semester, s.updated_at,
+                p.program_id, p.program_code, p.program_name,
+                (SELECT COUNT(*) FROM subject_offered o
+                  WHERE o.subject_id = s.subject_id AND o.status != 'cancelled') AS live_offerings
+           FROM subject s
+           LEFT JOIN program p ON p.program_id = s.program_id
+          WHERE s.status = 'inactive' $clause
+          ORDER BY s.updated_at DESC, s.subject_code",
+        $params
+    );
+
+    echo json_encode(['success' => true,
+        // The page cannot ask Auth::can() for itself, so say here whether to
+        // offer Restore at all rather than showing a button that always 403s.
+        'can_restore' => Auth::can('curriculum.edit'),
+        'subjects' => array_map(fn($r) => [
+            'subject_id'     => (int)$r['subject_id'],
+            'subject_code'   => $r['subject_code'],
+            'subject_name'   => $r['subject_name'],
+            'units'          => $r['units'] !== null ? (int)$r['units'] : null,
+            'year_level'     => $r['year_level'] !== null ? (int)$r['year_level'] : null,
+            'semester'       => $r['semester'] !== null ? (int)$r['semester'] : null,
+            'program_id'     => $r['program_id'] !== null ? (int)$r['program_id'] : null,
+            'program_code'   => $r['program_code'],
+            'program_name'   => $r['program_name'],
+            'live_offerings' => (int)$r['live_offerings'],
+            'archived_at'    => $r['updated_at'],
+        ], $rows)]);
 }
 
 /** GET ?action=subject&archive_id=X&subject_id=Y — one subject's captured contents. */

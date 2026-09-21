@@ -4,6 +4,7 @@
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 import { notify } from '../../utils/notify.js';
+import { attachEyeToggle } from '../../utils/password-change-otp.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
 
@@ -665,6 +666,7 @@ export async function render(container) {
                 <input type="text" class="f-input" id="ai-model" value="${escSy(model || 'meta-llama/Llama-3.1-8B-Instruct')}">
                 <div class="fg-hint">A Hugging Face chat/instruct model id available on the free Inference API router. Leave the default unless you know you need a different one.</div>
             </div>`;
+        attachEyeToggle(body.querySelector('#ai-hf-key'));
     }
 
     async function loadActivityLog() {

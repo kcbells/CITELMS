@@ -46,6 +46,12 @@ function expand(skipReset = false) {
 
 function minimize() {
     isOpen = false;
+    // Drop focus from the code input as the panel closes. On phones the
+    // keyboard's Go/Enter submits while the input is still focused, and a
+    // focused input makes the live refresh (utils/live-refresh.js) hold off
+    // as if the student were still typing -- so the approval never showed.
+    const focused = document.activeElement;
+    if (focused && rootEl?.contains(focused)) focused.blur();
     rootEl?.classList.remove('sef-open');
     getEl('sef-panel')?.setAttribute('aria-hidden', 'true');
 }

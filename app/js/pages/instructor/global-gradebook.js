@@ -15,6 +15,8 @@ import {
 import { Auth } from '../../auth.js';
 import { openGradingWorkbookExport } from './gradebook-xlsx-export.js';
 import { UI } from '../../utils/ui-tokens.js';
+import { watchLive, versionFetcher } from '../../utils/live-refresh.js';
+import { notify } from '../../utils/notify.js';
 
 // Same palette as Content Bank (content-bank.js) — both now read from the
 // shared UI tokens module. BORDER here is a lighter gray than Content Bank's
@@ -52,6 +54,8 @@ function fmt(v, dec = 2) {
 // ── Main entry point ───────────────────────────────────────────────────────
 
 let _classesData = [];
+/** Stops the previous live watcher; one page, one watcher. */
+let _stopLive = null;
 
 export async function render(container) {
     const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -74,6 +78,22 @@ export async function mountInstructorGlobalGradebook(host, { subjectId } = {}) {
 }
 
 async function renderGlobalGradebook(container, opts) {
+    // A gradebook is edited by more than one person at once - an instructor
+    // marking while a dean watches, or the same teacher on a phone and a
+    // laptop. Poll a cheap fingerprint and re-render only when it actually
+    // changes, so saved marks appear without anyone pressing refresh.
+    // Skipped while a modal is open or a cell is being typed into; see
+    // utils/live-refresh.js.
+    _stopLive?.();
+    _stopLive = null;
+    if (opts?.subjectId) {
+        _stopLive = watchLive({
+            container,
+            version: versionFetcher(Api, `/GradebookAPI.php?action=version&subject_id=${opts.subjectId}`),
+            render:  () => renderGlobalGradebook(container, opts),
+        });
+    }
+
     container.innerHTML = `<div class="ggb-loading"><div class="ggb-spin"></div></div><style>${css()}</style>`;
     // ttl:0 — see the matching comment in instructor/gradebook.js; this
     // page is only reached once that page's own grading_type check already
@@ -495,6 +515,10 @@ function mountRecord(host, container, subject, section, offeredId, students, gra
                     });
                 });
             }
+            // One entry point for filling columns, instead of controls
+            // repeated in every one of the header cells.
+            area.querySelector('#ggb-fill-btn')
+                ?.addEventListener('click', () => openBulkFillPanel(area, moduleFilter));
         }
         if (activeView === 'project') attachProjectEvents(area, offeredId, project);
         if (activeView === 'retries') attachRetriesEvents(area, offeredId, retries);
@@ -529,7 +553,7 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
 
     // Row 3: individual fields
     let hdr3 = '';
-    modules.forEach(() => {
+    modules.forEach(m => {
         hdr3 += `
         <th class="gb-item-th"><span class="gb-item-type activity">SOC</span><span class="gb-item-name">SOC 1</span></th>
         <th class="gb-item-th"><span class="gb-item-type activity">SOC</span><span class="gb-item-name">SOC 2</span></th>
@@ -581,6 +605,11 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
                 ).join('')}
             </div>
         </div>
+
+        <button type="button" class="ggb-fill-btn" id="ggb-fill-btn">
+            ${icon('edit', { size: 13, className: 'ui-icon-inline' })} Set column defaults
+        </button>
+        <span class="ggb-fill-hint">Type <kbd>P</kbd>/<kbd>A</kbd> then <kbd>&darr;</kbd> to move down &mdash; no mouse needed</span>
     </div>
     <div class="gc-cur-wrap">
         <div class="gc-cur-label">${esc(label)}</div>
@@ -606,6 +635,188 @@ function renderModuleTable(students, grades, project, subjectCode = '', sectionN
  * them in one motion, instead of opening each dropdown individually.
  * See attachFillHandles() for the drag mechanics.
  */
+/**
+ * "Set column defaults" — fill an entire column in one action.
+ *
+ * Every cell in Module Records is a dropdown, and a class of forty means
+ * forty dropdowns per column. The fill handle on the SOC cells copies a
+ * value downward, which helps, but only after the first row is set and only
+ * for attendance.
+ *
+ * This covers all six fields and puts the controls in ONE place instead of
+ * in every column heading. Six fields across fourteen modules would have
+ * meant eighty-four little button groups wedged into the header row, which
+ * is precisely the clutter this replaces.
+ *
+ * Each row in the panel names its column and shows the marker it writes, so
+ * it is obvious what is about to change before anything does.
+ */
+const BULK_FIELDS = [
+    { field: 'soc1',                   label: 'SOC 1',          group: 'Start of Class', kind: 'soc' },
+    { field: 'soc2',                   label: 'SOC 2',          group: 'Start of Class', kind: 'soc' },
+    { field: 'lets_practice',          label: "Let's Practice", group: 'Effortful Learning', kind: 'rubric' },
+    { field: 'lets_practice_optional', label: 'LP Optional',    group: 'Effortful Learning', kind: 'rubric' },
+    { field: 'reflection',             label: 'Reflection',     group: 'Effortful Learning', kind: 'rubric' },
+    { field: 'wrap_up_quiz',           label: 'Wrap Up Quiz',   group: 'Mastery',        kind: 'wuq' },
+];
+
+function bulkValueOptions(kind) {
+    const leave = '<option value="">— leave as is —</option>';
+    const clear = '<option value="__clear">Clear the column</option>';
+    if (kind === 'soc') {
+        return `${leave}<option value="P">P — Present</option><option value="A">A — Absent</option>${clear}`;
+    }
+    if (kind === 'wuq') {
+        // Wrap Up Quiz stores a percentage, not a 0–3 rubric mark, so it has
+        // to offer exactly the values its own cells accept.
+        return leave + WUQ_OPTS.filter(o => o.value !== '')
+            .map(o => `<option value="${o.value}">${o.label}</option>`).join('') + clear;
+    }
+    return `${leave}<option value="0">0</option><option value="1">1</option>`
+         + `<option value="2">2</option><option value="3">3</option>${clear}`;
+}
+
+function openBulkFillPanel(area, moduleFilter) {
+    // With "All Modules" in view the panel can be narrowed to specific
+    // modules. With a single module in view that module is the only choice.
+    const pickable = moduleFilter === 'all';
+    const selectedMods = new Set(pickable
+        ? Array.from({ length: 14 }, (_, i) => String(i + 1))
+        : [String(moduleFilter)]);
+    const scopeLabelFor = () => {
+        if (selectedMods.size === 14) return 'all 14 modules';
+        const mods = [...selectedMods].map(Number).sort((a, b) => a - b);
+        if (!mods.length) return 'no modules';
+        return mods.length === 1 ? `Module ${mods[0]}` : `Modules ${mods.join(', ')}`;
+    };
+    const modulePicker = pickable ? `
+        <div class="ggb-bulk-group">Modules</div>
+        <div class="ggb-bulk-mods">
+            <button type="button" class="ggb-bulk-mod all" data-mod="all">All</button>
+            ${Array.from({ length: 14 }, (_, i) =>
+                `<button type="button" class="ggb-bulk-mod" data-mod="${i + 1}">${i + 1}</button>`
+            ).join('')}
+        </div>
+        <p class="ggb-bulk-mods-hint">Tap a number to fill only that module; tap more to add them.</p>` : '';
+    let lastGroup = '';
+    const rowsHtml = BULK_FIELDS.map(f => {
+        const head = f.group !== lastGroup ? `<div class="ggb-bulk-group">${esc(f.group)}</div>` : '';
+        lastGroup = f.group;
+        return `${head}
+        <div class="ggb-bulk-row">
+            <span class="ggb-bulk-chip ${f.kind}">${f.kind === 'soc' ? 'P / A' : f.kind === 'wuq' ? '%' : '0–3'}</span>
+            <label class="ggb-bulk-label" for="bulk-${f.field}">${esc(f.label)}</label>
+            <select class="ggb-bulk-sel" id="bulk-${f.field}" data-field="${f.field}" data-kind="${f.kind}">
+                ${bulkValueOptions(f.kind)}
+            </select>
+        </div>`;
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'ggb-bulk-overlay';
+    overlay.innerHTML = `
+        <div class="ggb-bulk-card" role="dialog" aria-modal="true" aria-labelledby="ggb-bulk-title">
+            <div class="ggb-bulk-hd">
+                <div>
+                    <h3 id="ggb-bulk-title">Set column defaults</h3>
+                    <p>Applies to <strong class="ggb-bulk-scope">${esc(scopeLabelFor())}</strong> — every student in this section.</p>
+                </div>
+                <button type="button" class="ggb-bulk-x" aria-label="Close">&times;</button>
+            </div>
+            <div class="ggb-bulk-body">
+                ${modulePicker}
+                ${rowsHtml}
+                <p class="ggb-bulk-note">Columns left on <em>leave as is</em> are not touched. You can still change
+                individual students afterwards — this only sets the starting point.</p>
+            </div>
+            <div class="ggb-bulk-ft">
+                <button type="button" class="ggb-bulk-cancel">Cancel</button>
+                <button type="button" class="ggb-bulk-apply">Apply</button>
+            </div>
+        </div>`;
+
+    const close = () => overlay.remove();
+    overlay.querySelector('.ggb-bulk-x').addEventListener('click', close);
+    overlay.querySelector('.ggb-bulk-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    const syncModulePicker = () => {
+        overlay.querySelectorAll('.ggb-bulk-mod').forEach(btn => {
+            const on = btn.dataset.mod === 'all' ? selectedMods.size === 14 : selectedMods.has(btn.dataset.mod);
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        overlay.querySelector('.ggb-bulk-scope').textContent = scopeLabelFor();
+    };
+    overlay.querySelectorAll('.ggb-bulk-mod').forEach(btn => btn.addEventListener('click', () => {
+        const mod = btn.dataset.mod;
+        if (mod === 'all') {
+            for (let m = 1; m <= 14; m++) selectedMods.add(String(m));
+        } else if (selectedMods.size === 14) {
+            // From "everything", the first tap means "just this one".
+            selectedMods.clear();
+            selectedMods.add(mod);
+        } else if (selectedMods.has(mod)) {
+            selectedMods.delete(mod);
+        } else {
+            selectedMods.add(mod);
+        }
+        syncModulePicker();
+    }));
+    syncModulePicker();
+
+    overlay.querySelector('.ggb-bulk-apply').addEventListener('click', async () => {
+        const scopeLabel = scopeLabelFor();
+        if (!selectedMods.size) {
+            notify.info('No module selected — tap at least one module number.');
+            return;
+        }
+        const chosen = [...overlay.querySelectorAll('.ggb-bulk-sel')]
+            .map(sel => ({ field: sel.dataset.field, value: sel.value }))
+            .filter(c => c.value !== '');
+
+        if (!chosen.length) {
+            notify.info('Nothing selected — pick a value for at least one column.');
+            return;
+        }
+
+        // Count what would actually be overwritten BEFORE touching anything,
+        // so the confirmation can be specific rather than a vague warning.
+        let targets = [];
+        for (const c of chosen) {
+            const write = c.value === '__clear' ? '' : c.value;
+            const cells = Array.from(area.querySelectorAll(
+                `select.ggb-sel[data-field="${CSS.escape(c.field)}"]`
+            )).filter(cell => selectedMods.has(String(cell.dataset.mod)) && cell.value !== write);
+            targets.push({ ...c, write, cells });
+        }
+        const changing  = targets.reduce((n, t) => n + t.cells.length, 0);
+        const replacing = targets.reduce((n, t) => n + t.cells.filter(x => x.value !== '').length, 0);
+
+        if (!changing) { notify.info('Those columns already hold the values you picked.'); return; }
+
+        const ok = await notify.confirm(
+            `${changing} cell${changing > 1 ? 's' : ''} across ${targets.length} column${targets.length > 1 ? 's' : ''} will be set`
+            + (replacing ? `, replacing ${replacing} existing mark${replacing > 1 ? 's' : ''}.` : '.'),
+            { title: `Apply to ${scopeLabel}?`, confirmText: 'Apply', danger: replacing > 0 }
+        );
+        if (!ok) return;
+
+        close();
+        // Dispatch the normal change event per cell so the existing
+        // per-select save path runs; nothing new talks to the API.
+        for (const t of targets) {
+            for (const cell of t.cells) {
+                cell.value = t.write;
+                cell.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        notify.success(`Applied to ${changing} cell${changing > 1 ? 's' : ''}.`);
+    });
+
+    document.body.appendChild(overlay);
+}
+
 function socSel(field, sid, mod, val) {
     const colorClass = val === 'P' ? ' ggb-soc-p' : val === 'A' ? ' ggb-soc-a' : '';
     return `<span class="ggb-fillwrap">
@@ -657,6 +868,91 @@ function showSaveError(row, msg) {
     if (row) { row.classList.add('ggb-row-err'); setTimeout(() => row.classList.remove('ggb-row-err'), 3000); }
 }
 
+/**
+ * Spreadsheet-style keyboard movement across the grade grid.
+ *
+ * Marking attendance for a class means the same two actions over and over:
+ * set a value, move to the next student. Doing that with the mouse is a
+ * click into the dropdown, a click on the option, then a click into the next
+ * row - three clicks per student, and the rows are short so the pointer has
+ * to be precise. This makes the whole grid keyboard-operable:
+ *
+ *   type P / A / 0-3   set the value (the browser's own type-ahead on a
+ *                      <select>; nothing custom needed)
+ *   Down / Enter       next student, same column
+ *   Up                 previous student
+ *   Left / Right       previous / next column, same student
+ *   Alt+Down           open the dropdown the normal way
+ *
+ * THE CATCH: on a focused <select>, the arrow keys natively change the
+ * SELECTED VALUE rather than moving focus. Taking them over for navigation
+ * means preventDefault(), which removes the native way to cycle options -
+ * so type-ahead (press P, press A) becomes the way values are set, and
+ * Alt+Down is left alone so the dropdown can still be opened properly.
+ * Without that escape hatch this would be a downgrade for anyone who
+ * navigates by keyboard already.
+ */
+function attachGridKeys(area) {
+    const table = area.querySelector('.ggb-module-table');
+    if (!table) return;
+
+    table.addEventListener('keydown', (e) => {
+        const cell = e.target;
+        if (!(cell instanceof HTMLSelectElement) || !cell.classList.contains('ggb-sel')) return;
+        // Alt+Arrow is the browser's "open this dropdown" - never hijack it.
+        if (e.altKey || e.ctrlKey || e.metaKey) return;
+
+        const td = cell.closest('td');
+        const tr = cell.closest('tr');
+        if (!td || !tr) return;
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const rowIdx = rows.indexOf(tr);
+        const colIdx = Array.from(tr.children).indexOf(td);
+        if (rowIdx < 0 || colIdx < 0) return;
+
+        /** Focus the nearest select at a row/column offset, if one exists. */
+        const move = (dRow, dCol) => {
+            if (dRow) {
+                const target = rows[rowIdx + dRow];
+                const next = target?.children[colIdx]?.querySelector('select.ggb-sel');
+                if (next) { next.focus(); return true; }
+                return false;
+            }
+            // Sideways: step across cells until one actually holds a select,
+            // since the leading #, Student ID and Name columns do not.
+            const cells = Array.from(tr.children);
+            for (let i = colIdx + dCol; i >= 0 && i < cells.length; i += dCol) {
+                const next = cells[i].querySelector('select.ggb-sel');
+                if (next) { next.focus(); return true; }
+            }
+            return false;
+        };
+
+        switch (e.key) {
+            case 'ArrowDown':
+            case 'Enter':
+                e.preventDefault();
+                move(1, 0);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                move(-1, 0);
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                move(0, 1);
+                break;
+            case 'ArrowLeft':
+                e.preventDefault();
+                move(0, -1);
+                break;
+            default:
+                break;   // every other key, including type-ahead, behaves normally
+        }
+    });
+}
+
 function attachModuleEvents(area, offeredId, grades) {
     area.querySelectorAll('.ggb-sel').forEach(sel => {
         sel.addEventListener('change', async () => {
@@ -704,6 +1000,7 @@ function attachModuleEvents(area, offeredId, grades) {
         });
     });
     attachFillHandles(area);
+    attachGridKeys(area);
 }
 
 // ── Excel-style fill handle — drag a SOC value down through the rows below
@@ -1567,6 +1864,73 @@ function tableCss() { return `
 }
 .ggb-sel:focus { outline:none; border-color:#00461B; box-shadow:0 0 0 2px rgba(0,70,27,.15); }
 
+/* Keyboard grid: the focused cell has to be obvious, otherwise arrowing
+   through a wide table means losing track of where you are. */
+.ggb-sel:focus {
+    outline:2px solid #00461B; outline-offset:1px;
+    box-shadow:0 0 0 3px rgba(0,70,27,.16); border-radius:6px;
+}
+.ggb-fill-hint kbd {
+    background:#F3F4F6; border:1px solid #D1D5DB; border-bottom-width:2px;
+    border-radius:4px; padding:0 4px; font-size:10.5px; font-family:inherit;
+    font-weight:700; color:#374151;
+}
+
+/* "Set column defaults" — toolbar button + its panel. */
+.ggb-fill-btn {
+    display:inline-flex; align-items:center; gap:7px; padding:8px 14px;
+    background:#fff; border:1.5px solid #00461B; color:#00461B; border-radius:9px;
+    font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;
+    transition:background .15s, color .15s;
+}
+.ggb-fill-btn:hover { background:#00461B; color:#fff; }
+.ggb-fill-hint { font-size:11.5px; color:#9CA3AF; }
+
+.ggb-bulk-overlay {
+    position:fixed; inset:0; z-index:5000; background:rgba(15,23,42,.55);
+    backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center;
+    padding:20px; animation:ggbBulkFade .16s ease-out;
+}
+@keyframes ggbBulkFade { from { opacity:0; } to { opacity:1; } }
+.ggb-bulk-card {
+    background:#fff; border-radius:16px; width:100%; max-width:470px;
+    max-height:min(86vh,720px); display:flex; flex-direction:column; overflow:hidden;
+    box-shadow:0 24px 56px rgba(0,0,0,.26); animation:ggbBulkRise .2s ease-out;
+}
+@keyframes ggbBulkRise { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } }
+.ggb-bulk-hd { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid #E8EAED; }
+.ggb-bulk-hd h3 { margin:0; font-size:17px; font-weight:700; color:#111827; }
+.ggb-bulk-hd p  { margin:4px 0 0; font-size:12.5px; color:#6B7280; }
+.ggb-bulk-x { background:#F1F3F4; border:none; width:32px; height:32px; border-radius:50%; font-size:20px; line-height:1; cursor:pointer; color:#5F6368; flex-shrink:0; }
+.ggb-bulk-x:hover { background:#E8EAED; }
+.ggb-bulk-body { padding:14px 20px 18px; overflow-y:auto; flex:1; }
+.ggb-bulk-group { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; color:#9CA3AF; margin:12px 0 7px; }
+.ggb-bulk-group:first-child { margin-top:0; }
+.ggb-bulk-row { display:flex; align-items:center; gap:10px; padding:7px 0; }
+.ggb-bulk-mods { display:flex; flex-wrap:wrap; gap:6px; }
+.ggb-bulk-mod { min-width:34px; padding:6px 8px; border:1.5px solid #E0E0E0; border-radius:8px; background:#fff; color:#374151; font-size:12.5px; font-weight:700; cursor:pointer; }
+.ggb-bulk-mod.all { padding:6px 12px; }
+.ggb-bulk-mod:hover { border-color:#00461B; }
+.ggb-bulk-mod.on { background:#00461B; border-color:#00461B; color:#fff; }
+.ggb-bulk-mods-hint { margin:7px 0 4px; font-size:11.5px; color:#6B7280; }
+/* The identifier: says at a glance which markers this column accepts. */
+.ggb-bulk-chip { font-size:9.5px; font-weight:800; padding:3px 7px; border-radius:5px; flex-shrink:0; min-width:38px; text-align:center; }
+.ggb-bulk-chip.soc    { background:#DCFCE7; color:#166534; }
+.ggb-bulk-chip.rubric { background:#EDE9FE; color:#5B21B6; }
+.ggb-bulk-chip.wuq    { background:#FEF3C7; color:#92400E; }
+.ggb-bulk-label { flex:1; font-size:13.5px; font-weight:600; color:#1F2937; cursor:pointer; }
+.ggb-bulk-sel { width:168px; padding:7px 9px; border:1.5px solid #E0E0E0; border-radius:8px; font-size:12.5px; cursor:pointer; background:#fff; color:#111827; }
+.ggb-bulk-sel:focus { outline:none; border-color:#00461B; }
+.ggb-bulk-note { margin:14px 0 0; font-size:11.5px; color:#6B7280; line-height:1.55; background:#F9FAFB; border:1px solid #F1F3F4; border-radius:9px; padding:10px 12px; }
+.ggb-bulk-ft { padding:13px 20px; border-top:1px solid #E8EAED; display:flex; justify-content:flex-end; gap:10px; }
+.ggb-bulk-cancel { padding:9px 17px; background:#fff; border:1.5px solid #DADCE0; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.ggb-bulk-apply  { padding:9px 20px; background:#00461B; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; }
+.ggb-bulk-apply:hover { background:#006428; }
+@media (max-width:560px) {
+    .ggb-bulk-row { flex-wrap:wrap; }
+    .ggb-bulk-sel { width:100%; }
+}
+
 /* SOC 1 / SOC 2 attendance dropdowns — P (present) green, A (absent) red,
    colored the moment a value is picked (see socSel() for initial render and
    the change handler in attachModuleEvents() for live updates) so a glance
@@ -1659,6 +2023,23 @@ td.gc-cur-badge-fail .ggb-remark-badge { background:#FEF3C7; color:#92400E; }
 .ggb-retry-notes { min-width:130px; }
 .ggb-retry-status { width:100%; padding:3px 4px; border:1px solid #E5E7EB; border-radius:5px; font-size:11.5px; font-family:inherit; cursor:pointer; }
 .ggb-row-err td { background:#FEF2F2 !important; }
+
+/* Module Records — the per-field header row (SOC 1 … Wrap Up Quiz). Was the
+   shared near-black slate, which read as a heavy bar under the colored group
+   row. Each column now takes a light tint of the group above it (blue Start
+   of Class, violet Effortful Learning, amber Mastery) with dark text of the
+   same hue, so the header is bright, easy to read, and visibly tied to its
+   group. Six columns per module: 1–2 SOC, 3–5 EL, 6 WUQ. */
+.ggb-module-table thead tr:nth-child(3) .gb-item-th { border-bottom:1px solid #000 !important; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+1), :nth-child(6n+2)) { background:#DBEAFE !important; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+3), :nth-child(6n+4), :nth-child(6n+5)) { background:#EDE9FE !important; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:nth-child(6n) { background:#FEF3C7 !important; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+1), :nth-child(6n+2)) .gb-item-name { color:#1E3A8A; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+1), :nth-child(6n+2)) .gb-item-type { color:#2563EB; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+3), :nth-child(6n+4), :nth-child(6n+5)) .gb-item-name { color:#4C1D95; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:is(:nth-child(6n+3), :nth-child(6n+4), :nth-child(6n+5)) .gb-item-type { color:#7C3AED; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:nth-child(6n) .gb-item-name { color:#78350F; }
+.ggb-module-table thead tr:nth-child(3) .gb-item-th:nth-child(6n) .gb-item-type { color:#B45309; }
 
 /* ── Guide tabs ── */
 .ggb-guide-tabs { display:flex; gap:0; padding:0 18px; border-bottom:1px solid #E5E7EB; flex-shrink:0; }

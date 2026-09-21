@@ -18,6 +18,20 @@ let _cachedLackingCount   = 0;    // overdue/not-done quizzes+lessons (students)
 let _topbarRole           = null;
 let _topbarUserId         = null;
 
+// Pending class-join requests — polled on their own, faster timer so a
+// student joining from their phone shows up within seconds. Every role that
+// can teach a class gets it: deans and program heads run their own sections
+// through the same my-classes page, and a dean-owned class was silently left
+// out when this only ran for 'instructor'. Other screens (my-classes.js)
+// listen for JOIN_REQUESTS_EVENT instead of polling the endpoint again.
+export const JOIN_REQUESTS_EVENT = 'citelms:join-requests';
+const TEACHING_ROLES = ['instructor', 'dean', 'program_head'];
+const watchesJoins = () => TEACHING_ROLES.includes(_topbarRole);
+const JOIN_POLL_MS = 8000;
+let _joinPollTimer        = null;
+let _cachedJoinRequests   = [];
+let _joinSeenIds          = null;   // null until the first poll sets a baseline
+
 export function renderTopbar(container) {
     const user = Auth.user();
     const role = user.role;
@@ -80,6 +94,13 @@ export function renderTopbar(container) {
                     <span class="dropdown-arrow">${icon('chevronDown', { size: 12 })}</span>
                 </div>
                 <div class="dropdown-menu user-dropdown">
+                    <div class="dropdown-user-head">
+                        <div class="topbar-user-avatar">${icon('user', { size: 18 })}</div>
+                        <div class="dropdown-user-text">
+                            <span class="dropdown-user-name">${escapeHtml(user.name)}</span>
+                            <span class="dropdown-user-role">${Auth.roleName(role)}</span>
+                        </div>
+                    </div>
                     <a href="#${role}/profile" class="dropdown-item">
                         <span>${icon('user', { size: 16 })}</span><span>My Profile</span>
                     </a>
@@ -202,6 +223,62 @@ export function renderTopbar(container) {
     clearInterval(_notifPollTimer);
     const pollMs = role === 'student' ? 12000 : 30000;
     _notifPollTimer = setInterval(pollUnreadCount, pollMs);
+
+    clearInterval(_joinPollTimer);
+    _joinPollTimer = null;
+    if (TEACHING_ROLES.includes(role)) {
+        pollJoinRequests();
+        _joinPollTimer = setInterval(pollJoinRequests, JOIN_POLL_MS);
+        if (!_joinVisibilityHooked) {
+            _joinVisibilityHooked = true;
+            // Returning to the tab should feel instant, not wait out the timer.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && _joinPollTimer) pollJoinRequests();
+            });
+        }
+    }
+}
+
+let _joinVisibilityHooked = false;
+
+/** Poll now instead of waiting for the timer — e.g. right after approving one. */
+export function refreshJoinRequests() {
+    if (watchesJoins()) pollJoinRequests();
+}
+
+/** Latest pending join requests seen by the poller, or null before its first answer. */
+export function getJoinRequests() {
+    return _joinSeenIds ? _cachedJoinRequests : null;
+}
+
+async function pollJoinRequests() {
+    if (document.visibilityState !== 'visible') return;
+    try {
+        const res = await Api.get(`/SectionsAPI.php?action=join-watch&_t=${Date.now()}`, { ttl: 0 });
+        if (!res?.success) return;
+        const requests = res.data?.requests || [];
+        const ids = new Set(requests.map(r => String(r.request_id)));
+
+        // Only requests that appeared since the last poll get a toast — the
+        // first poll after page load just records what is already waiting.
+        // No toast — the bell badge and the class-card badges are the signal.
+        const fresh = _joinSeenIds ? requests.filter(r => !_joinSeenIds.has(String(r.request_id))) : [];
+        _joinSeenIds = ids;
+        _cachedJoinRequests = requests;
+
+        window.dispatchEvent(new CustomEvent(JOIN_REQUESTS_EVENT, {
+            detail: { version: res.data?.version, requests, fresh },
+        }));
+        updateNotifBadge(currentBadgeCount());
+    } catch (_) { /* offline or a hiccup — next tick retries */ }
+}
+
+function currentBadgeCount() {
+    return _cachedNewLessons.length
+        + _cachedCommentReplies.length
+        + _cachedTeachingAlerts.length
+        + _cachedLackingCount
+        + (watchesJoins() ? _cachedJoinRequests.length : 0);
 }
 
 async function pollUnreadCount() {
@@ -244,12 +321,7 @@ async function pollUnreadCount() {
                 : 0;
         }
 
-        updateNotifBadge(
-            _cachedNewLessons.length
-            + _cachedCommentReplies.length
-            + _cachedTeachingAlerts.length
-            + _cachedLackingCount
-        );
+        updateNotifBadge(currentBadgeCount());
     } catch (_) {}
 }
 
@@ -333,7 +405,9 @@ async function loadNotifications(role) {
         setTimeout(pollUnreadCount, 300);
     }
 
-    if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length && !lackingItems.length) {
+    const joinRequests = TEACHING_ROLES.includes(role) ? _cachedJoinRequests : [];
+
+    if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length && !lackingItems.length && !joinRequests.length) {
         body.innerHTML = `<div class="notif-empty">You're all caught up!</div>`;
         return;
     }
@@ -426,6 +500,24 @@ async function loadNotifications(role) {
                     <div class="notification-content">
                         <span class="notification-title">Overdue activity${l.subject_code ? ` in <strong>${escapeHtml(l.subject_code)}</strong>` : ''}: <strong>${escapeHtml(l.lesson_title || 'Activity')}</strong></span>
                         <span class="notification-time">Was due ${relativeTime(l.due_date)}</span>
+                    </div>
+                    <span class="notif-dot"></span>
+                </div>`;
+        }).join('');
+    }
+
+    // ── Join requests waiting for approval (instructor) ────────────────
+    if (joinRequests.length) {
+        html += `<div class="notif-section-label">Join Requests</div>`;
+        html += joinRequests.slice(0, 10).map(r => {
+            const name = `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'A student';
+            const href = `#${role}/my-classes?subject_id=${r.subject_id}`;
+            return `
+                <div class="notification-item unread notif-teach-item" style="cursor:pointer" data-href="${escapeHtml(href)}">
+                    ${avatarOf(name)}
+                    <div class="notification-content">
+                        <span class="notification-title"><strong>${escapeHtml(name)}</strong> wants to join <strong>${escapeHtml(r.subject_code || '')}</strong> — ${escapeHtml(r.section_name || '')}</span>
+                        <span class="notification-time">${relativeTime(r.requested_at)} · waiting for your approval</span>
                     </div>
                     <span class="notif-dot"></span>
                 </div>`;
@@ -599,6 +691,24 @@ function addTopbarStyles() {
             }
             .notification-dropdown { width: auto; }
             .dropdown-body { max-height: calc(100dvh - var(--topbar-height, 70px) - 90px); }
+
+            /* ...but NOT the user menu. The full-bleed rule above exists for
+               the 320px notification panel, which genuinely needs the width.
+               Applied to a two-item user menu it stretched edge to edge and
+               opened under the hamburger on the far LEFT while its avatar sat
+               on the far right, so it read as belonging to something else.
+               Keep it anchored to the button that opens it. */
+            .dropdown-menu.user-dropdown {
+                position: absolute;
+                top: 100%; left: auto; right: 0;
+                width: 224px; min-width: 224px;
+                margin-top: 8px;
+            }
+            .dropdown-menu.user-dropdown .dropdown-item { padding: 13px 16px; }
+
+            /* The topbar hides the name/role at this width, so without this
+               the menu never says who is signed in. */
+            .dropdown-user-head { display: flex !important; }
         }
         /* Facebook-style notification rows — avatars & text only, no icon boxes */
         .notification-item {
@@ -647,7 +757,18 @@ function addTopbarStyles() {
         .topbar-user-name { font-size: 14px; font-weight: 600; color: var(--gray-800); }
         .topbar-user-role { font-size: 12px; color: var(--gray-500); }
         .dropdown-arrow { font-size: 10px; color: var(--gray-400); margin-left: 4px; }
-        .user-dropdown { width: 200px; }
+        .user-dropdown { width: 224px; }
+        .dropdown-user-head {
+            display: none; align-items: center; gap: 10px;
+            padding: 12px 16px; border-bottom: 1px solid var(--gray-100);
+        }
+        .dropdown-user-head .topbar-user-avatar { flex-shrink: 0; }
+        .dropdown-user-text { display: flex; flex-direction: column; min-width: 0; }
+        .dropdown-user-name {
+            font-size: 13.5px; font-weight: 600; color: var(--gray-900); line-height: 1.3;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .dropdown-user-role { font-size: 11.5px; color: var(--gray-500); line-height: 1.3; }
         /* Below 768px the name and caret are hidden, so .topbar-user's 12px
            side padding was reserving 24px for a label that is not rendered —
            width the topbar cannot spare on a 360px phone. This override lives

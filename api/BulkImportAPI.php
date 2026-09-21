@@ -64,6 +64,32 @@ if (Auth::role() !== 'admin' && !(Auth::role() === 'dean' && in_array($action, $
 
 ensureImportBatchTables();
 
+// A bulk import is a long job by nature: a real class-density file runs to
+// thousands of rows, each one doing lookups and inserts, and php.ini caps a
+// web request at max_execution_time=120. Past that PHP kills the request
+// mid-loop - the transaction rolls back, the browser gets a dead connection,
+// and the upload looks like it simply froze.
+//
+// Lift the cap for THIS request only. Scoped here rather than raised in
+// php.ini so a runaway loop anywhere else in the system still gets stopped
+// at 120 seconds; only the bulk importer, which legitimately needs minutes,
+// is allowed to run long.
+//
+// ignore_user_abort keeps the row loop going if the browser tab is closed or
+// the network drops mid-import, so the run finishes and commits instead of
+// dying half-applied. The import is already one transaction per file, and
+// every run is recorded as a batch that can be undone.
+@set_time_limit(0);
+@ignore_user_abort(true);
+
+// Declared up here, not next to pruneUploadCache() where it is used: a
+// top-level `const` is NOT hoisted the way a function declaration is, it runs
+// in source order. The dispatcher below calls the handlers immediately, so a
+// const sitting further down the file has not executed yet by the time it is
+// read -- which is exactly the "Undefined constant UPLOAD_CACHE_TTL" fatal
+// that turned every import into "Import failed unexpectedly".
+const UPLOAD_CACHE_TTL = 86400; // 24 hours
+
 try {
     switch ($action) {
         case 'import':  handleImport();  break;
@@ -462,11 +488,20 @@ function uploadCacheDir(): string
     return $dir;
 }
 
-/** Drops cached uploads older than 30 minutes. */
+/**
+ * Drops cached uploads once they are a day old.
+ *
+ * This is disk housekeeping, NOT a deadline on the operator. The original
+ * 30-minute window meant that previewing a large roster, then checking
+ * something before committing it, could silently throw the upload away and
+ * force the whole file up again ("That upload expired"). A day is long
+ * enough that no realistic review ever runs out of time, while still
+ * stopping storage/import-cache growing without bound.
+ */
 function pruneUploadCache(): void
 {
     foreach (glob(uploadCacheDir() . '/*') ?: [] as $path) {
-        if (is_file($path) && filemtime($path) < time() - 1800) @unlink($path);
+        if (is_file($path) && filemtime($path) < time() - UPLOAD_CACHE_TTL) @unlink($path);
     }
 }
 

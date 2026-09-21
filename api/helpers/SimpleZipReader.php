@@ -6,6 +6,13 @@ class SimpleZipReader {
 
     private $entries = [];
 
+    /**
+     * Mirrors ZipArchive's public $numFiles property. The numFiles() method
+     * below stays for existing callers; callers written against ZipArchive
+     * reach for the property, so both have to work.
+     */
+    public $numFiles = 0;
+
     public static function open($path) {
         $reader = new self();
         if (!$reader->parse($path)) {
@@ -44,6 +51,37 @@ class SimpleZipReader {
 
     public function getFromIndex($index) {
         return $this->entries[$index]['data'] ?? false;
+    }
+
+    /** ZipArchive-compatible: the entry's index, or false when absent. */
+    public function locateName($name) {
+        $name = str_replace('\\', '/', $name);
+        foreach ($this->entries as $i => $entry) {
+            if ($entry['name'] === $name) {
+                return $i;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * ZipArchive-compatible subset: only 'name' and 'size' are filled in,
+     * which is all XlsxReader reads. parse() already decompressed every entry,
+     * so the uncompressed size is just the buffer length.
+     */
+    public function statName($name) {
+        $name = str_replace('\\', '/', $name);
+        foreach ($this->entries as $entry) {
+            if ($entry['name'] === $name) {
+                return ['name' => $entry['name'], 'size' => strlen($entry['data'])];
+            }
+        }
+        return false;
+    }
+
+    /** No-op; everything was read during open(). Present so a caller can treat this like a ZipArchive. */
+    public function close() {
+        return true;
     }
 
     private function parse($path) {
@@ -97,7 +135,8 @@ class SimpleZipReader {
             $pos += 46 + $nameLen + $extraLen + $commentLen;
         }
 
-        return count($this->entries) > 0;
+        $this->numFiles = count($this->entries);
+        return $this->numFiles > 0;
     }
 
     private function findEocd($fh) {

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -1050,7 +1051,57 @@ function handleReassignSection() {
             )->execute([$targetOfferingId, $current['subject_offered_id'], $sid, $targetOfferingId, $sid]);
         }
 
+        // The section has now left the old offering. If that was its LAST
+        // section, the old offering is an empty shell that still names the
+        // previous instructor - which is why a fully transferred subject kept
+        // showing "Also: <previous instructor>" on Faculty Assignments, and
+        // why they still appeared to hold a class they no longer teach.
+        // Release it rather than delete it: the find-or-create above
+        // deliberately reuses unassigned shells, so this also stops duplicate
+        // offering rows accumulating every time a class changes hands.
+        $remaining = db()->fetchOne(
+            "SELECT COUNT(*) AS c FROM section_subject
+              WHERE subject_offered_id = ? AND status <> 'cancelled'",
+            [$current['subject_offered_id']]
+        );
+        if ((int)($remaining['c'] ?? 0) === 0) {
+            $pdo->prepare(
+                "UPDATE subject_offered SET user_teacher_id = NULL, updated_at = NOW()
+                  WHERE subject_offered_id = ?"
+            )->execute([$current['subject_offered_id']]);
+        }
+
+        // Record the handover. Lessons and quizzes are keyed on
+        // (subject_id, user_teacher_id), so they did NOT move with the section
+        // above and cannot be moved without stripping them from an instructor
+        // who may still teach other sections of this subject. The log is what
+        // lets the new instructor manage that inherited material, and doubles
+        // as the audit trail this action previously never wrote.
+        recordSubjectTransfer(
+            (int)$current['subject_id'],
+            (int)$current['section_id'],
+            (int)$current['subject_offered_id'],
+            $targetOfferingId,
+            $current['user_teacher_id'] !== null ? (int)$current['user_teacher_id'] : null,
+            $newInstrId,
+            (int)Auth::id()
+        );
+
         $pdo->commit();
+
+        try {
+            pdo()->prepare(
+                "INSERT INTO activity_logs (users_id, activity_type, activity_description)
+                 VALUES (?, 'subject_transfer', ?)"
+            )->execute([
+                Auth::id(),
+                sprintf('Transferred section_subject #%d (subject #%d) from instructor #%s to instructor #%d',
+                    $sectSubjId, (int)$current['subject_id'],
+                    $current['user_teacher_id'] ?? 'none', $newInstrId),
+            ]);
+        } catch (Throwable $e) {
+            error_log('ReassignSection activity log: ' . $e->getMessage());
+        }
 
         $newInstr = db()->fetchOne("SELECT first_name, last_name FROM users WHERE users_id = ?", [$newInstrId]);
         echo json_encode(['success' => true, 'message' => 'Section transferred', 'data' => [

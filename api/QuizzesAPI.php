@@ -14,6 +14,7 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
 require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
@@ -463,14 +464,27 @@ function getInstructorQuizzes() {
     $where = ''; $params = [$userId];
     if ($subjectId) { $where = 'AND q.subject_id = ?'; $params[] = $subjectId; }
 
+    // A transferred class keeps its quizzes under the ORIGINAL author, so
+    // filtering on q.user_teacher_id alone showed the receiving instructor an
+    // empty class. Include subjects inherited through subject_transfer_log.
+    $inherited = inheritedSubjectIds($userId);
+    $inheritedSql = '';
+    if ($inherited) {
+        $inheritedSql = ' OR q.subject_id IN (' . implode(',', array_map('intval', $inherited)) . ')';
+    }
+
     $quizzes = db()->fetchAll(
         "SELECT q.*, s.subject_code, s.subject_name,
+            (q.user_teacher_id = ?) AS is_own,
+            CONCAT(au.first_name, ' ', au.last_name) AS author_name,
             (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.quiz_id) as question_count,
             (SELECT COUNT(*) FROM student_quiz_attempts qa WHERE qa.quiz_id = q.quiz_id AND qa.status = 'completed') as attempt_count,
             (SELECT ROUND(AVG(qa.percentage),1) FROM student_quiz_attempts qa WHERE qa.quiz_id = q.quiz_id AND qa.status = 'completed') as avg_score
-         FROM quiz q JOIN subject s ON q.subject_id = s.subject_id
-         WHERE q.user_teacher_id = ? $where ORDER BY q.created_at DESC",
-        $params
+         FROM quiz q
+         JOIN subject s ON q.subject_id = s.subject_id
+         LEFT JOIN users au ON au.users_id = q.user_teacher_id
+         WHERE (q.user_teacher_id = ?$inheritedSql) $where ORDER BY q.created_at DESC",
+        array_merge([$userId], $params)
     );
     enrichQuizzesWithSections($quizzes);
     echo json_encode(['success' => true, 'data' => $quizzes]);
@@ -501,10 +515,8 @@ function createQuiz() {
             return;
         }
     } else {
-        $teaches = db()->fetchOne(
-            "SELECT 1 FROM subject_offered WHERE subject_id = ? AND user_teacher_id = ? AND status = 'open' LIMIT 1",
-            [$subjectId, $userId]
-        );
+        // Owns an open offering, or received the subject through a transfer.
+        $teaches = canManageClasswork((int)$userId, (int)$subjectId);
         if (!$teaches) {
             echo json_encode(['success' => false, 'message' => 'You do not teach this subject']);
             return;
@@ -582,10 +594,37 @@ function createQuiz() {
     }
 }
 
+/**
+ * The quiz row when the caller may manage it: they authored it, or they were
+ * handed the subject through subject_transfer_log. Returns null otherwise.
+ * Replaces the scattered "AND user_teacher_id = ?" tests, which locked an
+ * inheriting instructor out of the class they now actually teach.
+ */
+function quizManageable(int $quizId): ?array {
+    $quiz = db()->fetchOne("SELECT * FROM quiz WHERE quiz_id = ?", [$quizId]);
+    if (!$quiz) return null;
+    if ((int)$quiz['user_teacher_id'] === (int)Auth::id()) return $quiz;
+    return canManageClasswork((int)Auth::id(), (int)$quiz['subject_id']) ? $quiz : null;
+}
+
+/** Same check, starting from a question instead of a quiz. */
+function quizManageableByQuestion(int $questionId): ?array {
+    $row = db()->fetchOne(
+        "SELECT q.quiz_id FROM quiz q JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id
+          WHERE qq.questions_id = ?",
+        [$questionId]
+    );
+    return $row ? quizManageable((int)$row['quiz_id']) : null;
+}
+
 function updateQuiz() {
     $d = json_decode(file_get_contents('php://input'), true);
     $id = (int)($d['quiz_id'] ?? 0);
     if (!$id) { echo json_encode(['success' => false, 'message' => 'Quiz ID required']); return; }
+    if (!quizManageable($id)) {
+        echo json_encode(['success' => false, 'message' => 'Quiz not found or access denied']);
+        return;
+    }
     try {
         $pub = parseQuizPublishInput($d);
         $objGrade = normalizeObjectiveGradingMode($d['objective_grading_mode'] ?? 'auto');
@@ -596,7 +635,7 @@ function updateQuiz() {
             "UPDATE quiz SET quiz_title=?, quiz_description=?, time_limit=?, passing_rate=?, max_attempts=?,
              status=?, availability_start=?, due_date=?, is_randomized=?, one_at_a_time=?,
              objective_grading_mode=?, subjective_grading_mode=?, grading_period=?, updated_at=NOW()
-             WHERE quiz_id=? AND user_teacher_id=?"
+             WHERE quiz_id=?"
         )->execute([
             trim($d['quiz_title'] ?? ''),
             trim($d['quiz_description'] ?? ''),
@@ -612,7 +651,6 @@ function updateQuiz() {
             $subGrade,
             $gradingPeriod,
             $id,
-            Auth::id(),
         ]);
         if (array_key_exists('all_sections', $d) || array_key_exists('section_ids', $d)) {
             $allSections = !empty($d['all_sections']);
@@ -644,18 +682,15 @@ function setQuizStatus() {
     }
     $status = (($d['status'] ?? '') === 'published') ? 'published' : 'draft';
     try {
-        $owned = db()->fetchOne(
-            "SELECT quiz_id FROM quiz WHERE quiz_id = ? AND user_teacher_id = ?",
-            [$id, Auth::id()]
-        );
+        $owned = quizManageable($id);
         if (!$owned) {
             echo json_encode(['success' => false, 'message' => 'Quiz not found or access denied']);
             return;
         }
         pdo()->prepare(
             "UPDATE quiz SET status = ?, availability_start = NULL, updated_at = NOW()
-             WHERE quiz_id = ? AND user_teacher_id = ?"
-        )->execute([$status, $id, Auth::id()]);
+             WHERE quiz_id = ?"
+        )->execute([$status, $id]);
         if ($status === 'published') {
             NotificationEmailHelper::queueNewQuiz($id);
             NotificationEmailHelper::dispatchAfterPublish();
@@ -679,7 +714,7 @@ function deleteQuiz() {
     try {
         pdo()->prepare("DELETE FROM question_option WHERE quiz_question_id IN (SELECT questions_id FROM quiz_questions WHERE quiz_id = ?)")->execute([$id]);
         pdo()->prepare("DELETE FROM quiz_questions WHERE quiz_id = ?")->execute([$id]);
-        pdo()->prepare("DELETE FROM quiz WHERE quiz_id = ? AND user_teacher_id = ?")->execute([$id, Auth::id()]);
+        pdo()->prepare("DELETE FROM quiz WHERE quiz_id = ?")->execute([$id]);
         echo json_encode(['success' => true, 'message' => 'Quiz deleted']);
     } catch (Exception $e) { echo json_encode(['success' => false, 'message' => 'Failed']); }
 }
@@ -690,7 +725,7 @@ function listQuestionsForInstructor() {
     $quizId = (int)($_GET['quiz_id'] ?? 0);
     if (!$quizId) { echo json_encode(['success' => false, 'message' => 'Quiz ID required']); return; }
 
-    $quiz = db()->fetchOne("SELECT * FROM quiz WHERE quiz_id = ? AND user_teacher_id = ?", [$quizId, Auth::id()]);
+    $quiz = quizManageable($quizId);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Quiz not found']); return; }
 
     $questions = db()->fetchAll(
@@ -794,7 +829,7 @@ function addQuestion() {
 
     if (!$quizId || !$text) { echo json_encode(['success' => false, 'message' => 'Quiz ID and question text required']); return; }
 
-    $quiz = db()->fetchOne("SELECT * FROM quiz WHERE quiz_id = ? AND user_teacher_id = ?", [$quizId, Auth::id()]);
+    $quiz = quizManageable($quizId);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Quiz not found']); return; }
 
     if (in_array($type, ['multiple_choice', 'true_false', 'checkboxes', 'dropdown'])) {
@@ -845,7 +880,7 @@ function updateQuestion() {
 
     if (!$questionId || !$text) { echo json_encode(['success' => false, 'message' => 'Question ID and text required']); return; }
 
-    $quiz = db()->fetchOne("SELECT q.quiz_id FROM quiz q JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id WHERE qq.questions_id = ? AND q.user_teacher_id = ?", [$questionId, Auth::id()]);
+    $quiz = quizManageableByQuestion($questionId);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Question not found']); return; }
 
     if (in_array($type, ['multiple_choice', 'true_false', 'checkboxes', 'dropdown'])) {
@@ -882,7 +917,7 @@ function deleteQuestion() {
     $questionId = (int)($d['questions_id'] ?? 0);
     if (!$questionId) { echo json_encode(['success' => false, 'message' => 'Question ID required']); return; }
 
-    $quiz = db()->fetchOne("SELECT q.quiz_id FROM quiz q JOIN quiz_questions qq ON q.quiz_id = qq.quiz_id WHERE qq.questions_id = ? AND q.user_teacher_id = ?", [$questionId, Auth::id()]);
+    $quiz = quizManageableByQuestion($questionId);
     if (!$quiz) { echo json_encode(['success' => false, 'message' => 'Question not found']); return; }
 
     try {

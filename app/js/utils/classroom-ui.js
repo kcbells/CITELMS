@@ -407,11 +407,28 @@ export function openGcModal({ title = '', bodyHtml = '', wide = false, onClose =
         if (onClose) onClose();
     };
 
+    /**
+     * Close with the exit animation and resolve once it has finished, so a
+     * caller can await it and open the next panel as this one leaves.
+     * Falls back to an immediate close when motion is reduced or the
+     * animation never fires.
+     */
+    const closeAnimated = () => new Promise(resolve => {
+        const done = () => { close(); resolve(); };
+        const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        if (reduced) return done();
+        overlay.classList.add('gc-closing');
+        let settled = false;
+        const finish = () => { if (!settled) { settled = true; done(); } };
+        overlay.addEventListener('animationend', finish, { once: true });
+        setTimeout(finish, 260);   // safety net if animationend never arrives
+    });
+
     overlay.querySelector('.gc-modal-close')?.addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.body.classList.add('gc-modal-open');
     document.body.appendChild(overlay);
-    return { close, overlay };
+    return { close, closeAnimated, overlay };
 }
 
 /** Right rail stack: Your work (top) + private comments (bottom) */
@@ -833,9 +850,24 @@ export function classroomCss(accent) {
             position:fixed; inset:0; z-index:4000;
             background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
             display:flex; align-items:center; justify-content:center; padding:20px;
+            animation:gcFadeIn .18s ease-out;
+        }
+        /* Handing off to the grading drawer: the modal fades and drops away
+           rather than vanishing on the same frame the drawer appears, so the
+           two read as one movement instead of a flicker. */
+        .gc-modal-overlay.gc-closing { animation:gcFadeOut .18s ease-in forwards; pointer-events:none; }
+        .gc-modal-overlay.gc-closing .gc-modal { animation:gcModalOut .18s ease-in forwards; }
+        @keyframes gcFadeIn  { from { opacity:0; } to { opacity:1; } }
+        @keyframes gcFadeOut { from { opacity:1; } to { opacity:0; } }
+        @keyframes gcModalIn  { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } }
+        @keyframes gcModalOut { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(8px) scale(.985); } }
+        @media (prefers-reduced-motion:reduce) {
+            .gc-modal-overlay, .gc-modal-overlay.gc-closing,
+            .gc-modal-overlay .gc-modal, .gc-modal-overlay.gc-closing .gc-modal { animation:none; }
         }
         body.gc-modal-open { overflow:hidden; }
         .gc-modal {
+            animation:gcModalIn .2s ease-out;
             background:#fff; border-radius:16px; width:100%; max-width:520px;
             max-height:min(88vh, 720px); display:flex; flex-direction:column;
             box-shadow:0 24px 48px rgba(0,0,0,.2); overflow:hidden;

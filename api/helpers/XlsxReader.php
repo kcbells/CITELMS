@@ -36,13 +36,23 @@ class XlsxReader
      */
     public static function readFirstSheet(string $filePath): array
     {
-        if (!extension_loaded('zip')) {
-            throw new Exception('The "zip" PHP extension is not enabled on this server — ask whoever manages the server to enable it.');
-        }
-
-        $zip = new ZipArchive();
-        if ($zip->open($filePath) !== true) {
-            throw new Exception('Could not open the file — is it a valid .xlsx file?');
+        // ZipArchive is the fast path, but plenty of stock PHP builds ship with
+        // the zip extension commented out (XAMPP does, which is how a perfectly
+        // valid .xlsx came back as "Could not read the file"). SimpleZipReader
+        // is a pure-PHP reader for exactly this case, so a missing extension
+        // costs speed instead of killing bulk import outright.
+        $nativeZip = extension_loaded('zip');
+        if ($nativeZip) {
+            $zip = new ZipArchive();
+            if ($zip->open($filePath) !== true) {
+                throw new Exception('Could not open the file — is it a valid .xlsx file?');
+            }
+        } else {
+            require_once __DIR__ . '/SimpleZipReader.php';
+            $zip = SimpleZipReader::open($filePath);
+            if ($zip === null) {
+                throw new Exception('Could not open the file — is it a valid .xlsx file?');
+            }
         }
 
         $sharedStrings = self::readSharedStrings($zip);
@@ -51,6 +61,19 @@ class XlsxReader
         $uncompressedSize = $stat['size'] ?? 0;
 
         if ($uncompressedSize > 0 && $uncompressedSize <= self::STREAM_THRESHOLD_BYTES) {
+            $xml = $zip->getFromName($sheetPath);
+            $zip->close();
+            if ($xml === false) {
+                throw new Exception('Could not read worksheet data from the file');
+            }
+            return self::parseSheetXml($xml, $sharedStrings);
+        }
+
+        // Streaming reads through the zip:// stream wrapper, which the zip
+        // extension provides — on the pure-PHP fallback that wrapper does not
+        // exist, so buffer instead. SimpleZipReader has already decompressed the
+        // part in memory anyway, so there is nothing further to stream.
+        if (!$nativeZip) {
             $xml = $zip->getFromName($sheetPath);
             $zip->close();
             if ($xml === false) {
@@ -69,7 +92,7 @@ class XlsxReader
         return self::parseSheetStream($streamUri, $sharedStrings);
     }
 
-    private static function readSharedStrings(ZipArchive $zip): array
+    private static function readSharedStrings(ZipArchive|SimpleZipReader $zip): array
     {
         $xml = $zip->getFromName('xl/sharedStrings.xml');
         if ($xml === false) {
@@ -166,7 +189,7 @@ class XlsxReader
     }
 
     /** Case/separator-tolerant lookup for a zip entry (some tools write '\' separators or odd casing). */
-    private static function findEntryTolerant(ZipArchive $zip, string $wantedNormalized): ?string
+    private static function findEntryTolerant(ZipArchive|SimpleZipReader $zip, string $wantedNormalized): ?string
     {
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = (string)$zip->getNameIndex($i);
@@ -182,7 +205,7 @@ class XlsxReader
      * own tab order — or null if workbook.xml/its rels can't be read, so the
      * caller can fall back to the tolerant filename-based scan instead.
      */
-    private static function firstVisibleSheetPathFromWorkbook(ZipArchive $zip): ?string
+    private static function firstVisibleSheetPathFromWorkbook(ZipArchive|SimpleZipReader $zip): ?string
     {
         $workbookXml = $zip->getFromName('xl/workbook.xml');
         $relsXml     = $zip->getFromName('xl/_rels/workbook.xml.rels');
@@ -218,7 +241,7 @@ class XlsxReader
         return null;
     }
 
-    private static function firstSheetPath(ZipArchive $zip): string
+    private static function firstSheetPath(ZipArchive|SimpleZipReader $zip): string
     {
         // The correct notion of "first sheet" is whichever TAB is first and
         // visible in Excel's own tab order — NOT whichever worksheetN.xml

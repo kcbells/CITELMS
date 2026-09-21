@@ -21,6 +21,7 @@ import {
 } from './utils/quiz-guard.js';
 import { Api } from './api.js';
 import { icon, iconLg } from './utils/icons.js';
+import { watchLive, versionFetcher, pageEditingInProgress, currentRouteKey } from './utils/live-refresh.js';
 
 // Cache-bust for dynamically-imported page modules — bump this on every deploy
 // (same convention as this file's own ?v= in dashboard.html and css/style.css).
@@ -43,6 +44,58 @@ document.addEventListener('visibilitychange', () => {
     if (hiddenSince && Date.now() - hiddenSince > STALE_AFTER_MS) Api.invalidateAll();
     hiddenSince = 0;
 });
+
+// ── App-wide live refresh ───────────────────────────────────────────────────
+// Every page redraws itself when something it shows changes on the server —
+// a student submits, an instructor publishes or grades, a dean edits a
+// section — instead of waiting for someone to press refresh. One cheap
+// fingerprint (LiveAPI.php?action=version, scoped to the signed-in user's
+// own classes) is polled while the tab is visible; the page re-renders only
+// when it moves, and never while the person is mid-task (see
+// pageEditingInProgress in utils/live-refresh.js).
+const PAGE_LIVE_MS = 15_000;
+// Pages that already keep themselves current with their own, more specific
+// watcher — a second, generic one would just redraw them twice.
+const SELF_LIVE_PAGES = new Set([
+    'instructor/gradebook', 'instructor/global-gradebook', 'instructor/my-classes',
+    'student/my-subjects', 'student/take-quiz',
+    'instructor/messages', 'student/messages',
+]);
+// Pages where a redraw would throw away work or interrupt something even
+// when no field looks edited: builders/editors, the grading screen, reading
+// a lesson (video, progress tracking), and account forms.
+const NO_LIVE_PAGES = new Set([
+    'student/lesson-view', 'instructor/quiz-questions', 'instructor/quiz-ai-generate',
+    'instructor/module-quiz', 'instructor/essay-grading', 'admin/settings', 'admin/rbac',
+]);
+let stopPageLive = null;
+
+function startPageLive(resolvedKey, content) {
+    if (SELF_LIVE_PAGES.has(resolvedKey) || NO_LIVE_PAGES.has(resolvedKey)) return;
+    if (resolvedKey.endsWith('/profile')) return;
+    const renderPage = pages[resolvedKey];
+    if (!renderPage) return;
+
+    stopPageLive = watchLive({
+        container: content,
+        intervalMs: PAGE_LIVE_MS,
+        version: versionFetcher(Api, '/LiveAPI.php?action=version'),
+        shouldWait: () => pageEditingInProgress(content),
+        render: async () => {
+            // The whole point is fresh data: without this the redraw would be
+            // served from Api's 45s cache and show exactly what was there.
+            Api.invalidateAll();
+            // Hold the height while the page swaps in its loading state, so
+            // the document does not collapse and throw the scroll position.
+            content.style.minHeight = content.offsetHeight + 'px';
+            try {
+                await renderPage(content, getCurrentRoute()?.params || {});
+            } finally {
+                content.style.minHeight = '';
+            }
+        },
+    });
+}
 
 // ── Page-transition spinner (used only for the very first paint of a
 //    page, when there's nothing on screen yet) ───────────────────
@@ -209,6 +262,10 @@ async function loadCurrentPage() {
     const route = getCurrentRoute();
     const user = Auth.user();
 
+    // The previous page's live watcher never outlives it.
+    stopPageLive?.();
+    stopPageLive = null;
+
     if (!route || !user) {
         // Default: redirect to user's dashboard
         if (user) {
@@ -348,6 +405,10 @@ async function loadCurrentPage() {
     }
 
     hideNavSpinner();
+
+    // Only if the person is still on this page — a fast click elsewhere may
+    // already have started loading the next one.
+    if (currentRouteKey() === pageKey) startPageLive(resolvedKey, content);
 
     mountRoleWidgets(user.role);
 

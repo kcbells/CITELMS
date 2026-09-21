@@ -34,6 +34,7 @@ switch ($action) {
     case 'drop':            dropSubject();       break;
     case 'my-pending':      getMyPendingJoins(); break;
     case 'cancel-pending':  cancelPendingJoin(); break;
+    case 'version':         getEnrollmentVersion(); break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -630,4 +631,59 @@ function dropSubject() {
     } catch (PDOException $e) {
         echo json_encode(['success' => false, 'message' => 'Failed to drop subject']);
     }
+}
+
+
+/**
+ * Fingerprint of everything the student's My Subjects screen shows, so the
+ * open page can notice a change instead of sitting stale until a reload.
+ *
+ * The case that made this necessary: an instructor approves a join request,
+ * but the student's screen keeps showing "Waiting for instructor approval"
+ * until they hard-refresh. The approval only ever changed a row in
+ * class_join_requests, and nothing told the already-rendered page.
+ *
+ * Scoped to the signed-in student, so it stays a couple of indexed lookups
+ * no matter how large the tables get.
+ *
+ * GET ?action=version
+ */
+function getEnrollmentVersion(): void
+{
+    $studentId = (int)Auth::id();
+    if ($studentId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Not signed in']);
+        return;
+    }
+
+    $parts = [];
+    $stamp = function (string $sql, array $args) use (&$parts) {
+        try {
+            $r = db()->fetchOne($sql, $args);
+            $parts[] = ($r['n'] ?? 0) . ':' . ($r['t'] ?? '0');
+        } catch (Throwable $e) {
+            $parts[] = '0:0';
+        }
+    };
+
+    // Join requests: status flipping pending -> approved/rejected is exactly
+    // the event that was being missed. decided_at moves when it happens.
+    $stamp("SELECT COUNT(*) n,
+                   CONCAT(MAX(COALESCE(decided_at, requested_at)), '/', GROUP_CONCAT(status ORDER BY request_id)) t
+              FROM class_join_requests WHERE user_student_id = ?", [$studentId]);
+
+    // Enrolments themselves - approval creates one, a drop removes one.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(updated_at, enrollment_date)) t
+              FROM student_subject WHERE user_student_id = ?", [$studentId]);
+
+    // Announcements the card previews.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(a.updated_at, a.created_at)) t
+              FROM announcement a
+              JOIN student_subject ss ON ss.user_student_id = ?
+             WHERE a.is_published = 1
+               AND (a.subject_offered_id IS NULL OR a.subject_offered_id = ss.subject_offered_id)", [$studentId]);
+
+    echo json_encode(['success' => true, 'data' => [
+        'version' => substr(sha1(implode('|', $parts)), 0, 16),
+    ]]);
 }

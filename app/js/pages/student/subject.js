@@ -127,8 +127,12 @@ export async function render(container, params) {
     const lessonsRes = await Api.get('/LessonsAPI.php?action=list&subject_id=' + subject.subject_offered_id);
     const classmatesRes = await Api.get('/ClassroomAPI.php?action=classmates&subject_id=' + subjectId);
 
-    // Keep this page in step with the teacher without a manual refresh.
-    startStreamWatch(container, params, subjectId, subject.subject_offered_id);
+    // Keeping this page in step with the teacher is now the app-wide live
+    // refresh's job (startPageLive in app.js, LiveAPI.php): it covers the
+    // stream this watcher did plus grades, quiz results and feedback, checks
+    // twice as often, and stops when the student navigates away. Only make
+    // sure no watcher from an older build of this page is left running.
+    stopStreamWatch();
 
     const classroom = classRes.success ? classRes.data : {};
     const teacher   = classroom.teacher || null;

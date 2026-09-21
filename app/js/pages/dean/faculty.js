@@ -183,6 +183,18 @@ function applyFilters(container) {
     const countEl = container.querySelector('#fa-instr-count');
     if (countEl) countEl.textContent = filtered.length;
 
+    // The "Assign Yourself" card is rendered OUTSIDE #fa-instr-list, so it used
+    // to survive every filter — searching a name that matched nobody still left
+    // the dean's own card sitting on screen underneath a "Faculty 0" count,
+    // which read as a broken search. Put it through the same predicate.
+    const selfSection = container.querySelector('.fa-dean-self-section');
+    if (selfSection && _deanSelf) {
+        const selfText = `${_deanSelf.first_name || ''} ${_deanSelf.last_name || ''} ${_deanSelf.employee_id || ''}`.toLowerCase();
+        const matchesQ    = !q || selfText.includes(q);
+        const matchesDept = !_deptFilter || (_deanSelf.program_code || '') === _deptFilter;
+        selfSection.style.display = (matchesQ && matchesDept) ? '' : 'none';
+    }
+
     container.querySelector('#fa-instr-list').innerHTML = renderPeopleList(filtered);
     bindPersonClicks();
 }
@@ -384,7 +396,7 @@ function renderRight(person, right) {
         </div>
         <div class="fa-prof-stat">
             <span class="fa-prof-stat-val" id="assigned-count">${assignedCount}</span>
-            <span class="fa-prof-stat-lbl">subjects assigned</span>
+            <span class="fa-prof-stat-lbl" id="assigned-label">subject${assignedCount === 1 ? '' : 's'} assigned</span>
         </div>
     </div>
 
@@ -646,6 +658,10 @@ function updateChangeState() {
 
     const ac = document.getElementById('assigned-count');
     if (ac) ac.textContent = _pending.size;
+    // Keep the wording in step with the number as it changes, or ticking the
+    // last box leaves "1 subjects assigned" on screen.
+    const al = document.getElementById('assigned-label');
+    if (al) al.textContent = `subject${_pending.size === 1 ? '' : 's'} assigned`;
 }
 
 function bindSaveBar(person) {
@@ -801,7 +817,11 @@ function css() { return `
     .fa-left-title { font-size:13px;font-weight:700;color:#404040;display:flex;align-items:center;gap:6px; }
     .fa-instr-count { background:#00461B; color:#fff;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700; }
     .fa-dept-wrap { position:relative; }
-    .fa-dept-sel { width:100%;padding:8px 30px 8px 12px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:12px;font-weight:600;color:#374151;background:#f9fafb;appearance:none;-webkit-appearance:none;cursor:pointer;box-sizing:border-box;outline:none;transition:border-color .15s; }
+    .fa-dept-sel { width:100%;padding:8px 30px 8px 12px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:12px;font-weight:600;color:#374151;background:#f9fafb;appearance:none;-webkit-appearance:none;cursor:pointer;box-sizing:border-box;outline:none;transition:border-color .15s;
+        /* "BSIT — Bachelor of Science in Information Technology" is wider than a
+           phone-width column; ellipsize instead of letting it run under the
+           chevron. */
+        text-overflow:ellipsis;white-space:nowrap;overflow:hidden; }
     .fa-dept-sel:focus { border-color:#00461B;background:#fff; }
     .fa-dept-wrap::after { content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:#9ca3af; }
 
@@ -973,7 +993,54 @@ function css() { return `
     .fa-review-foot { padding:14px 24px 20px;border-top:1px solid #f3f4f6;display:flex;gap:10px;justify-content:flex-end;background:#fafafa;border-radius:0 0 16px 16px; }
 
     @media (max-width:768px) {
-        .fa-layout { grid-template-columns:1fr; }
-        .fa-left { position:static;max-height:240px; }
+        .fa-layout { grid-template-columns:1fr;gap:12px; }
+
+        /* Unsticky and let it size to content. The old max-height:240px turned
+           the roster into a cramped inner scroller sitting above a second
+           scroller, so on a phone you scrolled a box inside a page. */
+        .fa-left { position:static;max-height:none; }
+        .fa-instr-list { max-height:340px; }
+
+        /* Banner: stack, and let the semester select use the full width
+           instead of being squeezed against the title. */
+        .fa-banner { padding:16px;border-radius:14px;margin-bottom:14px;flex-direction:column;align-items:stretch;gap:14px; }
+        .fa-banner-left { align-items:flex-start; }
+        .fa-banner-title { font-size:20px; }
+        .fa-banner-sub { font-size:12.5px;line-height:1.45; }
+        .fa-banner-right { width:100%; }
+        .fa-sem-sel { width:100%;padding:11px 12px;font-size:14px; }
+
+        /* Comfortable tap targets - 8px rows are a miss on a phone. */
+        .fa-instr-search, .fa-dept-sel { padding:11px 12px;font-size:14px; }
+        .fa-dept-sel { padding-right:30px; }
+        .fa-instr-card { padding:12px 10px; }
+
+        /* Profile header: the 28px stat was fighting the name for width and
+           pushing the e-mail into a ragged wrap. Put it on its own row. */
+        .fa-prof-card { flex-wrap:wrap;padding:14px 16px;gap:12px; }
+        .fa-prof-info { min-width:0;flex:1 1 100%;order:2; }
+        .fa-prof-av { order:1; }
+        .fa-prof-stat { order:1;margin-left:auto;display:flex;align-items:baseline;gap:6px;text-align:right; }
+        .fa-prof-stat-val { font-size:22px; }
+        .fa-prof-meta { gap:2px; }
+        .fa-prof-meta span { word-break:break-word; }
+
+        /* Legend: three items on one line wrapped into a ragged 2+1. A
+           two-column grid keeps it tidy at any width. */
+        .fa-legend { display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:10px 16px; }
+        .fa-leg-item { font-size:11px; }
+
+        .fa-subj-search-wrap .fa-instr-search { max-width:none; }
+
+        /* Save bar spans the width and stacks its buttons so neither is clipped. */
+        .fa-save-bar { flex-direction:column;align-items:stretch;gap:10px;padding:12px 14px; }
+        .fa-save-btns { display:flex;gap:8px; }
+        .fa-save-btns button { flex:1;padding:11px 14px; }
+    }
+
+    @media (max-width:480px) {
+        .fa-banner-title { font-size:18px; }
+        .fa-prof-name { font-size:15px; }
+        .fa-legend { grid-template-columns:1fr; }
     }
 `; }

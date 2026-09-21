@@ -6,10 +6,17 @@
  * by role itself.
  *
  * Three levels: semesters -> subjects in one -> one subject's contents.
+ *
+ * Two tabs, because "archive" means two different things in this app and only
+ * one of them used to be visible here:
+ *   - Past semesters: captured automatically when the active semester changes.
+ *   - Archived subjects: retired by hand from the curriculum. These used to
+ *     vanish entirely - archiving a subject sent it nowhere at all.
  */
 import { Api } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 import { esc } from '../../utils/classroom-ui.js';
+import { notify } from '../../utils/notify.js';
 
 const G = '#00461B';
 
@@ -24,20 +31,103 @@ export async function render(container) {
     }
 
     const semesters = res.semesters || [];
+
+    // Fetched up front so the tab can carry a count -- an empty tab nobody
+    // opens is how the archived subjects stayed invisible in the first place.
+    const subjRes = await Api.get('/ArchiveAPI.php?action=archived-subjects', { ttl: 0 });
+    const archivedSubjects = subjRes?.success ? (subjRes.subjects || []) : [];
+    const canRestore = !!subjRes?.can_restore;
+
     container.innerHTML = `
         <style>${css()}</style>
         <div class="ar-page">
             <header class="ar-hero">
                 <span class="ar-pill">${icon('archive', { size: 13, className: 'ui-icon-inline' })} Archive</span>
-                <h1>Past Semesters</h1>
-                <p class="ar-hero-sub">Lesson materials, quizzes and announcements kept from semesters that have
-                    already closed. Everything here is read-only.</p>
+                <h1>Archive</h1>
+                <p class="ar-hero-sub">Semesters that have closed, and subjects retired from the curriculum.
+                    Semester contents are read-only; an archived subject can be put back.</p>
             </header>
+            <div class="ar-tabs" role="tablist">
+                <button type="button" class="ar-tab active" data-tab="semesters" role="tab">
+                    Past Semesters <span class="ar-tab-n">${semesters.length}</span>
+                </button>
+                <button type="button" class="ar-tab" data-tab="subjects" role="tab">
+                    Archived Subjects <span class="ar-tab-n">${archivedSubjects.length}</span>
+                </button>
+            </div>
             <div id="ar-body"></div>
         </div>`;
 
     const body = container.querySelector('#ar-body');
-    renderSemesters(body, semesters);
+    const tabs = container.querySelectorAll('.ar-tab');
+    const show = (which) => {
+        tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === which));
+        if (which === 'semesters') renderSemesters(body, semesters);
+        else renderArchivedSubjects(container, body, archivedSubjects, canRestore);
+    };
+    tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
+    show('semesters');
+}
+
+/**
+ * Subjects pulled out of the curriculum by hand. Restoring is offered only
+ * when the API said this account may edit the curriculum.
+ */
+function renderArchivedSubjects(container, body, subjects, canRestore) {
+    if (!subjects.length) {
+        body.innerHTML = `<div class="ar-empty">
+            <p><strong>No archived subjects.</strong></p>
+            <p>Archiving a subject from the curriculum retires it from all views and lists it here,
+               where it can be restored.</p>
+        </div>`;
+        return;
+    }
+
+    body.innerHTML = `
+        <div class="ar-sub-list">
+            ${subjects.map(s => `
+                <article class="ar-sub" data-subject="${s.subject_id}">
+                    <div class="ar-sub-main">
+                        <div class="ar-sub-top">
+                            <span class="ar-sub-code">${esc(s.subject_code || '')}</span>
+                            ${s.program_code ? `<span class="ar-sub-prog">${esc(s.program_code)}</span>` : ''}
+                        </div>
+                        <h3>${esc(s.subject_name || '')}</h3>
+                        <div class="ar-sub-meta">
+                            ${s.units != null ? `<span>${s.units} unit${s.units === 1 ? '' : 's'}</span>` : ''}
+                            ${s.year_level ? `<span>Year ${s.year_level}</span>` : ''}
+                            ${s.semester ? `<span>Sem ${s.semester}</span>` : ''}
+                            <span>Archived ${fmtDate(s.archived_at)}</span>
+                        </div>
+                    </div>
+                    ${canRestore ? `
+                        <button type="button" class="ar-restore" data-restore="${s.subject_id}"
+                                data-name="${esc(s.subject_name || '')}">Restore</button>` : ''}
+                </article>`).join('')}
+        </div>`;
+
+    body.querySelectorAll('[data-restore]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ok = await notify.confirm(
+                `Restore "${btn.dataset.name}"?\n\nIt goes back into the curriculum as an active subject.`,
+                { confirmText: 'Restore' }
+            );
+            if (!ok) return;
+            btn.disabled = true;
+            btn.textContent = 'Restoring\u2026';
+            const res = await Api.post('/CurriculumAPI.php?action=restore', {
+                subject_id: parseInt(btn.dataset.restore, 10),
+            });
+            if (res.success) {
+                notify.success(res.message || 'Subject restored');
+                render(container);   // counts on both tabs move, so reload the page
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Restore';
+                notify.error(res.message || 'Failed to restore subject');
+            }
+        });
+    });
 }
 
 function renderSemesters(body, semesters) {
@@ -203,6 +293,34 @@ function css() {
             padding:5px 12px; border-radius:20px; }
         .ar-hero h1 { margin:12px 0 4px; font-size:26px; font-weight:900; color:#111; }
         .ar-hero-sub { margin:0; font-size:13px; color:#6B7280; line-height:1.6; max-width:640px; }
+
+        .ar-tabs { display:flex; gap:8px; margin-bottom:18px; }
+        .ar-tab { display:inline-flex; align-items:center; gap:7px; background:#fff; border:2px solid #111;
+            border-radius:10px; padding:8px 15px; font-family:inherit; font-size:13px; font-weight:800;
+            color:#111; cursor:pointer; transition:background .15s, color .15s; }
+        .ar-tab:hover { background:#F3F4F6; }
+        .ar-tab.active { background:${G}; border-color:${G}; color:#fff; }
+        .ar-tab-n { background:rgba(0,0,0,.12); border-radius:20px; padding:1px 8px; font-size:11px; }
+        .ar-tab.active .ar-tab-n { background:rgba(255,255,255,.25); }
+
+        .ar-sub-list { display:flex; flex-direction:column; gap:10px; }
+        .ar-sub { display:flex; align-items:center; gap:14px; background:#fff; border:2px solid #111;
+            border-radius:14px; padding:14px 18px; }
+        .ar-sub-main { min-width:0; flex:1; }
+        .ar-sub-top { display:flex; align-items:center; gap:8px; }
+        .ar-sub-code { font-size:11px; font-weight:800; color:${G}; letter-spacing:.4px; }
+        .ar-sub-prog { font-size:10px; font-weight:700; background:#E8F5EC; color:${G};
+            padding:2px 8px; border-radius:20px; }
+        .ar-sub h3 { margin:5px 0 6px; font-size:16px; font-weight:800; color:#111; }
+        .ar-sub-meta { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:#6B7280; }
+        .ar-restore { flex-shrink:0; background:${G}; color:#fff; border:none; border-radius:9px;
+            padding:9px 18px; font-family:inherit; font-size:12.5px; font-weight:800; cursor:pointer; }
+        .ar-restore:hover { background:#006428; }
+        .ar-restore:disabled { opacity:.55; cursor:not-allowed; }
+        @media(max-width:560px) {
+            .ar-sub { flex-direction:column; align-items:stretch; }
+            .ar-restore { width:100%; }
+        }
 
         .ar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
         .ar-card { text-align:left; background:#fff; border:2px solid #111; border-radius:14px;

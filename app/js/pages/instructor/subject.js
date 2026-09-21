@@ -28,6 +28,7 @@ import {
     formatPosted, formatDue, classworkPostedTime, formatQType, groupStudentSubmissions,
     renderStudentSubmissionRow, renderCwKebabMenu, renderQuizScoresTable,
     renderQuestionDifficultyPanel, renderDetailSubmissionsPanel,
+    listQuizSubmissionsInOrder,
 } from './subject-render-helpers.js';
 
 const inl = { size: 14, className: 'ui-icon-inline' };
@@ -285,11 +286,26 @@ export async function render(container, params) {
                 : '<p class="gc-focus-card-empty">No students have turned in work yet.</p>';
 
             const title = workType === 'quiz' ? 'Quiz submissions' : 'Activity submissions';
-            openGcModal({ title, bodyHtml: body, wide: true });
+            const modal = openGcModal({ title, bodyHtml: body, wide: true });
 
             setTimeout(() => {
                 document.querySelectorAll('.gc-grade-btn').forEach(b => {
-                    b.addEventListener('click', () => openGradingPanel(b.dataset.attempt));
+                    b.addEventListener('click', async () => {
+                        // Hand off: this list fades out FIRST, then the grading
+                        // drawer slides in. Appending the drawer on top left
+                        // both on screen at once -- the submissions dialog sat
+                        // in the middle of the page behind the panel, with two
+                        // scrims stacked and no clear focus.
+                        const attemptId = b.dataset.attempt;
+                        await modal.closeAnimated();
+                        // Pass the WHOLE queue, already in turn-in order, so the
+                        // drawer can walk it with Next instead of sending the
+                        // instructor back to this list between every student.
+                        openGradingPanel(attemptId, {
+                            queue: workType === 'quiz' ? listQuizSubmissionsInOrder(quizScores) : [],
+                            onClose: () => openInlineSubmissions(workType, workId),
+                        });
+                    });
                 });
             }, 50);
         } finally {
@@ -1202,12 +1218,28 @@ export async function render(container, params) {
         const w = state.selectedWork;
         if (!w) return;
         const title = w.type === 'quiz' ? 'Quiz submissions' : 'Activity submissions';
-        openGcModal({ title, bodyHtml: buildSubmissionsModalBody(w), wide: true });
+        const modal = openGcModal({ title, bodyHtml: buildSubmissionsModalBody(w), wide: true });
 
         // Wire up "Check / Grade" buttons inside the modal
         setTimeout(() => {
             document.querySelectorAll('.gc-grade-btn').forEach(btn => {
-                btn.addEventListener('click', () => openGradingPanel(btn.dataset.attempt));
+                btn.addEventListener('click', async () => {
+                    // Hand off cleanly. Previously the grading drawer was just
+                    // appended on top, leaving the submissions modal sitting in
+                    // the middle of the screen behind it -- two overlays, two
+                    // scrims, and no clear "where am I". Fade this one out
+                    // first, then slide the drawer in, so it reads as moving
+                    // from the list INTO the submission.
+                    const attemptId = btn.dataset.attempt;
+                    await modal.closeAnimated();
+                    // Hand over the whole list: it becomes the rail beside the
+                    // answers, so the instructor never loses sight of who else
+                    // is waiting. Closing still returns here.
+                    openGradingPanel(attemptId, {
+                        queue: w.type === 'quiz' ? listQuizSubmissionsInOrder(state.quizScores) : [],
+                        onClose: openSubmissionsModal,
+                    });
+                });
             });
         }, 50);
     }
@@ -1302,15 +1334,84 @@ export async function render(container, params) {
     }
 
     // ─── Submission Grading Panel ──────────────────────────────────
-    async function openGradingPanel(attemptId) {
+    /**
+     * Grading drawer.
+     *
+     * `queue` is every submission for this quiz in turn-in order (first to
+     * last). When supplied, the drawer grows a rail listing them all and the
+     * instructor steps through with Next / Finalize & Next, rather than
+     * closing back to the submissions modal after each one.
+     */
+    async function openGradingPanel(attemptId, { onClose = null, queue = [] } = {}) {
+        const gpQueue = Array.isArray(queue) ? queue.filter(q => q && q.attempt_id) : [];
+        let gpIndex = Math.max(0, gpQueue.findIndex(q => String(q.attempt_id) === String(attemptId)));
+        // The submissions list rides ALONG with the answers instead of being
+        // replaced by them: pick a student on the left, grade on the right.
+        // A lone submission still gets the rail -- that list IS the table the
+        // instructor just came from -- but Prev/Next only earns its place in
+        // the footer once there is somewhere to go.
+        const hasQueue = gpQueue.length > 0;
+        const hasNav = gpQueue.length > 1;
         const resolveUrl = u => (!u || /^https?:\/\//i.test(u) || u.startsWith('/')) ? u : BASE_URL + '/' + u;
 
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;justify-content:flex-end;';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:2000;display:flex;align-items:center;justify-content:center;padding:24px;animation:gpScrimIn .22s ease-out;overflow:hidden;';
         overlay.innerHTML = `
             <style>
-                .gp-panel { background:#fff;width:720px;max-width:100vw;height:100%;display:flex;flex-direction:column;box-shadow:-4px 0 40px rgba(0,0,0,.18);animation:gpSlide .22s ease-out; }
-                @keyframes gpSlide { from { transform:translateX(60px);opacity:0; } to { transform:translateX(0);opacity:1; } }
+                /* Centred dialog rather than a drawer pinned to the right edge: the
+                   grading view is the task, so it sits in the middle of the
+                   screen like the submissions modal it replaces. */
+                .gp-panel { background:#fff;width:${hasQueue ? 1340 : 760}px;max-width:100%;height:min(88vh,880px);max-height:100%;
+                    display:flex;border-radius:16px;overflow:hidden;
+                    box-shadow:0 24px 64px rgba(0,0,0,.28);animation:gpSlide .24s cubic-bezier(.22,.61,.36,1); }
+                .gp-main { flex:1;display:flex;flex-direction:column;min-width:0; }
+                /* The submissions TABLE itself lives here, docked to the right of
+                   the answers, rather than the instructor bouncing between two
+                   dialogs. Same columns, same chrome as the modal it came from
+                   (curriculumTableCss) - click a row, the answers on the right
+                   swap to that student. */
+                .gp-rail { width:560px;flex-shrink:0;border-right:1px solid #E5E7EB;background:#FAFAFA;display:flex;flex-direction:column;min-height:0; }
+                .gp-rail-hd { padding:11px 14px;border-bottom:1px solid #E5E7EB;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6B7280;display:flex;justify-content:space-between;align-items:center;gap:6px; }
+                .gp-rail-n { background:#00461B;color:#fff;border-radius:10px;padding:2px 7px;font-size:10px; }
+                .gp-rail-list { flex:1;overflow-y:auto;overscroll-behavior:contain;padding:12px; }
+                /* Tighter than the full-page version - it is sharing the screen now. */
+                .gp-rail-list .gc-cur-table { font-size:11.5px; }
+                .gp-rail-list .gc-cur-table th,
+                .gp-rail-list .gc-cur-table td { padding:6px 8px; }
+                .gp-rail-list .gc-cur-table .td-name { width:130px; }
+                .gp-rail-list .gc-cur-label { font-size:11px;padding:6px 10px; }
+                .gp-tbl-row { cursor:pointer; }
+                .gp-tbl-btn { padding:5px 11px;background:#00461B;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap; }
+                .gp-tbl-btn.is-current { background:#FDE68A;color:#78350F;cursor:default; }
+                .gp-tbl-btn.is-done { background:#E6F4EA;color:#137333; }
+                .gp-rail-note { padding:0 14px 12px;font-size:11px;color:#9CA3AF; }
+                .gp-nav { display:flex;align-items:center;gap:7px;margin-right:auto; }
+                .gp-navb { padding:7px 12px;background:#fff;border:1.5px solid #dadce0;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;color:#374151; }
+                .gp-navb:hover:not(:disabled) { border-color:#00461B;color:#00461B; }
+                .gp-navb:disabled { opacity:.4;cursor:not-allowed; }
+                .gp-pos { font-size:12px;color:#6B7280;font-weight:700;min-width:62px;text-align:center; }
+                /* Narrow the list before dropping it: the answers need the room
+                   more than the roster does, and below tablet the rail goes
+                   away entirely so grading gets the full width. */
+                @media (max-width:1280px) { .gp-rail { width:440px; } }
+                @media (max-width:1040px) {
+                    .gp-rail { display:none; }
+                    .gp-panel { height:100%;border-radius:12px; }
+                }
+                @media (max-width:560px) {
+                    .gp-panel { border-radius:0; }
+                }
+                /* Rises into the middle as the submissions modal fades out, so
+                   the handoff reads as one surface replacing another in place. */
+                @keyframes gpSlide    { from { opacity:0; transform:translateY(14px) scale(.975); } to { opacity:1; transform:none; } }
+                @keyframes gpSlideOut { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(10px) scale(.985); } }
+                @keyframes gpScrimIn  { from { opacity:0; } to { opacity:1; } }
+                @keyframes gpScrimOut { from { opacity:1; } to { opacity:0; } }
+                .gp-closing { animation:gpScrimOut .22s ease-in forwards; pointer-events:none; }
+                .gp-closing .gp-panel { animation:gpSlideOut .22s ease-in forwards; }
+                @media (prefers-reduced-motion:reduce) {
+                    .gp-panel, .gp-closing, .gp-closing .gp-panel { animation:none; }
+                }
                 .gp-hdr { background:#fff;border-bottom:1px solid #E5E7EB;color:#111;padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0; }
                 .gp-hdr h3 { margin:0;font-size:17px;font-weight:700;color:#111; }
                 .gp-hdr p { margin:4px 0 0;font-size:12px;color:#6B7280; }
@@ -1378,6 +1479,13 @@ export async function render(container, params) {
                 .gp-integrity { background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#991B1B; }
             </style>
             <div class="gp-panel">
+                ${hasQueue ? `
+                <aside class="gp-rail">
+                    <div class="gp-rail-hd"><span>Student submissions</span><span class="gp-rail-n">${gpQueue.length}</span></div>
+                    <div class="gp-rail-list" id="gp-rail-list"></div>
+                    <div class="gp-rail-note">Ordered from first submitted to last · click a row to grade.</div>
+                </aside>` : ''}
+                <div class="gp-main">
                 <div class="gp-hdr">
                     <div><h3 id="gp-title">Loading…</h3><p id="gp-sub"></p></div>
                     <button class="gp-close" id="gp-close">&times;</button>
@@ -1397,33 +1505,179 @@ export async function render(container, params) {
                     </div>
                 </div>
                 <div class="gp-foot">
+                    ${hasNav ? `
+                    <div class="gp-nav">
+                        <button class="gp-navb" id="gp-prev">← Prev</button>
+                        <span class="gp-pos" id="gp-pos"></span>
+                        <button class="gp-navb" id="gp-next">Next →</button>
+                    </div>` : ''}
                     <button class="gp-btn-cancel" id="gp-cancel">Close</button>
-                    <button class="gp-finalize" id="gp-finalize" disabled>✓ Finalize & Save</button>
+                    <button class="gp-finalize" id="gp-finalize" disabled>✓ Finalize &amp; Save</button>
+                </div>
                 </div>
             </div>`;
 
         document.body.appendChild(overlay);
 
-        const closeFn = () => overlay.remove();
+        // Slide the drawer back out before handing control to onClose, so
+        // returning to the submissions list mirrors the way we came in
+        // instead of snapping.
+        const closeFn = () => {
+            const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+            const finish = () => { overlay.remove(); onClose?.(); };
+            if (reduced) return finish();
+            overlay.classList.add('gp-closing');
+            let settled = false;
+            const once = () => { if (!settled) { settled = true; finish(); } };
+            overlay.addEventListener('animationend', once, { once: true });
+            setTimeout(once, 260);
+        };
         overlay.querySelector('#gp-close').addEventListener('click', closeFn);
         overlay.querySelector('#gp-cancel').addEventListener('click', closeFn);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeFn(); });
 
-        const res = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
-        if (!res.success) {
-            overlay.querySelector('#gp-body').innerHTML = `<div style="color:#b91c1c;text-align:center;padding:40px;">${esc(res.message || 'Failed to load')}</div>`;
-            return;
+        // ── submissions table (right) + next/prev ─────────────────
+        /**
+         * The same table the submissions modal shows, rebuilt from the queue
+         * so it can carry the two things the modal's copy cannot: which row is
+         * open right now, and which ones are already finalized.
+         */
+        const paintRail = () => {
+            const list = overlay.querySelector('#gp-rail-list');
+            if (list) {
+                const fmtDate = (ts) => {
+                    if (!ts) return '—';
+                    const d = new Date(String(ts).replace(' ', 'T'));
+                    if (Number.isNaN(d.getTime())) return '—';
+                    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                };
+                list.innerHTML = `
+                    <div class="gc-cur-wrap">
+                        <div class="gc-cur-label">Student submissions — first to last turned in</div>
+                        <table class="gc-cur-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th class="th-left">Student ID</th>
+                                    <th class="th-left">Name</th>
+                                    <th>Score</th>
+                                    <th>%</th>
+                                    <th>Attempts</th>
+                                    <th>Status</th>
+                                    <th>Turned in</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${gpQueue.map((q, i) => {
+                                    const active = i === gpIndex;
+                                    // listQuizSubmissionsInOrder() already stores `score` as a percentage.
+                                    const pct = Number.isFinite(q.score) ? Math.round(q.score) : null;
+                                    const btnCls = active ? ' is-current' : (q.__done ? ' is-done' : '');
+                                    const btnTxt = active ? 'Viewing' : (q.__done ? 'Graded ✓' : 'Check / Grade');
+                                    return `<tr class="gp-tbl-row${active ? ' gb-row-selected' : ''}" data-i="${i}">
+                                        <td class="td-rank">${i + 1}</td>
+                                        <td class="td-id">${esc(q.student_id || '—')}</td>
+                                        <td class="td-name">${esc(q.name || '')}</td>
+                                        <td class="td-num"><strong>${q.earned}/${q.total || '—'}</strong></td>
+                                        <td class="td-num">${pct != null ? pct + '%' : '—'}</td>
+                                        <td class="td-num">${q.attempts}</td>
+                                        <td class="td-pass">
+                                            <span class="${q.passed ? 'gc-cur-badge-pass' : 'gc-cur-badge-fail'}">${q.passed ? 'Passed' : 'Failed'}</span>
+                                        </td>
+                                        <td class="td-num" style="font-weight:400;font-size:11px;color:#5F6368;">${esc(fmtDate(q.first_completed))}</td>
+                                        <td><button type="button" class="gp-tbl-btn${btnCls}" data-i="${i}">${btnTxt}</button></td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+                list.querySelectorAll('.gp-tbl-row').forEach(r => {
+                    r.addEventListener('click', () => goToIndex(parseInt(r.dataset.i, 10)));
+                });
+                overlay.querySelector('.gp-tbl-row.gb-row-selected')?.scrollIntoView({ block: 'nearest' });
+            }
+            const pos = overlay.querySelector('#gp-pos');
+            if (pos) pos.textContent = `${gpIndex + 1} of ${gpQueue.length}`;
+            const prev = overlay.querySelector('#gp-prev');
+            const next = overlay.querySelector('#gp-next');
+            if (prev) prev.disabled = gpIndex <= 0;
+            if (next) next.disabled = gpIndex >= gpQueue.length - 1;
+            const fin = overlay.querySelector('#gp-finalize');
+            if (fin && hasNav) {
+                fin.innerHTML = gpIndex >= gpQueue.length - 1 ? '✓ Finalize &amp; Save' : '✓ Finalize &amp; Next';
+            }
+        };
+
+        /** Swap the drawer's contents to another submission WITHOUT closing it. */
+        const loadAttempt = async (id) => {
+            const body = overlay.querySelector('#gp-body');
+            body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#888;">Loading submission…</div>`;
+            overlay.querySelector('#gp-finalize').disabled = true;
+            paintRail();
+
+            const r = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + id, { ttl: 0 });
+            if (!r.success) {
+                body.innerHTML = `<div style="color:#b91c1c;text-align:center;padding:40px;">${esc(r.message || 'Failed to load')}</div>`;
+                return;
+            }
+            const { attempt, answers } = r.data;
+            overlay.querySelector('#gp-title').textContent = attempt.quiz_title || 'Submission Review';
+            overlay.querySelector('#gp-sub').textContent = `${attempt.first_name || ''} ${attempt.last_name || ''}${attempt.student_id ? ' (' + attempt.student_id + ')' : ''} — ${attempt.subject_code || ''}`;
+            overlay.querySelector('#gp-score').textContent = `${attempt.earned_points || 0} / ${attempt.total_points || 0} pts (${parseFloat(attempt.percentage || 0).toFixed(1)}%)`;
+
+            const sw = parseInt(attempt.tab_switch_count || 0);
+            const integrityHtml = sw > 0 ? `<div class="gp-integrity"><strong>⚠ Integrity Flag — ${sw} tab switch${sw > 1 ? 'es' : ''} detected</strong><br>Student left the quiz tab ${sw} time${sw > 1 ? 's' : ''} while taking this quiz.${sw >= 3 ? ' <strong>Multiple violations detected.</strong>' : ''}</div>` : '';
+
+            // After finalizing we advance rather than close, so the callback the
+            // body uses for "done" moves the queue on instead of tearing the
+            // drawer down.
+            renderGradingBody(overlay, answers, integrityHtml, attempt, id, resolveUrl, afterFinalize);
+        };
+
+        const goToIndex = async (i) => {
+            if (i < 0 || i >= gpQueue.length || i === gpIndex) return;
+            gpIndex = i;
+            await loadAttempt(gpQueue[i].attempt_id);
+        };
+
+        /**
+         * Called once a submission is finalized: mark it and move straight to
+         * the next one. The whole point of the queue is that the instructor
+         * never has to go back to the table to pick the next student -- grade,
+         * finalize, and the next submission is already loaded.
+         */
+        function afterFinalize() {
+            if (!hasQueue) return closeFn();
+            if (gpQueue[gpIndex]) gpQueue[gpIndex].__done = true;
+            refreshQueueScores();
+            if (gpIndex < gpQueue.length - 1) goToIndex(gpIndex + 1);
+            else { paintRail(); notify.success('All submissions reviewed.'); }
         }
 
-        const { attempt, answers } = res.data;
-        overlay.querySelector('#gp-title').textContent = attempt.quiz_title || 'Submission Review';
-        overlay.querySelector('#gp-sub').textContent = `${attempt.first_name || ''} ${attempt.last_name || ''}${attempt.student_id ? ' (' + attempt.student_id + ')' : ''} — ${attempt.subject_code || ''}`;
-        overlay.querySelector('#gp-score').textContent = `${attempt.earned_points || 0} / ${attempt.total_points || 0} pts (${parseFloat(attempt.percentage || 0).toFixed(1)}%)`;
+        /**
+         * Finalizing changes a student's score, so pull the scores again and
+         * patch the rows in place -- otherwise the table on the left keeps
+         * showing the pre-finalize number for everyone already graded.
+         */
+        async function refreshQueueScores() {
+            const w = state.selectedWork;
+            if (w?.type !== 'quiz') return;
+            const fresh = listQuizSubmissionsInOrder(await loadQuizScores(w.id));
+            let changed = false;
+            for (const row of fresh) {
+                const q = gpQueue.find(x => String(x.attempt_id) === String(row.attempt_id));
+                if (!q) continue;
+                Object.assign(q, { score: row.score, earned: row.earned, total: row.total, passed: row.passed });
+                changed = true;
+            }
+            if (changed) paintRail();
+        }
 
-        const switches = parseInt(attempt.tab_switch_count || 0);
-        const integrityHtml = switches > 0 ? `<div class="gp-integrity"><strong>⚠ Integrity Flag — ${switches} tab switch${switches > 1 ? 'es' : ''} detected</strong><br>Student left the quiz tab ${switches} time${switches > 1 ? 's' : ''} while taking this quiz.${switches >= 3 ? ' <strong>Multiple violations detected.</strong>' : ''}</div>` : '';
+        overlay.querySelector('#gp-prev')?.addEventListener('click', () => goToIndex(gpIndex - 1));
+        overlay.querySelector('#gp-next')?.addEventListener('click', () => goToIndex(gpIndex + 1));
 
-        renderGradingBody(overlay, answers, integrityHtml, attempt, attemptId, resolveUrl, closeFn);
+        await loadAttempt(attemptId);
     }
 
     function renderGradingBody(overlay, answers, integrityHtml, attempt, attemptId, resolveUrl, closeFn) {
@@ -1562,7 +1816,7 @@ export async function render(container, params) {
 
         // Wire save buttons
         body.querySelectorAll('.gp-save-btn').forEach(btn => {
-            btn.addEventListener('click', () => saveGradePanelAnswer(overlay, btn, attempt, attemptId));
+            btn.addEventListener('click', () => saveGradePanelAnswer(overlay, btn, attempt, attemptId, closeFn));
         });
 
         // Wire AI Check button
@@ -1573,7 +1827,11 @@ export async function render(container, params) {
                 notify.info('No pending subjective answers to grade in this submission.');
                 return;
             }
-            if (!confirm('AI will grade all pending essay/short answer questions for this student.\n\nYou will still need to confirm each grade before finalizing. Continue?')) return;
+            const okAi = await notify.confirm(
+                'AI will grade all pending essay and short-answer questions for this student. You will still confirm each grade before finalizing.',
+                { title: 'Run AI grading?', confirmText: 'Run AI grading' }
+            );
+            if (!okAi) return;
             aiBtn.disabled = true;
             aiBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="gp-spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Checking…`;
             try {
@@ -1601,7 +1859,11 @@ export async function render(container, params) {
         const confirmAllBtn = overlay.querySelector('#gp-confirm-all');
         if (hasAI) confirmAllBtn.classList.add('show');
         confirmAllBtn.addEventListener('click', async () => {
-            if (!confirm('Confirm all AI-graded answers as-is? You can still adjust individual scores before finalizing.')) return;
+            const okAll = await notify.confirm(
+                'Confirm all AI-graded answers as they stand? You can still adjust individual scores before finalizing.',
+                { title: 'Confirm all AI grades?', confirmText: 'Confirm all' }
+            );
+            if (!okAll) return;
             const aiAnswers = answers.filter(a => a.grading_status === 'auto_graded');
             confirmAllBtn.disabled = true;
             for (const a of aiAnswers) {
@@ -1620,7 +1882,7 @@ export async function render(container, params) {
         checkFinalizeState(overlay, answers, attemptId, closeFn);
     }
 
-    async function saveGradePanelAnswer(overlay, btn, attempt, attemptId) {
+    async function saveGradePanelAnswer(overlay, btn, attempt, attemptId, closeFn) {
         const aid    = btn.dataset.aid;
         const isOverride = !!btn.dataset.override;
         const ptsEl  = overlay.querySelector(`#gp-pts-${aid}`);
@@ -1653,9 +1915,14 @@ export async function render(container, params) {
             if (res.new_score != null) {
                 overlay.querySelector('#gp-score').textContent = `${res.new_score} / ${attempt.total_points || 0} pts (${parseFloat(res.new_pct || 0).toFixed(1)}%)`;
             }
-            // Re-check finalize
+            // Re-check finalize. Hand back the SAME closeFn the panel was opened
+            // with -- it is what walks the instructor to the next submission.
+            // Re-wiring it to a bare overlay.remove() here meant that grading one
+            // answer silently downgraded "Finalize & Next" into "close
+            // everything", which is exactly the click-the-table-again loop the
+            // queue exists to avoid.
             const fresh = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
-            if (fresh.success) checkFinalizeState(overlay, fresh.data.answers, attemptId, () => overlay.remove());
+            if (fresh.success) checkFinalizeState(overlay, fresh.data.answers, attemptId, closeFn);
         } else {
             await notify.alert(res.message || 'Failed to save grade', { title: 'Save Failed', type: 'error' });
         }
@@ -1670,6 +1937,9 @@ export async function render(container, params) {
         finBtn.disabled = hasUnconfirmed;
         finBtn.title = hasUnconfirmed ? `${unconfirmed.length} answer(s) still need your confirmation` : '';
 
+        // paintRail() decides whether this reads "& Next" or "& Save"; remember
+        // it so a failed finalize restores the right one.
+        const finLabel = finBtn.innerHTML;
         finBtn.onclick = async () => {
             finBtn.disabled = true;
             finBtn.textContent = 'Finalizing…';
@@ -1686,7 +1956,7 @@ export async function render(container, params) {
                 }
             } else {
                 finBtn.disabled = false;
-                finBtn.textContent = '✓ Finalize & Save';
+                finBtn.innerHTML = finLabel;
                 await notify.alert(res.message || 'Failed to finalize', { title: 'Finalize Failed', type: 'error' });
             }
         };

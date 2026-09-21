@@ -9,20 +9,87 @@ import { openLessonModal } from '../../components/lesson-modal.js';
 import { openQuizCreatePicker } from '../../components/quiz-create-picker.js';
 import { buildStudentJoinUrl, buildStudentJoinUrlByEnrollmentCode, renderQrInto } from '../../utils/qr-utils.js';
 import { esc } from '../../utils/classroom-ui.js';
+import { JOIN_REQUESTS_EVENT, getJoinRequests, refreshJoinRequests } from '../../components/topbar.js';
+import { refreshWouldInterrupt, currentRouteKey } from '../../utils/live-refresh.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
+
+// The topbar polls SectionsAPI?action=join-watch and broadcasts the result;
+// this page just listens, so a join request sent from a student's phone
+// lights up the badges here without a reload and without a second poller.
+// One listener at a time — each render() replaces the previous one.
+//
+// Badges alone were not enough: approving a request (here or on another
+// device) enrols the student, but the section card kept saying "0 / 40
+// students" until a reload. The broadcast carries a version that also moves
+// when the roster changes, so on a change the page re-renders itself — just
+// not while a modal is open or a field is focused; that tick is skipped and
+// the next one retries, because the version is only adopted once shown.
+let _joinListener = null;
+let _shownJoinVersion = null;
+function watchJoinRequests(container, params) {
+    if (_joinListener) window.removeEventListener(JOIN_REQUESTS_EVENT, _joinListener);
+    // #page-content outlives this page, so also stop once the route changes —
+    // otherwise a later broadcast would redraw My Classes over another page.
+    const route = currentRouteKey();
+    _joinListener = (e) => {
+        if (!container.isConnected || currentRouteKey() !== route) {
+            window.removeEventListener(JOIN_REQUESTS_EVENT, _joinListener);
+            _joinListener = null;
+            return;
+        }
+        const version = e.detail?.version ?? null;
+        if (_shownJoinVersion === null) _shownJoinVersion = version;
+        if (version !== null && version !== _shownJoinVersion && !refreshWouldInterrupt()) {
+            _shownJoinVersion = version;
+            const y = window.scrollY;
+            render(container, { ...params, _live: true }).then(() => window.scrollTo(0, y));
+            return;
+        }
+        applyJoinCounts(container, e.detail?.requests || []);
+    };
+    window.addEventListener(JOIN_REQUESTS_EVENT, _joinListener);
+    // Paint what the topbar already knows right away, rather than waiting
+    // for its next tick. null = it has not polled yet.
+    const known = getJoinRequests();
+    if (known) applyJoinCounts(container, known);
+}
+
+function applyJoinCounts(container, requests) {
+    const bySection = new Map();
+    const bySubject = new Map();
+    for (const r of requests) {
+        const key = `${r.subject_offered_id}|${r.section_id}`;
+        bySection.set(key, (bySection.get(key) || 0) + 1);
+        bySubject.set(String(r.subject_id), (bySubject.get(String(r.subject_id)) || 0) + 1);
+    }
+    container.querySelectorAll('[data-pending-badge]').forEach(badge => {
+        const n = bySection.get(badge.dataset.pendingBadge) || 0;
+        badge.textContent = String(n);
+        badge.hidden = n === 0;
+    });
+    container.querySelectorAll('[data-subject-pending]').forEach(chip => {
+        const n = bySubject.get(chip.dataset.subjectPending) || 0;
+        chip.textContent = `${n} pending`;
+        chip.hidden = n === 0;
+    });
+}
 const G = '#00461B';
 const G2 = '#006428';
 const GL = '#E8F5EC';
 const BORDER = '#E5E7EB';
 
 export async function render(container, params = {}) {
-    container.innerHTML = `<div class="mc-loading"><div class="mc-spin"></div></div>`;
+    // A live re-render keeps the current page on screen until the new data
+    // is in, instead of flashing the loading spinner.
+    if (!params?._live) container.innerHTML = `<div class="mc-loading"><div class="mc-spin"></div></div>`;
 
     const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const subjectId  = params?.subject_id || hashParams.get('subject_id');
     const view       = (params?.view || hashParams.get('view')) === 'archived' ? 'archived' : 'active';
 
-    const classesRes = await Api.get('/SectionsAPI.php?action=instructor-classes');
+    // ttl:0 — a re-render served from Api's 45s cache would redraw the old
+    // student counts and make the live refresh look like it did nothing.
+    const classesRes = await Api.get('/SectionsAPI.php?action=instructor-classes', { ttl: 0 });
 
     const subjects = classesRes.success ? (classesRes.data || []) : [];
 
@@ -39,6 +106,11 @@ export async function render(container, params = {}) {
     }
 
     applyPageBg(container);
+    const { _live, ...baseParams } = params || {};
+    // A normal (navigation) render just loaded fresh data, so whatever the
+    // next broadcast says becomes the new baseline rather than a "change".
+    if (!_live) _shownJoinVersion = null;
+    watchJoinRequests(container, baseParams);
 }
 
 function renderSubjectList(container, subjects, view = 'active') {
@@ -319,6 +391,7 @@ function subjectCard(s) {
                     <span class="mc-subj-card-code">${esc(s.subject_code)}</span>
                     <h3>${esc(s.subject_name)}</h3>
                     ${isArchived ? '<span class="mc-archived-badge">Archived</span>' : ''}
+                    <span class="mc-subj-pending" data-subject-pending="${s.subject_id}" hidden></span>
                 </div>
                 <div class="mc-subj-body">
                     <div class="mc-stat-row">${icon('school', inl)} <strong>${secCount}</strong> section${secCount !== 1 ? 's' : ''}</div>
@@ -485,31 +558,69 @@ function openCreateSectionModal(container, subject) {
     });
 }
 
+function enrolledListHtml(students) {
+    if (!students.length) return '<p class="mc-empty-text">No students yet. Share the class code or import a list below.</p>';
+    return students.map(st => `
+        <div class="mc-student-row">
+            <div>
+                <strong>${esc(st.last_name)}, ${esc(st.first_name)}</strong>
+                <span class="mc-student-id">${esc(st.student_id || '')}</span>
+            </div>
+            ${st.subjects.map(subj => `
+                <button type="button" class="mc-btn-danger-sm" data-ssid="${subj.student_subject_id}">Remove</button>
+            `).join('')}
+        </div>
+    `).join('');
+}
+
+function pendingListHtml(pending) {
+    if (!pending.length) return '<p class="mc-empty-text">No pending join requests right now.</p>';
+    return pending.map(p => `
+        <div class="mc-student-row" data-pending-row="${p.request_id}">
+            <div>
+                <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
+                <span class="mc-student-id">${esc(p.student_id || p.email || '')}</span>
+            </div>
+            <div class="mc-pending-actions">
+                <button type="button" class="mc-btn-approve-sm" data-approve="${p.request_id}">Approve</button>
+                <button type="button" class="mc-btn-danger-sm" data-reject="${p.request_id}">Reject</button>
+            </div>
+        </div>
+    `).join('');
+}
+
 async function openManageStudentsModal(container, subject, sectionInfo) {
     const { sectionId, sectionName, subjectCode, enrollmentCode, subjectOfferedId } = sectionInfo;
     const code = enrollmentCode || subjectCode || subject.subject_code || '';
     const joinUrl = enrollmentCode ? buildStudentJoinUrlByEnrollmentCode(enrollmentCode, subject.subject_id) : buildStudentJoinUrl(code, sectionId);
     const offeredId = String(subjectOfferedId || subject.subject_offered_id || '');
-    const [res, pendingRes] = await Promise.all([
-        Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId),
-        Api.get(`/SectionsAPI.php?action=pending-joins&subject_offered_id=${offeredId}&section_id=${sectionId}`),
-    ]);
-    const rows = res.success ? res.data : [];
-    let pending = pendingRes.success ? (pendingRes.data || []) : [];
 
-    const byStudent = new Map();
-    for (const row of rows) {
-        const matchesSubject = offeredId
-            ? String(row.subject_offered_id) === offeredId
-            : String(row.subject_id) === String(subject.subject_id);
-        if (!matchesSubject) continue;
+    // Fresh every time (ttl:0): this roster changes from other devices — a
+    // student joining from their phone — so a cached copy is often wrong.
+    async function fetchEnrolled() {
+        const res = await Api.get('/SectionsAPI.php?action=students&section_id=' + sectionId, { ttl: 0 });
+        const byStudent = new Map();
+        for (const row of (res.success ? res.data : [])) {
+            const matchesSubject = offeredId
+                ? String(row.subject_offered_id) === offeredId
+                : String(row.subject_id) === String(subject.subject_id);
+            if (!matchesSubject) continue;
 
-        if (!byStudent.has(row.user_student_id)) {
-            byStudent.set(row.user_student_id, { ...row, subjects: [] });
+            if (!byStudent.has(row.user_student_id)) {
+                byStudent.set(row.user_student_id, { ...row, subjects: [] });
+            }
+            byStudent.get(row.user_student_id).subjects.push(row);
         }
-        byStudent.get(row.user_student_id).subjects.push(row);
+        return [...byStudent.values()];
     }
-    const students = [...byStudent.values()];
+
+    const [initialStudents, pendingRes] = await Promise.all([
+        fetchEnrolled(),
+        Api.get(`/SectionsAPI.php?action=pending-joins&subject_offered_id=${offeredId}&section_id=${sectionId}`, { ttl: 0 }),
+    ]);
+    let students = initialStudents;
+    let pending = pendingRes.success ? (pendingRes.data || []) : [];
+    let rosterChanged = false;
 
     const overlay = document.createElement('div');
     overlay.className = 'mc-modal-overlay';
@@ -538,40 +649,11 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
                     <button type="button" class="mc-stu-tab" data-stu-tab="add">Add Students</button>
                 </div>
 
-                <div id="mc-stu-panel-enrolled"${pending.length ? ' hidden' : ''}>
-                    ${students.length === 0
-                        ? '<p class="mc-empty-text">No students yet. Share the class code or import a list below.</p>'
-                        : students.map(st => `
-                            <div class="mc-student-row">
-                                <div>
-                                    <strong>${esc(st.last_name)}, ${esc(st.first_name)}</strong>
-                                    <span class="mc-student-id">${esc(st.student_id || '')}</span>
-                                </div>
-                                ${st.subjects.map(subj => `
-                                    <button type="button" class="mc-btn-danger-sm" data-ssid="${subj.student_subject_id}">Remove</button>
-                                `).join('')}
-                            </div>
-                        `).join('')}
-                </div>
+                <div id="mc-stu-panel-enrolled"${pending.length ? ' hidden' : ''}>${enrolledListHtml(students)}</div>
 
                 <div id="mc-stu-panel-pending"${pending.length ? '' : ' hidden'}>
                     <p class="mc-import-hint">Students who scanned the QR code or entered the class code — nothing enrolls until you approve them here.</p>
-                    <div id="mc-pending-list">
-                        ${pending.length === 0
-                            ? '<p class="mc-empty-text">No pending join requests right now.</p>'
-                            : pending.map(p => `
-                                <div class="mc-student-row" data-pending-row="${p.request_id}">
-                                    <div>
-                                        <strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong>
-                                        <span class="mc-student-id">${esc(p.student_id || p.email || '')}</span>
-                                    </div>
-                                    <div class="mc-pending-actions">
-                                        <button type="button" class="mc-btn-approve-sm" data-approve="${p.request_id}">Approve</button>
-                                        <button type="button" class="mc-btn-danger-sm" data-reject="${p.request_id}">Reject</button>
-                                    </div>
-                                </div>
-                            `).join('')}
-                    </div>
+                    <div id="mc-pending-list">${pendingListHtml(pending)}</div>
                 </div>
 
                 <div id="mc-stu-panel-add" hidden>
@@ -603,10 +685,23 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
     `;
 
     document.body.appendChild(overlay);
-    const close = () => overlay.remove();
+    // The page underneath holds off its live re-render while this modal is
+    // open; closing asks the topbar to poll now so the card's student count
+    // catches up straight away instead of on the next tick.
+    const close = () => {
+        overlay.remove();
+        if (rosterChanged) refreshJoinRequests();
+    };
     overlay.querySelector('.mc-modal-x').addEventListener('click', close);
     overlay.querySelector('.mc-modal-cancel').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    async function reloadEnrolled() {
+        students = await fetchEnrolled();
+        if (!overlay.isConnected) return;
+        overlay.querySelector('#mc-stu-panel-enrolled').innerHTML = enrolledListHtml(students);
+        overlay.querySelector('[data-stu-tab="enrolled"]').textContent = `Enrolled (${students.length})`;
+    }
 
     overlay.querySelectorAll('[data-copy]').forEach(el => {
         el.addEventListener('click', () => {
@@ -661,13 +756,34 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
             btn.disabled = false;
             return;
         }
-        pending = pending.filter(p => p.request_id !== requestId);
+        pending = pending.filter(p => String(p.request_id) !== String(requestId));
         overlay.querySelector(`[data-pending-row="${requestId}"]`)?.remove();
         updatePendingTabCount();
+        refreshJoinRequests();
         if (approveBtn) {
+            rosterChanged = true;
+            reloadEnrolled();
             showMcPopup('Student approved and enrolled.', { title: 'Approved', type: 'success' });
         }
     });
+
+    // Live: a student who requests (or cancels) while this modal is open
+    // appears in / drops out of the Pending list without reopening it.
+    const onJoinRequests = (e) => {
+        if (!overlay.isConnected) {
+            window.removeEventListener(JOIN_REQUESTS_EVENT, onJoinRequests);
+            return;
+        }
+        const mine = (e.detail?.requests || []).filter(r =>
+            String(r.subject_offered_id) === offeredId && String(r.section_id) === String(sectionId));
+        const idsOf = list => list.map(p => String(p.request_id)).sort().join(',');
+        if (idsOf(mine) === idsOf(pending)) return;
+        // Oldest first, same order the modal opened with.
+        pending = [...mine].sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
+        overlay.querySelector('#mc-pending-list').innerHTML = pendingListHtml(pending);
+        updatePendingTabCount();
+    };
+    window.addEventListener(JOIN_REQUESTS_EVENT, onJoinRequests);
 
     const fileInput = overlay.querySelector('#mc-import-file');
     const fnameEl = overlay.querySelector('#mc-import-fname');
@@ -779,23 +895,24 @@ async function openManageStudentsModal(container, subject, sectionInfo) {
         }
     });
 
-    overlay.querySelectorAll('[data-ssid]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const ok = await showMcConfirm('Remove this student from the class?');
-            if (!ok) return;
-            btn.disabled = true;
-            const r = await Api.post('/SectionsAPI.php?action=unenroll', {
-                student_subject_id: parseInt(btn.dataset.ssid, 10)
-            });
-            if (r.success) {
-                close();
-                showMcPopup('Student removed from this class.', { title: 'Removed', type: 'success' });
-                render(container, { subject_id: subject.subject_id });
-            } else {
-                showMcPopup(r.message || 'Could not remove student.', { title: 'Error', type: 'error' });
-                btn.disabled = false;
-            }
+    // Delegated, because the Enrolled list is redrawn after an approval.
+    overlay.querySelector('#mc-stu-panel-enrolled').addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-ssid]');
+        if (!btn) return;
+        const ok = await showMcConfirm('Remove this student from the class?');
+        if (!ok) return;
+        btn.disabled = true;
+        const r = await Api.post('/SectionsAPI.php?action=unenroll', {
+            student_subject_id: parseInt(btn.dataset.ssid, 10)
         });
+        if (r.success) {
+            close();
+            showMcPopup('Student removed from this class.', { title: 'Removed', type: 'success' });
+            render(container, { subject_id: subject.subject_id });
+        } else {
+            showMcPopup(r.message || 'Could not remove student.', { title: 'Error', type: 'error' });
+            btn.disabled = false;
+        }
     });
 }
 
@@ -1172,6 +1289,11 @@ function styles() {
            of the hidden attribute JS sets when there's nothing pending.
            This re-asserts hidden wins. */
         .mc-manage-people-badge[hidden] { display:none; }
+        /* "N pending" on a subject card — join requests waiting in any of its sections. */
+        .mc-subj-pending { position:absolute; top:12px; right:12px; z-index:1; padding:3px 9px; border-radius:999px;
+            background:#DC2626; color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.2px;
+            box-shadow:0 2px 6px rgba(0,0,0,.25); }
+        .mc-subj-pending[hidden] { display:none; }
 
         .mc-empty-state, .mc-empty-inline { text-align:center; padding:48px 24px; border:2px dashed ${BORDER};
             border-radius:16px; background:#FAFAFA; }

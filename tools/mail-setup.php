@@ -110,6 +110,10 @@ header('Content-Type: text/html; charset=UTF-8');
     .msg { padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
     .msg.success { background: #E8F5E9; color: #1B4D3E; }
     .msg.error { background: #FEE2E2; color: #991B1B; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 42px; }
+    .pw-eye { position: absolute; right: 8px; top: 9px; width: auto; padding: 2px; background: none; color: #9CA3AF; display: flex; }
+    .pw-eye:hover, .pw-eye.on { background: none; color: #00461B; }
     .badge { display: inline-block; background: rgba(255,255,255,.2); padding: 4px 10px; border-radius: 999px; font-size: 11px; margin-top: 10px; }
   </style>
 </head>
@@ -142,7 +146,12 @@ header('Content-Type: text/html; charset=UTF-8');
         <input type="email" id="gmail" name="gmail" placeholder="yourname@gmail.com" required>
 
         <label for="app_password">Google App Password (16 chars)</label>
-        <input type="password" id="app_password" name="app_password" placeholder="xxxx xxxx xxxx xxxx" required autocomplete="off">
+        <div class="pw-wrap">
+          <input type="password" id="app_password" name="app_password" placeholder="xxxx xxxx xxxx xxxx" required autocomplete="off">
+          <button type="button" class="pw-eye" aria-label="Show password" onclick="var i=document.getElementById('app_password'),s=i.type==='password';i.type=s?'text':'password';this.classList.toggle('on',s);this.setAttribute('aria-label',s?'Hide password':'Show password');">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
 
         <label for="test_to">Send test email to</label>
         <input type="email" id="test_to" name="test_to" placeholder="Same as Gmail or another inbox">

@@ -8,6 +8,7 @@ require_once __DIR__ . '/../config/cors.php';
 ob_start();
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 ob_clean();
 
 header('Content-Type: application/json');
@@ -72,8 +73,8 @@ function handleInstructorReport() {
          FROM subject_offered so
          JOIN subject s ON so.subject_id = s.subject_id
          LEFT JOIN student_subject ss   ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'enrolled'
-         LEFT JOIN quiz q               ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
-         LEFT JOIN lessons l            ON l.subject_id = s.subject_id AND l.user_teacher_id = so.user_teacher_id
+         LEFT JOIN quiz q               ON q.subject_id = s.subject_id AND " . classworkTeacherSql('q', 'so') . "
+         LEFT JOIN lessons l            ON l.subject_id = s.subject_id AND " . classworkTeacherSql('l', 'so') . "
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.status = 'completed'
          WHERE so.user_teacher_id = ? AND so.status = 'open'
          GROUP BY so.subject_offered_id
@@ -109,8 +110,8 @@ function handleInstructorReport() {
             COUNT(CASE WHEN sqa.status = 'completed' AND sqa.passed = 0 AND sqa.has_pending_grades = 0 THEN 1 END) as total_failed
          FROM subject_offered so
          LEFT JOIN student_subject ss   ON ss.subject_offered_id = so.subject_offered_id AND ss.status = 'enrolled'
-         LEFT JOIN quiz q               ON q.subject_id = so.subject_id AND q.user_teacher_id = so.user_teacher_id
-         LEFT JOIN lessons l            ON l.subject_id = so.subject_id AND l.user_teacher_id = so.user_teacher_id
+         LEFT JOIN quiz q               ON q.subject_id = so.subject_id AND " . classworkTeacherSql('q', 'so') . "
+         LEFT JOIN lessons l            ON l.subject_id = so.subject_id AND " . classworkTeacherSql('l', 'so') . "
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id
          WHERE so.user_teacher_id = ? AND so.status = 'open'",
         [$userId]
@@ -311,7 +312,7 @@ function handleStrugglingStudents() {
          JOIN subject_offered so  ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s           ON s.subject_id = so.subject_id
          LEFT JOIN section sec               ON sec.section_id = ss.section_id
-         LEFT JOIN quiz q                    ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
+         LEFT JOIN quiz q                    ON q.subject_id = s.subject_id AND " . classworkTeacherSql('q', 'so') . "
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
          LEFT JOIN global_module_grades gmg  ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id
          WHERE $whereSql
@@ -508,7 +509,7 @@ function computeStrugglingSnapshot(array $scope, array $moduleRange, array $quiz
          JOIN student_subject ss  ON ss.user_student_id = u.users_id AND ss.status = 'enrolled'
          JOIN subject_offered so  ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s           ON s.subject_id = so.subject_id
-         LEFT JOIN quiz q ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id AND q.grading_period IN ($quizPh)
+         LEFT JOIN quiz q ON q.subject_id = s.subject_id AND " . classworkTeacherSql('q', 'so') . " AND q.grading_period IN ($quizPh)
          LEFT JOIN student_quiz_attempts sqa ON sqa.quiz_id = q.quiz_id AND sqa.user_student_id = u.users_id AND sqa.status = 'completed'
          LEFT JOIN global_module_grades gmg ON gmg.subject_offered_id = so.subject_offered_id AND gmg.student_id = u.users_id AND gmg.module_number IN ($modulePh)
          WHERE $whereSql

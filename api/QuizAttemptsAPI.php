@@ -635,7 +635,10 @@ function getPendingGrading() {
               WHERE a.attempt_id = sqa.attempt_id
               AND q2.question_type IN ('essay','short_answer','fill_blank','fill_in_the_blank')
               AND TRIM(COALESCE(a.answer_text,'')) != '') > 0
-         ORDER BY sqa.completed_at DESC",
+         -- Oldest first: the grading workspace walks the queue from the FIRST
+         -- student who submitted to the last, so whoever waited longest is
+         -- marked first. Newest-first made the instructor grade backwards.
+         ORDER BY sqa.completed_at ASC",
         $params
     );
     echo json_encode(['success' => true, 'data' => $attempts ?: []]);

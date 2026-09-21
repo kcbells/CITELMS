@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
 
@@ -953,11 +954,14 @@ function setClassworkDueDate() {
 
         if ($lessonsId) {
             ensureLessonDueDateColumn();
+            // An inheriting instructor sets due dates on the class they now
+            // run, so authorship is the wrong question - ask whether they may
+            // manage this subject's classwork at all.
             $lesson = db()->fetchOne(
-                'SELECT lessons_id FROM lessons WHERE lessons_id = ? AND subject_id = ? AND user_teacher_id = ?',
-                [$lessonsId, $subjectId, $userId]
+                'SELECT lessons_id FROM lessons WHERE lessons_id = ? AND subject_id = ?',
+                [$lessonsId, $subjectId]
             );
-            if (!$lesson) {
+            if (!$lesson || !canManageClasswork((int)$userId, (int)$subjectId)) {
                 echo json_encode(['success' => false, 'message' => 'Lesson not found']);
                 return;
             }
@@ -967,10 +971,10 @@ function setClassworkDueDate() {
             require_once __DIR__ . '/helpers/QuizSectionHelper.php';
             ensureQuizScheduleColumns();
             $quiz = db()->fetchOne(
-                'SELECT quiz_id FROM quiz WHERE quiz_id = ? AND subject_id = ? AND user_teacher_id = ?',
-                [$quizId, $subjectId, $userId]
+                'SELECT quiz_id FROM quiz WHERE quiz_id = ? AND subject_id = ?',
+                [$quizId, $subjectId]
             );
-            if (!$quiz) {
+            if (!$quiz || !canManageClasswork((int)$userId, (int)$subjectId)) {
                 echo json_encode(['success' => false, 'message' => 'Quiz not found']);
                 return;
             }

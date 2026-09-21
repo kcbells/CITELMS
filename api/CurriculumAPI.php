@@ -25,6 +25,7 @@ $_currPerms = [
     'create_subject'    => 'curriculum.edit',
     'update'            => 'curriculum.edit',
     'archive'           => 'curriculum.edit',
+    'restore'           => 'curriculum.edit',
     'add_program'       => 'curriculum.edit',
     'list_versions'     => 'curriculum.view',
     'add_version'       => 'curriculum.edit',
@@ -46,6 +47,7 @@ switch ($action) {
     case 'create_subject':      handleCreateSubject();    break;
     case 'update':              handleUpdate();           break;
     case 'archive':             handleArchive();          break;
+    case 'restore':             handleRestore();          break;
     case 'add_program':         handleAddProgram();       break;
     case 'list_versions':       handleListVersions();     break;
     case 'add_version':         handleAddVersion();       break;
@@ -462,6 +464,56 @@ function handleArchive() {
     } catch (Exception $e) {
         error_log('Curriculum archive: ' . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to archive subject']);
+    }
+}
+
+/**
+ * Undo handleArchive(): put a retired subject back into the curriculum.
+ *
+ * The archive was a one-way door before this - Archive flipped the subject to
+ * 'inactive' and nothing in the app could flip it back, so a mis-click meant
+ * editing the database by hand. Restoring reverses exactly what archiving
+ * changed: the subject row, and the curriculum rows that were deactivated
+ * alongside it.
+ */
+function handleRestore() {
+    $data      = json_decode(file_get_contents('php://input'), true) ?? [];
+    $subjectId = (int)($data['subject_id'] ?? 0);
+    if (!$subjectId) { echo json_encode(['success' => false, 'message' => 'subject_id required']); return; }
+
+    $subject = db()->fetchOne("SELECT subject_id, program_id, status FROM subject WHERE subject_id = ?", [$subjectId]);
+    if (!$subject) { echo json_encode(['success' => false, 'message' => 'Subject not found']); return; }
+
+    // Archiving only ever passes a program when the caller had one, so fall
+    // back to the subject's own program rather than skipping the curriculum row.
+    $programId = (int)($data['program_id'] ?? 0) ?: (int)($subject['program_id'] ?? 0);
+    if ($programId && !deanCanAccessProgram($programId)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied: program not in your department']);
+        return;
+    }
+
+    if (($subject['status'] ?? '') === 'active') {
+        echo json_encode(['success' => true, 'message' => 'Subject is already active']);
+        return;
+    }
+
+    try {
+        $pdo = pdo();
+
+        if ($programId) {
+            $pdo->prepare(
+                "UPDATE curriculum SET status = 'active' WHERE program_id = ? AND course_id = ?"
+            )->execute([$programId, $subjectId]);
+        }
+
+        $pdo->prepare("UPDATE subject SET status = 'active', updated_at = NOW() WHERE subject_id = ?")
+            ->execute([$subjectId]);
+
+        echo json_encode(['success' => true, 'message' => 'Subject restored to the curriculum']);
+    } catch (Exception $e) {
+        error_log('Curriculum restore: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to restore subject']);
     }
 }
 

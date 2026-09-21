@@ -5,7 +5,7 @@
 import { Api } from '../../api.js';
 import { L } from '../../utils/action-labels.js';
 import { notify } from '../../utils/notify.js';
-import { validatePassword, attachStrengthMeter } from '../../utils/password-change-otp.js';
+import { validatePassword, attachStrengthMeter, attachEyeToggle } from '../../utils/password-change-otp.js';
 import { icon } from '../../utils/icons.js';
 
 import { esc } from '../../utils/classroom-ui.js';
@@ -568,6 +568,7 @@ function openModal(container, user = null) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
     attachStrengthMeter(overlay.querySelector('#m-password'));
+    attachEyeToggle(overlay.querySelector('#m-password'));
 
     overlay.querySelector('#modal-save').addEventListener('click', async () => {
         const alertEl = overlay.querySelector('#modal-alert');
@@ -666,6 +667,8 @@ function openChangePasswordModal(container, userId, userName) {
 
     document.body.appendChild(overlay);
     attachStrengthMeter(overlay.querySelector('#cp-pw'));
+    attachEyeToggle(overlay.querySelector('#cp-pw'));
+    attachEyeToggle(overlay.querySelector('#cp-confirm'));
 
     overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
     overlay.querySelector('.modal-cancel').addEventListener('click', () => overlay.remove());

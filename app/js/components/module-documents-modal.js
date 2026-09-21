@@ -154,7 +154,11 @@ async function loadAndRender(overlay, subjectId, opts) {
 
         body.querySelectorAll('.mdoc-delete-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Remove this file?')) return;
+                const okFile = await notify.confirm(
+                    'Remove this file? Students will no longer be able to open it.',
+                    { title: 'Remove file?', confirmText: 'Remove', danger: true }
+                );
+                if (!okFile) return;
                 await Api.post('/ModuleDocumentsAPI.php?action=delete', { doc_id: parseInt(btn.dataset.docId, 10) });
                 await loadAndRender(overlay, subjectId, opts);
             });

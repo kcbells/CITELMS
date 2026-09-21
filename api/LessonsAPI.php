@@ -8,6 +8,8 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
+require_once __DIR__ . '/helpers/SemesterScopeHelper.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
 require_once __DIR__ . '/helpers/NotificationEmailHelper.php';
 require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
@@ -593,7 +595,7 @@ function getInstructorSubjects() {
          JOIN subject s          ON s.subject_id          = so.subject_id
          JOIN section_subject ss ON ss.subject_offered_id = so.subject_offered_id
                                 AND ss.status = 'active'
-         WHERE so.user_teacher_id = ? AND so.status = 'open'
+         WHERE so.user_teacher_id = ? AND so.status = 'open'" . currentTermSql('so') . "
          ORDER BY s.subject_code",
         [$userId]
     );
@@ -618,7 +620,7 @@ function getInstructorLessons() {
          JOIN subject s ON l.subject_id = s.subject_id
          WHERE s.subject_id IN (
              SELECT DISTINCT so.subject_id FROM subject_offered so
-             WHERE so.user_teacher_id = ? AND so.status = 'open'
+             WHERE so.user_teacher_id = ? AND so.status = 'open'" . currentTermSql('so') . "
          ) $where
          ORDER BY s.subject_code, l.lesson_order",
         $params
@@ -816,9 +818,17 @@ function getStudentsForOffering() {
  */
 function verifyLessonOwner($lessonId) {
     $lesson = db()->fetchOne(
-        "SELECT lessons_id, subject_id FROM lessons WHERE lessons_id = ? AND user_teacher_id = ?",
-        [$lessonId, Auth::id()]
+        // Ownership OR inheritance. The old owner-only check meant an
+        // instructor handed a class mid-semester could see its lessons but
+        // silently failed every edit, delete and material upload.
+        "SELECT lessons_id, subject_id, user_teacher_id FROM lessons WHERE lessons_id = ?",
+        [$lessonId]
     );
+    if (!$lesson) return null;
+    // Authors keep their own material even after handing the class over and
+    // losing the offering, mirroring quizManageable() in QuizzesAPI.php.
+    if ((int)$lesson['user_teacher_id'] === (int)Auth::id()) return $lesson;
+    if (!canManageClasswork((int)Auth::id(), (int)$lesson['subject_id'])) return null;
     return $lesson;
 }
 

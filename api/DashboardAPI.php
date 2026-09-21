@@ -10,6 +10,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
+require_once __DIR__ . '/helpers/SemesterScopeHelper.php';
 
 ensureQuizScheduleColumns();
 
@@ -190,9 +191,13 @@ function handleInstructorDashboard() {
 
     // Get instructor's subject IDs (via subject_offered.user_teacher_id)
     $subjectIds = db()->fetchAll(
+        // Scoped to the current term. Without this an instructor saw every
+        // offering ever generated for them, including future academic years a
+        // Class Density import had already created - which is why a dean
+        // counting 2 subjects could face an instructor dashboard showing 4.
         "SELECT DISTINCT s.subject_id FROM subject_offered so
          JOIN subject s ON so.subject_id = s.subject_id
-         WHERE so.user_teacher_id = ? AND so.status = 'open'",
+         WHERE so.user_teacher_id = ? AND so.status = 'open'" . currentTermSql('so'),
         [$userId]
     );
     $sIds = array_map(fn($r) => $r['subject_id'], $subjectIds);
@@ -229,7 +234,7 @@ function handleInstructorDashboard() {
          JOIN subject s ON so.subject_id = s.subject_id
          LEFT JOIN section_subject ss2 ON ss2.subject_offered_id = so.subject_offered_id AND ss2.status = 'active'
          LEFT JOIN section sec ON sec.section_id = ss2.section_id
-         WHERE so.user_teacher_id = ? AND so.status = 'open'
+         WHERE so.user_teacher_id = ? AND so.status = 'open'" . currentTermSql('so') . "
          GROUP BY s.subject_id, s.subject_code, s.subject_name, s.units
          HAVING COUNT(DISTINCT sec.section_id) > 0
          ORDER BY s.subject_code",

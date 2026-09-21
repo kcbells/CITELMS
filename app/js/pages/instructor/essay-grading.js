@@ -1,6 +1,27 @@
 /**
- * Instructor Essay Grading Page (SPA module)
- * Grade essay and short answer responses from students
+ * Instructor Subjective Grading (SPA module)
+ *
+ * A grading WORKSPACE, not a list plus a dialog.
+ *
+ * It used to be: a centred list of pending submissions, click one, a modal
+ * opened over the page, grade, Finalize, modal closes, you are back at the
+ * list, hunt for the next student, repeat. Marking a class of forty meant
+ * forty round trips through a list.
+ *
+ * Now the queue lives in a rail down the LEFT and the student's answers fill
+ * the pane beside it, so both are on screen together. The instructor moves
+ * with Next / Prev (or Finalize & Next, which saves and advances in one
+ * click) straight down the queue - ordered from the FIRST student who
+ * submitted to the last, which is also why QuizAttemptsAPI's pending-grading
+ * query now sorts completed_at ASC instead of DESC.
+ *
+ * Deliberate choices worth knowing:
+ *   - A finalized row STAYS in the rail with a tick rather than vanishing.
+ *     Removing rows made "3 of 17" renumber underneath the person using it.
+ *   - Navigating away with an unsaved score is blocked and asks first. With
+ *     a modal, closing was deliberate; with Next it is one stray click.
+ *   - The rail collapses to a drawer under 900px, where side-by-side cannot
+ *     fit, and Next / Prev keep working one-handed.
  */
 import { Api } from '../../api.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
@@ -9,74 +30,72 @@ import { notify } from '../../utils/notify.js';
 import { esc } from '../../utils/classroom-ui.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 
+/** The flat, chronological grading queue and where we are in it. */
+let _queue = [];
+let _index = -1;
+let _subjectId = '';
+let _container = null;
+/** answer_id -> true while an edited score/feedback has not been saved. */
+let _dirty = new Set();
+let _keyHandler = null;
+
 export async function render(container) {
-    // Fetch instructor's subjects for the filter dropdown
-    const subjRes = await Api.get('/LessonsAPI.php?action=subjects');
+    _container = container;
+    const subjRes = await Api.get('/QuizzesAPI.php?action=instructor-subjects');
     const subjects = subjRes.success ? subjRes.data : [];
 
     container.innerHTML = `
         <style>
-            .eg-header { background:#00461B; border-radius:16px; padding:24px 28px; color:#fff; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+            .eg-wrap { display:flex; flex-direction:column; min-height:0; }
+            .btn-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#555; text-decoration:none; margin-bottom:14px; }
+            .btn-back:hover { color:#00461B; }
+            .eg-header { background:#00461B; border-radius:16px; padding:20px 24px; color:#fff; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
             .eg-header h2 { font-size:20px; font-weight:700; margin:0; }
             .eg-header p { font-size:13px; opacity:.85; margin:4px 0 0; }
-            .btn-back { display:inline-flex; align-items:center; gap:6px; color:#1B4D3E; font-size:13px; font-weight:600; text-decoration:none; margin-bottom:16px; }
-            .btn-back:hover { text-decoration:underline; }
-
-            .eg-stats { display:flex; gap:14px; margin-bottom:24px; flex-wrap:wrap; }
-            .eg-stat { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; min-width:150px; }
-            .eg-stat-icon { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:18px; background:#F3F4F6; color:#111; }
-            .eg-stat-num { font-size:20px; font-weight:700; color:#222; display:block; }
-            .eg-stat-lbl { font-size:11px; color:#777; display:block; }
-
-            .eg-filter { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; align-items:center; }
+            .eg-filter { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
             .eg-filter select { padding:9px 14px; border:1px solid #e0e0e0; border-radius:8px; font-size:13px; min-width:220px; cursor:pointer; }
 
-            .eg-list { display:flex; flex-direction:column; gap:10px; }
-            .eg-card { background:#fff; border:1px solid #e8e8e8; border-radius:12px; padding:16px 20px; display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:16px; cursor:pointer; transition:all .15s; }
-            .eg-card:hover { border-color:#1B4D3E; box-shadow:0 2px 8px rgba(0,0,0,.05); }
-            .eg-avatar { width:42px; height:42px; border-radius:50%; background:#1B4D3E; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; flex-shrink:0; }
-            .eg-info .eg-student { font-size:15px; font-weight:600; color:#222; }
-            .eg-info .eg-meta { font-size:12px; color:#888; margin-top:3px; }
-            .eg-info .eg-subject { display:inline-block; background:#1B4D3E; color:#fff; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600; margin-top:4px; }
-            .eg-progress { min-width:140px; }
-            .eg-prog-label { display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:5px; }
-            .eg-prog-bar { height:5px; background:#e8e8e8; border-radius:3px; overflow:hidden; }
-            .eg-prog-fill { height:100%; background:#1B4D3E; border-radius:3px; transition:width .3s; }
-            .eg-pending-count { background:#B45309; color:#fff; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
-            .eg-btn { padding:8px 16px; background:#1B4D3E; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:6px; }
-            .eg-btn:hover { background:#2D6A4F; }
+            /* ── The workspace: rail + pane, side by side ─────────────── */
+            .eg-work { display:grid; grid-template-columns:288px 1fr; gap:16px; align-items:start; }
 
-            .empty-state { text-align:center; padding:60px 24px; background:#fafafa; border:1px dashed #ddd; border-radius:12px; }
-            .empty-state h3 { font-size:18px; font-weight:600; color:#333; margin:0 0 8px; }
-            .empty-state p { font-size:14px; color:#666; margin:0; }
+            .eg-rail { background:#fff; border:1px solid #e8e8e8; border-radius:14px; overflow:hidden;
+                       position:sticky; top:16px; display:flex; flex-direction:column; max-height:calc(100dvh - 190px); }
+            .eg-rail-head { padding:12px 14px; border-bottom:1px solid #f0f0f0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+            .eg-rail-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; }
+            .eg-rail-count { background:#00461B; color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; }
+            .eg-rail-list { overflow-y:auto; flex:1; overscroll-behavior:contain; }
+            .eg-qrow { display:flex; gap:10px; align-items:flex-start; padding:11px 13px; border-bottom:1px solid #f5f5f5;
+                       cursor:pointer; transition:background .12s; border-left:3px solid transparent; }
+            .eg-qrow:hover { background:#f0fdf4; }
+            .eg-qrow.active { background:#f0fdf4; border-left-color:#00461B; }
+            .eg-qrow.done .eg-qrow-name { color:#9ca3af; }
+            .eg-qrow-idx { font-size:10px; font-weight:700; color:#9ca3af; min-width:18px; padding-top:2px; }
+            .eg-qrow-main { min-width:0; flex:1; }
+            .eg-qrow-name { font-size:13px; font-weight:600; color:#111827; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .eg-qrow-sub { font-size:11px; color:#9ca3af; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .eg-qrow-tag { flex-shrink:0; font-size:10px; font-weight:700; padding:2px 6px; border-radius:5px; background:#FEF3C7; color:#92400E; }
+            .eg-qrow-tag.ok { background:#DCFCE7; color:#166534; }
+            .eg-qrow-flag { color:#b91c1c; flex-shrink:0; }
 
-            /* Student group card */
-            .eg-student-group { background:#fff; border:1px solid #e8e8e8; border-radius:12px; margin-bottom:10px; overflow:hidden; }
-            .eg-student-header { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:16px; padding:16px 20px; cursor:pointer; transition:background .15s; }
-            .eg-student-header:hover { background:#f0fdf4; }
-            .eg-expand-icon { font-size:11px; color:#737373; transition:transform .2s; }
-            .eg-expand-icon.open { transform:rotate(90deg); }
-            .eg-attempts-list { display:none; border-top:1px solid #f0f0f0; }
-            .eg-attempts-list.open { display:block; }
-            .eg-attempt-row { display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:14px; padding:12px 20px 12px 60px; border-bottom:1px solid #f5f5f5; background:#fafffe; }
-            .eg-attempt-row:last-child { border-bottom:none; }
-            .eg-attempt-row:hover { background:#f0fdf4; }
-            .eg-attempt-meta { font-size:12px; color:#888; }
-            .eg-attempt-meta strong { color:#333; font-size:13px; display:block; }
+            .eg-pane { background:#fff; border:1px solid #e8e8e8; border-radius:14px; display:flex; flex-direction:column; min-height:520px; }
+            .eg-pane-head { padding:16px 20px; border-bottom:1px solid #e8e8e8; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+            .eg-pane-head h3 { margin:0; font-size:16px; font-weight:700; color:#111827; }
+            .eg-pane-head p { margin:3px 0 0; font-size:12.5px; color:#6b7280; }
+            .eg-pane-body { flex:1; overflow-y:auto; padding:20px; }
+            .eg-pane-foot { padding:12px 18px; border-top:1px solid #e8e8e8; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+            .eg-nav { display:flex; align-items:center; gap:8px; }
+            .eg-pos { font-size:12.5px; color:#6b7280; font-weight:600; min-width:74px; text-align:center; }
+            .eg-navbtn { padding:8px 13px; background:#fff; border:1px solid #ddd; border-radius:8px; font-size:13px; font-weight:600;
+                         cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+            .eg-navbtn:hover:not(:disabled) { border-color:#00461B; color:#00461B; }
+            .eg-navbtn:disabled { opacity:.4; cursor:not-allowed; }
+            .eg-hint { font-size:11px; color:#9ca3af; }
 
-            /* Grading Panel */
-            .eg-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000; display:flex; justify-content:flex-end; }
-            .eg-panel { background:#fff; width:700px; max-width:100vw; height:100%; display:flex; flex-direction:column; box-shadow:-4px 0 32px rgba(0,0,0,.15); animation:slideIn .25s ease-out; }
-            @keyframes slideIn { from { transform:translateX(40px); opacity:0; } to { transform:translateX(0); opacity:1; } }
-            .eg-panel-header { display:flex; justify-content:space-between; align-items:flex-start; padding:20px 24px; border-bottom:1px solid #e8e8e8; }
-            .eg-panel-header h3 { margin:0; font-size:17px; font-weight:700; color:#222; }
-            .eg-panel-header p { margin:4px 0 0; font-size:13px; color:#888; }
-            .eg-panel-close { background:none; border:none; font-size:24px; color:#999; cursor:pointer; padding:0; line-height:1; }
-            .eg-panel-close:hover { color:#333; }
-            .eg-panel-body { flex:1; overflow-y:auto; padding:24px; }
-            .eg-panel-footer { padding:16px 24px; border-top:1px solid #e8e8e8; display:flex; justify-content:flex-end; gap:10px; }
+            .empty-state { text-align:center; padding:56px 20px; color:#666; }
+            .empty-state h3 { font-size:17px; font-weight:600; color:#333; margin:0 0 6px; }
+            .empty-state p { font-size:13.5px; color:#666; margin:0; }
 
-            .attempt-meta { display:flex; gap:20px; flex-wrap:wrap; background:#f8f9fa; border-radius:10px; padding:14px 16px; margin-bottom:20px; font-size:13px; color:#555; }
+            .attempt-meta { display:flex; gap:20px; flex-wrap:wrap; background:#f8f9fa; border-radius:10px; padding:14px 16px; margin-bottom:18px; font-size:13px; color:#555; }
             .attempt-meta strong { display:block; font-size:15px; color:#222; font-weight:700; }
 
             .qblock { border:1px solid #e8e8e8; border-radius:10px; margin-bottom:14px; overflow:hidden; transition:border-color .2s; }
@@ -104,216 +123,204 @@ export async function render(container) {
             .save-btn:hover { background:#2D6A4F; }
             .save-btn.saved { background:#10b981; }
             .save-btn:disabled { opacity:.6; cursor:not-allowed; }
+            .save-btn.unsaved { background:#B45309; }
             .graded-badge { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; background:#00461B; color:#fff; border-radius:6px; font-size:12px; font-weight:600; }
             .mc-row { display:flex; gap:8px; align-items:center; font-size:13px; color:#555; margin-bottom:6px; }
             .icon-ok  { color:#1B4D3E; }
             .icon-bad { color:#b91c1c; }
 
-            .btn-outline { padding:9px 18px; background:#fff; border:1px solid #ddd; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
             .btn-green  { padding:9px 18px; background:#1B4D3E; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:7px; }
-            .btn-green:hover { background:#2D6A4F; }
+            .btn-green:hover:not(:disabled) { background:#2D6A4F; }
             .btn-green:disabled { opacity:.5; cursor:not-allowed; }
 
             .spin { animation:spin 1s linear infinite; }
             @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+            .eg-drawer-btn { display:none; }
+
+            /* Side-by-side needs roughly 900px. Below that the rail becomes a
+               drawer over the pane, and Next/Prev carry the workflow. */
+            @media (max-width:900px) {
+                .eg-work { grid-template-columns:1fr; }
+                .eg-rail { position:fixed; top:0; bottom:0; left:0; width:280px; max-height:none; z-index:900;
+                           border-radius:0; transform:translateX(-100%); transition:transform .22s ease; }
+                .eg-rail.open { transform:translateX(0); box-shadow:4px 0 28px rgba(0,0,0,.18); }
+                .eg-drawer-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 13px; background:#fff;
+                                 border:1px solid #ddd; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+                .eg-scrim { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:899; display:none; }
+                .eg-scrim.open { display:block; }
+                .eg-pane-foot { justify-content:stretch; }
+                .eg-nav { flex:1; justify-content:space-between; }
+            }
+            @media (max-width:560px) {
+                .eg-header { padding:16px; }
+                .eg-pane-body { padding:14px; }
+                .grade-row { flex-direction:column; }
+                .pts-input { width:100%; }
+            }
         </style>
 
-        <a href="#instructor/gradebook" class="btn-back">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
-            Back to Gradebook
-        </a>
-        <div class="eg-header">
-            <div>
-                <h2>Subjective Grading</h2>
-                <p>Review and grade essay, short answer, and fill-in-the-blank responses from students</p>
+        <div class="eg-wrap">
+            <a href="#instructor/gradebook" class="btn-back">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                Back to Gradebook
+            </a>
+            <div class="eg-header">
+                <div>
+                    <h2>Subjective Grading</h2>
+                    <p>Grade each submission in turn — oldest first. Use Next to move down the queue.</p>
+                </div>
+            </div>
+
+            <div class="eg-filter">
+                <select id="eg-subject-filter">
+                    <option value="">All Subjects</option>
+                    ${subjects.map(s => `<option value="${s.subject_id}">${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
+                </select>
+                <button class="eg-drawer-btn" id="eg-drawer-toggle">${icon('menu', inl)} Queue</button>
+            </div>
+
+            <div class="eg-work">
+                <aside class="eg-rail" id="eg-rail">
+                    <div class="eg-rail-head">
+                        <span class="eg-rail-title">Submissions</span>
+                        <span class="eg-rail-count" id="eg-rail-count">0</span>
+                    </div>
+                    <div class="eg-rail-list" id="eg-rail-list"></div>
+                </aside>
+                <section class="eg-pane" id="eg-pane">
+                    <div class="eg-pane-body"><div class="empty-state">Loading…</div></div>
+                </section>
             </div>
         </div>
-
-        <div class="eg-stats" id="eg-stats"></div>
-
-        <div class="eg-filter">
-            <select id="eg-subject-filter">
-                <option value="">All Subjects</option>
-                ${subjects.map(s => `<option value="${s.subject_id}">${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
-            </select>
-        </div>
-
-        <div id="eg-list-wrap"></div>
+        <div class="eg-scrim" id="eg-scrim"></div>
     `;
 
-    document.getElementById('eg-subject-filter').addEventListener('change', e => loadList(container, e.target.value));
-    loadList(container, '');
+    container.querySelector('#eg-subject-filter').addEventListener('change', e => loadQueue(e.target.value));
+
+    const rail = container.querySelector('#eg-rail');
+    const scrim = container.querySelector('#eg-scrim');
+    const closeDrawer = () => { rail.classList.remove('open'); scrim.classList.remove('open'); };
+    container.querySelector('#eg-drawer-toggle').addEventListener('click', () => {
+        rail.classList.toggle('open'); scrim.classList.toggle('open');
+    });
+    scrim.addEventListener('click', closeDrawer);
+
+    bindKeys();
+    await loadQueue('');
 }
 
-async function loadList(container, subjectId) {
-    const wrap = document.getElementById('eg-list-wrap');
-    const statsEl = document.getElementById('eg-stats');
-    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">Loading...</div>';
+/** Alt+Arrow to move, Ctrl+Enter to finalize. Plain arrows would fight the score fields. */
+function bindKeys() {
+    if (_keyHandler) document.removeEventListener('keydown', _keyHandler);
+    _keyHandler = (e) => {
+        if (!_container?.isConnected) return;
+        if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goTo(_index + 1); }
+        if (e.altKey && e.key === 'ArrowLeft')  { e.preventDefault(); goTo(_index - 1); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('eg-finalize')?.click();
+        }
+    };
+    document.addEventListener('keydown', _keyHandler);
+}
+
+async function loadQueue(subjectId) {
+    _subjectId = subjectId;
+    _dirty.clear();
+    const listEl = document.getElementById('eg-rail-list');
+    const pane = document.getElementById('eg-pane');
+    listEl.innerHTML = `<div style="padding:20px;text-align:center;color:#9ca3af;font-size:12.5px;">Loading…</div>`;
 
     const url = '/QuizAttemptsAPI.php?action=pending-grading' + (subjectId ? '&subject_id=' + subjectId : '');
-    const res = await Api.get(url);
-    const attempts = res.success ? res.data : [];
+    const res = await Api.get(url, { ttl: 0 });
+    const attempts = res.success ? (res.data || []) : [];
 
-    // Stats — count only attempts that still have ungraded answers
-    const pendingAttempts  = attempts.filter(a => parseInt(a.pending_count || 0) > 0);
-    const totalAnswers     = pendingAttempts.reduce((s, a) => s + parseInt(a.pending_count || 0), 0);
-    const flaggedAttempts  = attempts.filter(a => parseInt(a.tab_switch_count || 0) > 0);
-    statsEl.innerHTML = `
-        <div class="eg-stat">
-            <div class="eg-stat-icon">${icon('edit', { size: 22 })}</div>
-            <div><span class="eg-stat-num">${pendingAttempts.length}</span><span class="eg-stat-lbl">Submissions Pending</span></div>
-        </div>
-        <div class="eg-stat">
-            <div class="eg-stat-icon">${icon('checkCircle', { size: 22 })}</div>
-            <div><span class="eg-stat-num">${totalAnswers}</span><span class="eg-stat-lbl">Answers to Grade</span></div>
-        </div>
-        ${flaggedAttempts.length > 0 ? `
-        <div class="eg-stat" style="border-color:#FCA5A5;">
-            <div class="eg-stat-icon" style="background:#F3F4F6;">${icon('siren', { size: 22 })}</div>
-            <div><span class="eg-stat-num" style="color:#b91c1c;">${flaggedAttempts.length}</span><span class="eg-stat-lbl">Integrity Flags</span></div>
-        </div>` : ''}`;
+    // Flat and chronological: the queue is the order people submitted in, not
+    // a per-student grouping. The API already sorts completed_at ASC.
+    _queue = attempts.map(a => ({ ...a, finalized: false }));
 
-    if (attempts.length === 0) {
-        wrap.innerHTML = `<div class="empty-state">
-            <div style="margin-bottom:12px;">${iconLg('quiz')}</div>
+    document.getElementById('eg-rail-count').textContent = _queue.length;
+
+    if (!_queue.length) {
+        listEl.innerHTML = `<div style="padding:22px 14px;text-align:center;color:#9ca3af;font-size:12.5px;">Nothing to grade</div>`;
+        pane.innerHTML = `<div class="eg-pane-body"><div class="empty-state">
+            <div style="margin-bottom:10px;">${iconLg('quiz')}</div>
             <h3>No Subjective Submissions</h3>
             <p>No students have submitted quizzes with essay or short answer questions yet.</p>
-        </div>`;
+        </div></div>`;
+        _index = -1;
         return;
     }
 
-    // Group attempts by student
-    const byStudent = new Map();
-    attempts.forEach(a => {
-        const key = a.first_name + '_' + a.last_name;
-        if (!byStudent.has(key)) byStudent.set(key, { first_name: a.first_name, last_name: a.last_name, attempts: [] });
-        byStudent.get(key).attempts.push(a);
-    });
+    renderRail();
+    await goTo(0, true);
+}
 
-    let html = '';
-    let gid = 0;
-    for (const [, st] of byStudent) {
-        gid++;
-        const groupId = `sg-${gid}`;
-        const initials = (st.first_name?.[0] || '') + (st.last_name?.[0] || '');
-        const totalPending = st.attempts.reduce((s, a) => s + parseInt(a.pending_count || 0), 0);
-        const totalAttempts = st.attempts.length;
-
-        html += `
-        <div class="eg-student-group">
-            <div class="eg-student-header" data-group="${groupId}">
-                <span class="eg-expand-icon">▶</span>
-                <div class="eg-info" style="display:flex;align-items:center;gap:12px;">
-                    <div class="eg-avatar">${esc(initials)}</div>
-                    <div>
-                        <div class="eg-student">${esc(st.first_name)} ${esc(st.last_name)}</div>
-                        <div class="eg-meta">${totalAttempts} submission${totalAttempts!==1?'s':''}</div>
-                    </div>
-                </div>
-                ${totalPending > 0
-                    ? `<span class="eg-pending-count">${totalPending} pending</span>`
-                    : `<span class="eg-pending-count" style="background:#00461B; color:#fff;">${icon('check', inl)} all graded</span>`
-                }
-                <span style="font-size:12px;color:#9ca3af;">${totalAttempts} attempt${totalAttempts!==1?'s':''}</span>
+function renderRail() {
+    const listEl = document.getElementById('eg-rail-list');
+    if (!listEl) return;
+    listEl.innerHTML = _queue.map((a, i) => {
+        const pending = parseInt(a.pending_count || 0);
+        const flags = parseInt(a.tab_switch_count || 0);
+        const when = a.completed_at ? new Date(a.completed_at.replace(' ', 'T')) : null;
+        const whenTxt = when && !isNaN(when) ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        return `
+        <div class="eg-qrow${i === _index ? ' active' : ''}${a.finalized ? ' done' : ''}" data-i="${i}">
+            <span class="eg-qrow-idx">${i + 1}</span>
+            <div class="eg-qrow-main">
+                <div class="eg-qrow-name">${esc(a.last_name || '')}, ${esc(a.first_name || '')}</div>
+                <div class="eg-qrow-sub">${esc(a.subject_code)} · ${esc(a.quiz_title)}</div>
+                <div class="eg-qrow-sub">${esc(whenTxt)}</div>
             </div>
-            <div class="eg-attempts-list" id="${groupId}">
-                ${st.attempts.map(a => {
-                    const total  = parseInt(a.pending_count || 0) + parseInt(a.graded_count || 0);
-                    const graded = parseInt(a.graded_count || 0);
-                    const pct    = total > 0 ? Math.round(graded / total * 100) : 0;
-                    const date   = a.completed_at ? new Date(a.completed_at).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
-                    return `
-                    <div class="eg-attempt-row">
-                        <div class="eg-attempt-meta">
-                            <strong>${esc(a.quiz_title)}</strong>
-                            <span>${esc(a.subject_code)} &bull; ${date}</span>
-                            ${parseInt(a.tab_switch_count || 0) > 0
-                                ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#7F1D1D; color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-top:3px;">
-                                    ${icon('siren', inl)} ${a.tab_switch_count} tab switch${parseInt(a.tab_switch_count)>1?'es':''}
-                                   </span>`
-                                : ''}
-                        </div>
-                        <div class="eg-progress" style="min-width:120px;">
-                            <div class="eg-prog-label"><span style="font-size:11px;color:#888;">${graded}/${total} graded</span></div>
-                            <div class="eg-prog-bar"><div class="eg-prog-fill" style="width:${pct}%"></div></div>
-                        </div>
-                        ${parseInt(a.pending_count) > 0
-                            ? `<span class="eg-pending-count" style="font-size:11px;">${a.pending_count} pending</span>`
-                            : `<span class="eg-pending-count" style="font-size:11px;background:#00461B; color:#fff;">${icon('check', inl)} graded</span>`
-                        }
-                        <button class="eg-btn grade-btn" data-attempt="${a.attempt_id}" data-switches="${a.tab_switch_count || 0}">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            ${parseInt(a.pending_count) > 0 ? 'Grade' : 'Review'}
-                        </button>
-                    </div>`;
-                }).join('')}
-            </div>
+            ${flags > 0 ? `<span class="eg-qrow-flag" title="${flags} tab switch(es)">${icon('siren', { size: 13 })}</span>` : ''}
+            <span class="eg-qrow-tag${a.finalized || pending === 0 ? ' ok' : ''}">${a.finalized ? '✓' : (pending || '✓')}</span>
         </div>`;
-    }
+    }).join('');
 
-    wrap.innerHTML = html;
-
-    // Toggle expand/collapse
-    wrap.querySelectorAll('.eg-student-header').forEach(hdr => {
-        hdr.addEventListener('click', () => {
-            const list = document.getElementById(hdr.dataset.group);
-            const icon = hdr.querySelector('.eg-expand-icon');
-            const isOpen = list.classList.toggle('open');
-            icon.classList.toggle('open', isOpen);
-        });
-    });
-
-    // Grade button opens panel
-    wrap.querySelectorAll('.grade-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openPanel(container, btn.dataset.attempt, subjectId, parseInt(btn.dataset.switches || 0));
-        });
+    listEl.querySelectorAll('.eg-qrow').forEach(row => {
+        row.addEventListener('click', () => goTo(parseInt(row.dataset.i)));
     });
 }
 
-async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
-    const overlay = document.createElement('div');
-    overlay.className = 'eg-overlay';
-    overlay.innerHTML = `<div class="eg-panel">
-        <div class="eg-panel-header">
-            <div><h3 id="panel-title">Loading...</h3><p id="panel-sub"></p></div>
-            <button class="eg-panel-close">&times;</button>
-        </div>
-        <div class="eg-panel-body" id="panel-body">
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;gap:12px;color:#888;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1B4D3E" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-                <p>Loading submission...</p>
-            </div>
-        </div>
-        <div class="eg-panel-footer">
-            <button class="btn-outline panel-cancel">Close</button>
-            <button class="btn-green" id="panel-finalize" disabled style="opacity:.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                Finalize &amp; Save
-            </button>
-        </div>
-    </div>`;
+/** True when it is safe to leave the current submission. */
+async function confirmLeave() {
+    if (!_dirty.size) return true;
+    return notify.confirm(
+        `${_dirty.size} grade${_dirty.size > 1 ? 's' : ''} on this submission ${_dirty.size > 1 ? 'have' : 'has'} not been saved. Leave anyway?`,
+        { confirmText: 'Leave' }
+    );
+}
 
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.querySelector('.eg-panel-close').addEventListener('click', close);
-    overlay.querySelector('.panel-cancel').addEventListener('click', close);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+async function goTo(i, skipGuard = false) {
+    if (i < 0 || i >= _queue.length || i === _index) return;
+    if (!skipGuard && !(await confirmLeave())) return;
 
-    const res = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + attemptId);
+    _dirty.clear();
+    _index = i;
+    renderRail();
+    document.getElementById('eg-rail')?.classList.remove('open');
+    document.getElementById('eg-scrim')?.classList.remove('open');
+    await openAt(i);
+
+    // Keep the active row in view when moving by keyboard.
+    document.querySelector('.eg-qrow.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+async function openAt(i) {
+    const entry = _queue[i];
+    const pane = document.getElementById('eg-pane');
+    pane.innerHTML = `<div class="eg-pane-body"><div class="empty-state">Loading submission…</div></div>`;
+
+    const res = await Api.get('/QuizAttemptsAPI.php?action=attempt-answers&attempt_id=' + entry.attempt_id, { ttl: 0 });
     if (!res.success) {
-        document.getElementById('panel-body').innerHTML = `<div style="color:#b91c1c;text-align:center;padding:40px;">${esc(res.message || 'Failed to load')}</div>`;
+        pane.innerHTML = `<div class="eg-pane-body"><div class="empty-state" style="color:#b91c1c;">${esc(res.message || 'Failed to load')}</div></div>`;
         return;
     }
 
     const { attempt, answers } = res.data;
-    document.getElementById('panel-title').textContent = attempt.quiz_title;
-    document.getElementById('panel-sub').textContent =
-        `${attempt.first_name} ${attempt.last_name}${attempt.student_id ? ' (' + attempt.student_id + ')' : ''} — ${attempt.subject_code}`;
+    const switches = parseInt(attempt.tab_switch_count || entry.tab_switch_count || 0);
 
-    // Integrity alert — shown at top of panel if student switched tabs
-    const switches = parseInt(attempt.tab_switch_count || tabSwitches || 0);
     const integrityHtml = switches > 0 ? `
         <div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;">
             <span style="flex-shrink:0;">${icon('siren', { size: 22 })}</span>
@@ -328,7 +335,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
             </div>
         </div>` : '';
 
-    let html = `${integrityHtml}<div class="attempt-meta">
+    let body = `${integrityHtml}<div class="attempt-meta">
         <div><strong>${attempt.earned_points}/${attempt.total_points} pts</strong>Current Score</div>
         <div><strong>${attempt.percentage}%</strong>Percentage</div>
         <div><strong>${attempt.passing_rate}%</strong>Passing Rate</div>
@@ -343,7 +350,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
         const isGraded   = a.grading_status === 'graded';
         const studentText = (a.answer_text || '').trim();
 
-        html += `<div class="qblock${isGraded ? ' graded' : ''}" id="qb_${a.answer_id}">
+        body += `<div class="qblock${isGraded ? ' graded' : ''}" id="qb_${a.answer_id}">
             <div class="qblock-head">
                 <span class="qnum">Question ${qn}</span>
                 <div style="display:flex;gap:8px;align-items:center;">
@@ -356,12 +363,11 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
                 <div class="q-text">${esc(a.question_text)}</div>`;
 
         if (isSubj) {
-            html += `<div class="student-ans${!studentText ? ' empty' : ''}">${studentText ? esc(studentText) : '(No answer provided)'}</div>`;
+            body += `<div class="student-ans${!studentText ? ' empty' : ''}">${studentText ? esc(studentText) : '(No answer provided)'}</div>`;
             if (isPending || isAiGraded) {
-                // Show grade form — for AI graded, pre-fill with AI score so instructor can review/override
                 const currentPts = isAiGraded ? (parseFloat(a.points_earned) || 0) : 0;
                 const currentFb  = isAiGraded ? (a.grader_feedback || '') : '';
-                html += `
+                body += `
                 ${isAiGraded ? `<div style="background:#EDE9FE;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#5B21B6;">
                     ${icon('robot', inl)} <strong>AI Score: ${currentPts}/${a.max_points} pts</strong>${currentFb ? ` — <em>${esc(currentFb)}</em>` : ''}<br>
                     <span style="opacity:.75">Review and adjust below if needed.</span>
@@ -375,12 +381,12 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
                 <div class="grade-row">
                     <div class="pts-wrap">
                         <span class="pts-label">Points</span>
-                        <input type="number" class="pts-input" id="pts_${a.answer_id}" min="0" max="${a.max_points}" step="0.5" value="${currentPts}">
+                        <input type="number" class="pts-input" id="pts_${a.answer_id}" data-answer="${a.answer_id}" min="0" max="${a.max_points}" step="0.5" value="${currentPts}">
                         <div class="pts-max">/ ${a.max_points}</div>
                     </div>
                     <div class="fb-wrap">
                         <span class="pts-label">Feedback (optional)</span>
-                        <textarea class="fb-input" id="fb_${a.answer_id}" placeholder="Add feedback...">${esc(currentFb)}</textarea>
+                        <textarea class="fb-input" id="fb_${a.answer_id}" data-answer="${a.answer_id}" placeholder="Add feedback...">${esc(currentFb)}</textarea>
                     </div>
                 </div>
                 <button class="save-btn" id="sbtn_${a.answer_id}" data-answer="${a.answer_id}" data-max="${a.max_points}">
@@ -388,7 +394,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
                     ${isAiGraded ? 'Override / Confirm Grade' : 'Save Grade'}
                 </button>`;
             } else {
-                html += `<div class="graded-badge">
+                body += `<div class="graded-badge">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                     Graded: ${a.points_earned}/${a.max_points} pts
                     ${a.grader_feedback ? `&nbsp;&mdash; <em style="font-weight:400;">${esc(a.grader_feedback)}</em>` : ''}
@@ -396,7 +402,7 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
             }
         } else {
             const correct = a.is_correct == 1;
-            html += `<div class="mc-row">
+            body += `<div class="mc-row">
                 <span class="${correct ? 'icon-ok' : 'icon-bad'}">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         ${correct ? '<polyline points="20 6 9 17 4 12"/>' : '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'}
@@ -408,76 +414,122 @@ async function openPanel(container, attemptId, subjectId, tabSwitches = 0) {
             ${a.correct_answer_text && !correct ? `<div style="font-size:12px;color:#1B4D3E;margin-top:3px;">Correct: <strong>${esc(a.correct_answer_text)}</strong></div>` : ''}`;
         }
 
-        html += '</div></div>';
+        body += '</div></div>';
     });
 
-    document.getElementById('panel-body').innerHTML = html;
+    const last = _index >= _queue.length - 1;
+    pane.innerHTML = `
+        <div class="eg-pane-head">
+            <div>
+                <h3>${esc(attempt.first_name)} ${esc(attempt.last_name)}${attempt.student_id ? ` <span style="font-weight:500;color:#9ca3af;">(${esc(attempt.student_id)})</span>` : ''}</h3>
+                <p>${esc(attempt.quiz_title)} — ${esc(attempt.subject_code)}</p>
+            </div>
+        </div>
+        <div class="eg-pane-body" id="eg-pane-body">${body}</div>
+        <div class="eg-pane-foot">
+            <div class="eg-nav">
+                <button class="eg-navbtn" id="eg-prev" ${_index <= 0 ? 'disabled' : ''}>← Prev</button>
+                <span class="eg-pos">${_index + 1} of ${_queue.length}</span>
+                <button class="eg-navbtn" id="eg-next" ${last ? 'disabled' : ''}>Next →</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span class="eg-hint">Alt+← / Alt+→ · Ctrl+Enter</span>
+                <button class="btn-green" id="eg-finalize">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    ${last ? 'Finalize' : 'Finalize &amp; Next'}
+                </button>
+            </div>
+        </div>`;
 
-    // Wire up AI grade buttons
-    overlay.querySelectorAll('.ai-grade-btn').forEach(btn => {
-        btn.addEventListener('click', () => runAiGrade(overlay, btn.dataset.answer, parseFloat(btn.dataset.max)));
+    pane.querySelectorAll('.ai-grade-btn').forEach(btn => {
+        btn.addEventListener('click', () => runAiGrade(btn.dataset.answer, parseFloat(btn.dataset.max)));
+    });
+    pane.querySelectorAll('.save-btn').forEach(btn => {
+        btn.addEventListener('click', () => saveAnswer(btn.dataset.answer, parseFloat(btn.dataset.max)));
+    });
+    // Track edits so Next can warn instead of losing them silently.
+    pane.querySelectorAll('.pts-input, .fb-input').forEach(el => {
+        el.addEventListener('input', () => {
+            _dirty.add(el.dataset.answer);
+            const sb = document.getElementById('sbtn_' + el.dataset.answer);
+            if (sb) { sb.classList.remove('saved'); sb.classList.add('unsaved'); }
+        });
     });
 
-    // Wire up save buttons
-    overlay.querySelectorAll('.save-btn').forEach(btn => {
-        btn.addEventListener('click', () => saveAnswer(overlay, btn.dataset.answer, parseFloat(btn.dataset.max)));
-    });
-
-    checkFinalize(overlay, attemptId, close, subjectId, container);
+    document.getElementById('eg-prev').addEventListener('click', () => goTo(_index - 1));
+    document.getElementById('eg-next').addEventListener('click', () => goTo(_index + 1));
+    document.getElementById('eg-finalize').addEventListener('click', finalizeAndNext);
 }
 
-function checkFinalize(overlay, attemptId, closePanel, subjectId, container) {
-    const finalBtn = document.getElementById('panel-finalize');
-    const pendingBtns = overlay.querySelectorAll('.save-btn:not(.saved)');
-    if (pendingBtns.length === 0) {
-        finalBtn.disabled = false;
-        finalBtn.style.opacity = '1';
+/**
+ * Save anything still edited, finalize the attempt, then move on.
+ *
+ * The old panel disabled Finalize until every answer had been saved by hand,
+ * which with a Next button would just be a dead button the person cannot
+ * explain. Saving first is the same end state with one less thing to get
+ * wrong.
+ */
+async function finalizeAndNext() {
+    const btn = document.getElementById('eg-finalize');
+    const entry = _queue[_index];
+    if (!entry) return;
+
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Saving…';
+
+    for (const answerId of [...document.querySelectorAll('.save-btn:not(.saved)')].map(b => b.dataset.answer)) {
+        const maxEl = document.getElementById('sbtn_' + answerId);
+        await saveAnswer(answerId, parseFloat(maxEl?.dataset.max || 0), true);
     }
 
-    finalBtn.onclick = async () => {
-        finalBtn.disabled = true;
-        finalBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Finalizing...';
+    const res = await Api.post('/QuizAttemptsAPI.php?action=finalize-grading', { attempt_id: parseInt(entry.attempt_id) });
+    btn.disabled = false;
+    btn.innerHTML = orig;
 
-        const res = await Api.post('/QuizAttemptsAPI.php?action=finalize-grading', { attempt_id: parseInt(attemptId) });
-        if (res.success) {
-            closePanel();
-            loadList(container, subjectId);
-        } else {
-            finalBtn.disabled = false;
-            finalBtn.innerHTML = 'Finalize &amp; Save';
-            notify.error(res.message || 'Failed to finalize');
-        }
-    };
+    if (!res.success) {
+        notify.error(res.message || 'Failed to finalize');
+        return;
+    }
+
+    // Keep the row, mark it done - see the note at the top about not letting
+    // the queue renumber under the person using it.
+    entry.finalized = true;
+    entry.pending_count = 0;
+    _dirty.clear();
+    renderRail();
+
+    if (_index < _queue.length - 1) {
+        await goTo(_index + 1, true);
+    } else {
+        notify.success?.('All submissions graded.');
+        await openAt(_index);
+    }
 }
 
-async function runAiGrade(overlay, answerId, maxPts) {
+async function runAiGrade(answerId, maxPts) {
     const btn  = document.getElementById('aibtn_' + answerId);
     const hint = document.getElementById('ai-hint-' + answerId);
     const saveBtn = document.getElementById('sbtn_' + answerId);
 
     btn.disabled = true;
-    btn.textContent = '⏳ Grading…';
+    btn.textContent = 'Grading…';
 
-    const res = await Api.post('/QuizAttemptsAPI.php?action=ai-grade-answer', {
-        answer_id: parseInt(answerId)
-    });
+    const res = await Api.post('/QuizAttemptsAPI.php?action=ai-grade-answer', { answer_id: parseInt(answerId) });
 
     if (res.success) {
-        // Pre-fill the score and feedback inputs
         const ptsInput = document.getElementById('pts_' + answerId);
         const fbInput  = document.getElementById('fb_'  + answerId);
         if (ptsInput) ptsInput.value = res.score;
         if (fbInput)  fbInput.value  = res.feedback || '';
+        _dirty.add(String(answerId));
 
-        // Replace the hint box with the purple AI result summary
         if (hint) {
             hint.style.background  = '#EDE9FE';
             hint.style.border      = 'none';
             hint.style.color       = '#5B21B6';
             hint.innerHTML = `${icon('robot', inl)} <strong>AI Score: ${res.score}/${maxPts} pts</strong>${res.feedback ? ` — <em>${esc(res.feedback)}</em>` : ''}<br><span style="opacity:.75">Review and adjust below if needed.</span>`;
         }
-
-        // Update save button label to "Override / Confirm Grade"
         if (saveBtn) {
             saveBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg> Override / Confirm Grade';
         }
@@ -494,13 +546,16 @@ async function runAiGrade(overlay, answerId, maxPts) {
     }
 }
 
-async function saveAnswer(overlay, answerId, maxPts) {
+async function saveAnswer(answerId, maxPts, quiet = false) {
     const btn = document.getElementById('sbtn_' + answerId);
+    if (!btn) return;
     const pts = Math.max(0, Math.min(maxPts, parseFloat(document.getElementById('pts_' + answerId)?.value) || 0));
     const feedback = document.getElementById('fb_' + answerId)?.value || '';
 
     btn.disabled = true;
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Saving...';
+    if (!quiet) {
+        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Saving...';
+    }
 
     const res = await Api.post('/QuizAttemptsAPI.php?action=grade-answer', {
         answer_id: parseInt(answerId),
@@ -510,27 +565,17 @@ async function saveAnswer(overlay, answerId, maxPts) {
 
     if (res.success) {
         btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Saved!';
+        btn.classList.remove('unsaved');
         btn.classList.add('saved');
-        const block = document.getElementById('qb_' + answerId);
-        if (block) block.classList.add('graded');
-
-        // Check if all answers are graded → enable finalize
-        const remaining = overlay.querySelectorAll('.save-btn:not(.saved)');
-        const finalBtn = document.getElementById('panel-finalize');
-        if (remaining.length === 0) {
-            finalBtn.disabled = false;
-            finalBtn.style.opacity = '1';
-        }
+        _dirty.delete(String(answerId));
+        document.getElementById('qb_' + answerId)?.classList.add('graded');
     } else {
         btn.disabled = false;
         btn.innerHTML = 'Save Grade (retry)';
-        notify.error(res.message || 'Failed to save grade');
+        if (!quiet) notify.error(res.message || 'Failed to save grade');
     }
 }
 
 function formatType(t) {
     return { essay:'Essay', short_answer:'Short Answer', multiple_choice:'Multiple Choice', true_false:'True/False', fill_blank:'Fill in Blank' }[t] || t;
 }
-
-// esc() imported from classroom-ui.js (see import above)
-

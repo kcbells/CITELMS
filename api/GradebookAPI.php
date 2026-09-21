@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
 require_once __DIR__ . '/helpers/QuizSectionHelper.php';
 
@@ -42,6 +43,9 @@ switch ($action) {
         break;
     case 'my-lacking-work':
         handleMyLackingWork();
+        break;
+    case 'version':
+        handleGradebookVersion();
         break;
     default:
         http_response_code(400);
@@ -189,7 +193,7 @@ function handleMyLackingWork(): void {
          FROM student_subject ss
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON s.subject_id = so.subject_id
-         JOIN quiz q ON q.subject_id = s.subject_id AND q.user_teacher_id = so.user_teacher_id
+         JOIN quiz q ON q.subject_id = s.subject_id AND " . classworkTeacherSql('q', 'so') . "
          WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
            AND q.status = 'published' AND q.due_date IS NOT NULL AND q.due_date < NOW()
            AND (
@@ -210,7 +214,7 @@ function handleMyLackingWork(): void {
          FROM student_subject ss
          JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
          JOIN subject s ON s.subject_id = so.subject_id
-         JOIN lessons l ON l.subject_id = s.subject_id AND l.user_teacher_id = so.user_teacher_id
+         JOIN lessons l ON l.subject_id = s.subject_id AND " . classworkTeacherSql('l', 'so') . "
          WHERE ss.user_student_id = ? AND ss.status = 'enrolled'
            AND l.status = 'published' AND l.due_date IS NOT NULL AND l.due_date < NOW()
            AND (
@@ -426,4 +430,87 @@ function enrichLessonRowsWithSections(array &$rows): void
         $row['all_sections'] = empty($ids);
     }
     unset($row);
+}
+
+
+/**
+ * A short fingerprint of everything a gradebook screen shows, so an open page
+ * can ask "has anything changed?" on a timer instead of the person guessing
+ * when to press refresh. Mirrors ClassroomAPI's stream-version, which does the
+ * same job for the class stream.
+ *
+ * Cheap by design: COUNT + MAX(timestamp) per table, all index-backed, so it
+ * can be polled by every open gradebook without becoming the thing that makes
+ * the gradebook slow.
+ *
+ * GET ?action=version&subject_id=<id>[&offering_id=<id>]
+ */
+function handleGradebookVersion(): void
+{
+    $subjectId  = (int)($_GET['subject_id'] ?? 0);
+    $offeringId = (int)($_GET['offering_id'] ?? 0);
+    if (!$subjectId && !$offeringId) {
+        echo json_encode(['success' => false, 'message' => 'subject_id or offering_id required']);
+        return;
+    }
+
+    if (!$subjectId && $offeringId) {
+        $row = db()->fetchOne("SELECT subject_id FROM subject_offered WHERE subject_offered_id = ?", [$offeringId]);
+        $subjectId = (int)($row['subject_id'] ?? 0);
+    }
+
+    $parts = [];
+    $stamp = function (string $sql, array $args) use (&$parts) {
+        try {
+            $r = db()->fetchOne($sql, $args);
+            $parts[] = ($r['n'] ?? 0) . ':' . ($r['t'] ?? '0');
+        } catch (Throwable $e) {
+            // A missing optional table must not break the whole probe - it
+            // just contributes nothing to the fingerprint.
+            $parts[] = '0:0';
+        }
+    };
+
+    // Enrolment, final grades, remarks, and who is in the class at all.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(ss.updated_at,'1970-01-01')) t
+              FROM student_subject ss
+              JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+             WHERE so.subject_id = ?", [$subjectId]);
+
+    // Global gradebook cells.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(g.updated_at,'1970-01-01')) t
+              FROM global_module_grades g
+              JOIN subject_offered so ON so.subject_offered_id = g.subject_offered_id
+             WHERE so.subject_id = ?", [$subjectId]);
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(g.updated_at,'1970-01-01')) t
+              FROM global_project_grades g
+              JOIN subject_offered so ON so.subject_offered_id = g.subject_offered_id
+             WHERE so.subject_id = ?", [$subjectId]);
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(g.updated_at,'1970-01-01')) t
+              FROM global_retry_tracker g
+              JOIN subject_offered so ON so.subject_offered_id = g.subject_offered_id
+             WHERE so.subject_id = ?", [$subjectId]);
+
+    // Raw-score side: attempts landing and manual overrides.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(completed_at, started_at)) t
+              FROM student_quiz_attempts a
+              JOIN quiz q ON q.quiz_id = a.quiz_id
+             WHERE q.subject_id = ?", [$subjectId]);
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(o.updated_at,'1970-01-01')) t
+              FROM quiz_score_overrides o
+              JOIN quiz q ON q.quiz_id = o.quiz_id
+             WHERE q.subject_id = ?", [$subjectId]);
+
+    // Lesson turn-ins / progress, which feed activity grades.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(last_accessed,'1970-01-01')) t
+              FROM student_progress sp
+             WHERE sp.subject_id = ?", [$subjectId]);
+
+    // The released grading period, and whether the class switched scheme.
+    $stamp("SELECT COUNT(*) n, MAX(COALESCE(updated_at,'1970-01-01')) t
+              FROM subject_offered WHERE subject_id = ?", [$subjectId]);
+
+    echo json_encode(['success' => true, 'data' => [
+        'version' => substr(sha1(implode('|', $parts)), 0, 16),
+    ]]);
 }

@@ -8,6 +8,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/StudentListParser.php';
+require_once __DIR__ . '/helpers/SemesterScopeHelper.php';
 require_once __DIR__ . '/helpers/ClassCodeHelper.php';
 
 backfillMissingSectionSubjectCodes();
@@ -49,6 +50,7 @@ $_sectPerms = [
     'unenroll'                  => 'sections.edit',
     'delete'                    => 'sections.delete',
     'pending-joins'             => 'sections.view',
+    'join-watch'                => 'sections.view',
     'approve-join'              => 'sections.edit',
     'reject-join'               => 'sections.edit',
 ];
@@ -65,7 +67,7 @@ $instrActions = ['create','update','delete','add-subject','remove-subject','unen
                  'instructor-list','instructor-avail-subjects','instructor-assigned-subjects',
                  'instructor-programs','instructor-classes','create-for-subject','students',
                  'preview-import-students','bulk-import-students',
-                 'pending-joins','approve-join','reject-join'];
+                 'pending-joins','join-watch','approve-join','reject-join'];
 $instrBypassed = $isInstrSect && in_array($action, $instrActions);
 
 if (!$isDeanSect && !$isProgHeadSect && !$instrBypassed && isset($_sectPerms[$action]) && !Auth::can($_sectPerms[$action])) {
@@ -94,6 +96,7 @@ switch ($action) {
     case 'students':                   handleStudents();                  break;
     case 'unenroll':                   handleUnenroll();                  break;
     case 'pending-joins':              handlePendingJoins();              break;
+    case 'join-watch':                 handleJoinWatch();                 break;
     case 'approve-join':               handleApproveJoin();               break;
     case 'reject-join':                handleRejectJoin();                break;
     case 'semesters':                  handleSemesters();                 break;
@@ -847,7 +850,7 @@ function handleInstructorClasses() {
          FROM subject_offered so
          JOIN subject s ON s.subject_id = so.subject_id
          LEFT JOIN program p ON p.program_id = s.program_id
-         WHERE so.user_teacher_id = ? AND so.status IN ('open', 'archived')
+         WHERE so.user_teacher_id = ? AND so.status IN ('open', 'archived')" . currentTermSql('so', true) . "
          ORDER BY so.status ASC, s.subject_code",
         [$userId]
     );
@@ -1821,6 +1824,57 @@ function handlePendingJoins() {
         [$offeredId, $sectionId]
     );
     echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+/**
+ * GET ?action=join-watch — every still-pending join request across the
+ * signed-in instructor's own classes, plus a short version fingerprint.
+ *
+ * The topbar polls this so a request a student sends from their phone shows
+ * up on the instructor's screen (toast, bell, card badge, open Manage
+ * Students list) without a reload. One indexed query, scoped to the
+ * instructor, so polling it every few seconds stays cheap.
+ */
+function handleJoinWatch() {
+    // Not gated on the instructor role: deans and program heads teach classes
+    // too (their own my-classes page), and what scopes this is ownership of
+    // the offering. Anyone who teaches nothing simply gets an empty list.
+    $teacherId = (int)Auth::id();
+    if ($teacherId <= 0) {
+        echo json_encode(['success' => true, 'data' => ['version' => '0', 'requests' => []]]);
+        return;
+    }
+
+    $rows = db()->fetchAll(
+        "SELECT r.request_id, r.subject_offered_id, r.section_id, r.requested_at,
+                so.subject_id, s.subject_code, s.subject_name, sec.section_name,
+                u.first_name, u.last_name, u.student_id
+         FROM class_join_requests r
+         JOIN subject_offered so ON so.subject_offered_id = r.subject_offered_id
+         JOIN subject s          ON s.subject_id = so.subject_id
+         JOIN section sec        ON sec.section_id = r.section_id
+         JOIN users u            ON u.users_id = r.user_student_id
+         WHERE so.user_teacher_id = ? AND r.status = 'pending'
+         ORDER BY r.requested_at DESC
+         LIMIT 100",
+        [$teacherId]
+    );
+
+    // Roster size too, so an enrolment made elsewhere (another device,
+    // bulk import) also counts as a change worth re-drawing for.
+    $roster = db()->fetchOne(
+        "SELECT COUNT(*) n, MAX(ss.student_subject_id) m
+         FROM student_subject ss
+         JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+         WHERE so.user_teacher_id = ?",
+        [$teacherId]
+    );
+
+    $ids = array_map(fn($r) => (int)$r['request_id'], $rows);
+    sort($ids);
+    $version = substr(sha1(implode(',', $ids) . '|' . ($roster['n'] ?? 0) . ':' . ($roster['m'] ?? 0)), 0, 16);
+
+    echo json_encode(['success' => true, 'data' => ['version' => $version, 'requests' => $rows]]);
 }
 
 /** POST ?action=approve-join {request_id} — enrolls the student for real, then marks the request approved. */

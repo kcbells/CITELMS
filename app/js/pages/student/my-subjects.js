@@ -9,6 +9,7 @@ import { subjectHash } from './quizzes.js';
 import { notify } from '../../utils/notify.js';
 
 import { esc } from '../../utils/classroom-ui.js';
+import { watchLive, versionFetcher } from '../../utils/live-refresh.js';
 const inl = { size: 14, className: 'ui-icon-inline' };
 const G  = '#00461B';
 const G2 = '#006428';
@@ -18,8 +19,13 @@ const MUTED = '#6B7280';
 
 let refreshHandler = null;
 
+/** Stops the previous live watcher; one page, one watcher. */
+let _stopLive = null;
+
 export async function render(container) {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+
+
 
     if (params.get('tab') === 'quizzes') {
         const sid = params.get('subject_id') || '';
@@ -39,14 +45,36 @@ export async function render(container) {
 
     container.innerHTML = `<div class="ms-loading"><div class="ms-spin"></div></div>`;
 
+    // Always fresh (ttl:0). The live watcher below re-renders when the
+    // server's version changes, and a re-render served from Api's 45s cache
+    // would redraw the very same "Waiting for instructor approval" box -- the
+    // watcher then counts the change as shown and never tries again, so an
+    // approval inside that 45s window only appeared after a manual reload.
     const [res, annRes, pendingRes] = await Promise.all([
-        Api.get('/EnrollmentAPI.php?action=my-subjects'),
-        Api.get('/AnnouncementsAPI.php?action=student-list'),
-        Api.get('/EnrollmentAPI.php?action=my-pending'),
+        Api.get('/EnrollmentAPI.php?action=my-subjects', { ttl: 0 }),
+        Api.get('/AnnouncementsAPI.php?action=student-list', { ttl: 0 }),
+        Api.get('/EnrollmentAPI.php?action=my-pending', { ttl: 0 }),
     ]);
 
     const allSubjects = res.success ? res.data : [];
     const pendingJoins = pendingRes.success ? (pendingRes.data || []) : [];
+
+    // An instructor approving a join request only flips a row in
+    // class_join_requests -- nothing told this already-rendered page, so it
+    // kept showing "Waiting for instructor approval" until a hard refresh.
+    // Poll the student's own enrolment fingerprint instead.
+    //
+    // Cadence follows what the student is actually doing: while a request is
+    // pending they are sitting there waiting for an answer, so check every
+    // 8s; with nothing pending there is nothing urgent, so fall back to the
+    // normal 30s and stop hammering the server.
+    _stopLive?.();
+    _stopLive = watchLive({
+        container,
+        intervalMs: pendingJoins.length ? 8_000 : 30_000,
+        version: versionFetcher(Api, '/EnrollmentAPI.php?action=version'),
+        render:  () => render(container),
+    });
     const activeSubjects   = allSubjects.filter(s => s.offering_status !== 'archived');
     const archivedSubjects = allSubjects.filter(s => s.offering_status === 'archived');
     const subjects = view === 'archived' ? archivedSubjects : activeSubjects;

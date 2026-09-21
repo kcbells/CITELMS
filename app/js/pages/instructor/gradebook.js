@@ -11,6 +11,7 @@ import {
 } from '../../utils/gradebook-periods.js';
 import { notify } from '../../utils/notify.js';
 import { mountGlobalClassRecord } from './global-gradebook.js';
+import { watchLive, versionFetcher } from '../../utils/live-refresh.js';
 
 const inl    = { size: 14, className: 'ui-icon-inline' };
 // Same palette as instructor/global-gradebook.js — the raw-score class
@@ -44,7 +45,25 @@ export async function mountInstructorGradebook(host, { subjectId, sectionId } = 
     });
 }
 
+/** Stops the previous live watcher; one page, one watcher. */
+let _stopLive = null;
+
 async function renderGradebook(container, opts = {}) {
+    // Marks land here from several directions at once - a student finishing a
+    // quiz, a co-teacher saving an override, the same person on another
+    // device. Poll a cheap fingerprint (GradebookAPI action=version) and
+    // re-render only when something really changed, so the table updates
+    // itself instead of quietly going stale until someone reloads.
+    _stopLive?.();
+    _stopLive = null;
+    if (opts?.subjectId) {
+        _stopLive = watchLive({
+            container,
+            version: versionFetcher(Api, `/GradebookAPI.php?action=version&subject_id=${opts.subjectId}`),
+            render:  () => renderGradebook(container, opts),
+        });
+    }
+
     container.innerHTML = `<div class="gb-loading"><div class="gb-spin"></div></div><style>${pageCss()}</style>`;
 
     // ttl:0 — this drives whether raw-score or Global Gradebook renders
@@ -683,6 +702,13 @@ function renderBanner(title, sub) {
                 <h1 class="gb-hero-title">${esc(title)}</h1>
                 <p class="gb-hero-sub">${esc(sub)}</p>
             </div>
+            <!-- The subjective-grading workspace had no entry point anywhere in
+                 the app: it was only reachable by typing its hash by hand, even
+                 though it carries a "Back to Gradebook" link implying it should
+                 be opened from here. -->
+            <a href="#instructor/essay-grading" class="gb-grade-link">
+                ${icon('edit', inl)} Grade submissions
+            </a>
         </header>`;
 }
 
@@ -823,6 +849,11 @@ function pageCss() {
         .gb-btn-primary { background:${G}; color:#fff; border:none; padding:10px 18px; border-radius:10px;
             font-size:13px; font-weight:700; cursor:pointer; }
         .gb-btn-primary:hover { background:${G2}; }
+        .gb-hero { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+        .gb-grade-link { display:inline-flex; align-items:center; gap:7px; padding:9px 15px; background:#fff;
+            border:1.5px solid ${G}; color:${G}; border-radius:9px; font-size:13px; font-weight:700;
+            text-decoration:none; white-space:nowrap; transition:background .15s, color .15s; }
+        .gb-grade-link:hover { background:${G}; color:#fff; }
 
         @media(max-width:640px) {
             .gb-subj-hero { flex-direction:column; }

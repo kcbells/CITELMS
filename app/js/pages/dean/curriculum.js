@@ -151,7 +151,11 @@ function renderVersionBar(container) {
         btn.addEventListener('click', async () => {
             const ver = _versions.find(v => String(v.version_id) === btn.dataset.vid);
             if (!ver) return;
-            if (!confirm(`Delete the version "${ver.version_label}"?\n\nThis only removes the version label and its file. Subjects already in the curriculum are not deleted.`)) return;
+            const okVer = await notify.confirm(
+                `Delete the version "${ver.version_label}"? This only removes the version label and its file — subjects already in the curriculum are not deleted.`,
+                { title: 'Delete version?', confirmText: 'Delete', danger: true }
+            );
+            if (!okVer) return;
 
             btn.disabled = true;
             const r = await Api.post('/CurriculumAPI.php?action=delete_version', { version_id: ver.version_id });
@@ -428,7 +432,11 @@ function bindElectiveEvents(el) {
     });
     el.querySelectorAll('.el-del-track').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Remove this elective track and all its subjects?')) return;
+            const okTrack = await notify.confirm(
+                'Remove this elective track and all of its subjects?',
+                { title: 'Remove track?', confirmText: 'Remove', danger: true }
+            );
+            if (!okTrack) return;
             await Api.post('/ElectiveAPI.php?action=delete_track', { track_id: parseInt(btn.dataset.track) });
             await loadElectives(null, el);
         });
@@ -438,7 +446,11 @@ function bindElectiveEvents(el) {
     });
     el.querySelectorAll('.el-chip-remove').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Remove this subject from the track?')) return;
+            const okSubj = await notify.confirm(
+                'Remove this subject from the track?',
+                { title: 'Remove subject?', confirmText: 'Remove', danger: true }
+            );
+            if (!okSubj) return;
             await Api.post('/ElectiveAPI.php?action=remove_subject', { id: parseInt(btn.dataset.id) });
             await loadElectives(null, el);
         });
