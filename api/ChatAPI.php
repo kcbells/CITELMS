@@ -6,6 +6,8 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ContentFilter.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 
 header('Content-Type: application/json');
 
@@ -129,6 +131,7 @@ function sendMessage() {
         echo json_encode(['success' => false, 'message' => 'Conversation ID and content required']);
         return;
     }
+    if (contentFilterReject($content)) return;
 
     // Verify participant
     $participant = db()->fetchOne(

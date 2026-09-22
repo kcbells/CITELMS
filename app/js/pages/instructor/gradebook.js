@@ -7,7 +7,7 @@ import { icon, iconLg } from '../../utils/icons.js';
 import { subjectColor } from '../../utils/subject-colors.js';
 import { curriculumTableCss, esc, rotateOverlayHtml, rotateOverlayCss } from '../../utils/classroom-ui.js';
 import {
-    buildPeriodGroups, isItemMissing, gradingPeriodTableCss,
+    buildPeriodGroups, isItemMissing, gradingPeriodTableCss, GRADING_PERIODS,
 } from '../../utils/gradebook-periods.js';
 import { notify } from '../../utils/notify.js';
 import { mountGlobalClassRecord } from './global-gradebook.js';
@@ -463,15 +463,27 @@ async function loadClassRecord(subject, section) {
 
 /* ─── Table rendering ───────────────────────────────────────── */
 
-function renderTableHeaders(allItems) {
-    const colCount = Math.max(allItems.length, 1);
+/**
+ * Two header rows. The top one names the grading period (P1 Midterms,
+ * P2 Prefinals, P3 Finals) spanning that period's items; the second names
+ * each activity or quiz. A period with nothing in it yet still gets a column,
+ * so the three periods are always visible in the same place.
+ */
+function renderTableHeaders(periodGroups) {
     let periodRow = `<th rowspan="2">#</th><th rowspan="2" class="th-left">Student ID</th><th rowspan="2" class="gc-th-info th-left">Name</th>`;
-    periodRow += `<th colspan="${colCount}" class="gb-period-th gb-period-th--p1">Activities &amp; Quizzes</th>`;
-    periodRow += `<th rowspan="2">Total</th><th rowspan="2">Remarks</th>`;
-
     let itemRow = '';
-    if (allItems.length) {
-        for (const item of allItems) {
+
+    for (const p of GRADING_PERIODS) {
+        const items = periodGroups.groups[p.code] || [];
+        periodRow += `<th colspan="${Math.max(items.length, 1)}" class="gb-period-th gb-period-th--${p.code.toLowerCase()}">
+            ${p.label}<span class="gb-period-sub">${esc(p.title)}</span>
+        </th>`;
+
+        if (!items.length) {
+            itemRow += `<th class="gb-item-th gb-item-th--empty">No items yet</th>`;
+            continue;
+        }
+        for (const item of items) {
             const typeLabel = item.kind === 'quiz' ? 'Quiz' : 'Activity';
             const short     = item.title.length > 16 ? `${item.title.slice(0, 14)}…` : item.title;
             const pts       = item.kind === 'quiz' && item.totalPoints ? ` · ${item.totalPoints}pts` : '';
@@ -480,48 +492,52 @@ function renderTableHeaders(allItems) {
                 <span class="gb-item-name">${esc(short)}</span>
             </th>`;
         }
-    } else {
-        itemRow += `<th class="gb-item-th gb-item-th--empty">—</th>`;
     }
 
     return { periodRow, itemRow };
 }
 
 /**
- * Single source of truth for the row-level status/remark, shared by the
- * table renderer and the CSV export so they can never drift apart. Same
- * cutoffs (60% / 40%) and labels as the Global Gradebook's amber/red
- * convention and the Reports page.
+ * What one cell says. No adding up across items: each activity or quiz just
+ * shows its own state.
+ *   quiz  → the score (e.g. 7/10), with "At risk" under it when below passing
+ *   quiz  → "Missing" once the due date passes with no attempt
+ *   activity → "Done", or "Missing" once past due
+ *   anything not due yet and not done → "—"
  */
-function classifyRow(earnedTotal, possibleTotal, missingCount, quizItemCount, allPassed) {
-    const anyScore = possibleTotal > 0;
-    const pct = anyScore ? (earnedTotal / possibleTotal) * 100 : null;
-    if (!anyScore) {
-        return missingCount > 0 ? { status: 'lacking', remark: 'Lacking' } : { status: 'none', remark: '—' };
+function cellStatus(st, item) {
+    if (item.kind === 'quiz') {
+        const c = st.quizScores[item.id];
+        if (c) {
+            const score = c.total ? `${c.earned}/${c.total}` : String(c.earned);
+            return { kind: 'score', score, atRisk: c.passed === false, overridden: !!c.overridden };
+        }
+        return isItemMissing(item) ? { kind: 'missing' } : { kind: 'pending' };
     }
-    if (quizItemCount > 0 && allPassed) return { status: 'good', remark: 'Passed' };
-    if (pct >= 60) return { status: 'good', remark: 'In progress' };
-    if (pct >= 40) return { status: 'at_risk', remark: 'At Risk' };
-    return { status: 'critical', remark: 'Critical' };
+    if (st.lessonStatus?.[item.id] === 'completed') return { kind: 'done' };
+    return isItemMissing(item) ? { kind: 'missing' } : { kind: 'pending' };
 }
 
 function renderStudentItemCell(st, item) {
+    const s = cellStatus(st, item);
+
     if (item.kind === 'quiz') {
         const cell = st.quizScores[item.id];
         const editAttrs = `data-edit-cell data-quiz-id="${item.id}" data-student-id="${st.user_student_id}" data-total="${item.totalPoints || cell?.total || 0}"`;
-        if (cell === null || cell === undefined) {
-            const missing = isItemMissing(item);
-            return `<td class="td-num gb-editable-td" ${editAttrs} data-earned="">
-                <span class="${missing ? 'gc-cur-badge-missing' : 'gc-cur-badge-none'} gb-edit-target">${missing ? 'Missing' : '—'}</span>
-            </td>`;
-        }
-        return `<td class="td-num gb-editable-td" ${editAttrs} data-earned="${cell.earned}">
-            <span class="gc-cur-badge-raw${cell.overridden ? ' gb-overridden' : ''} gb-edit-target">${cell.earned}</span>
+        // Everything shown sits inside the one .gb-edit-target, so cancelling an
+        // edit (Escape) puts the whole cell back, status tag included.
+        const inner = s.kind === 'score'
+            ? `<span class="gb-cell-score${s.overridden ? ' gb-overridden' : ''}">${s.score}</span>${s.atRisk ? '<span class="gb-cell-risk">At risk</span>' : ''}`
+            : s.kind === 'missing'
+                ? '<span class="gc-cur-badge-missing">Missing</span>'
+                : '<span class="gc-cur-badge-none">—</span>';
+        return `<td class="td-num gb-editable-td${s.atRisk ? ' gb-td-risk' : ''}" ${editAttrs} data-earned="${cell ? cell.earned : ''}">
+            <span class="gb-edit-target gb-cell">${inner}</span>
         </td>`;
     }
-    const status = st.lessonStatus?.[item.id];
-    if (status === 'completed') return `<td class="td-num"><span class="gc-cur-badge-pass">Done</span></td>`;
-    if (isItemMissing(item))    return `<td class="td-num"><span class="gc-cur-badge-missing">Missing</span></td>`;
+
+    if (s.kind === 'done')    return `<td class="td-num"><span class="gc-cur-badge-pass">Done</span></td>`;
+    if (s.kind === 'missing') return `<td class="td-num"><span class="gc-cur-badge-missing">Missing</span></td>`;
     return `<td class="td-num"><span class="gc-cur-badge-none">—</span></td>`;
 }
 
@@ -540,7 +556,7 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
             <span class="gb-role-pill">${icon('gradebook', inl)} Instructor view</span>
             <h2>Class Record</h2>
             <p>${meta}</p>
-            <p class="gb-period-legend">All published activities and quizzes. Activities show completion status; quizzes show raw score.</p>
+            <p class="gb-period-legend">Grouped by grading period — P1 Midterms · P2 Prefinals · P3 Finals. Each cell shows its own result: the score, <strong>At risk</strong> when below passing, <strong>Missing</strong> once the due date passes, or <strong>Done</strong>. Scores are not added together.</p>
             <div class="gb-record-stats">
                 <span><strong>${students.length}</strong> student${students.length !== 1 ? 's' : ''}</span>
                 <span><strong>${totalItems}</strong> item${totalItems !== 1 ? 's' : ''}</span>
@@ -556,51 +572,30 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
     // renderTableHeaders() and the empty `students` map below already
     // degrade gracefully to a placeholder "—" column / zero rows.
 
-    const { periodRow, itemRow } = renderTableHeaders(allItems);
+    const { periodRow, itemRow } = renderTableHeaders(periodGroups);
+
+    // Every column in header order, with a placeholder where a period is empty,
+    // so body and footer line up with the two header rows.
+    const columns = GRADING_PERIODS.flatMap(p => {
+        const items = periodGroups.groups[p.code] || [];
+        return items.length ? items : [null];
+    });
 
     const rows = students.map((st, i) => {
-        let earnedTotal = 0, possibleTotal = 0, missingCount = 0;
-        const quizItems = allItems.filter(x => x.kind === 'quiz');
-        let allPassed = quizItems.length > 0;
-        let itemCells = '';
-
-        for (const item of allItems) {
-            itemCells += renderStudentItemCell(st, item);
-            if (item.kind === 'quiz') {
-                const cell = st.quizScores[item.id];
-                if (cell) {
-                    earnedTotal   += parseFloat(cell.earned) || 0;
-                    possibleTotal += parseFloat(cell.total)  || 0;
-                    if (!cell.passed) allPassed = false;
-                } else {
-                    allPassed = false;
-                    if (isItemMissing(item)) missingCount++;
-                }
-            } else {
-                if (st.lessonStatus?.[item.id] !== 'completed' && isItemMissing(item)) missingCount++;
-            }
-        }
-
-        const totalLabel = possibleTotal > 0
-            ? `<strong>${earnedTotal} / ${possibleTotal}</strong>`
-            : '<span class="gc-cur-badge-none">—</span>';
-
-        const { status, remark } = classifyRow(earnedTotal, possibleTotal, missingCount, quizItems.length, allPassed);
-        const rowClass = status === 'critical' ? 'gb-row-critical' : status === 'at_risk' ? 'gb-row-at-risk' : status === 'lacking' ? 'gb-row-lacking' : '';
-        const badgeClass = status === 'good' ? 'gc-cur-badge-pass' : status === 'at_risk' ? 'gc-cur-badge-atrisk' : status === 'critical' ? 'gc-cur-badge-critical' : status === 'lacking' ? 'gc-cur-badge-lacking' : 'gc-cur-badge-none';
-
+        const itemCells = columns.map(item => item
+            ? renderStudentItemCell(st, item)
+            : '<td class="td-num gb-td-empty"></td>').join('');
         return `
-            <tr class="${rowClass}" data-stu="${st.user_student_id}">
+            <tr data-stu="${st.user_student_id}">
                 <td class="td-rank">${i + 1}</td>
                 <td class="td-id">${esc(st.student_id || '—')}</td>
-                <td class="td-name">${esc(st.name)}${status === 'critical' || status === 'at_risk' ? ' <span class="gb-risk-tag">!</span>' : ''}</td>
+                <td class="td-name">${esc(st.name)}</td>
                 ${itemCells}
-                <td class="td-num">${totalLabel}</td>
-                <td class="td-pass"><span class="${badgeClass}">${remark}</span></td>
             </tr>`;
     }).join('');
 
-    const footerCells = allItems.map(item => {
+    const footerCells = columns.map(item => {
+        if (!item) return '<td class="td-num gb-td-empty"></td>';
         if (item.kind === 'quiz') {
             const vals = students.map(st => st.quizScores[item.id]?.earned).filter(v => v != null);
             return `<td class="td-num" style="font-weight:700;background:#f7f7f7;">${vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—'}</td>`;
@@ -619,7 +614,7 @@ function renderClassRecordTable(subject, section, { periodGroups, students }) {
                         <tr>${periodRow}</tr>
                         <tr>${itemRow}</tr>
                     </thead>
-                    <tbody>${rows || `<tr><td colspan="${3 + Math.max(allItems.length, 1) + 2}" class="gc-cur-empty">No students enrolled in this section yet.</td></tr>`}</tbody>
+                    <tbody>${rows || `<tr><td colspan="${3 + columns.length}" class="gc-cur-empty">No students enrolled in this section yet.</td></tr>`}</tbody>
                     ${allItems.length ? `
                     <tfoot>
                         <tr class="gb-record-avg-row">
@@ -641,42 +636,21 @@ function quizAppliesToSection(quiz, sectionId) {
 }
 
 function exportClassRecordCsv(subject, section, { periodGroups, students }) {
-    const allItems = periodGroups.flat;
-    const headers  = ['#', 'Student ID', 'Name'];
-    for (const item of allItems) {
+    const headers = ['#', 'Student ID', 'Name'];
+    const ordered = GRADING_PERIODS.flatMap(p => (periodGroups.groups[p.code] || []).map(item => ({ item, period: p })));
+    for (const { item, period } of ordered) {
         const prefix = item.kind === 'quiz' ? 'Quiz' : 'Activity';
-        headers.push(`${prefix}: ${item.title}${item.kind === 'quiz' && item.totalPoints ? ` (/${item.totalPoints})` : ''}`);
+        headers.push(`${period.label} · ${prefix}: ${item.title}${item.kind === 'quiz' && item.totalPoints ? ` (/${item.totalPoints})` : ''}`);
     }
-    headers.push('Total Score', 'Remarks');
 
     const body = students.map((st, i) => {
-        let earnedTotal = 0, possibleTotal = 0, missingCount = 0;
-        const quizItems = allItems.filter(x => x.kind === 'quiz');
-        let allPassed = quizItems.length > 0;
         const row = [i + 1, st.student_id || '', st.name];
-
-        for (const item of allItems) {
-            if (item.kind === 'quiz') {
-                const c = st.quizScores[item.id];
-                if (c) {
-                    earnedTotal   += parseFloat(c.earned) || 0;
-                    possibleTotal += parseFloat(c.total)  || 0;
-                    if (!c.passed) allPassed = false;
-                    row.push(c.total ? `${c.earned}/${c.total}` : String(c.earned));
-                } else {
-                    allPassed = false;
-                    if (isItemMissing(item)) missingCount++;
-                    row.push(isItemMissing(item) ? 'Missing' : '');
-                }
-            } else {
-                const done = st.lessonStatus?.[item.id] === 'completed';
-                if (!done && isItemMissing(item)) missingCount++;
-                row.push(done ? 'Done' : (isItemMissing(item) ? 'Missing' : ''));
-            }
+        for (const { item } of ordered) {
+            const s = cellStatus(st, item);
+            row.push(s.kind === 'score' ? (s.atRisk ? `${s.score} (At risk)` : s.score)
+                : s.kind === 'missing' ? 'Missing'
+                : s.kind === 'done' ? 'Done' : '');
         }
-
-        const { remark } = classifyRow(earnedTotal, possibleTotal, missingCount, quizItems.length, allPassed);
-        row.push(possibleTotal > 0 ? `${earnedTotal}/${possibleTotal}` : '', remark === '—' ? '' : remark);
         return row;
     });
 
@@ -819,6 +793,15 @@ function pageCss() {
             display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700;
         }
         .gc-cur-badge-raw { font-size:12px; font-weight:700; color:#111827; }
+
+        /* One cell = one result: the score, with a small "At risk" tag under it
+           when it is below passing. Nothing is added up across the row. */
+        .gb-cell { display:inline-flex; flex-direction:column; align-items:center; gap:3px; }
+        .gb-cell-score { font-size:12px; font-weight:700; color:#111827; white-space:nowrap; }
+        .gb-cell-risk { display:inline-block; padding:1px 6px; border-radius:5px; font-size:9.5px; font-weight:800;
+            color:${AMBER_FG}; border:1px solid ${AMBER_FG}; background:#fff; white-space:nowrap; }
+        .gb-td-risk .gb-cell-score { color:${AMBER_FG}; }
+        .gb-td-empty { background:#FAFAFA; }
 
         /* Click-to-edit quiz score cells — same directly-editable-cell spirit
            and focus treatment as the Global Gradebook's dropdowns. */

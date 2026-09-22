@@ -19,3 +19,8 @@
 # Ignore composer & node
 /vendor
 /node_modules
+
+/storage/backups/
+/storage/import-cache/
+/database.zip
+/*.bak-before-tuning

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/env.php';
 /**
  * OCR configuration — used by api/helpers/OcrHelper.php to read text out of
  * photos uploaded to the Class Density / Subjects bulk importers.
@@ -24,7 +25,7 @@
  */
 if (!defined('TESSERACT_PATH')) {
     $__tesseractCandidates = [
-        getenv('TESSERACT_PATH') ?: '',
+        envValue('TESSERACT_PATH') ?: '',
         'C:/Program Files/Tesseract-OCR/tesseract.exe',
         'C:/Program Files (x86)/Tesseract-OCR/tesseract.exe',
         '/usr/bin/tesseract',
@@ -44,5 +45,5 @@ if (!defined('TESSERACT_PATH')) {
 }
 
 if (!defined('OCR_SPACE_API_KEY')) {
-    define('OCR_SPACE_API_KEY', getenv('OCR_SPACE_API_KEY') ?: 'helloworld');
+    define('OCR_SPACE_API_KEY', envValue('OCR_SPACE_API_KEY') ?: 'helloworld');
 }

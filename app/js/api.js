@@ -189,6 +189,13 @@ export const Api = {
             };
         }
 
+        // 422 + blocked — bad words or a nude photo. One popup for the whole
+        // app, so every page that sends text gets it without its own code.
+        if (data && data.blocked) {
+            showBlockedPopup(data.message);
+            return { ...data, success: false, _blocked: true };
+        }
+
         // 429 — rate limited
         if (response.status === 429) {
             const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
@@ -227,6 +234,36 @@ export const Api = {
         return data;
     },
 };
+
+
+/**
+ * "Not allowed" popup for blocked content. Built here rather than in
+ * notify.js so api.js keeps no imports (notify.js imports modules that
+ * import api.js). notify.js skips its own toast for the same message.
+ */
+function showBlockedPopup(message) {
+    const msg = message || 'This is not allowed.';
+    window.__cocBlocked = { msg, at: Date.now() };
+    document.getElementById('coc-blocked-pop')?.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'coc-blocked-pop';
+    wrap.setAttribute('role', 'alertdialog');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;color:#111;border:2px solid #111;border-radius:10px;width:min(100%,380px);padding:22px 20px 18px;text-align:center;font-family:inherit;';
+    box.innerHTML = '<div style="width:52px;height:52px;margin:0 auto 12px;border:2px solid #B91C1C;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#B91C1C">'
+        + '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg></div>'
+        + '<h3 style="margin:0 0 6px;font-size:18px;font-weight:800;color:#B91C1C">Not allowed</h3>'
+        + '<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151"></p>'
+        + '<button type="button" style="width:100%;border:0;border-radius:8px;background:#00461B;color:#fff;font-weight:700;font-size:14px;padding:11px;cursor:pointer">OK</button>';
+    box.querySelector('p').textContent = msg + ' Your message was not sent.';
+    wrap.appendChild(box);
+    const close = () => wrap.remove();
+    box.querySelector('button').addEventListener('click', close);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    document.body.appendChild(wrap);
+    box.querySelector('button').focus();
+}
 
 // Export BASE_URL for use in other modules
 export { BASE_URL };

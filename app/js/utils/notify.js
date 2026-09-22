@@ -44,6 +44,9 @@ function ensureContainer() {
 }
 
 function toast(type, message, duration = 4000) {
+    // The "Not allowed" popup (api.js) already told the user — skip the echo.
+    const blk = window.__cocBlocked;
+    if (blk && blk.msg === message && Date.now() - blk.at < 4000) return;
     const c   = ensureContainer();
     const col = COLORS[type] || COLORS.info;
 

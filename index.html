@@ -391,7 +391,7 @@
         .scroll-top:hover { transform:translateY(-3px); }
 
         /* â”€â”€ REGISTRATION MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-        .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9000; align-items:center; justify-content:center; padding:20px; }
+        .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(17,24,39,.72); z-index:9000; align-items:center; justify-content:center; padding:20px; }
         .modal-backdrop.open { display:flex; animation:bdFadeIn .15s; }
         @keyframes bdFadeIn { from{opacity:0;} to{opacity:1;} }
         .reg-modal { background:#fff; border-radius:16px; width:100%; max-width:700px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 32px 80px rgba(0,0,0,.32); animation:modalSlide .22s cubic-bezier(.4,0,.2,1); }
@@ -505,6 +505,12 @@
         .si-captcha-inline-input::placeholder { color:#c7ccc9; }
         .si-captcha-inline-input.si-ok    { color:#15803d; border-color:#15803d; }
         .si-captcha-inline-input.si-error { color:#b91c1c; border-color:#b91c1c; }
+        .si-input.si-error { border-color:#b91c1c; box-shadow:0 0 0 3px rgba(185,28,28,.10); }
+        .si-input.si-match { border-color:var(--green); }
+        .si-field-note { font-size:12px; font-weight:600; margin:6px 0 0; display:none; }
+        .si-field-note.show { display:block; }
+        .si-field-note.bad  { color:#b91c1c; }
+        .si-field-note.good { color:var(--green); }
         .si-captcha-reload { width:42px; height:42px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; color:#6b7280; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s,color .15s; flex-shrink:0; }
         .si-captcha-reload:hover { border-color:var(--green); color:var(--green); }
         .si-btn { width:100%; padding:13px; background:var(--green); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; margin-top:4px; transition:background .15s; }
@@ -512,8 +518,18 @@
         .si-switch { text-align:center; margin-top:18px; font-size:13px; color:#6b7280; padding-top:16px; border-top:1px solid #f0f0f0; }
         .si-switch-link { background:none; border:none; color:var(--green); font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; padding:0; text-decoration:underline; }
         /* Forgot password modal */
+        /* Single-line code field — still used by the registration modal (#reg-otp) */
         .fp-otp-input { width:100%; padding:13px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:22px; font-weight:700; font-family:'Courier New',monospace; letter-spacing:10px; text-align:center; color:#111827; background:#f9fafb; outline:none; transition:border-color .15s,box-shadow .15s; box-sizing:border-box; }
         .fp-otp-input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(27,77,46,.08); background:#fff; }
+
+        .otp-boxes { display:flex; gap:8px; justify-content:space-between; }
+        .otp-box { flex:1 1 0; min-width:0; aspect-ratio:1/1; max-height:56px; padding:0; border:1.5px solid #111827; border-radius:8px;
+            font-size:22px; font-weight:800; text-align:center; color:#111827; background:#fff; outline:none;
+            transition:border-color .12s, box-shadow .12s; box-sizing:border-box; font-family:inherit; -moz-appearance:textfield; }
+        .otp-box::-webkit-outer-spin-button, .otp-box::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+        .otp-box:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(0,70,27,.12); }
+        .otp-box.filled { border-color:var(--green); }
+        @media (max-width:420px) { .otp-boxes { gap:6px; } .otp-box { font-size:19px; } }
         .fp-success-box { text-align:center; padding:12px 0 4px; }
         .fp-success-icon { width:60px; height:60px; background:#dcfce7; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; color:#16a34a; }
         .fp-success-box h3 { font-size:18px; font-weight:700; color:#111827; margin:0 0 8px; }
@@ -647,8 +663,6 @@
         </a>
         <ul class="nav-links">
             <li><a href="#about">About</a></li>
-            <li><a href="#programs">Programs</a></li>
-            <li><a href="#faq">FAQs</a></li>
         </ul>
         <div class="nav-actions">
             <button class="btn-nav-reg" onclick="openReg()">Register Here</button>
@@ -665,8 +679,6 @@
 <!-- MOBILE NAV -->
 <div class="mobile-nav" id="mobile-nav">
     <a href="#about"    onclick="closeNav()">About</a>
-    <a href="#programs" onclick="closeNav()">Programs</a>
-    <a href="#faq"      onclick="closeNav()">FAQs</a>
     <div class="mobile-nav-btns">
         <button class="btn-nav-reg" onclick="closeNav();openReg()">Register Here</button>
                 <button class="btn-nav-login" onclick="closeNav();openSignIn()">Sign In</button>
@@ -773,195 +785,7 @@
     </div>
 </section>
 
-<!-- PROGRAMS -->
-<section class="section programs" id="programs">
-    <div class="sec-inner">
-        <div class="center-block" data-anim="up">
-            <div class="sec-kicker"><span class="sec-kicker-line"></span> Academic Programs <span class="sec-kicker-line"></span></div>
-            <h2 class="sec-title">Colleges and Programs <em>Offered</em></h2>
-            <div class="gold-divider"></div>
-            <p class="sec-desc" style="margin-top:16px;">Six colleges. Swipe or click the arrows to explore each one.</p>
-        </div>
 
-        <div class="prog-carousel-wrap" data-anim="up">
-            <div class="prog-carousel" id="prog-carousel">
-
-                <!-- CIT -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-green">CIT</span>
-
-                        <div class="cc-badge cc-green">CIT</div>
-                        <div class="cc-name">College of Information Technology</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>Bachelor of Science in Information Technology<span class="cc-elective">Electives: Business Informatics, Computer Security, System Development, Digital Arts</span></li>
-                    </ul></div>
-                </div>
-
-                <!-- CEA -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-maroon">CEA</span>
-
-                        <div class="cc-badge cc-maroon">CEA</div>
-                        <div class="cc-name">College of Engineering and Architecture</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>BS Architecture</li>
-                        <li>BS Civil Engineering</li>
-                        <li>BS Computer Engineering</li>
-                        <li>BS Electrical Engineering</li>
-                        <li>BS Mechanical Engineering</li>
-                    </ul></div>
-                </div>
-
-                <!-- COE -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-blue">COE</span>
-
-                        <div class="cc-badge cc-blue">COE</div>
-                        <div class="cc-name">College of Education</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>Bachelor in Early Childhood Education</li>
-                        <li>BSEd Major in English</li>
-                        <li>BSEd Major in Filipino</li>
-                        <li>BSEd Major in Math</li>
-                        <li>Bachelor of Elementary Education</li>
-                    </ul></div>
-                </div>
-
-                <!-- CAHS -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-red">CAHS</span>
-
-                        <div class="cc-badge cc-red">CAHS</div>
-                        <div class="cc-name">College of Allied Health Sciences</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>BS Medical Technology</li>
-                        <li>BS Nursing</li>
-                        <li>BS Pharmacy</li>
-                        <li>BS Psychology</li>
-                    </ul></div>
-                </div>
-
-                <!-- CMA -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-gold">CMA</span>
-
-                        <div class="cc-badge cc-gold">CMA</div>
-                        <div class="cc-name">College of Management and Accountancy</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>BS Accountancy</li>
-                        <li>BSBA Major in Financial Management</li>
-                        <li>BSBA Major in Marketing Management</li>
-                        <li>BS Hospitality Management</li>
-                        <li>BS Tourism Management</li>
-                        <li>BS Management Accounting</li>
-                    </ul></div>
-                </div>
-
-                <!-- SCCJ -->
-                <div class="col-card">
-                    <div class="cc-top">
-                        <span class="cc-abbr-bg cc-purple">SCCJ</span>
-
-                        <div class="cc-badge cc-purple">SCCJ</div>
-                        <div class="cc-name">School of Criminology and Criminal Justice</div>
-                    </div>
-                    <div class="cc-divider"></div>
-                    <div class="cc-programs"><ul>
-                        <li>Bachelor of Science in Criminology</li>
-                    </ul></div>
-                </div>
-
-            </div>
-            <div class="prog-controls">
-                <button class="prog-arrow" onclick="carouselMove(-1)" aria-label="Previous">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-                <div class="prog-dots" id="prog-dots">
-                    <button class="prog-dot active" onclick="carouselGo(0)"></button>
-                    <button class="prog-dot" onclick="carouselGo(1)"></button>
-                    <button class="prog-dot" onclick="carouselGo(2)"></button>
-                    <button class="prog-dot" onclick="carouselGo(3)"></button>
-                    <button class="prog-dot" onclick="carouselGo(4)"></button>
-                    <button class="prog-dot" onclick="carouselGo(5)"></button>
-                </div>
-                <button class="prog-arrow" onclick="carouselMove(1)" aria-label="Next">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- FAQ -->
-<section class="section faq" id="faq">
-    <div class="sec-inner">
-        <div class="center-block" data-anim="up">
-            <div class="sec-kicker"><span class="sec-kicker-line"></span> Got Questions? <span class="sec-kicker-line"></span></div>
-            <h2 class="sec-title">Frequently Asked <em>Questions</em></h2>
-            <div class="gold-divider"></div>
-        </div>
-
-        <div class="faq-wrap" data-anim="up">
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    What is Phinmaed Learning?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Phinmaed Learning is the official Learning Management System of PHINMA Cagayan de Oro College. It connects students, instructors, deans, and administrators across all campuses in one platform for lessons, quizzes, grades, and communication.</div></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    Who can create an account?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Students can self-register using the "Register Here" button above. Instructor, program head, dean, and admin accounts are created for you by the school's administration — you don't need to (and can't) sign up for those roles yourself.</div></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    I forgot my password. What do I do?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Click "Sign In," then use the "Forgot password?" link. You'll receive a one-time code by email to verify your identity and set a new password.</div></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    Can I use the system on my phone?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Yes. The system works on any device — phone, tablet, or desktop — through your browser, and can also be installed like an app for quick access, with limited offline support.</div></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    Which campuses use this system?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Phinmaed Learning is used across PHINMA Cagayan de Oro College's Carmen, Iligan, and Puerto campuses.</div></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-q" onclick="toggleFaq(this)">
-                    Is my data safe on this platform?
-                    <span class="faq-q-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
-                </button>
-                <div class="faq-a"><div class="faq-a-inner">Yes. Passwords are securely encrypted, access is role-based (you only see what's relevant to your account), and your personal data is only used for managing your academic account — see our Privacy Policy for details.</div></div>
-            </div>
-        </div>
-    </div>
-</section>
 
 <!-- FOOTER -->
 <footer>
@@ -980,8 +804,6 @@
             <div class="footer-col">
                 <h4>Navigation</h4>
                 <a href="#about">About</a>
-                <a href="#programs">Programs</a>
-                <a href="#faq">FAQs</a>
             </div>
             <div class="footer-col">
                 <h4>Campuses</h4>
@@ -1198,13 +1020,14 @@
         <div class="modal-hdr">
             <img src="assets/images/app-icon.png" alt="COC Seal">
             <div class="modal-hdr-text">
-                <span class="si-kicker">Learning Management System</span>
-                <h2>Welcome Back!</h2>
-                <p>Sign in to continue to your dashboard</p>
+                <span class="si-kicker" id="si-hdr-kicker">Learning Management System</span>
+                <h2 id="si-hdr-title">Welcome Back!</h2>
+                <p id="si-hdr-sub">Sign in to continue to your dashboard</p>
             </div>
             <button class="modal-close" onclick="closeSignIn()">&#x2715;</button>
         </div>
         <div class="modal-body">
+            <div id="si-login-view">
             <div class="rmsg" id="signin-msg" role="alert"></div>
             <form id="form-signin" onsubmit="submitSignIn(event)" novalidate>
 
@@ -1254,90 +1077,92 @@
 
                 <button type="submit" class="si-btn">Sign In</button>
             </form>
+            </div>
+
+            <!-- Reset password lives inside this same card: the student never
+                 leaves the sign-in popup to change their password. -->
+            <div id="si-reset-view" style="display:none">
+            <!-- Step 1: identifier input -->
+            <div id="fp-step1">
+                <div class="si-group">
+                    <label class="si-label" for="fp-identifier">Email or School ID</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <input class="si-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
+                    </div>
+                </div>
+                <div id="fp-msg1" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Remembered it? <button type="button" class="si-switch-link" onclick="backToSignIn()">Back to Sign In</button>
+                </p>
+            </div>
+            <!-- Step 2: OTP + new password -->
+            <div id="fp-step2" style="display:none">
+                <p id="fp-email-hint" style="font-size:13px;color:#374151;margin-bottom:16px;line-height:1.5;"></p>
+                <div class="si-group">
+                    <label class="si-label">6-Digit Verification Code</label>
+                    <div class="otp-boxes" id="fp-otp-boxes">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" aria-label="Digit 1">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 2">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 3">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 4">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 5">
+                        <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 6">
+                    </div>
+                    <!-- the six boxes keep this in sync, so everything that reads
+                         the code still reads one plain 6-character value -->
+                    <input type="hidden" id="fp-otp">
+                    <p class="si-hint" id="fp-timer" style="margin-top:6px;"></p>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-newpw">New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-pw-toggle" onclick="fpTogglePw('fp-newpw','fp-pw-toggle')" aria-label="Show password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-confirmpw">Confirm New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-cpw-toggle" onclick="fpTogglePw('fp-confirmpw','fp-cpw-toggle')" aria-label="Show confirm password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <p class="si-field-note" id="fp-pw-note"></p>
+                <div id="fp-msg2" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Didn't get the code? <button type="button" class="si-switch-link" onclick="fpGoBack()">Go back &amp; resend</button>
+                </p>
+            </div>
+            <!-- Step 3: success -->
+            <div id="fp-step3" style="display:none">
+                <div class="fp-success-box">
+                    <div class="fp-success-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <h3>Password Reset!</h3>
+                    <p>Your password has been changed. You can now sign in with your new credentials.</p>
+                    <button class="si-btn" onclick="backToSignIn()">Back to Sign In</button>
+                </div>
+            </div>
+            </div>
         </div>
     </div>
     </div>
 </div>
 
-<!-- FORGOT PASSWORD MODAL -->
-<div class="modal-backdrop" id="fp-backdrop" onclick="if(event.target===this)closeForgotPw()">
-    <div class="reg-modal" style="max-width:480px;">
-        <div class="modal-hdr">
-            <img src="assets/images/app-icon.png" alt="COC Seal">
-            <div class="modal-hdr-text">
-                <h2>Reset Password</h2>
-                <p id="fp-modal-sub">Enter your registered email or School ID</p>
-            </div>
-            <button class="modal-close" onclick="closeForgotPw()">&#x2715;</button>
-        </div>
-        <div class="modal-body">
-            <!-- Step 1: identifier input -->
-            <div id="fp-step1">
-                <div class="si-group">
-                    <label class="si-label" for="fp-identifier">Email or School ID</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                        <input class="si-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
-                    </div>
-                </div>
-                <div id="fp-msg1" style="margin-bottom:8px;"></div>
-                <button class="si-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
-                <p class="si-switch" style="margin-top:14px;">
-                    Remembered it? <button type="button" class="si-switch-link" onclick="closeForgotPw();openSignIn()">Back to Sign In</button>
-                </p>
-            </div>
-            <!-- Step 2: OTP + new password -->
-            <div id="fp-step2" style="display:none">
-                <p id="fp-email-hint" style="font-size:13px;color:#374151;margin-bottom:16px;line-height:1.5;"></p>
-                <div class="si-group">
-                    <label class="si-label">6-Digit Verification Code</label>
-                    <input class="fp-otp-input" type="text" id="fp-otp" placeholder="&mdash; &mdash; &mdash; &mdash; &mdash; &mdash;" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
-                    <p class="si-hint" id="fp-timer" style="margin-top:6px;"></p>
-                </div>
-                <div class="si-group">
-                    <label class="si-label" for="fp-newpw">New Password</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                        <input class="si-input si-pw-input" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
-                        <button type="button" class="si-pw-toggle" id="fp-pw-toggle" onclick="fpTogglePw('fp-newpw','fp-pw-toggle')" aria-label="Show password">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="si-group">
-                    <label class="si-label" for="fp-confirmpw">Confirm New Password</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                        <input class="si-input si-pw-input" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
-                        <button type="button" class="si-pw-toggle" id="fp-cpw-toggle" onclick="fpTogglePw('fp-confirmpw','fp-cpw-toggle')" aria-label="Show confirm password">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div id="fp-msg2" style="margin-bottom:8px;"></div>
-                <button class="si-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
-                <p class="si-switch" style="margin-top:14px;">
-                    Didn't get the code? <button type="button" class="si-switch-link" onclick="fpGoBack()">Go back &amp; resend</button>
-                </p>
-            </div>
-            <!-- Step 3: success -->
-            <div id="fp-step3" style="display:none">
-                <div class="fp-success-box">
-                    <div class="fp-success-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    </div>
-                    <h3>Password Reset!</h3>
-                    <p>Your password has been changed. You can now sign in with your new credentials.</p>
-                    <button class="si-btn" onclick="closeForgotPw();openSignIn()">Back to Sign In</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- SET FIRST PASSWORD MODAL — shown when a dean logs in for the first time -->
 <style>
-    #set-password-modal { position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
+    #set-password-modal { position:fixed; inset:0; background:rgba(17,24,39,.72); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
     #set-password-modal[hidden] { display:none; animation:none; }
     .auth-error   { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; border-radius:7px; padding:10px 14px; font-size:13px; align-items:center; gap:8px; line-height:1.4; margin-bottom:14px; }
     .auth-success { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:7px; padding:10px 14px; font-size:13px; align-items:center; gap:8px; line-height:1.4; margin-bottom:14px; }
@@ -1392,7 +1217,7 @@
 
 <!-- SET PHINMAED EMAIL MODAL — shown when a bulk-imported account has no real email on file -->
 <style>
-    #set-email-modal { position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(5px); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
+    #set-email-modal { position:fixed; inset:0; background:rgba(17,24,39,.72); z-index:9001; display:flex; align-items:center; justify-content:center; padding:20px; animation:bdFadeIn .15s; }
     #set-email-modal[hidden] { display:none; animation:none; }
 </style>
 <div id="set-email-modal" hidden aria-hidden="true">
@@ -1469,22 +1294,6 @@
     document.querySelectorAll('[data-count-to]').forEach(el => countObs.observe(el));
 
     // FAQ accordion — one open at a time
-    function toggleFaq(btn) {
-        const item = btn.closest('.faq-item');
-        const answer = item.querySelector('.faq-a');
-        const wasOpen = item.classList.contains('open');
-
-        document.querySelectorAll('.faq-item.open').forEach(other => {
-            other.classList.remove('open');
-            other.querySelector('.faq-a').style.maxHeight = null;
-        });
-
-        if (!wasOpen) {
-            item.classList.add('open');
-            answer.style.maxHeight = answer.scrollHeight + 'px';
-        }
-    }
-
     // ── Registration modal (3-step) ─────────────────────────────
     let regStep = 1;
     let regToken = null;
@@ -1763,23 +1572,11 @@
         }
     }
 
-    // Sign In modal
-    function openSignIn()  { document.getElementById('signin-backdrop').classList.add('open'); document.body.style.overflow='hidden'; }
-    function closeSignIn() { document.getElementById('signin-backdrop').classList.remove('open'); document.body.style.overflow=''; }
+    // Sign In modal — openSignIn/closeSignIn are defined once, further down
+    // (they also seed the captcha). An earlier duplicate pair used to sit here
+    // and was silently overridden by those, so edits here did nothing.
 
     document.addEventListener('keydown', e => { if (e.key==='Escape') { closeReg(); closeSignIn(); closeForgotPw(); } });
-
-    // Programs carousel
-    const carouselEl = document.getElementById('prog-carousel');
-    const progDots = document.querySelectorAll('.prog-dot');
-    const CARD_W = 360;
-    function updateDots() {
-        const idx = Math.round(carouselEl.scrollLeft / CARD_W);
-        progDots.forEach((d,i) => d.classList.toggle('active', i === idx));
-    }
-    carouselEl.addEventListener('scroll', updateDots, { passive:true });
-    function carouselMove(dir) { carouselEl.scrollBy({ left: dir * CARD_W, behavior:'smooth' }); }
-    function carouselGo(idx) { carouselEl.scrollTo({ left: idx * CARD_W, behavior:'smooth' }); }
 
     // Programs carousel dropdown (keep for page display)
     function loadRegPrograms(sel) {}
@@ -1817,18 +1614,31 @@
     function openSignIn() {
         document.getElementById('signin-backdrop').classList.add('open');
         document.body.style.overflow = 'hidden';
+        siShowView('login');          // always open on the sign-in form, never mid-reset
         siGenCaptcha();
         document.getElementById('si-uid').focus();
     }
     function closeSignIn() {
         document.getElementById('signin-backdrop').classList.remove('open');
         document.body.style.overflow = '';
+        clearInterval(fpTimerInterval);
+        siShowView('login');
     }
 
     // The app now opens straight into sign-in instead of the marketing
     // homepage (the homepage markup is still there, just hidden via
     // #site-marketing so nothing is lost, in case it's wanted again later).
     openSignIn();
+
+    // Typing a User ID clears the "enter it first" warning
+    document.getElementById('si-uid')?.addEventListener('input', () => {
+        const el = document.getElementById('si-uid');
+        if (el.value.trim()) {
+            el.classList.remove('si-error');
+            const msg = document.getElementById('signin-msg');
+            if (msg && msg.classList.contains('error')) { msg.textContent = ''; msg.className = 'rmsg'; }
+        }
+    });
 
     // Password show/hide
     function toggleSiPw() {
@@ -1963,22 +1773,187 @@
 
     let fpTimerInterval = null;
 
+    // Reset password is a view *inside* the sign-in popup — the card never
+    // disappears and nothing navigates away; only its contents swap.
+    function siShowView(which) {
+        const login = document.getElementById('si-login-view');
+        const reset = document.getElementById('si-reset-view');
+        if (!login || !reset) return;
+        const onReset = which === 'reset';
+        login.style.display = onReset ? 'none' : '';
+        reset.style.display = onReset ? '' : 'none';
+        const title = document.getElementById('si-hdr-title');
+        const sub   = document.getElementById('si-hdr-sub');
+        const kick  = document.getElementById('si-hdr-kicker');
+        if (title) title.textContent = onReset ? 'Reset Password' : 'Welcome Back!';
+        if (sub)   sub.textContent   = onReset ? 'Enter your registered email or School ID' : 'Sign in to continue to your dashboard';
+        if (kick)  kick.style.display = onReset ? 'none' : '';
+    }
+
     function openForgotPw() {
-        closeSignIn();
-        document.getElementById('fp-backdrop').classList.add('open');
-        document.body.style.overflow = 'hidden';
+        if (!document.getElementById('signin-backdrop').classList.contains('open')) openSignIn();
+
+        // The code goes to the email registered to a specific account, so the
+        // User ID has to be filled in first — that ID decides which mailbox it
+        // is sent to. Empty means we have nothing to look the account up by.
+        const uidEl = document.getElementById('si-uid');
+        const uid = (uidEl?.value || '').trim();
+        if (!uid) {
+            const msg = document.getElementById('signin-msg');
+            if (msg) { msg.textContent = 'Enter your User ID first — the code is sent to the email registered to that account.'; msg.className = 'rmsg error'; }
+            uidEl?.classList.add('si-error');
+            uidEl?.focus();
+            return;
+        }
+        uidEl.classList.remove('si-error');
+        const msg = document.getElementById('signin-msg');
+        if (msg) { msg.textContent = ''; msg.className = 'rmsg'; }
+
         fpReset();
-        setTimeout(() => { const el = document.getElementById('fp-identifier'); if (el) el.focus(); }, 80);
+        siShowView('reset');
+
+        // carry it over so they do not type the same ID twice
+        const idField = document.getElementById('fp-identifier');
+        if (idField) idField.value = uid;
+        const sendBtn = document.getElementById('fp-send-btn');
+        if (sendBtn) sendBtn.disabled = false;
+        fpCheckIdentifier();
+        setTimeout(() => { const el = document.getElementById('fp-identifier'); if (el) { el.focus(); el.select(); } }, 80);
+    }
+
+    /** The reset step cannot send a code without an ID either — keep the button honest. */
+    function fpCheckIdentifier() {
+        const el = document.getElementById('fp-identifier');
+        const btn = document.getElementById('fp-send-btn');
+        if (!el || !btn) return;
+        const empty = el.value.trim() === '';
+        btn.disabled = empty;
+        btn.style.opacity = empty ? '.55' : '';
+        btn.style.cursor = empty ? 'not-allowed' : '';
+        el.classList.toggle('si-error', empty);
+    }
+
+    function fpBindIdentifier() {
+        const el = document.getElementById('fp-identifier');
+        if (!el || el.dataset.bound) return;
+        el.dataset.bound = '1';
+        el.addEventListener('input', fpCheckIdentifier);
+    }
+
+    /** Back to the sign-in form, same popup. */
+    function backToSignIn() {
+        clearInterval(fpTimerInterval);
+        fpReset();
+        siShowView('login');
+        setTimeout(() => { const el = document.getElementById('si-uid'); if (el) el.focus(); }, 80);
     }
     function closeForgotPw() {
-        document.getElementById('fp-backdrop').classList.remove('open');
-        document.body.style.overflow = '';
         clearInterval(fpTimerInterval);
+        siShowView('login');          // next time the popup opens it shows sign-in
+        closeSignIn();
     }
+    // Six single-digit boxes that behave like one field: digits only, moving on
+    // by itself, backspace stepping back, and a pasted code filling every box.
+    function fpBindOtpBoxes() {
+        const wrap = document.getElementById('fp-otp-boxes');
+        const hidden = document.getElementById('fp-otp');
+        if (!wrap || wrap.dataset.bound) return;
+        wrap.dataset.bound = '1';
+        const boxes = [...wrap.querySelectorAll('.otp-box')];
+        const sync = () => {
+            hidden.value = boxes.map(b => b.value).join('');
+            boxes.forEach(b => b.classList.toggle('filled', b.value !== ''));
+        };
+        /** Writes a run of digits starting at one box and moves the cursor after it. */
+        const fillFrom = (start, digits) => {
+            const use = digits.slice(0, boxes.length - start);
+            [...use].forEach((d, k) => { boxes[start + k].value = d; });
+            sync();
+            boxes[Math.min(start + use.length, boxes.length - 1)].focus();
+        };
+
+        boxes.forEach((box, i) => {
+            box.addEventListener('input', () => {
+                const digits = box.value.replace(/[^0-9]/g, '');            // numbers only
+                if (digits.length > 1) {
+                    // a pasted or auto-filled code landed in this one box —
+                    // spread it across the remaining boxes instead of losing it
+                    fillFrom(i, digits);
+                    return;
+                }
+                box.value = digits;
+                sync();
+                if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+            });
+            box.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ''; sync(); e.preventDefault(); }
+                else if (e.key === 'ArrowLeft' && i > 0) { boxes[i - 1].focus(); e.preventDefault(); }
+                else if (e.key === 'ArrowRight' && i < boxes.length - 1) { boxes[i + 1].focus(); e.preventDefault(); }
+                else if (e.key === 'Enter') { e.preventDefault(); fpVerifyAndReset(); }
+                else if (e.key.length === 1 && !/[0-9]/.test(e.key)) e.preventDefault();   // letters/symbols never appear
+            });
+            box.addEventListener('paste', (e) => {
+                const data = (e.clipboardData || window.clipboardData);
+                if (!data) return;                       // let the input handler above cope
+                e.preventDefault();
+                fillFrom(i, data.getData('text').replace(/[^0-9]/g, ''));
+            });
+            box.addEventListener('focus', () => box.select());
+        });
+    }
+
+    function fpClearOtpBoxes() {
+        const wrap = document.getElementById('fp-otp-boxes');
+        if (!wrap) return;
+        wrap.querySelectorAll('.otp-box').forEach(b => { b.value = ''; b.classList.remove('filled'); });
+        const hidden = document.getElementById('fp-otp');
+        if (hidden) hidden.value = '';
+    }
+
+    /**
+     * Live match check: the moment Confirm New Password stops matching New
+     * Password, both boxes turn red and say so — no waiting for the button.
+     */
+    function fpCheckPwMatch() {
+        const pw = document.getElementById('fp-newpw');
+        const cpw = document.getElementById('fp-confirmpw');
+        const note = document.getElementById('fp-pw-note');
+        if (!pw || !cpw || !note) return true;
+        const a = pw.value, b = cpw.value;
+        pw.classList.remove('si-error', 'si-match');
+        cpw.classList.remove('si-error', 'si-match');
+        note.className = 'si-field-note';
+        note.textContent = '';
+        if (!b) return a === b;                       // nothing typed yet — stay neutral
+        const same = a === b;
+        pw.classList.add(same ? 'si-match' : 'si-error');
+        cpw.classList.add(same ? 'si-match' : 'si-error');
+        note.textContent = same ? 'Passwords match.' : 'Passwords do not match.';
+        note.className = 'si-field-note show ' + (same ? 'good' : 'bad');
+        return same;
+    }
+
+    function fpBindPwMatch() {
+        const pw = document.getElementById('fp-newpw');
+        const cpw = document.getElementById('fp-confirmpw');
+        if (!pw || !cpw || pw.dataset.matchBound) return;
+        pw.dataset.matchBound = '1';
+        pw.addEventListener('input', fpCheckPwMatch);
+        cpw.addEventListener('input', fpCheckPwMatch);
+    }
+
     function fpReset() {
+        fpBindOtpBoxes();
+        fpBindPwMatch();
+        fpBindIdentifier();
+        fpClearOtpBoxes();      // wipe the six digit boxes, not just the hidden value
+        fpCheckPwMatch();
         ['fp-identifier','fp-otp','fp-newpw','fp-confirmpw'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         document.getElementById('fp-msg1').innerHTML = '';
         document.getElementById('fp-msg2').innerHTML = '';
+        ['fp-newpw','fp-confirmpw'].forEach(id => document.getElementById(id)?.classList.remove('si-error','si-match'));
+        const pwNote = document.getElementById('fp-pw-note');
+        if (pwNote) { pwNote.textContent = ''; pwNote.className = 'si-field-note'; }
         document.getElementById('fp-step1').style.display = '';
         document.getElementById('fp-step2').style.display = 'none';
         document.getElementById('fp-step3').style.display = 'none';
@@ -2021,7 +1996,7 @@
                 hint.textContent = 'If that account exists, a 6-digit code has been sent. Enter it below.';
             }
             fpStartTimer(res.data && res.data.expires_at, (res.data && res.data.expires_in) || 60);
-            document.getElementById('fp-otp').focus();
+            document.querySelector('#fp-otp-boxes .otp-box')?.focus();
         } catch (err) {
             msgEl.innerHTML = '<p style="color:#dc2626;font-size:13px;margin:0;">Connection error. Please try again.</p>';
         } finally {

@@ -7,6 +7,8 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/BankAccessHelper.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
+require_once __DIR__ . '/helpers/ContentFilter.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 
 header('Content-Type: application/json');
 
@@ -145,6 +147,7 @@ function addComment() {
     $postType = trim($input['post_type'] ?? '');
     $postId   = (int)($input['post_id'] ?? 0);
     $content  = Sanitize::text($input['content'] ?? '');
+    if (contentFilterReject($content)) return;
     $parentId = (int)($input['parent_comment_id'] ?? 0) ?: null;
 
     if (!in_array($postType, ['material', 'question', 'quiz'], true) || !$postId || !$content) {

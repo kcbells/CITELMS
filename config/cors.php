@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/env.php';
 /**
  * Centralized CORS + request security headers for all API endpoints.
  * Auto-executes on include — require_once at the top of every api/*.php file.
@@ -27,7 +28,7 @@ $_cors_allowed = false;
 // Extra allowed hosts for a real deploy — comma-separated, e.g.
 // CORS_ALLOWED_HOSTS="phinma-cdo.edu.ph,lms.phinma-cdo.edu.ph" — set via .env
 // so going live doesn't require remembering to edit this file by hand.
-$_cors_extra_hosts = array_filter(array_map('trim', explode(',', getenv('CORS_ALLOWED_HOSTS') ?: '')));
+$_cors_extra_hosts = array_filter(array_map('trim', explode(',', envValue('CORS_ALLOWED_HOSTS') ?: '')));
 
 if ($_cors_origin !== '') {
     $_cors_host = parse_url($_cors_origin, PHP_URL_HOST) ?: '';

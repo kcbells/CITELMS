@@ -183,3 +183,46 @@ export function gradingPeriodTableCss() {
         .gb-stu-kind.activity { background:#EDE9FE; color:#6D28D9; }
     `;
 }
+
+/**
+ * P1 / P2 / P3 as three tappable choices — used on every form that creates
+ * graded work (activity, lesson, quiz, AI quiz) so each item lands under the
+ * right period in the Raw Gradebook. Styles travel with the markup, so any
+ * form can drop it in without loading the gradebook's CSS.
+ */
+export function gradingPeriodPickerHtml(name, selected = 'P1') {
+    const cur = normalizeGradingPeriod(selected);
+    return `
+        <style>
+            .gpp { display:flex; flex-direction:column; gap:6px; }
+            .gpp-label { font-size:12px; font-weight:700; color:#374151; }
+            .gpp-row { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; }
+            .gpp-opt { position:relative; display:flex; flex-direction:column; align-items:center; gap:1px;
+                border:1.5px solid #D1D5DB; border-radius:9px; padding:8px 6px; cursor:pointer; background:#fff;
+                transition:border-color .12s, background .12s, color .12s; }
+            .gpp-opt input { position:absolute; opacity:0; pointer-events:none; }
+            .gpp-code { font-size:14px; font-weight:800; color:#111; line-height:1.1; }
+            .gpp-title { font-size:10.5px; font-weight:600; color:#6B7280; }
+            .gpp-opt:hover { border-color:#00461B; }
+            .gpp-opt:has(input:checked) { border-color:#00461B; background:#00461B; }
+            .gpp-opt:has(input:checked) .gpp-code, .gpp-opt:has(input:checked) .gpp-title { color:#fff; }
+            .gpp-opt:has(input:focus-visible) { outline:2px solid #00461B; outline-offset:2px; }
+        </style>
+        <div class="gpp" role="radiogroup" aria-label="Grading period">
+            <span class="gpp-label">Grading period</span>
+            <div class="gpp-row">
+                ${GRADING_PERIODS.map(p => `
+                    <label class="gpp-opt">
+                        <input type="radio" name="${name}" value="${p.code}" ${p.code === cur ? 'checked' : ''}>
+                        <span class="gpp-code">${p.label}</span>
+                        <span class="gpp-title">${p.title}</span>
+                    </label>`).join('')}
+            </div>
+        </div>`;
+}
+
+/** The period chosen in a gradingPeriodPickerHtml() block (P1 if none). */
+export function readGradingPeriod(root, name) {
+    const el = root?.querySelector(`input[name="${name}"]:checked`);
+    return normalizeGradingPeriod(el ? el.value : 'P1');
+}

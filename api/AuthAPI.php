@@ -21,6 +21,7 @@ header('Content-Type: application/json');
 // Load config files
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 require_once __DIR__ . '/../config/jwt.php';
 require_once __DIR__ . '/helpers/SignupCatalogHelper.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
@@ -1412,12 +1413,9 @@ function handleSetPhinmaedEmail() {
 
 function logActivity($userId, $activityType, $description) {
     try {
-        db()->execute(
-            "INSERT INTO activity_logs (users_id, activity_type, activity_description, created_at)
-             VALUES (?, ?, ?, NOW())",
-            [$userId, $activityType, $description]
-        );
-    } catch (Exception $e) {
+        // Records the IP address and the device too — see helpers/ActivityLog.php
+        recordActivity($userId === null ? null : (int)$userId, $activityType, $description);
+    } catch (Throwable $e) {
         error_log('Activity log error: ' . $e->getMessage());
     }
 }

@@ -1,14 +1,14 @@
 /**
  * COC LMS — Service Worker v4
  *
- * SHELL_CACHE  — static files (HTML, CSS, JS, images) — stale-while-revalidate
+ * SHELL_CACHE  — pages/CSS/JS network-first, images stale-while-revalidate
  * DATA_CACHE   — API responses for lessons, subjects, gradebook — network-first
  * NEVER CACHED — enrollment/join actions, POST requests, auth
  * BACKGROUND SYNC — outgoing messages queued in IndexedDB, flushed on reconnect
  */
 
-const SHELL_VER = 'coc-shell-v94';
-const DATA_VER  = 'coc-data-v94';
+const SHELL_VER = 'coc-shell-v110';
+const DATA_VER  = 'coc-data-v110';
 
 // Static shell — precached on install
 const SHELL_FILES = [
@@ -137,11 +137,11 @@ self.addEventListener('fetch', e => {
     // All other PHP (auth, enrollment, admin) → network-only
     if (path.endsWith('.php')) return;
 
-    // App code → network-first. stale-while-revalidate served the previous copy
+    // Pages and app code → network-first. stale-while-revalidate served the previous copy
     // on every load, so a JS/CSS change only appeared on the *second* reload and
     // looked like the change had not been applied at all. Images and fonts keep
     // stale-while-revalidate — they are big and they rarely change.
-    if (/\.(js|css)$/i.test(path)) {
+    if (/\.(js|css|html)$/i.test(path) || req.mode === "navigate" || path.endsWith("/")) {
         e.respondWith(networkFirstAsset(req, SHELL_VER));
         return;
     }

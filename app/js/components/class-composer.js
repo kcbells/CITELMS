@@ -3,6 +3,7 @@
  */
 import { Api, BASE_URL } from '../api.js';
 import { icon } from '../utils/icons.js';
+import { gradingPeriodPickerHtml, readGradingPeriod } from '../utils/gradebook-periods.js';
 
 import { esc } from '../utils/classroom-ui.js';
 const MAX_FILE_MB = 25;
@@ -615,6 +616,7 @@ export function openUploadLessonModal({ subjectId, sectionId = null, sections = 
                         placeholder="Optional notes for students…"></textarea>
                 </div>
 
+                <div class="cm-field">${gradingPeriodPickerHtml('cm-les-period', 'P1')}</div>
                 <div class="cm-field">
                     <label class="cm-label">Files</label>
                     <div class="cm-drop" id="cm-les-drop">
@@ -754,6 +756,7 @@ export function openUploadLessonModal({ subjectId, sectionId = null, sections = 
                 lesson_description: desc.slice(0, 300),
                 lesson_content: desc,
                 status: 'published',
+                grading_period: readGradingPeriod(modal, 'cm-les-period'),
                 all_sections,
                 section_ids,
                 student_ids,
@@ -812,6 +815,7 @@ export function openCreateActivityModal({ subjectId, sectionId = null, sections 
                     <textarea class="cm-textarea" id="cm-act-desc" rows="4"
                         placeholder="Describe what students need to do, what to submit, and how they will be evaluated…"></textarea>
                 </div>
+                <div class="cm-field">${gradingPeriodPickerHtml('cm-act-period', 'P1')}</div>
                 <div style="display:flex;gap:12px;">
                     <div class="cm-field" style="flex:1;">
                         <label class="cm-label" for="cm-act-due">Due Date &amp; Time (optional)</label>
@@ -965,6 +969,7 @@ export function openCreateActivityModal({ subjectId, sectionId = null, sections 
                 lesson_description: desc,
                 lesson_content: desc,
                 status: 'published',
+                grading_period: readGradingPeriod(modal, 'cm-act-period'),
                 due_date: dueVal || null,
                 total_points: ptsVal !== '' ? parseFloat(ptsVal) : null,
                 all_sections,

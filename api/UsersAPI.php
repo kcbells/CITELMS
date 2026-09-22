@@ -7,6 +7,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
 require_once __DIR__ . '/helpers/YearLevelHelper.php';
 require_once __DIR__ . '/helpers/ScopeHelper.php';
@@ -22,12 +23,9 @@ $action = $_GET['action'] ?? '';
 
 function logActivity($userId, $activityType, $description) {
     try {
-        db()->execute(
-            "INSERT INTO activity_logs (users_id, activity_type, activity_description, created_at)
-             VALUES (?, ?, ?, NOW())",
-            [$userId, $activityType, $description]
-        );
-    } catch (Exception $e) {
+        // Records the IP address and the device too — see helpers/ActivityLog.php
+        recordActivity($userId === null ? null : (int)$userId, $activityType, $description);
+    } catch (Throwable $e) {
         error_log('Activity log error: ' . $e->getMessage());
     }
 }
@@ -172,6 +170,7 @@ function handleActivityLog() {
         return;
     }
 
+    ensureActivityLogColumns();   // older installs may predate ip/device
     $search   = trim($_GET['search'] ?? '');
     $type     = trim($_GET['activity_type'] ?? '');
     $page     = max(1, (int)($_GET['page'] ?? 1));
@@ -181,10 +180,21 @@ function handleActivityLog() {
     $where  = [];
     $params = [];
     if ($search !== '') {
-        $where[]  = "(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR al.activity_description LIKE ?)";
+        $where[]  = "(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR al.activity_description LIKE ?"
+                   . " OR al.ip_address LIKE ? OR al.user_agent LIKE ?)";
         $s = "%$search%";
-        array_push($params, $s, $s, $s, $s);
+        array_push($params, $s, $s, $s, $s, $s, $s);
     }
+    // Device filter — phones and computers are matched on the browser string,
+    // the same signals activityDeviceKind() reads.
+    $device = trim($_GET['device'] ?? '');
+    if ($device === 'phone') {
+        $where[] = "(al.user_agent LIKE '%Mobile%' OR al.user_agent LIKE '%iPhone%' OR al.user_agent LIKE '%Android%') AND al.user_agent NOT LIKE '%iPad%'";
+    } elseif ($device === 'computer') {
+        $where[] = "(al.user_agent IS NOT NULL AND al.user_agent NOT LIKE '%Mobile%' AND al.user_agent NOT LIKE '%iPhone%' AND al.user_agent NOT LIKE '%Android%' AND al.user_agent NOT LIKE '%iPad%')";
+    }
+    $role = trim($_GET['role'] ?? '');
+    if ($role !== '') { $where[] = 'u.role = ?'; $params[] = $role; }
     if ($type !== '') {
         $where[]  = "al.activity_type = ?";
         $params[] = $type;
@@ -198,6 +208,7 @@ function handleActivityLog() {
 
     $logs = db()->fetchAll(
         "SELECT al.log_id, al.activity_type, al.activity_description, al.created_at,
+                al.ip_address, al.user_agent,
                 al.users_id, u.first_name, u.last_name, u.email, u.role
          FROM activity_logs al
          LEFT JOIN users u ON u.users_id = al.users_id
@@ -213,9 +224,23 @@ function handleActivityLog() {
         "SELECT DISTINCT activity_type FROM activity_logs ORDER BY activity_type"
     ), 'activity_type');
 
+    // Readable action name, device summary and severity are worked out here so
+    // every screen shows the same wording.
+    foreach ($logs as &$row) {
+        $row['action_label'] = activityActionLabel((string)$row['activity_type']);
+        $row['severity']     = activityActionSeverity((string)$row['activity_type']);
+        $row['device_label'] = activityDeviceLabel($row['user_agent'] ?? null);
+        $row['device_kind']  = activityDeviceKind($row['user_agent'] ?? null);
+        $row['ip_address']   = $row['ip_address'] ?: 'Not recorded';
+    }
+    unset($row);
+
+    $typeOptions = array_map(fn($t) => ['value' => $t, 'label' => activityActionLabel($t)], $types);
+
     echo json_encode(['success' => true, 'data' => [
         'logs'        => $logs,
         'types'       => $types,
+        'type_options'=> $typeOptions,
         'total'       => $total,
         'page'        => $page,
         'per_page'    => $perPage,

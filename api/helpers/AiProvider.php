@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../config/env.php';
 /**
  * Shared AI provider helper — Hugging Face Inference Providers' OpenAI-
  * compatible chat-completions router (https://router.huggingface.co/v1/chat/completions).
@@ -31,7 +32,7 @@ const AI_TIMEOUT_LONGFORM    = 100; // reviewer / quiz generation — big output
 
 /** Hugging Face access token — system_settings.hf_api_key, or HF_API_KEY env var. */
 function getAiApiKey(): string {
-    $envKey = getenv('HF_API_KEY') ?: '';
+    $envKey = envValue('HF_API_KEY') ?: '';
     if ($envKey !== '') return $envKey;
     $row = db()->fetchOne("SELECT setting_value FROM system_settings WHERE setting_key = 'hf_api_key'");
     return $row['setting_value'] ?? '';

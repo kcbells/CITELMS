@@ -18,8 +18,8 @@ if (!function_exists('loadDotEnv')) {
             $val = trim(trim($val), "\"'");
             if ($key === '') continue;
             // Never override real environment variables (set by server/hosting)
-            if (getenv($key) === false) {
-                putenv("$key=$val");
+            if (envValue($key) === false) {
+                if (function_exists('putenv')) @putenv("$key=$val");
                 $_ENV[$key]    = $val;
                 $_SERVER[$key] = $val;
             }
@@ -27,4 +27,18 @@ if (!function_exists('loadDotEnv')) {
     }
 }
 
+/**
+ * Reads one setting. Some hosts (InfinityFree) let putenv() run but ignore it,
+ * so getenv() stays empty — fall back to the copy kept in $_ENV / $_SERVER.
+ * Returns false when the setting is not defined anywhere, just like getenv().
+ */
+if (!function_exists('envValue')) {
+    function envValue(string $key) {
+        $v = getenv($key);
+        if ($v !== false) return $v;
+        if (array_key_exists($key, $_ENV)) return $_ENV[$key];
+        if (array_key_exists($key, $_SERVER) && is_string($_SERVER[$key])) return $_SERVER[$key];
+        return false;
+    }
+}
 loadDotEnv(__DIR__ . '/../.env');

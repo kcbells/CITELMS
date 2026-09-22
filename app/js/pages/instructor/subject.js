@@ -787,7 +787,7 @@ export async function render(container, params) {
             <div class="gc-moddoc-row">
                 <span class="gc-moddoc-type">${esc(label)}</span>
                 ${quiz
-                    ? `<span class="gc-moddoc-quiz-status gc-moddoc-quiz-status--${quiz.status}">${quiz.status === 'published' ? 'Published to students' : 'Draft — not visible to students'}</span>`
+                    ? `<span class="gc-moddoc-quiz-status gc-moddoc-quiz-status--${quiz.status}">${quiz.status === 'published' ? 'Published' : 'Draft'}</span>`
                     : `<span class="gc-moddoc-empty">Not built yet</span>`}
                 <span class="gc-moddoc-row-actions">
                     <button type="button" class="gc-moddoc-quizbuild-btn" data-quiz-mod="${d.module_number}" data-quiz-component="${component}" ${quiz ? `data-quiz-id="${quiz.quiz_id}"` : ''}>
@@ -797,44 +797,47 @@ export async function render(container, params) {
             </div>`;
 
         return `
-            <article class="gc-post-card">
-                <div class="gc-post-card__row">
-                    <div class="gc-moddoc-main">
-                        <header class="gc-post-card__hdr">
-                            <div class="sc-avatar sm teacher-av">${esc(myInitials)}</div>
-                            <div class="gc-cw-author-text">
-                                <span class="gc-cw-author-name">${esc(myName)}</span>
-                                ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
-                            </div>
-                        </header>
-                        <div class="gc-post-card__work">
-                            <span class="gc-cw-icon gc-cw-icon--subj">${icon('document', { size: 20 })}</span>
-                            <div class="gc-cw-body">
-                                <div class="gc-cw-title">Module ${d.module_number} — Documents</div>
-                                <label class="gc-moddoc-require-toggle">
-                                    <input type="checkbox" data-require-mod="${d.module_number}" ${d.requireAllParts ? 'checked' : ''}>
-                                    Require all 3 parts (Let's Practice, Reflection, Wrap Up Quiz) to complete this module
-                                </label>
-                                <label class="gc-moddoc-due">
-                                    <span>Due date for this module</span>
-                                    <input type="datetime-local" data-due-mod="${d.module_number}" value="${esc(d.moduleDueDate)}">
-                                    <em>All 3 parts use this unless a part has its own deadline. Leave blank for none.</em>
-                                </label>
-                                ${docLine('Teaching Guide', 'teaching_guide', tg)}
-                                ${docLine('Student Activity Sheet', 'sas', sas)}
-                                ${quizLine("Let's Practice", 'lets_practice', d.lets_practice)}
-                                ${quizLine('Reflection', 'reflection', d.reflection)}
-                                ${quizLine('Wrap Up Quiz', 'wrap_up_quiz', d.wrap_up_quiz)}
-                            </div>
-                        </div>
+            <article class="gc-post-card gc-moddoc-card">
+                <header class="gc-moddoc-head">
+                    <div class="sc-avatar sm teacher-av">${esc(myInitials)}</div>
+                    <div class="gc-cw-author-text">
+                        <span class="gc-cw-author-name">${esc(myName)}</span>
+                        ${posted ? `<span class="gc-cw-posted-time">${esc(posted)}</span>` : ''}
                     </div>
-                    <div class="gc-moddoc-actions">
-                        ${sas ? `
+                    ${sas ? `
+                        <div class="gc-moddoc-actions">
                             <span class="gc-cw-modpub gc-cw-modpub--${sasPubState}">${esc(sasPubLabel)}</span>
                             <button type="button" class="gc-moddoc-pubtoggle" data-moddoc-pub-id="${sas.doc_id}" data-moddoc-pub-now="${sas.is_published ? 1 : 0}">
                                 ${sas.is_published ? 'Unpublish' : 'Publish to students'}
-                            </button>` : ''}
-                    </div>
+                            </button>
+                        </div>` : ''}
+                </header>
+
+                <h3 class="gc-moddoc-title">Module ${d.module_number} — Documents</h3>
+
+                <div class="gc-moddoc-settings">
+                    <label class="gc-moddoc-require-toggle">
+                        <input type="checkbox" data-require-mod="${d.module_number}" ${d.requireAllParts ? 'checked' : ''}>
+                        <span>Require all 3 parts to complete this module<em>Let's Practice, Reflection and Wrap Up Quiz</em></span>
+                    </label>
+                    <label class="gc-moddoc-due">
+                        <span>Due date for this module</span>
+                        <input type="datetime-local" data-due-mod="${d.module_number}" value="${esc(d.moduleDueDate)}">
+                        <em>All 3 parts use this unless a part has its own deadline. Leave blank for none.</em>
+                    </label>
+                </div>
+
+                <p class="gc-moddoc-section-label">Files</p>
+                <div class="gc-moddoc-list">
+                    ${docLine('Teaching Guide', 'teaching_guide', tg)}
+                    ${docLine('Student Activity Sheet', 'sas', sas)}
+                </div>
+
+                <p class="gc-moddoc-section-label">Student parts</p>
+                <div class="gc-moddoc-list">
+                    ${quizLine("Let's Practice", 'lets_practice', d.lets_practice)}
+                    ${quizLine('Reflection', 'reflection', d.reflection)}
+                    ${quizLine('Wrap Up Quiz', 'wrap_up_quiz', d.wrap_up_quiz)}
                 </div>
             </article>`;
     }
@@ -2645,10 +2648,21 @@ function instructorExtraCss() {
         }
         .gc-cw-status:not(.done) { color:#fff; background:#B45309; padding:2px 8px; border-radius:10px; font-size:11px; }
         .gc-cw-status.done { color:#137333; }
-        .gc-cw-modpub { padding:3px 10px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap; }
-        .gc-cw-modpub--published { color:#137333; background:#E6F4EA; }
-        .gc-cw-modpub--scheduled { color:#fff; background:#B45309; }
-        .gc-cw-modpub--hidden { color:#5F6368; background:#F1F3F4; }
+        .gc-cw-modpub { padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; white-space:nowrap;
+            background:#fff; border:1px solid #9CA3AF; color:#4B5563; }
+        .gc-cw-modpub--published { color:#00461B; border-color:#00461B; }
+        .gc-cw-modpub--scheduled { color:#B45309; border-color:#B45309; }
+        .gc-cw-modpub--hidden { color:#6B7280; border-color:#D1D5DB; }
+        .gc-moddoc-card { padding:14px 16px; }
+        .gc-moddoc-head { display:flex; align-items:center; gap:10px; padding-bottom:12px; border-bottom:1px solid #E5E7EB; }
+        .gc-moddoc-title { font-size:15px; font-weight:800; color:#111; margin:12px 0 10px; }
+        .gc-moddoc-settings { border:1px solid #E5E7EB; border-radius:10px; padding:12px 14px; margin-bottom:14px; }
+        .gc-moddoc-section-label { font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+            color:#6B7280; margin:0 0 6px; }
+        .gc-moddoc-list { border:1px solid #E5E7EB; border-radius:10px; margin-bottom:14px; }
+        .gc-moddoc-list > .gc-moddoc-row { border-bottom:1px solid #F3F4F6; padding:10px 14px; margin:0; }
+        .gc-moddoc-list > .gc-moddoc-row:last-child { border-bottom:none; }
+        .gc-moddoc-list > .gc-moddoc-row:hover { background:#FAFAFA; }
         .gc-moddoc-main { flex:1; min-width:0; }
         .gc-moddoc-row { display:flex; align-items:center; gap:10px; padding:5px 0; flex-wrap:wrap; }
         .gc-moddoc-type { font-size:12px; font-weight:700; color:#5F6368; min-width:150px; flex-shrink:0; }
@@ -2664,21 +2678,22 @@ function instructorExtraCss() {
         .gc-moddoc-delete-btn:disabled { opacity:.5; cursor:default; }
         .gc-moddoc-locked-tag { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;
             color:#6B7280; background:#F3F4F6; padding:3px 9px; border-radius:6px; white-space:nowrap; }
-        .gc-moddoc-require-toggle { display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#374151;
-            font-weight:600; margin:2px 0 10px; cursor:pointer; line-height:1.4; }
+        .gc-moddoc-require-toggle { display:flex; align-items:flex-start; gap:8px; font-size:12.5px; color:#111;
+            font-weight:700; margin:0 0 12px; cursor:pointer; line-height:1.45; }
+        .gc-moddoc-require-toggle em { display:block; font-style:normal; font-size:11.5px; font-weight:500; color:#6B7280; margin-top:2px; }
         .gc-moddoc-require-toggle input { margin-top:2px; accent-color:#00461B; flex-shrink:0; cursor:pointer; }
-        .gc-moddoc-due { display:flex; flex-direction:column; gap:4px; margin:8px 0 10px; font-size:12px; color:#374151; }
+        .gc-moddoc-due { display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; color:#374151; }
         .gc-moddoc-due > span { font-weight:700; }
         .gc-moddoc-due input { align-self:flex-start; border:1.5px solid #111; border-radius:8px;
             padding:6px 9px; font-size:12.5px; font-family:inherit; }
         .gc-moddoc-due em { font-style:normal; font-size:11px; color:#6B7280; }
-        .gc-moddoc-quiz-status { font-size:11.5px; font-weight:600; }
-        .gc-moddoc-quiz-status--published { color:#137333; }
-        .gc-moddoc-quiz-status--draft { color:#92400E; }
+        .gc-moddoc-quiz-status { font-size:11px; font-weight:700; padding:2px 9px; border-radius:6px; border:1px solid; }
+        .gc-moddoc-quiz-status--published { color:#00461B; border-color:#00461B; }
+        .gc-moddoc-quiz-status--draft { color:#B45309; border-color:#B45309; }
         .gc-moddoc-quizbuild-btn { background:#fff; border:1.5px solid #E5E7EB; color:#374151; padding:3px 10px;
             border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; }
         .gc-moddoc-quizbuild-btn:hover { border-color:#00461B; color:#00461B; }
-        .gc-moddoc-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0; padding-top:2px; }
+        .gc-moddoc-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:auto; flex-wrap:wrap; justify-content:flex-end; }
         .gc-moddoc-pubtoggle { white-space:nowrap; background:#fff; border:1.5px solid #00461B; color:#00461B;
             padding:6px 13px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;
             transition:background .15s, color .15s; }

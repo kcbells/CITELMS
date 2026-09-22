@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/env.php';
 /**
  * ============================================================
  * JWT (JSON Web Token) Helper
@@ -9,12 +10,12 @@
  */
 
 // Load secret from environment; fall back to a strong generated key stored in database.local.php
-$_jwtSecret = getenv('JWT_SECRET') ?: (defined('JWT_SECRET_KEY') ? JWT_SECRET_KEY : null);
+$_jwtSecret = envValue('JWT_SECRET') ?: (defined('JWT_SECRET_KEY') ? JWT_SECRET_KEY : null);
 if (!$_jwtSecret || strlen($_jwtSecret) < 32) {
     // A production deploy running on this well-known hardcoded string would let anyone who's
     // read the source (it's right here) forge a valid JWT for any user. Refuse to boot instead
     // of silently signing tokens with it.
-    if (getenv('APP_ENV') === 'production') {
+    if (envValue('APP_ENV') === 'production') {
         http_response_code(500);
         error_log('FATAL: APP_ENV=production but JWT_SECRET is not set (or shorter than 32 chars) — refusing to fall back to the hardcoded dev secret.');
         header('Content-Type: application/json');

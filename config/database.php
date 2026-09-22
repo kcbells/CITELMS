@@ -23,18 +23,18 @@ require_once __DIR__ . '/env.php';
 // install). Refuse to boot rather than silently connecting as root with no password if this
 // is ever actually deployed with APP_ENV=production and the real credentials weren't set —
 // a misconfigured production deploy should fail loudly, not fall back to a dev default.
-if (getenv('APP_ENV') === 'production' && (getenv('DB_USER') === false || getenv('DB_PASS') === false)) {
+if (envValue('APP_ENV') === 'production' && (envValue('DB_USER') === false || envValue('DB_PASS') === false)) {
     http_response_code(500);
     error_log('FATAL: APP_ENV=production but DB_USER/DB_PASS are not set — refusing to fall back to the root/empty-password dev default.');
     header('Content-Type: application/json');
     die(json_encode(['success' => false, 'message' => 'Server misconfigured. Contact the administrator.']));
 }
 
-$dbHost = getenv('DB_HOST') ?: '127.0.0.1';
-$dbName = getenv('DB_NAME') ?: 'cit_lms';
-$dbUser = getenv('DB_USER') ?: 'root';
-$dbPass = getenv('DB_PASS') !== false ? getenv('DB_PASS') : '';
-$dbPort = (int)(getenv('DB_PORT') ?: 3306);
+$dbHost = envValue('DB_HOST') ?: '127.0.0.1';
+$dbName = envValue('DB_NAME') ?: 'cit_lms';
+$dbUser = envValue('DB_USER') ?: 'root';
+$dbPass = envValue('DB_PASS') !== false ? envValue('DB_PASS') : '';
+$dbPort = (int)(envValue('DB_PORT') ?: 3306);
 
 // Legacy local override (still supported for InfinityFree / backwards compat)
 $dbLocal = __DIR__ . '/database.local.php';

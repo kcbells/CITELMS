@@ -370,22 +370,33 @@ function renderBody(ctx) {
 
     body.innerHTML = `
         ${warning}${empty}
-        <div class="mqb-field">
-            <label>Quiz title</label>
-            <input type="text" id="mqb-title" value="${esc(ctx.existingTitle || `Module ${ctx.moduleNumber} — ${label}`)}">
-        </div>
-        <div class="mqb-field">
-            <label>Due date <span class="mqb-opt">(optional)</span></label>
-            <input type="datetime-local" id="mqb-due" value="${esc(ctx.existingDueDate || '')}">
-            <p class="mqb-hint">Students can answer anytime up to this date and time. After it passes they can't
-                start, and are told to ask you for an extension. Leave blank for no deadline — or leave it blank
-                to use the module's own deadline if one is set.</p>
-        </div>
+        <section class="mqb-card">
+            <h4 class="mqb-card-title">Quiz details</h4>
+            <div class="mqb-field">
+                <label>Quiz title</label>
+                <input type="text" id="mqb-title" value="${esc(ctx.existingTitle || `Module ${ctx.moduleNumber} — ${label}`)}">
+            </div>
+            <div class="mqb-field">
+                <label>Due date <span class="mqb-opt">(optional)</span></label>
+                <input type="datetime-local" id="mqb-due" value="${esc(ctx.existingDueDate || '')}">
+                <p class="mqb-hint">Students can answer any time up to this date. After it passes they can't start,
+                    and are told to ask you for an extension. Leave blank to use the module's own deadline.</p>
+            </div>
+        </section>
         ${isRubricScale ? `<div class="mqb-rubric-note">${esc(label)} is graded on the Global Gradebook's 0–3 scale, not points — every question counts equally toward the percentage that determines the score (100% = 3, 80–99% = 2, 60–79% = 1, below 60% = 0).</div>` : ''}
-        <div class="mqb-items" id="mqb-items"></div>
-        <button type="button" class="mqb-add-btn" id="mqb-add">+ Add question manually</button>
-        <div class="mqb-field">
-            <label>Grading</label>
+        <section class="mqb-card">
+            <div class="mqb-card-head">
+                <h4 class="mqb-card-title">Questions</h4>
+                <span class="mqb-count" id="mqb-count"></span>
+            </div>
+            <div class="mqb-items" id="mqb-items"></div>
+            <button type="button" class="mqb-add-btn" id="mqb-add">+ Add a question</button>
+        </section>
+
+        <section class="mqb-card">
+            <h4 class="mqb-card-title">Grading</h4>
+            <div class="mqb-field">
+            <label>How answers are graded</label>
             <select id="mqb-grading">
                 <option value="ai_auto">AI grades automatically against the Teaching Guide (you still review before finalizing)</option>
                 <option value="manual">I'll grade each answer manually</option>
@@ -395,6 +406,7 @@ function renderBody(ctx) {
             <input type="checkbox" id="mqb-consent-cb">
             <span>I understand the AI will check student answers against the Teaching Guide, and that no AI-graded score is final until I personally review and approve it.</span>
         </label>
+        </section>
         <div class="mqb-actions">
             <button type="button" class="mqb-cancel-btn" id="mqb-cancel">Cancel</button>
             <button type="button" class="mqb-save-btn" id="mqb-save" disabled>${ctx.quizId ? 'Save Changes' : 'Save Quiz'}</button>
@@ -413,7 +425,12 @@ function renderBody(ctx) {
     gradingSel.addEventListener('change', updateSaveGate);
     consentCb.addEventListener('change', updateSaveGate);
     updateSaveGate();
-    const renderItems = () => { itemsEl.innerHTML = items.map(it => itemHtml(it, isRubricScale)).join(''); wireItemEvents(); };
+    const renderItems = () => {
+        itemsEl.innerHTML = items.map((it, i) => itemHtml(it, isRubricScale, i + 1)).join('');
+        const countEl = body.querySelector('#mqb-count');
+        if (countEl) countEl.textContent = items.length === 1 ? '1 question' : items.length + ' questions';
+        wireItemEvents();
+    };
     const wireItemEvents = () => {
         itemsEl.querySelectorAll('[data-remove]').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -595,7 +612,7 @@ function renderBody(ctx) {
     });
 }
 
-function itemHtml(item, isRubricScale = false) {
+function itemHtml(item, isRubricScale = false, n = null) {
     const isFillBlank = item.type === 'fill_blank';
     const isSubjective = item.type === 'short_answer' || item.type === 'essay' || isFillBlank;
     const questionPlaceholder = isFillBlank
@@ -619,6 +636,7 @@ function itemHtml(item, isRubricScale = false) {
     return `
     <div class="mqb-item" data-id="${item.id}">
         <div class="mqb-item-top">
+            <span class="mqb-item-no">${typeof n === 'number' ? n : ''}</span>
             <select data-type-sel="${item.id}">
                 <option value="short_answer" ${item.type === 'short_answer' ? 'selected' : ''}>Short Answer</option>
                 <option value="essay" ${item.type === 'essay' ? 'selected' : ''}>Essay</option>
@@ -630,13 +648,16 @@ function itemHtml(item, isRubricScale = false) {
             <button type="button" class="mqb-edit-btn" data-edit="${item.id}" title="Open in the full editor">Edit</button>
             <button type="button" class="mqb-remove-btn" data-remove="${item.id}" title="Remove">&#x2715;</button>
         </div>
-        <textarea class="mqb-qtext" data-question="${item.id}" rows="2" placeholder="${esc(questionPlaceholder)}">${esc(item.question || '')}</textarea>
+        <label class="mqb-item-label" for="q-${item.id}">Question</label>
+        <textarea class="mqb-qtext" id="q-${item.id}" data-question="${item.id}" rows="2" placeholder="${esc(questionPlaceholder)}">${esc(item.question || '')}</textarea>
         ${item.type === 'multiple_choice' ? mcOptionsHtml(item) : ''}
         ${item.type === 'true_false' ? `
             <label class="mqb-tf"><input type="radio" name="tf-${item.id}" data-tf="${item.id}" value="1" ${item.answer ? 'checked' : ''}> True</label>
             <label class="mqb-tf"><input type="radio" name="tf-${item.id}" data-tf="${item.id}" value="0" ${!item.answer ? 'checked' : ''}> False</label>
         ` : ''}
-        ${isSubjective ? `<textarea class="mqb-answer" data-answer="${item.id}" rows="2" placeholder="${esc(answerPlaceholder)}">${esc(item.answer || '')}</textarea>` : ''}
+        ${isSubjective ? `
+            <label class="mqb-item-label mqb-item-label--answer" for="a-${item.id}">${isFillBlank ? 'Correct answer' : 'Expected answer'} <em>what a full-mark answer should contain</em></label>
+            <textarea class="mqb-answer" id="a-${item.id}" data-answer="${item.id}" rows="2" placeholder="${esc(answerPlaceholder)}">${esc(item.answer || '')}</textarea>` : ''}
     </div>`;
 }
 
@@ -706,8 +727,9 @@ function css() {
     @keyframes mqbSpin { to { transform:rotate(360deg); } }
     .mqb-warn { background:#FFFBEB; border:1px solid #FDE68A; color:#92400E; border-radius:8px; padding:9px 12px; font-size:12px; }
     /* White surface, black border, deep green reserved for text/accents. */
-    .mqb-rubric-note { background:#fff; border:1.5px solid #111; color:${G}; border-radius:8px;
-        padding:10px 13px; font-size:12px; line-height:1.5; font-weight:600; }
+    /* A quiet note, not a wall of bold green text. */
+    .mqb-rubric-note { background:#fff; border:1px solid #D1D5DB; border-left:3px solid ${G}; color:#374151;
+        border-radius:0 8px 8px 0; padding:9px 13px; font-size:11.5px; line-height:1.55; font-weight:500; }
     .mqb-setup { display:flex; flex-direction:column; gap:12px; }
     .mqb-setup-lede { margin:0 0 4px; font-size:13px; color:#374151; }
     /* Same card shape as the regular quiz creation picker. */
@@ -732,8 +754,20 @@ function css() {
     .mqb-opt { font-weight:600; color:#9CA3AF; text-transform:none; letter-spacing:0; }
     .mqb-hint { font-size:11.5px; color:#6B7280; line-height:1.55; margin:4px 0 0; }
     .mqb-items { display:flex; flex-direction:column; gap:10px; }
-    .mqb-item { border:1px solid ${BORDER}; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:7px; background:#FAFAFA; }
-    .mqb-item-top { display:flex; align-items:center; gap:8px; }
+    .mqb-item { border:1.5px solid #E5E7EB; border-radius:10px; padding:12px 14px; display:flex; flex-direction:column;
+        gap:6px; background:#fff; transition:border-color .12s; }
+    .mqb-item:focus-within { border-color:${G}; }
+    .mqb-item-top { display:flex; align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid #F3F4F6; margin-bottom:2px; }
+    .mqb-item-no { width:22px; height:22px; border-radius:6px; background:${G}; color:#fff; font-size:11px;
+        font-weight:800; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .mqb-item-label { font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+        color:#6B7280; margin-top:4px; }
+    .mqb-item-label em { font-style:normal; font-weight:500; text-transform:none; letter-spacing:0; color:#9CA3AF; margin-left:6px; }
+    .mqb-item-label--answer { color:${G}; }
+    .mqb-card { border:1.5px solid #E5E7EB; border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+    .mqb-card-title { margin:0; font-size:13px; font-weight:800; color:#111; }
+    .mqb-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .mqb-count { font-size:11.5px; font-weight:700; color:#6B7280; }
     .mqb-item-top select { border:1px solid ${BORDER}; border-radius:6px; padding:4px 6px; font-size:12px; font-family:inherit; }
     .mqb-item--converting { background:#F3F4F6; }
     .mqb-converting-label { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:${G}; }
@@ -750,10 +784,12 @@ function css() {
     .mqb-mc-opt { display:flex; align-items:center; gap:7px; font-size:12.5px; }
     .mqb-mc-opt input[type=text] { flex:1; border:1px solid ${BORDER}; border-radius:6px; padding:5px 8px; font-size:12.5px; font-family:inherit; }
     .mqb-tf { display:inline-flex; align-items:center; gap:5px; font-size:12.5px; margin-right:14px; }
-    .mqb-add-btn { align-self:flex-start; background:#fff; border:1.5px dashed ${G}; color:${G}; padding:6px 14px;
-        border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; }
+    .mqb-add-btn { align-self:stretch; background:#fff; border:1.5px dashed ${G}; color:${G}; padding:10px 14px;
+        border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; }
     .mqb-add-btn:hover { background:#F3F4F6; }
-    .mqb-actions { display:flex; justify-content:flex-end; gap:10px; padding-top:6px; border-top:1px solid ${BORDER}; }
+    /* Stays in reach at the bottom of a long quiz instead of only after the last question. */
+    .mqb-actions { position:sticky; bottom:0; display:flex; justify-content:flex-end; gap:10px;
+        padding:12px 4px; border-top:1.5px solid #111; background:#fff; z-index:5; }
     .mqb-cancel-btn { background:#fff; border:1px solid ${BORDER}; color:#374151; padding:8px 16px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; }
     .mqb-save-btn { background:${G}; border:1px solid ${G}; color:#fff; padding:8px 18px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; }
     .mqb-save-btn:hover { background:#006428; }

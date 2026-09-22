@@ -12,6 +12,7 @@ require_once __DIR__ . '/helpers/GroqCurl.php';
 require_once __DIR__ . '/helpers/AiProvider.php';
 require_once __DIR__ . '/helpers/StudentListParser.php';
 require_once __DIR__ . '/helpers/ScopeHelper.php';
+require_once __DIR__ . '/helpers/GradingPeriodHelper.php';
 
 header('Content-Type: application/json');
 ini_set('display_errors', '0');
@@ -939,8 +940,8 @@ function saveQuiz($input, $userId) {
             $stmt = $pdo->prepare(
                 "INSERT INTO quiz (user_teacher_id, subject_id, quiz_title, quiz_description, time_limit, passing_rate,
                  max_attempts, total_points, status, availability_start, due_date, quiz_type,
-                 objective_grading_mode, subjective_grading_mode, module_number, gradebook_component, source_doc_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
+                 objective_grading_mode, subjective_grading_mode, module_number, gradebook_component, source_doc_id, grading_period, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())"
             );
             $stmt->execute([
                 $userId,
@@ -962,6 +963,8 @@ function saveQuiz($input, $userId) {
                 $moduleNumber,
                 $gradebookComponent,
                 $sourceDocId,
+                // which of P1 / P2 / P3 this quiz is graded under in the Raw Gradebook
+                normalizeGradingPeriod($input['grading_period'] ?? 'P1'),
             ]);
             $quizId = $pdo->lastInsertId();
 

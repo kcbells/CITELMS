@@ -9,11 +9,19 @@
  * POST ?action=end     { room_key }  — instructor ends class for everyone
  * GET  ?action=comments&room_key=...&since=0
  * POST ?action=comment { room_key, content }
+ * POST ?action=hand    { room_key, raised, user_id? } — raise/lower hand (host may lower anyone's)
+ * POST ?action=react   { room_key, emoji }            — emoji reaction everyone sees
+ * POST ?action=media   { room_key, cam_off, mic_off }  — my camera / mic state
+ * GET  ?action=roster&room_key=...                     — host: enrolled students, in class or not
+ * POST ?action=notify_absent { room_key, user_ids? }   — host: message students who have not joined
+ * POST ?action=host_cmd { room_key, user_id?, cmd }    — host: mute / mute_all / cam_request
  */
 require_once __DIR__ . '/../config/cors.php';
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/helpers/ContentFilter.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 
 if (!Auth::check()) {
     http_response_code(401);
@@ -34,6 +42,12 @@ $_videoPerms = [
     'leave'    => 'video.view',
     'comments' => 'video.view',
     'comment'  => 'video.view',
+    'hand'     => 'video.view',
+    'react'    => 'video.view',
+    'media'    => 'video.view',
+    'roster'   => 'video.view',
+    'notify_absent' => 'video.view',
+    'host_cmd' => 'video.view',
 ];
 if (isset($_videoPerms[$action]) && !Auth::can($_videoPerms[$action])) {
     http_response_code(403);
@@ -49,6 +63,12 @@ switch ($action) {
     case 'end':      handleEnd();      break;
     case 'comments': handleComments(); break;
     case 'comment':  handleComment();  break;
+    case 'hand':     handleHand();     break;
+    case 'react':    handleReact();    break;
+    case 'media':    handleMedia();    break;
+    case 'roster':   handleRoster();   break;
+    case 'notify_absent': handleNotifyAbsent(); break;
+    case 'host_cmd': handleHostCmd();  break;
     default:
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
@@ -100,6 +120,20 @@ function ensureVideoSchema() {
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_room_comments (room_key, comment_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Raise-hand state lives with presence so late joiners see it too.
+        $cols = array_column(db()->fetchAll('SHOW COLUMNS FROM video_presence'), 'Field');
+        if (!in_array('hand_raised', $cols, true)) {
+            pdo()->exec("ALTER TABLE video_presence ADD COLUMN hand_raised TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN hand_at TIMESTAMP NULL DEFAULT NULL");
+        }
+        // Camera on/off is told to everyone directly: a switched-off camera
+        // cannot be reliably detected from the video stream on every browser.
+        if (!in_array('cam_off', $cols, true)) {
+            pdo()->exec("ALTER TABLE video_presence ADD COLUMN cam_off TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        if (!in_array('mic_off', $cols, true)) {
+            pdo()->exec("ALTER TABLE video_presence ADD COLUMN mic_off TINYINT(1) NOT NULL DEFAULT 0");
+        }
     } catch (Exception $e) {
         // ignore if tables exist
     }
@@ -307,6 +341,10 @@ function handleJoin() {
             display_name = VALUES(display_name),
             user_role = VALUES(user_role),
             is_host = VALUES(is_host),
+            hand_raised = 0,
+            hand_at = NULL,
+            cam_off = 0,
+            mic_off = 0,
             last_seen = NOW()",
         [$roomKey, Auth::id(), buildDisplayName($user), $role, $host ? 1 : 0]
     );
@@ -331,8 +369,32 @@ function handleJoin() {
             'class_active' => $classActive,
             'host_present' => $hostPresent,
             'signal_since' => $signalSince,
+            'ice_servers'  => videoIceServers(),
         ],
     ]);
+}
+
+/**
+ * STUN finds a direct path between two devices. On mobile data and many
+ * school/home routers there is none, and video only flows through a TURN
+ * relay. TURN needs an account, so it is read from .env:
+ *   TURN_URLS=turn:host:3478,turns:host:443?transport=tcp
+ *   TURN_USERNAME=...
+ *   TURN_CREDENTIAL=...
+ */
+function videoIceServers(): array {
+    $servers = [
+        ['urls' => ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478']],
+    ];
+    $turn = trim((string)(envValue('TURN_URLS') ?: ''));
+    if ($turn !== '') {
+        $servers[] = [
+            'urls'       => array_values(array_filter(array_map('trim', explode(',', $turn)))),
+            'username'   => (string)(envValue('TURN_USERNAME') ?: ''),
+            'credential' => (string)(envValue('TURN_CREDENTIAL') ?: ''),
+        ];
+    }
+    return $servers;
 }
 
 function handlePoll() {
@@ -366,7 +428,7 @@ function handlePoll() {
     pruneRoom($roomKey);
 
     $participants = db()->fetchAll(
-        "SELECT user_id, display_name, user_role, is_host
+        "SELECT user_id, display_name, user_role, is_host, hand_raised, hand_at, cam_off, mic_off
          FROM video_presence
          WHERE room_key = ?
          ORDER BY is_host DESC, display_name ASC",
@@ -439,6 +501,10 @@ function handlePoll() {
                     'display_name' => buildDisplayNameFromStored($p['display_name']),
                     'role'         => $p['user_role'],
                     'is_host'      => (bool)$p['is_host'],
+                    'hand_raised'  => !empty($p['hand_raised']),
+                    'hand_at'      => $p['hand_at'] ?? null,
+                    'cam_off'      => !empty($p['cam_off']),
+                    'mic_off'      => !empty($p['mic_off']),
                 ];
             }, $participants),
             'signals' => $parsed,
@@ -618,6 +684,8 @@ function handleComment() {
         return;
     }
 
+    if (contentFilterReject($content)) return;
+
     if (mb_strlen($content) > 500) {
         echo json_encode(['success' => false, 'message' => 'Comment is too long (max 500 characters)']);
         return;
@@ -645,4 +713,212 @@ function handleComment() {
             'id' => (int)db()->lastInsertId(),
         ],
     ]);
+}
+
+function handleHand() {
+    $body    = getJsonBody();
+    $roomKey = sanitizeRoomKey($body['room_key'] ?? '');
+    $raised  = !empty($body['raised']);
+    $target  = isset($body['user_id']) ? (int)$body['user_id'] : (int)Auth::id();
+
+    if ($roomKey === '') {
+        echo json_encode(['success' => false, 'message' => 'room_key required']);
+        return;
+    }
+    requireRoomAccess(parseSubjectIdFromRoom($roomKey));
+
+    // Anyone can raise or lower their own hand; only the host lowers someone else's.
+    if ($target !== (int)Auth::id() && ($raised || !isHostRole(Auth::role()))) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Only the instructor can lower another hand']);
+        return;
+    }
+
+    db()->execute(
+        "UPDATE video_presence SET hand_raised = ?, hand_at = " . ($raised ? 'NOW()' : 'NULL') . "
+         WHERE room_key = ? AND user_id = ?",
+        [$raised ? 1 : 0, $roomKey, $target]
+    );
+    echo json_encode(['success' => true, 'data' => ['raised' => $raised]]);
+}
+
+function handleReact() {
+    $body    = getJsonBody();
+    $roomKey = sanitizeRoomKey($body['room_key'] ?? '');
+    $emoji   = (string)($body['emoji'] ?? '');
+
+    // A fixed set: reactions are shown to everyone, so nothing free-typed.
+    $allowed = ['👍', '❤️', '😂', '😮', '👏', '🎉', '🙏', '🤔'];
+    if ($roomKey === '' || !in_array($emoji, $allowed, true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid reaction']);
+        return;
+    }
+    requireRoomAccess(parseSubjectIdFromRoom($roomKey));
+
+    // Rate limit: one reaction per ~0.7s per person is plenty.
+    $recent = db()->fetchOne(
+        "SELECT COUNT(*) n FROM video_signals
+         WHERE room_key = ? AND from_user_id = ? AND signal_type = 'react'
+           AND created_at >= DATE_SUB(NOW(), INTERVAL 3 SECOND)",
+        [$roomKey, Auth::id()]
+    );
+    if ((int)($recent['n'] ?? 0) >= 4) {
+        echo json_encode(['success' => true, 'data' => ['throttled' => true]]);
+        return;
+    }
+
+    db()->execute(
+        "INSERT INTO video_signals (room_key, from_user_id, to_user_id, signal_type, payload)
+         VALUES (?, ?, NULL, 'react', ?)",
+        [$roomKey, Auth::id(), json_encode(['emoji' => $emoji], JSON_UNESCAPED_UNICODE)]
+    );
+    echo json_encode(['success' => true]);
+}
+function handleMedia() {
+    $body    = getJsonBody();
+    $roomKey = sanitizeRoomKey($body['room_key'] ?? '');
+    if ($roomKey === '') {
+        echo json_encode(['success' => false, 'message' => 'room_key required']);
+        return;
+    }
+    requireRoomAccess(parseSubjectIdFromRoom($roomKey));
+    $sets = []; $params = [];
+    if (array_key_exists('cam_off', $body)) { $sets[] = 'cam_off = ?'; $params[] = !empty($body['cam_off']) ? 1 : 0; }
+    if (array_key_exists('mic_off', $body)) { $sets[] = 'mic_off = ?'; $params[] = !empty($body['mic_off']) ? 1 : 0; }
+    if ($sets) {
+        $params[] = $roomKey; $params[] = Auth::id();
+        db()->execute("UPDATE video_presence SET " . implode(', ', $sets) . " WHERE room_key = ? AND user_id = ?", $params);
+    }
+    echo json_encode(['success' => true]);
+}
+/** Host-only guard for the class controls below. Returns the subject id. */
+function requireRoomHost(string $roomKey): int {
+    if ($roomKey === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'room_key required']);
+        exit;
+    }
+    $subjectId = parseSubjectIdFromRoom($roomKey);
+    requireRoomAccess($subjectId);
+    if (!isHostRole(Auth::role())) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Only the instructor can do this']);
+        exit;
+    }
+    return $subjectId;
+}
+
+/**
+ * Students enrolled in this subject under the host, each marked in class or
+ * not. An instructor sees their own sections; admin/dean see every section.
+ */
+function classRoster(string $roomKey, int $subjectId): array {
+    $sql = "SELECT DISTINCT u.users_id, u.first_name, u.last_name, sec.section_name
+            FROM student_subject ss
+            JOIN subject_offered so ON so.subject_offered_id = ss.subject_offered_id
+            JOIN users u ON u.users_id = ss.user_student_id
+            LEFT JOIN section sec ON sec.section_id = ss.section_id
+            WHERE so.subject_id = ? AND so.status = 'open' AND ss.status = 'enrolled'
+              AND u.status = 'active'";
+    $params = [$subjectId];
+    if (Auth::role() === 'instructor') {
+        $sql .= " AND so.user_teacher_id = ?";
+        $params[] = Auth::id();
+    }
+    $sql .= " ORDER BY u.last_name, u.first_name";
+    $students = db()->fetchAll($sql, $params);
+
+    $present = array_flip(array_map('intval', array_column(
+        db()->fetchAll("SELECT user_id FROM video_presence WHERE room_key = ?", [$roomKey]), 'user_id'
+    )));
+
+    return array_map(fn($st) => [
+        'user_id'   => (int)$st['users_id'],
+        'name'      => trim($st['first_name'] . ' ' . $st['last_name']),
+        'section'   => $st['section_name'] ?? '',
+        'in_class'  => isset($present[(int)$st['users_id']]),
+    ], $students);
+}
+
+function handleRoster() {
+    $roomKey   = sanitizeRoomKey($_GET['room_key'] ?? '');
+    $subjectId = requireRoomHost($roomKey);
+    pruneRoom($roomKey);
+    $roster = classRoster($roomKey, $subjectId);
+    echo json_encode(['success' => true, 'data' => [
+        'students' => $roster,
+        'absent'   => count(array_filter($roster, fn($r) => !$r['in_class'])),
+    ]]);
+}
+
+/**
+ * "Notify all": a direct message from the instructor to every enrolled
+ * student who has not joined. Messages show up in the student's Messages
+ * with the unread badge, which refreshes on its own.
+ */
+function handleNotifyAbsent() {
+    $body      = getJsonBody();
+    $roomKey   = sanitizeRoomKey($body['room_key'] ?? '');
+    $subjectId = requireRoomHost($roomKey);
+    $only      = array_map('intval', (array)($body['user_ids'] ?? []));
+
+    $absent = array_filter(classRoster($roomKey, $subjectId), fn($r) => !$r['in_class']);
+    if ($only) $absent = array_filter($absent, fn($r) => in_array($r['user_id'], $only, true));
+
+    // No double-pinging: skip anyone already notified for this room in the last 5 minutes.
+    $subject = db()->fetchOne("SELECT subject_code, subject_name FROM subject WHERE subject_id = ?", [$subjectId]);
+    $label   = trim(($subject['subject_code'] ?? '') . ' ' . ($subject['subject_name'] ?? '')) ?: 'our subject';
+    $text    = "📹 Our online class for {$label} is live now. Please join: open the subject and tap Join class.";
+
+    $sent = 0; $skipped = 0;
+    foreach ($absent as $st) {
+        $recent = db()->fetchOne(
+            "SELECT message_id FROM messages
+             WHERE sender_id = ? AND receiver_id = ? AND content = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) LIMIT 1",
+            [Auth::id(), $st['user_id'], $text]
+        );
+        if ($recent) { $skipped++; continue; }
+        db()->execute("INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)",
+            [Auth::id(), $st['user_id'], $text]);
+        $sent++;
+    }
+    echo json_encode(['success' => true, 'data' => ['sent' => $sent, 'skipped' => $skipped],
+        'message' => $sent ? "Notified {$sent} student" . ($sent > 1 ? 's' : '') . '.' : 'Everyone was already notified in the last 5 minutes.']);
+}
+
+/**
+ * Instructor controls. The student's browser carries them out:
+ *   mute        — their microphone turns off (only they can turn it back on)
+ *   mute_all    — everyone's microphone except the host's
+ *   cam_request — they are ASKED to turn on the camera; nobody's camera is
+ *                 ever switched on remotely
+ */
+function handleHostCmd() {
+    $body      = getJsonBody();
+    $roomKey   = sanitizeRoomKey($body['room_key'] ?? '');
+    requireRoomHost($roomKey);
+    $cmd       = (string)($body['cmd'] ?? '');
+    $target    = (int)($body['user_id'] ?? 0);
+
+    if (!in_array($cmd, ['mute', 'mute_all', 'cam_request'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Unknown command']);
+        return;
+    }
+    if ($cmd !== 'mute_all' && $target <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Choose a student']);
+        return;
+    }
+
+    $name = buildDisplayName(Auth::user());
+    db()->execute(
+        "INSERT INTO video_signals (room_key, from_user_id, to_user_id, signal_type, payload) VALUES (?, ?, ?, 'cmd', ?)",
+        [$roomKey, Auth::id(), $cmd === 'mute_all' ? null : $target, json_encode(['cmd' => $cmd, 'by' => $name], JSON_UNESCAPED_UNICODE)]
+    );
+    if ($cmd === 'mute') {
+        db()->execute("UPDATE video_presence SET mic_off = 1 WHERE room_key = ? AND user_id = ?", [$roomKey, $target]);
+    } elseif ($cmd === 'mute_all') {
+        db()->execute("UPDATE video_presence SET mic_off = 1 WHERE room_key = ? AND is_host = 0", [$roomKey]);
+    }
+    echo json_encode(['success' => true]);
 }

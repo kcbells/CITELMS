@@ -14,6 +14,8 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
+require_once __DIR__ . '/helpers/ContentFilter.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 
 $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? ($_GET['action'] ?? 'threads') : 'threads');
 
@@ -250,6 +252,14 @@ function handleSend() {
     $attachmentPath = null;
     $attachmentName = null;
     $attachmentType = null;
+
+    // No bad words, no nude photos — refused before anything is saved.
+    if (contentFilterReject($content)) return;
+    if ($file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK
+        && contentFilterImageIsUnsafe($file['tmp_name'])) {
+        contentFilterSendBlocked('image');
+        return;
+    }
 
     if ($file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
         $saved = saveMessageAttachment($file);

@@ -38,7 +38,7 @@ if (!defined('BASE_URL')) {
         }
     }
 
-    define('BASE_URL', getenv('BASE_URL') ?: cit_detect_base_url());
+    define('BASE_URL', envValue('BASE_URL') ?: cit_detect_base_url());
     
     /**
      * Application Information
@@ -347,7 +347,7 @@ if (!defined('BASE_URL')) {
     /**
      * Debug mode - set to false in production!
      */
-    define('DEBUG_MODE', getenv('APP_ENV') === 'development');
+    define('DEBUG_MODE', envValue('APP_ENV') === 'development');
 
     if (DEBUG_MODE) {
         error_reporting(E_ALL);

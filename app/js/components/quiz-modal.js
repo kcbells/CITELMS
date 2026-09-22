@@ -2,6 +2,7 @@
  * Shared manual quiz create/edit modal — 3-step wizard.
  */
 import { Api } from '../api.js';
+import { gradingPeriodPickerHtml, readGradingPeriod, normalizeGradingPeriod } from '../utils/gradebook-periods.js';
 import { gradingOptionsHtml, readGradingPayload, ensureGradingOptionStyles } from '../utils/quiz-grading-options.js';
 
 import { esc } from '../utils/classroom-ui.js';
@@ -140,16 +141,16 @@ function toLocalDatetimeInput(value) {
 
 function getPublishState(quiz) {
     if (!quiz || quiz.status === 'draft') {
-        return { mode: 'draft', availability_start: '', due_date: quiz?.due_date ? String(quiz.due_date).slice(0, 10) : '' };
+        return { mode: 'draft', availability_start: '', due_date: quiz?.due_date ? toLocalDatetimeInput(quiz.due_date) : '' };
     }
     if (quiz.availability_start && new Date(String(quiz.availability_start).replace(' ', 'T')) > new Date()) {
         return {
             mode: 'scheduled',
             availability_start: toLocalDatetimeInput(quiz.availability_start),
-            due_date: quiz?.due_date ? String(quiz.due_date).slice(0, 10) : '',
+            due_date: quiz?.due_date ? toLocalDatetimeInput(quiz.due_date) : '',
         };
     }
-    return { mode: 'now', availability_start: '', due_date: quiz?.due_date ? String(quiz.due_date).slice(0, 10) : '' };
+    return { mode: 'now', availability_start: '', due_date: quiz?.due_date ? toLocalDatetimeInput(quiz.due_date) : '' };
 }
 
 function publishOptionsHtml(pubState) {
@@ -174,8 +175,9 @@ function publishOptionsHtml(pubState) {
                     <input type="datetime-local" class="qz-m-input" id="qz-availability" value="${pubState.availability_start}">
                 </div>
                 <div class="qz-pub-extra show" id="qz-pub-due-wrap" style="border-top:1px solid #e5e7eb;">
-                    <label class="qz-m-label" for="qz-due">Due date (optional)</label>
-                    <input type="date" class="qz-m-input" id="qz-due" value="${pubState.due_date}">
+                    <label class="qz-m-label" for="qz-due">Deadline (optional)</label>
+                    <input type="datetime-local" class="qz-m-input" id="qz-due" value="${pubState.due_date}">
+                    <p style="font-size:11px;color:#6b7280;margin:6px 0 0;">Students cannot start the quiz after this date and time. Leave empty for no deadline.</p>
                 </div>
             </div>
         </div>
@@ -263,6 +265,7 @@ export async function openQuizModal(options = {}) {
     const pub0 = getPublishState(quiz);
     // Persisted form data across wizard steps
     let fd = {
+        grading_period: normalizeGradingPeriod(quiz?.grading_period || 'P1'),
         subject_id: subjectId || '',
         quiz_title: quiz?.quiz_title || '',
         quiz_description: quiz?.quiz_description || '',
@@ -311,6 +314,8 @@ export async function openQuizModal(options = {}) {
             <div class="qz-m-body" id="qz-m-body"></div>
             <div class="qz-m-ft">
                 <button type="button" class="qz-m-btn-back" id="qz-btn-left">Cancel</button>
+                <span style="flex:1"></span>
+                <button type="button" class="qz-m-btn-back" id="qz-btn-save-now" hidden style="margin-right:8px;">Save now</button>
                 <button type="button" class="qz-m-btn-next" id="qz-btn-right">Next: Settings →</button>
             </div>
         </div>
@@ -328,6 +333,8 @@ export async function openQuizModal(options = {}) {
         const rightBtn = overlay.querySelector('#qz-btn-right');
         rightBtn.disabled = false;
 
+        const saveNowBtn = overlay.querySelector('#qz-btn-save-now');
+        if (saveNowBtn) saveNowBtn.hidden = !(isEdit && step === 1);
         if (step === 1) {
             leftBtn.textContent = 'Cancel';
             leftBtn.onclick = close;
@@ -376,6 +383,15 @@ export async function openQuizModal(options = {}) {
                 <label class="qz-m-label" for="qz-desc">Description</label>
                 <textarea class="qz-m-textarea" id="qz-desc" rows="2" placeholder="Instructions or overview for students">${esc(fd.quiz_description)}</textarea>
             </div>
+            ${isEdit ? `
+            <div class="qz-m-field">
+                <label class="qz-m-label" for="qz-due-s1">Deadline</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="datetime-local" class="qz-m-input" id="qz-due-s1" value="${esc(fd.due_date || '')}" style="flex:1;min-width:0;">
+                    <button type="button" id="qz-due-clear" class="qz-m-btn-back" style="flex-shrink:0;padding:10px 12px;">Clear</button>
+                </div>
+                <p style="font-size:11px;color:#6b7280;margin:6px 0 0;">Change the date or time, then press <b>Save now</b>. Leave empty for no deadline.</p>
+            </div>` : ''}
         `;
 
         wireSectionTarget(body);
@@ -415,8 +431,23 @@ export async function openQuizModal(options = {}) {
                 all_sections: sec.all_sections,
                 section_ids: sec.section_ids,
             });
-            goStep(2);
+            if (isEdit) fd.due_date = body.querySelector('#qz-due-s1')?.value || '';
+            return true;
         };
+        const readStep1 = rightBtn.onclick;
+        rightBtn.onclick = () => { if (readStep1()) goStep(2); };
+
+        body.querySelector('#qz-due-clear')?.addEventListener('click', () => {
+            const inp = body.querySelector('#qz-due-s1');
+            if (inp) inp.value = '';
+        });
+
+        // Editing only the deadline should not mean clicking through 3 pages.
+        const saveNow = overlay.querySelector('#qz-btn-save-now');
+        if (saveNow) {
+            saveNow.hidden = !isEdit;
+            saveNow.onclick = () => { if (readStep1()) doSave(body, saveNow); };
+        }
     }
 
     /* ── STEP 2: Settings ── */
@@ -501,6 +532,7 @@ export async function openQuizModal(options = {}) {
                 <span class="qz-m-label">AI &amp; Answer Checking</span>
                 ${gradingOptionsHtml(quiz, 'qz')}
             </div>
+            <div class="qz-m-field">${gradingPeriodPickerHtml('qz-period', fd.grading_period)}</div>
             ${publishOptionsHtml({ mode: fd.publish_mode, availability_start: fd.availability_start, due_date: fd.due_date })}
         `;
 
@@ -509,6 +541,7 @@ export async function openQuizModal(options = {}) {
         const saveStep3 = () => {
             Object.assign(fd, readGradingPayload(body, 'qz'));
             Object.assign(fd, readPublishPayload(body));
+            fd.grading_period = readGradingPeriod(body, 'qz-period');
         };
 
         leftBtn.onclick = () => { saveStep3(); goStep(2); };
@@ -539,6 +572,7 @@ export async function openQuizModal(options = {}) {
             publish_mode: fd.publish_mode || 'draft',
             availability_start: fd.availability_start || '',
             due_date: fd.due_date || '',
+            grading_period: fd.grading_period || 'P1',
             objective_grading_mode: fd.objective_grading_mode || 'auto',
             subjective_grading_mode: fd.subjective_grading_mode || 'ai_review',
         };

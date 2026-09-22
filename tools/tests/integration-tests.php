@@ -139,9 +139,9 @@ $t->same(false, $verify['json']['success'] ?? null, 'an invalid OTP token is rej
 /* -- IT-102 ---------------------------------------------------------------
  * Sign-in <-> Session Manager
  *
- * REGISTRY CORRECTION: app/js/login.js is dead code - app/login.html is a
- * stub that redirects to ../index.html and loads no scripts, and nothing in
- * the project references either file. The live handler is inline in
+ * REGISTRY NOTE: app/js/login.js and app/login.html were deleted (dead code -
+ * a redirect stub plus an unused script that nothing referenced). Sign-in and
+ * Forgot Password both live inline in index.html. The live handler is inline in
  * index.html. Role routing is also decided by the BACKEND (it returns
  * data.redirect); the frontend just follows it.
  */

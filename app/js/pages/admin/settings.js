@@ -1,7 +1,7 @@
 /**
  * Admin Settings Page — System maintenance focus
  */
-import { Api } from '../../api.js';
+import { Api, BASE_URL } from '../../api.js';
 import { icon } from '../../utils/icons.js';
 import { notify } from '../../utils/notify.js';
 import { attachEyeToggle } from '../../utils/password-change-otp.js';
@@ -187,6 +187,9 @@ export async function render(container) {
                     <div class="set-nav-item" data-section="ai">
                         <span class="nav-icon">${icon('robot')}</span> AI / Ali Assistant
                     </div>
+                    <div class="set-nav-item" data-section="backup">
+                        <span class="nav-icon">${icon('database')}</span> Database Backup
+                    </div>
                     <div class="set-nav-divider"></div>
                     <div class="set-nav-label">Administration</div>
                     <div class="set-nav-item" data-section="users">
@@ -320,6 +323,38 @@ export async function render(container) {
                         </div>
                     </div>
 
+                    <!-- ── Database Backup ── -->
+                    <div class="set-panel" data-panel="backup">
+                        <div class="set-card">
+                            <div class="set-card-head">
+                                <div class="set-card-head-icon">${icon('database', { size: 22 })}</div>
+                                <div class="set-card-title">
+                                    <h3>Database Backup</h3>
+                                    <p>Save a copy of everything — accounts, classes, grades, quizzes — so the system can be restored if it crashes</p>
+                                </div>
+                            </div>
+                            <div class="set-card-body">
+                                <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1.5px solid #111;border-radius:10px;margin-bottom:16px;">
+                                    <span style="flex-shrink:0;">${icon('shield', { size: 20 })}</span>
+                                    <div>
+                                        <div style="font-size:13px;font-weight:700;color:#111;margin-bottom:3px;">Keep a copy somewhere else too</div>
+                                        <div style="font-size:12.5px;color:#4b5563;">A backup stored only on this computer is lost with the computer. Download the newest one now and then, and keep it on a drive or cloud folder.</div>
+                                    </div>
+                                </div>
+
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+                                    <div>
+                                        <div style="font-size:13.5px;font-weight:700;color:#262626;">Back up now</div>
+                                        <div style="font-size:12px;color:#737373;margin-top:2px;" id="bk-sub">Creates a .sql file you can download and restore from</div>
+                                    </div>
+                                    <button class="btn-primary" id="bk-create" style="white-space:nowrap;">${icon('download', inl)} Create Backup</button>
+                                </div>
+
+                                <div id="bk-list"><div style="font-size:13px;color:#737373;">Loading backups…</div></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ── AI / Ali Assistant ── -->
                     <div class="set-panel" data-panel="ai">
                         <div class="set-card">
@@ -394,6 +429,102 @@ export async function render(container) {
 
     // Auto-load the default active panel (School Year)
     loadSchoolYear();
+
+    // ── Database backup ──────────────────────────────────────────────────
+    const bkList = container.querySelector('#bk-list');
+
+    const prettySize = (bytes) => {
+        if (!bytes) return '0 KB';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    };
+    const prettyWhen = (ts) => {
+        const d = new Date(String(ts).replace(' ', 'T'));
+        return isNaN(d) ? ts : d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    async function loadBackups() {
+        if (!bkList) return;
+        const res = await Api.get('/BackupAPI.php?action=list');
+        if (!res.success) {
+            bkList.innerHTML = `<div style="font-size:13px;color:#b91c1c;">${res.message || 'Could not load backups.'}</div>`;
+            return;
+        }
+        const { backups = [], keep = 10 } = res.data || {};
+        if (!backups.length) {
+            bkList.innerHTML = '<div style="font-size:13px;color:#737373;padding:14px 16px;border:1px dashed #d4d4d4;border-radius:10px;">No backups yet. Press <strong>Create Backup</strong> to make the first one.</div>';
+            return;
+        }
+        bkList.innerHTML = `
+            <div style="font-size:12px;font-weight:700;color:#737373;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
+                Saved backups — newest first (the last ${keep} are kept)
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                ${backups.map((b, i) => `
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px solid ${i === 0 ? '#111' : '#e8e8e8'};border-radius:10px;">
+                        <div style="min-width:0;">
+                            <div style="font-size:13px;font-weight:700;color:#262626;">
+                                ${prettyWhen(b.created_at)} ${i === 0 ? '<span style="font-size:10px;font-weight:800;color:#00461B;border:1px solid #00461B;border-radius:4px;padding:1px 6px;margin-left:6px;">NEWEST</span>' : ''}
+                            </div>
+                            <div style="font-size:11.5px;color:#737373;margin-top:2px;word-break:break-all;">${b.file} · ${prettySize(b.size_bytes)}</div>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-shrink:0;">
+                            <a class="btn-primary" style="white-space:nowrap;text-decoration:none;" href="${BASE_URL}/api/BackupAPI.php?action=download&file=${encodeURIComponent(b.file)}">Download</a>
+                            <button class="btn-danger" data-bk-del="${b.file}" style="white-space:nowrap;">Delete</button>
+                        </div>
+                    </div>`).join('')}
+            </div>`;
+
+        bkList.querySelectorAll('[data-bk-del]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const file = btn.dataset.bkDel;
+                const ok = await notify.confirm(`Delete this backup?
+${file}
+
+This cannot be undone.`, { danger: true, confirmText: 'Delete' });
+                if (!ok) return;
+                const res = await Api.post('/BackupAPI.php?action=delete', { file });
+                if (res.success) { notify.success('Backup deleted.'); loadBackups(); }
+                else notify.error(res.message || 'Could not delete that backup.');
+            });
+        });
+    }
+
+    container.querySelector('#bk-create')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `${icon('clock', inl)} Backing up…`;
+        try {
+            const res = await Api.post('/BackupAPI.php?action=create', {});
+            if (res.success) {
+                const d = res.data || {};
+                loadBackups();   // refresh the list first, so it is current behind the message
+                await notify.alert(
+                    `Backup saved.
+
+File: ${d.file}
+Size: ${prettySize(d.size_bytes)}
+Took: ${d.seconds}s` +
+                    (d.pruned ? `
+
+${d.pruned} older backup${d.pruned === 1 ? '' : 's'} removed.` : '') +
+                    `
+
+Download it and keep a copy off this computer.`,
+                    { title: 'Backup Complete', type: 'success' });
+            } else {
+                notify.error(res.message || 'Backup failed.');
+            }
+        } catch (_) {
+            notify.error('Connection error while backing up.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    loadBackups();
 
     // ── Toggle labels ──
     const cb = container.querySelector('#s-maintenance');
@@ -622,6 +753,8 @@ export async function render(container) {
     let _actPage = 1;
     let _actSearch = '';
     let _actType = '';
+    let _actDevice = '';   // phone / computer
+    let _actRole = '';
 
     // Human labels + a rough grouping color for each raw activity_type — new
     // types just fall back to a neutral badge instead of breaking anything.
@@ -669,6 +802,18 @@ export async function render(container) {
         attachEyeToggle(body.querySelector('#ai-hf-key'));
     }
 
+    /** "3 min ago" under the timestamp — quicker to scan than a date alone. */
+    function ago(ts) {
+        const then = new Date(String(ts).replace(' ', 'T'));
+        if (isNaN(then)) return '';
+        const secs = Math.max(0, (Date.now() - then.getTime()) / 1000);
+        const say = secs < 60 ? 'just now'
+            : secs < 3600 ? Math.floor(secs / 60) + ' min ago'
+            : secs < 86400 ? Math.floor(secs / 3600) + ' hr ago'
+            : Math.floor(secs / 86400) + ' days ago';
+        return `<span class="act-ago">${say}</span>`;
+    }
+
     async function loadActivityLog() {
         const body = container.querySelector('#activity-body');
         body.innerHTML = '<div class="sov-loading">Loading activity...</div>';
@@ -676,6 +821,8 @@ export async function render(container) {
         const params = new URLSearchParams({ page: _actPage, per_page: 30 });
         if (_actSearch) params.set('search', _actSearch);
         if (_actType) params.set('activity_type', _actType);
+        if (_actDevice) params.set('device', _actDevice);
+        if (_actRole) params.set('role', _actRole);
 
         const res = await Api.get(`/UsersAPI.php?action=activity-log&${params}`, { ttl: 0 });
         if (!res.success) {
@@ -692,7 +839,9 @@ export async function render(container) {
                 .act-type-select { padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:13px; background:#fff; }
                 .act-count { font-size:12px; color:#6b7280; margin-bottom:10px; }
                 .act-table-wrap { border:1px solid #e8e8e8; border-radius:12px; overflow:auto; }
-                .act-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+                .act-table { width:100%; min-width:940px; border-collapse:collapse; font-size:12.5px; }
+                .act-desc { min-width:200px; }
+                .act-table td:first-child { white-space:nowrap; }
                 .act-table th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
                     color:#fff; background:#00461B; padding:10px 14px; border-bottom:1px solid #e8e8e8; white-space:nowrap; }
                 .act-table td { padding:10px 14px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
@@ -704,16 +853,33 @@ export async function render(container) {
                 .act-desc { color:#6b7280; }
                 .act-time { color:#9ca3af; white-space:nowrap; }
                 .act-empty { text-align:center; padding:40px; color:#9ca3af; font-size:13px; }
+                .act-badge { border:1px solid #111; background:#fff; color:#111; }
+                .act-sev-create { border-color:#00461B; color:#00461B; }
+                .act-sev-warn   { border-color:#B45309; color:#B45309; }
+                .act-sev-danger { border-color:#B91C1C; color:#B91C1C; }
+                .act-role { display:block; font-size:10.5px; color:#6b7280; text-transform:capitalize; margin-top:2px; }
+                .act-device { color:#374151; white-space:nowrap; }
+                .act-ip { font-family:ui-monospace, monospace; font-size:11.5px; color:#374151; white-space:nowrap; }
+                .act-ago { display:block; font-size:10.5px; color:#9ca3af; }
                 .act-pager { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:16px; }
                 .act-pager button { border:1px solid #e5e7eb; background:#fff; border-radius:6px; padding:6px 12px; font-size:12.5px; cursor:pointer; }
                 .act-pager button:disabled { opacity:.4; cursor:default; }
                 .act-pager span { font-size:12.5px; color:#6b7280; }
             </style>
             <div class="act-toolbar">
-                <input type="text" class="act-search" id="act-search" placeholder="Search by name, email, or description..." value="${escSy(_actSearch)}">
+                <input type="text" class="act-search" id="act-search" placeholder="Search name, email, details, IP address…" value="${escSy(_actSearch)}">
                 <select class="act-type-select" id="act-type-select">
-                    <option value="">All activity types</option>
-                    ${types.map(t => `<option value="${escSy(t)}" ${t === _actType ? 'selected' : ''}>${escSy(activityMeta(t).label)}</option>`).join('')}
+                    <option value="">All actions</option>
+                    ${(res.data.type_options || types.map(t => ({ value: t, label: t }))).map(o => `<option value="${escSy(o.value)}" ${o.value === _actType ? 'selected' : ''}>${escSy(o.label)}</option>`).join('')}
+                </select>
+                <select class="act-type-select" id="act-device-select">
+                    <option value="">Any device</option>
+                    <option value="phone" ${_actDevice === 'phone' ? 'selected' : ''}>Phone</option>
+                    <option value="computer" ${_actDevice === 'computer' ? 'selected' : ''}>Computer</option>
+                </select>
+                <select class="act-type-select" id="act-role-select">
+                    <option value="">Any role</option>
+                    ${['admin','dean','program_head','instructor','student'].map(r => `<option value="${r}" ${_actRole === r ? 'selected' : ''}>${r.replace('_',' ')}</option>`).join('')}
                 </select>
             </div>
             <div class="act-count">${total} ${total === 1 ? 'entry' : 'entries'}</div>
@@ -722,10 +888,12 @@ export async function render(container) {
                 <table class="act-table">
                     <thead>
                         <tr>
-                            <th>Activity</th>
-                            <th>User</th>
-                            <th>Description</th>
-                            <th>Time</th>
+                            <th>Action</th>
+                            <th>Who</th>
+                            <th>Details</th>
+                            <th>Device</th>
+                            <th>IP address</th>
+                            <th>When</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -735,12 +903,17 @@ export async function render(container) {
                                 ? `<span class="act-who">${escSy((l.first_name || '') + ' ' + (l.last_name || '')).trim() || 'Unknown user'}</span><br><span class="act-email">${escSy(l.email || '')}</span>`
                                 : `<span class="act-email">System / unauthenticated</span>`;
                             const time = new Date(l.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                            const label = l.action_label || meta.label;
+                            const sev = l.severity || 'normal';
+                            const role = l.role ? `<span class="act-role">${escSy(String(l.role).replace('_', ' '))}</span>` : '';
                             return `
                             <tr>
-                                <td><span class="act-badge" style="background:${meta.bg};color:${meta.color}">${escSy(meta.label)}</span></td>
-                                <td>${who}</td>
+                                <td><span class="act-badge act-sev-${sev}">${escSy(label)}</span></td>
+                                <td>${who}${role}</td>
                                 <td class="act-desc">${escSy(l.activity_description || '')}</td>
-                                <td class="act-time">${time}</td>
+                                <td class="act-device" title="${escSy(l.user_agent || '')}">${escSy(l.device_label || 'Unknown device')}</td>
+                                <td class="act-ip">${escSy(l.ip_address || 'Not recorded')}</td>
+                                <td class="act-time">${time}${ago(l.created_at)}</td>
                             </tr>`;
                         }).join('')}
                     </tbody>
@@ -764,6 +937,16 @@ export async function render(container) {
         });
         body.querySelector('#act-type-select')?.addEventListener('change', (e) => {
             _actType = e.target.value;
+            _actPage = 1;
+            loadActivityLog();
+        });
+        body.querySelector('#act-device-select')?.addEventListener('change', (e) => {
+            _actDevice = e.target.value;
+            _actPage = 1;
+            loadActivityLog();
+        });
+        body.querySelector('#act-role-select')?.addEventListener('change', (e) => {
+            _actRole = e.target.value;
             _actPage = 1;
             loadActivityLog();
         });

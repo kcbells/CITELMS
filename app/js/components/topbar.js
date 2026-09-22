@@ -180,6 +180,7 @@ export function renderTopbar(container) {
             const res = await Api.post('/MessagingAPI.php?action=mark_all_read', {});
             markLessonLastSeen();
             markReplyLastSeen();
+            markNotifSeen();
             if (res.success) {
                 updateNotifBadge(0);
                 await loadNotifications(role);
@@ -274,11 +275,16 @@ async function pollJoinRequests() {
 }
 
 function currentBadgeCount() {
-    return _cachedNewLessons.length
-        + _cachedCommentReplies.length
-        + _cachedTeachingAlerts.length
+    const standing = _cachedTeachingAlerts.length
         + _cachedLackingCount
         + (watchesJoins() ? _cachedJoinRequests.length : 0);
+
+    // Already looked at this exact set? Then it is not "new" any more.
+    const unseenStanding = currentNotifSignature() === seenNotifSignature() ? 0 : standing;
+
+    return _cachedNewLessons.length
+        + _cachedCommentReplies.length
+        + unseenStanding;
 }
 
 async function pollUnreadCount() {
@@ -323,6 +329,35 @@ async function pollUnreadCount() {
 
         updateNotifBadge(currentBadgeCount());
     } catch (_) {}
+}
+
+/**
+ * Some notifications are events that happen once (a new lesson, a reply) —
+ * those already clear themselves. Others are standing situations: work a
+ * student has not finished, students needing attention, join requests waiting.
+ * Those never "happen" again, so the bell used to stay lit forever no matter
+ * how many times it was opened.
+ *
+ * We therefore remember a fingerprint of the standing items the user has
+ * actually seen. The badge only lights up again when that set CHANGES — a new
+ * overdue item, another join request — not merely because it still exists.
+ */
+function notifSeenKey() {
+    return `notif_seen_${_topbarUserId}`;
+}
+
+function currentNotifSignature() {
+    const joins = watchesJoins() ? _cachedJoinRequests.map(r => String(r.request_id)).sort() : [];
+    const alerts = _cachedTeachingAlerts.map(a => `${a.title || ''}|${a.meta || ''}`).sort();
+    return JSON.stringify({ lacking: _cachedLackingCount, joins, alerts });
+}
+
+function markNotifSeen() {
+    try { localStorage.setItem(notifSeenKey(), currentNotifSignature()); } catch (_) {}
+}
+
+function seenNotifSignature() {
+    try { return localStorage.getItem(notifSeenKey()); } catch (_) { return null; }
 }
 
 function lessonLastSeenKey() {
@@ -406,6 +441,11 @@ async function loadNotifications(role) {
     }
 
     const joinRequests = TEACHING_ROLES.includes(role) ? _cachedJoinRequests : [];
+
+    // The panel is open and these items are on screen — they are seen now, so
+    // the bell should go quiet until something actually changes.
+    markNotifSeen();
+    updateNotifBadge(currentBadgeCount());
 
     if (!unreadMsgs.length && !newLessons.length && !replies.length && !teachingAlerts.length && !lackingItems.length && !joinRequests.length) {
         body.innerHTML = `<div class="notif-empty">You're all caught up!</div>`;

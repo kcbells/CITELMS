@@ -8,6 +8,8 @@ require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/helpers/ClassworkAccessHelper.php';
 require_once __DIR__ . '/helpers/ClassworkDueHelper.php';
 require_once __DIR__ . '/helpers/Sanitize.php';
+require_once __DIR__ . '/helpers/ContentFilter.php';
+require_once __DIR__ . '/helpers/ActivityLog.php';
 
 header('Content-Type: application/json');
 
@@ -371,6 +373,7 @@ function addComment() {
     $quizId    = isset($input['quiz_id']) && $input['quiz_id'] !== ''
         ? (int)$input['quiz_id'] : null;
     $content   = Sanitize::text($input['content'] ?? '');
+    if (contentFilterReject($content)) return;
     $isPrivate = !empty($input['is_private']);
     $parentId  = (int)($input['parent_comment_id'] ?? 0);
     $userId    = Auth::id();
@@ -691,6 +694,10 @@ function uploadSubmission() {
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, $allowedExt, true)) {
         echo json_encode(['success' => false, 'message' => 'File type not allowed']);
+        return;
+    }
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true) && contentFilterImageIsUnsafe($file['tmp_name'])) {
+        contentFilterSendBlocked('image');
         return;
     }
 

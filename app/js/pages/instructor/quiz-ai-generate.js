@@ -3,6 +3,7 @@
  * 4-step flow: Configure → Upload PDF/DOCX → Question Settings → Review & Edit
  */
 import { Api, BASE_URL } from '../../api.js';
+import { gradingPeriodPickerHtml, readGradingPeriod } from '../../utils/gradebook-periods.js';
 import { L, icon, iconLg } from '../../utils/action-labels.js';
 import { openQuizModal } from '../../components/quiz-modal.js';
 import { showMcPopup } from '../../utils/mc-popup.js';
@@ -35,7 +36,7 @@ let generatedQuestions = null;
 let formState = {
     subject_id: '', lessons_id: '', quiz_title: '', quiz_type: 'graded',
     all_sections: true, section_ids: [],
-    publish_mode: 'draft', availability_start: '', due_date: '',
+    publish_mode: 'draft', availability_start: '', due_date: '', grading_period: 'P1',
     objective_grading_mode: 'auto', subjective_grading_mode: 'ai_review',
 };
 let questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
@@ -773,6 +774,7 @@ function renderStep4(container, subjects) {
                     <label style="font-size:12px;font-weight:600;color:#404040;display:block;margin-bottom:4px;">Due date (optional)</label>
                     <input type="date" id="ai-due" value="${formState.due_date}" style="width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;">
                 </div>
+                <div style="margin-top:12px;">${gradingPeriodPickerHtml('ai-period', formState.grading_period)}</div>
             </div>` : ''}
 
             <!-- Publish to Question Bank option -->
@@ -942,6 +944,7 @@ async function doSave(container, subjects, panel) {
         formState.publish_mode = panel.querySelector('input[name="ai-pub-mode"]:checked')?.value || 'draft';
         formState.availability_start = panel.querySelector('#ai-availability')?.value || '';
         formState.due_date = panel.querySelector('#ai-due')?.value || '';
+        formState.grading_period = readGradingPeriod(panel, 'ai-period');
         if (formState.publish_mode === 'scheduled' && !formState.availability_start) {
             return showMcPopup('Please choose a date and time for the scheduled release.', { title: 'Required', type: 'info' });
         }
@@ -962,6 +965,7 @@ async function doSave(container, subjects, panel) {
                 publish_mode: formState.publish_mode,
                 availability_start: formState.availability_start,
                 due_date: formState.due_date,
+                grading_period: formState.grading_period || 'P1',
             } : {}),
             ...(!linkedQuizId && subjectSections.length ? {
                 all_sections: formState.all_sections,
@@ -1035,7 +1039,7 @@ async function doSave(container, subjects, panel) {
                         currentStep = 1; extractedText = ''; generatedQuestions = null;
                         formState = { subject_id: formState.subject_id, lessons_id: '', quiz_title: '',
                             quiz_type: 'graded', all_sections: true, section_ids: [],
-                            publish_mode: 'draft', availability_start: '', due_date: '',
+                            publish_mode: 'draft', availability_start: '', due_date: '', grading_period: 'P1',
                             objective_grading_mode: 'auto', subjective_grading_mode: 'ai_review' };
                         questionSettings = { num_mc: 5, num_tf: 5, num_fib: 0, num_sa: 0, num_essay: 0, difficulty: 'medium' };
                         renderStep1(container, subjects);
