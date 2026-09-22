@@ -304,5 +304,5 @@ function pdo() {
 
 // ── Rate limiting — disabled ────────────────────────────────────
 // Was applied to every API request automatically and caused "Too many
-// requests" errors during normal use. Turned off; RateLimiter.php is left
-// in place in case rate limiting is wanted again later.
+// requests" errors during normal use. Turned off, and the unused
+// RateLimiter.php was removed (it is still in git history if needed).

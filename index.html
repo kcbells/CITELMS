@@ -1082,26 +1082,26 @@
             <!-- Reset password lives inside this same card: the student never
                  leaves the sign-in popup to change their password. -->
             <div id="si-reset-view" style="display:none">
-            <!-- Step 1: identifier input -->
-            <div id="fp-step1">
-                <div class="si-group">
-                    <label class="si-label" for="fp-identifier">Email or School ID</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                        <input class="si-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
-                    </div>
-                </div>
-                <div id="fp-msg1" style="margin-bottom:8px;"></div>
-                <button class="si-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
-                <p class="si-switch" style="margin-top:14px;">
-                    Remembered it? <button type="button" class="si-switch-link" onclick="backToSignIn()">Back to Sign In</button>
-                </p>
-            </div>
-            <!-- Step 2: OTP + new password -->
-            <div id="fp-step2" style="display:none">
-                <p id="fp-email-hint" style="font-size:13px;color:#374151;margin-bottom:16px;line-height:1.5;"></p>
-                <div class="si-group">
-                    <label class="si-label">6-Digit Verification Code</label>
+            <!-- Step 1: identifier input -->
+            <div id="fp-step1">
+                <div class="si-group">
+                    <label class="si-label" for="fp-identifier">Email or School ID</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <input class="si-input" type="text" id="fp-identifier" placeholder="2024-00001 or juan@phinmaed.com" autocomplete="off">
+                    </div>
+                </div>
+                <div id="fp-msg1" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-send-btn" onclick="fpSendCode()">Send Verification Code</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Remembered it? <button type="button" class="si-switch-link" onclick="backToSignIn()">Back to Sign In</button>
+                </p>
+            </div>
+            <!-- Step 2: OTP + new password -->
+            <div id="fp-step2" style="display:none">
+                <p id="fp-email-hint" style="font-size:13px;color:#374151;margin-bottom:16px;line-height:1.5;"></p>
+                <div class="si-group">
+                    <label class="si-label">6-Digit Verification Code</label>
                     <div class="otp-boxes" id="fp-otp-boxes">
                         <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" aria-label="Digit 1">
                         <input class="otp-box" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Digit 2">
@@ -1112,46 +1112,46 @@
                     </div>
                     <!-- the six boxes keep this in sync, so everything that reads
                          the code still reads one plain 6-character value -->
-                    <input type="hidden" id="fp-otp">
-                    <p class="si-hint" id="fp-timer" style="margin-top:6px;"></p>
-                </div>
-                <div class="si-group">
-                    <label class="si-label" for="fp-newpw">New Password</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                        <input class="si-input si-pw-input" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
-                        <button type="button" class="si-pw-toggle" id="fp-pw-toggle" onclick="fpTogglePw('fp-newpw','fp-pw-toggle')" aria-label="Show password">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="si-group">
-                    <label class="si-label" for="fp-confirmpw">Confirm New Password</label>
-                    <div class="si-wrap">
-                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-                        <input class="si-input si-pw-input" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
-                        <button type="button" class="si-pw-toggle" id="fp-cpw-toggle" onclick="fpTogglePw('fp-confirmpw','fp-cpw-toggle')" aria-label="Show confirm password">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    </div>
-                </div>
+                    <input type="hidden" id="fp-otp">
+                    <p class="si-hint" id="fp-timer" style="margin-top:6px;"></p>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-newpw">New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-newpw" placeholder="Min. 8 characters" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-pw-toggle" onclick="fpTogglePw('fp-newpw','fp-pw-toggle')" aria-label="Show password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="si-group">
+                    <label class="si-label" for="fp-confirmpw">Confirm New Password</label>
+                    <div class="si-wrap">
+                        <span class="si-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <input class="si-input si-pw-input" type="password" id="fp-confirmpw" placeholder="Repeat new password" maxlength="128" autocomplete="new-password">
+                        <button type="button" class="si-pw-toggle" id="fp-cpw-toggle" onclick="fpTogglePw('fp-confirmpw','fp-cpw-toggle')" aria-label="Show confirm password">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
                 <p class="si-field-note" id="fp-pw-note"></p>
-                <div id="fp-msg2" style="margin-bottom:8px;"></div>
-                <button class="si-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
-                <p class="si-switch" style="margin-top:14px;">
-                    Didn't get the code? <button type="button" class="si-switch-link" onclick="fpGoBack()">Go back &amp; resend</button>
-                </p>
-            </div>
-            <!-- Step 3: success -->
-            <div id="fp-step3" style="display:none">
-                <div class="fp-success-box">
-                    <div class="fp-success-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    </div>
-                    <h3>Password Reset!</h3>
-                    <p>Your password has been changed. You can now sign in with your new credentials.</p>
-                    <button class="si-btn" onclick="backToSignIn()">Back to Sign In</button>
-                </div>
+                <div id="fp-msg2" style="margin-bottom:8px;"></div>
+                <button class="si-btn" id="fp-reset-btn" onclick="fpVerifyAndReset()">Reset Password</button>
+                <p class="si-switch" style="margin-top:14px;">
+                    Didn't get the code? <button type="button" class="si-switch-link" onclick="fpGoBack()">Go back &amp; resend</button>
+                </p>
+            </div>
+            <!-- Step 3: success -->
+            <div id="fp-step3" style="display:none">
+                <div class="fp-success-box">
+                    <div class="fp-success-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <h3>Password Reset!</h3>
+                    <p>Your password has been changed. You can now sign in with your new credentials.</p>
+                    <button class="si-btn" onclick="backToSignIn()">Back to Sign In</button>
+                </div>
             </div>
             </div>
         </div>
@@ -2277,7 +2277,7 @@
 </script>
 
 <script>
-    /* PWA — register here too (not just app/home.html) so offline caching
+    /* PWA — register the service worker here so offline caching
        is active from the very first visit, before the user even logs in. */
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

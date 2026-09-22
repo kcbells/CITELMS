@@ -7,15 +7,14 @@
  * BACKGROUND SYNC — outgoing messages queued in IndexedDB, flushed on reconnect
  */
 
-const SHELL_VER = 'coc-shell-v110';
-const DATA_VER  = 'coc-data-v110';
+const SHELL_VER = 'coc-shell-v113';
+const DATA_VER  = 'coc-data-v113';
 
 // Static shell — precached on install
 const SHELL_FILES = [
     './',
     './index.html',
     './app/dashboard.html',
-    './app/home.html',
     './css/style.css',
     './manifest.json',
     './assets/images/phinma_logo2.png',

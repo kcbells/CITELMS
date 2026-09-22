@@ -77,7 +77,7 @@ export function renderTopbar(container) {
                         <div class="notif-loading">Loading...</div>
                     </div>
                     <div class="dropdown-footer" style="display:flex;justify-content:space-between;gap:8px;">
-                        <a href="#${role}/${role === 'student' ? 'dashboard' : 'announcements'}" id="notif-view-ann">${role === 'student' ? 'Home' : 'All announcements'}</a>
+                        <a href="#${role}/${(role === 'student' || role === 'admin') ? 'dashboard' : 'announcements'}" id="notif-view-ann">${(role === 'student' || role === 'admin') ? 'Home' : 'All announcements'}</a>
                         <a href="#${role}/messages" id="notif-view-all">All messages</a>
                     </div>
                 </div>

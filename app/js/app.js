@@ -148,7 +148,6 @@ const PAGE_PERMISSIONS = {
     'instructor/global-gradebook': 'grades.view',
     'instructor/quiz-integrity': 'grades.view',
     'instructor/reports':        'reports.view',
-    'instructor/analytics':      'analytics.view',
     // Student
     'student/my-subjects':       'subjects.view',
     'student/subject':           'subjects.view',
@@ -205,6 +204,11 @@ const PAGE_ALIASES = {
     'program_head/sections':        'dean/sections',
     // Same archive page; ArchiveAPI narrows what's visible to their program.
     'program_head/archive':         'dean/archive',
+    // "My Profile" and the bell's "All announcements" link go to these;
+    // without an alias they opened a missing page.
+    'program_head/profile':         'instructor/profile',
+    'program_head/announcements':   'instructor/announcements',
+    'dean/announcements':           'instructor/announcements',
     // Student accessing shared modules if granted
     // (student/announcements has its own page — no alias needed)
 };

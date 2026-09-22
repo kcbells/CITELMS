@@ -182,6 +182,16 @@ function renderPage(container) {
     }
 
     const bySubject = computeBySubject(subjects);
+    const picked = _subjectFilter ? subjects.find(s => s.subject_code === _subjectFilter) : null;
+    if (_subjectFilter && !picked) _subjectFilter = '';
+    // The four numbers at the top describe what is filtered, not always everything.
+    const shownTotals = picked ? {
+        enrolled:  picked.sections.reduce((n, sec) => n + (Number(sec.enrolled_count) || 0), 0),
+        submitted: picked.sections.reduce((n, sec) => n + (Number(sec.submitted_count) || 0), 0),
+        lacking:   picked.sections.reduce((n, sec) => n + (Number(sec.lacking_count) || 0), 0),
+        flagged:   picked.sections.reduce((n, sec) => n + sec.students.length, 0),
+    } : totals;
+    const subjectOptions = [...subjects].sort((a, b) => String(a.subject_code).localeCompare(String(b.subject_code)));
     const scopeLabel = scope.year_from && scope.year_to
         ? (scope.year_from === scope.year_to
             ? `${ordinal(scope.year_from)} year only`
@@ -199,24 +209,35 @@ function renderPage(container) {
                 <button type="button" class="ss-export-btn ss-print-btn" onclick="window.print()">${icon('document', { size: 13, className: 'ui-icon-inline' })} Export PDF</button>
             </div>
 
+            ${subjects.length ? `
+            <div class="ss-filter-bar">
+                <label for="ss-subject-select" class="ss-filter-label">Subject</label>
+                <select id="ss-subject-select" class="ss-subject-select">
+                    <option value="">All subjects (${subjects.length})</option>
+                    ${subjectOptions.map(s => `<option value="${esc(s.subject_code)}" ${_subjectFilter === s.subject_code ? 'selected' : ''}>${esc(s.subject_code)} — ${esc(s.subject_name)}</option>`).join('')}
+                </select>
+                ${picked ? '<button type="button" class="ss-filter-clear" id="ss-subject-clear">Clear</button>' : ''}
+            </div>` : ''}
+
             <div class="ss-stat-row">
                 <div class="ss-stat">
-                    <span class="ss-stat-num">${totals.enrolled}</span>
+                    <span class="ss-stat-num">${shownTotals.enrolled}</span>
                     <span class="ss-stat-lbl">Enrolled</span>
                 </div>
                 <div class="ss-stat">
-                    <span class="ss-stat-num">${totals.submitted}</span>
+                    <span class="ss-stat-num">${shownTotals.submitted}</span>
                     <span class="ss-stat-lbl">Submitted work</span>
                 </div>
                 <div class="ss-stat ss-stat-lacking">
-                    <span class="ss-stat-num">${totals.lacking}</span>
+                    <span class="ss-stat-num">${shownTotals.lacking}</span>
                     <span class="ss-stat-lbl">Lacking</span>
                 </div>
                 <div class="ss-stat ss-stat-flagged">
-                    <span class="ss-stat-num">${totals.flagged}</span>
+                    <span class="ss-stat-num">${shownTotals.flagged}</span>
                     <span class="ss-stat-lbl">Flagged</span>
                 </div>
             </div>
+            ${picked ? `<p class="ss-filter-note">Showing <b>${esc(picked.subject_code)} — ${esc(picked.subject_name)}</b> only.</p>` : ''}
 
             ${renderTrendChart(_trend)}
 
@@ -263,6 +284,14 @@ function renderPage(container) {
     container.querySelector('#ss-search')?.addEventListener('input', (e) => {
         _search = e.target.value;
         renderSubjectBlocks(container, subjects);
+    });
+    container.querySelector('#ss-subject-select')?.addEventListener('change', (e) => {
+        _subjectFilter = e.target.value || '';
+        renderPage(container);
+    });
+    container.querySelector('#ss-subject-clear')?.addEventListener('click', () => {
+        _subjectFilter = '';
+        renderPage(container);
     });
     container.querySelectorAll('.ss-subject-chip').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -613,6 +642,25 @@ function css() {
 
         .ss-main { min-width:0; }
         .ss-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+        .ss-filter-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+        .ss-filter-label { font-size:12px; font-weight:800; color:#111827; text-transform:uppercase; letter-spacing:.04em; }
+        .ss-subject-select {
+            flex:1; min-width:0; max-width:460px; padding:9px 12px; border:1.5px solid #111; border-radius:9px;
+            background:#fff; color:#111; font-size:13px; font-family:inherit; font-weight:600; outline:none; cursor:pointer;
+        }
+        .ss-subject-select:focus { border-color:${G}; }
+        .ss-filter-clear {
+            padding:9px 14px; border:1.5px solid #111; border-radius:9px; background:#fff; color:#111;
+            font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;
+        }
+        .ss-filter-clear:hover { background:#F3F4F6; }
+        .ss-filter-note { margin:-10px 0 18px; font-size:12.5px; color:#374151; }
+        @media(max-width:640px) {
+            .ss-filter-bar { gap:8px; }
+            .ss-filter-label { width:100%; }
+            .ss-subject-select { max-width:none; width:100%; flex-basis:100%; }
+            .ss-filter-clear { width:100%; }
+        }
         .ss-search-wrap { position:relative; max-width:320px; flex:1; }
         .ss-search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9CA3AF; pointer-events:none; }
         .ss-search { width:100%; padding:9px 12px 9px 34px; border:1.5px solid ${BORDER}; border-radius:9px; font-size:13px; font-family:inherit; outline:none; transition:border-color .15s; box-sizing:border-box; }
@@ -659,7 +707,7 @@ function css() {
            hides the app shell and interactive controls, leaves only the
            report content (stats, trend chart, subject/section tables). */
         @media print {
-            .ss-print-btn, .ss-export-btn, .ss-search-wrap, .ss-toolbar,
+            .ss-print-btn, .ss-export-btn, .ss-search-wrap, .ss-toolbar, .ss-filter-bar,
             .ss-year-edit, .ss-msg-btn, .ss-subjects-hint { display:none !important; }
             .ss-layout { grid-template-columns:1fr; }
             .ss-subjects { position:static; border:none; padding:0; }
