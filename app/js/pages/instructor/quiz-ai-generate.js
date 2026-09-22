@@ -1033,6 +1033,14 @@ async function doSave(container, subjects, panel) {
                     </div>
                 </div>
             `;
+            // In the pop-up version these links go to a page — close the pop-up
+            // too. "Back to My Classes" from My Classes changed nothing before,
+            // so the finished generator just sat on top of the page.
+            panel.querySelectorAll('.save-result a[href^="#"]').forEach(a => {
+                a.addEventListener('click', () => {
+                    if (isModalMode && modalCloseCallback) modalCloseCallback();
+                });
+            });
             if (!linkedQuizId) {
                 panel.querySelector('#btn-new')?.addEventListener('click', () => {
                     if (isModalMode) {

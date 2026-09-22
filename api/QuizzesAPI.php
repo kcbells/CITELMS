@@ -365,12 +365,11 @@ function getQuestions() {
             return;
         }
 
-        $quizType = $quiz['quiz_type'] ?? 'graded';
-        if (isQuizProctoredType($quizType)) {
-            setQuizProctorLock((int)$quizId);
-        } else {
-            clearQuizProctorLock();
-        }
+        // Ali (the AI assistant) is locked for EVERY quiz a student opens —
+        // practice, Let's Practice, Reflection and Wrap Up included. It used
+        // to stay open for the untimed ones, where students asked it for the
+        // answers. Leaving the quiz page or submitting unlocks it again.
+        setQuizProctorLock((int)$quizId);
         
         $attemptCount = (int)(db()->fetchOne(
             "SELECT COUNT(*) as count FROM student_quiz_attempts

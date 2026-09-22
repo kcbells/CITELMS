@@ -183,6 +183,26 @@ function ensureImportBatchTables(): void
             INDEX idx_ibr_batch (batch_id),
             INDEX idx_ibr_lookup (table_name, record_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Real registrar files have longer names than these columns were made
+        // for ("COC-FAB-BSN3-01-OLDCUR" is 22 characters; one nursing subject
+        // name is 163). Too-long values made those rows fail entirely.
+        $widen = [
+            ['section', 'section_name', 50,  'VARCHAR(50)'],
+            ['subject', 'subject_name', 255, 'VARCHAR(255)'],
+        ];
+        foreach ($widen as [$table, $col, $len, $type]) {
+            $row = db()->fetchOne(
+                "SELECT CHARACTER_MAXIMUM_LENGTH len, IS_NULLABLE nul, COLLATION_NAME coll FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                [$table, $col]
+            );
+            if ($row && (int)$row['len'] < $len) {
+                $pdo->exec("ALTER TABLE `$table` MODIFY `$col` $type"
+                    . ($row['coll'] ? " COLLATE {$row['coll']}" : '')
+                    . ($row['nul'] === 'YES' ? ' NULL' : ' NOT NULL'));
+            }
+        }
     } catch (Exception $e) {
         error_log('BulkImportAPI ensureImportBatchTables: ' . $e->getMessage());
     }
@@ -1484,6 +1504,7 @@ function processRow(array $d, int $rowNum, array &$summary, bool $instrEmailColA
         $instructorId = $res['users_id'];
         if ($res['created']) { $summary['created_instructors']++; $summary['notes'][] = "Row $rowNum: created instructor account — {$res['note']}"; }
         else                 { $summary['updated_instructors']++; }
+        if (!empty($res['warning'])) $summary['warnings'][] = "Row $rowNum: " . $res['warning'];
     }
 
     // Student
@@ -1494,6 +1515,7 @@ function processRow(array $d, int $rowNum, array &$summary, bool $instrEmailColA
         $studentId = $res['users_id'];
         if ($res['created']) { $summary['created_students']++; $summary['notes'][] = "Row $rowNum: created student account — {$res['note']}"; }
         else                 { $summary['updated_students']++; }
+        if (!empty($res['warning'])) $summary['warnings'][] = "Row $rowNum: " . $res['warning'];
     }
 
     // Link instructor + subject + section into a subject_offered
@@ -1690,8 +1712,10 @@ function findOrCreateSubject(array $d, ?int $programId): ?array
         return ['subject_id' => $existingId, 'created' => false, 'updated' => (bool)$sets];
     }
 
+    // No Subject Name in the file: use the code as the name so the row (and
+    // the class on it) still imports. The name can be corrected later.
     if ($name === '') {
-        throw new Exception("subject code \"$code\" has no Subject Name — can't create it");
+        $name = $code;
     }
 
     pdo()->prepare(
@@ -1787,6 +1811,22 @@ function generateSectionEnrollmentCode(): string
  *
  * @return array{users_id:int, created:bool, note:string}
  */
+/**
+ * A unique login ID for someone the file gave no ID and no email for:
+ * AUTO-T-00001 (instructors) / AUTO-S-00001 (students). Shown in the import
+ * log so the admin can tell the person how to sign in.
+ */
+function generateAutoLoginId(string $role): string
+{
+    $col    = $role === 'instructor' ? 'employee_id' : 'student_id';
+    $prefix = $role === 'instructor' ? 'AUTO-T-' : 'AUTO-S-';
+    $n = (int)(db()->fetchOne("SELECT COUNT(*) n FROM users WHERE `$col` LIKE ?", [$prefix . '%'])['n'] ?? 0) + 1;
+    do {
+        $id = $prefix . str_pad((string)$n++, 5, '0', STR_PAD_LEFT);
+    } while (db()->fetchOne("SELECT 1 FROM users WHERE `$col` = ?", [$id]));
+    return $id;
+}
+
 function upsertPerson(string $role, string $idValue, string $email, string $fullName, ?int $departmentId, ?int $programId, string $middleName = '', ?int $campusId = null): array
 {
     $idColumn = $role === 'instructor' ? 'employee_id' : 'student_id';
@@ -1865,9 +1905,11 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
         if ($email !== '' && strcasecmp($email, $user['email'] ?? '') !== 0 && !$hasRealEmail) {
             $emailTaken = db()->fetchOne("SELECT 1 FROM users WHERE email = ? AND users_id != ?", [$email, $user['users_id']]);
             if ($emailTaken) {
-                throw new Exception("can't add email \"$email\" to $role \"$idValue\" — it's already used by another account");
+                // Keep the row — only the email is left off this account.
+                $warning = "email \"$email\" is already used by another account, so it was not added to " . ($fullName ?: $idValue);
+            } else {
+                $sets[] = "email = ?"; $params[] = $email;
             }
-            $sets[] = "email = ?"; $params[] = $email;
         }
         if ($departmentId && empty($user['department_id']))     { $sets[] = "department_id = ?";   $params[] = $departmentId; }
         if ($programId && empty($user['program_id']))           { $sets[] = "program_id = ?";       $params[] = $programId; }
@@ -1877,14 +1919,25 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
             $params[] = $user['users_id'];
             pdo()->prepare("UPDATE users SET " . implode(', ', $sets) . ", updated_at = NOW() WHERE users_id = ?")->execute($params);
         }
-        return ['users_id' => (int)$user['users_id'], 'created' => false, 'note' => $sets ? 'matched existing account, filled in blanks' : 'matched existing account'];
+        return ['users_id' => (int)$user['users_id'], 'created' => false, 'note' => $sets ? 'matched existing account, filled in blanks' : 'matched existing account', 'warning' => $warning ?? null];
     }
 
+    // No ID in the file used to skip the whole row (and every class on it).
+    // Every row is imported now: with a real email the person signs in with
+    // that email; with neither, they get an auto login ID shown in the log.
+    $loginNote = '';
     if ($idValue === '') {
-        throw new Exception("no " . ($role === 'instructor' ? 'Employee ID' : 'Student ID') . " given — can't create a new $role account (found by email match failed too)");
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $loginNote = "signs in with email \"$email\"";
+        } else {
+            $idValue   = generateAutoLoginId($role);
+            $loginNote = "no ID or email in the file — auto login ID \"$idValue\"";
+        }
     }
 
-    [$firstName, $lastName] = splitPersonName($fullName !== '' ? $fullName : $idValue);
+    $nameSource = $fullName !== '' ? $fullName
+        : ($idValue !== '' ? $idValue : Sanitize::properName(str_replace(['.', '_'], ' ', strstr($email, '@', true) ?: $email)));
+    [$firstName, $lastName] = splitPersonName($nameSource);
     if ($lastName === '') $lastName = $firstName;
 
     // A real email should normally be in the sheet — this placeholder only
@@ -1892,7 +1945,13 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
     // when a row genuinely has none.
     $finalEmail = $email !== '' ? $email : ($idValue . '@pending.local');
     if (db()->fetchOne("SELECT 1 FROM users WHERE email = ?", [$finalEmail])) {
-        throw new Exception("can't create $role \"$idValue\" — email \"$finalEmail\" is already used by another account");
+        if ($email !== '') {
+            // The real email is taken by someone else — create with a placeholder
+            // instead of dropping the row; an admin can fix the email later.
+            $loginNote .= ($loginNote ? '; ' : '') . "email \"$email\" already belongs to another account, so a placeholder email was used";
+            if ($idValue === '') { $idValue = generateAutoLoginId($role); $loginNote .= " — auto login ID \"$idValue\""; }
+        }
+        $finalEmail = $idValue . '.' . bin2hex(random_bytes(3)) . '@pending.local';
     }
 
     // Default temp password: their last name in ALL CAPS. must_change_password
@@ -1917,16 +1976,20 @@ function upsertPerson(string $role, string $idValue, string $email, string $full
          VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())"
     )->execute([
         $firstName, $middleName !== '' ? $middleName : null, $lastName, $finalEmail,
-        password_hash($tempPassword, PASSWORD_DEFAULT), $role,
+        // cost 8: a temporary password that must be changed on first sign-in;
+        // at the default cost, hundreds of new accounts pushed the upload past
+        // the server's time limit. The real password uses the normal cost.
+        password_hash($tempPassword, PASSWORD_DEFAULT, ['cost' => 8]), $role,
         $departmentId, $programId, $campusId,
-        $role === 'instructor' ? $idValue : null,
-        $role === 'student'    ? $idValue : null,
+        $role === 'instructor' && $idValue !== '' ? $idValue : null,
+        $role === 'student'    && $idValue !== '' ? $idValue : null,
         $yearLevel,
     ]);
     $newId = (int)pdo()->lastInsertId();
     trackBatchRow('users', $newId);
 
-    return ['users_id' => $newId, 'created' => true, 'note' => "login ID \"$idValue\" — default password \"$tempPassword\" (last name, all caps), asked to set a real one on first login"];
+    $how = $loginNote !== '' ? $loginNote : "login ID \"$idValue\"";
+    return ['users_id' => $newId, 'created' => true, 'note' => "$how — default password \"$tempPassword\" (last name, all caps), asked to set a real one on first login"];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -195,6 +195,29 @@ function scanBoxHtml(id) {
  * counts right in it instead of a plain one-line alert. Resolves when
  * dismissed (OK, backdrop click, or Escape) — same contract as notify.alert.
  */
+/**
+ * Turns thousands of "Row N: ..." lines into a few plain reasons with counts,
+ * so the admin sees WHY rows were skipped and what to do about it.
+ */
+function groupImportErrors(errors = []) {
+    const kinds = [
+        { re: /no Employee ID given/i, text: (n, p) => `${n} row${p} skipped — the instructor has no account yet, and the file has no Employee ID to create one. Add these instructors in Users (or add an Employee ID column), then import again.` },
+        { re: /no Student ID given/i,  text: (n, p) => `${n} row${p} skipped — the student has no account yet, and the file has no Student ID to create one.` },
+        { re: /already used by another account/i, text: (n, p) => `${n} row${p} skipped — the email is already used by a different account.` },
+    ];
+    const counts = new Map();
+    for (const e of errors) {
+        const k = kinds.find(k => k.re.test(String(e)));
+        const key = k ? kinds.indexOf(k) : -1;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([key, n]) => {
+        const p = n === 1 ? '' : 's';
+        return key >= 0 ? kinds[key].text(n.toLocaleString(), p)
+            : `${n.toLocaleString()} row${p} skipped for other reasons — see the log below.`;
+    });
+}
+
 function openImportSuccessModal(data, { hasErrors = false } = {}) {
     const allStats = [
         ['Instructors created', data.created_instructors], ['Instructors updated', data.updated_instructors],
@@ -204,19 +227,22 @@ function openImportSuccessModal(data, { hasErrors = false } = {}) {
         ['Classes linked',      data.linked_offerings],     ['Students enrolled',   data.enrolled_students],
     ].filter(([, val]) => val > 0);
 
+    const newAccounts = (Number(data.created_instructors) || 0) + (Number(data.created_students) || 0);
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.id = 'bi-success-overlay';
         overlay.innerHTML = `
-            <div class="bi-pm-modal" role="alertdialog" aria-modal="true" aria-label="${hasErrors ? 'Import finished, with errors' : 'Import successful'}">
+            <div class="bi-pm-modal" role="alertdialog" aria-modal="true" aria-label="${hasErrors ? 'Import finished' : 'Import successful'}">
                 <svg class="bi-check-svg" viewBox="0 0 52 52">
                     <circle class="bi-check-circle" cx="26" cy="26" r="23" fill="none"/>
                     <path class="bi-check-mark" fill="none" d="M15 27l7.5 7.5L37 18"/>
                 </svg>
-                <h3>${hasErrors ? 'Import Finished, With Errors' : 'Import Successful'}</h3>
+                <h3>${hasErrors ? 'Import Finished' : 'Import Successful'}</h3>
                 <p class="bi-pm-file">${hasErrors
-                    ? `${esc(String(data.errors?.length || 0))} row error${(data.errors?.length || 0) !== 1 ? 's' : ''} — see the log below for details.`
+                    ? `${esc(Number(data.rows_processed ?? 0).toLocaleString())} row${data.rows_processed === 1 ? '' : 's'} saved.`
                     : `Processed ${esc(String(data.rows_processed ?? 0))} row${data.rows_processed === 1 ? '' : 's'} successfully.`}</p>
+                ${hasErrors ? `<div class="bi-skip-box">${groupImportErrors(data.errors).map(t => `<p>${esc(t)}</p>`).join('')}</div>` : ''}
+                ${newAccounts ? `<div class="bi-new-box"><p><b>${newAccounts.toLocaleString()} new account${newAccounts === 1 ? '' : 's'} created.</b> They sign in with their email (or the ID shown in the log). Temporary password: their <b>LAST NAME in capital letters</b> — they must change it the first time they sign in.</p></div>` : ''}
                 ${allStats.length ? `<div class="bi-success-stats">${allStats.map(([label, val]) => `
                     <div class="bi-stat"><strong>${val}</strong><span>${esc(label)}</span></div>
                 `).join('')}</div>` : ''}
@@ -619,6 +645,11 @@ export function bulkImportCss() {
             box-shadow:0 20px 60px rgba(0,0,0,.3); text-align:center; }
         .bi-pm-modal h3 { margin:0 0 4px; font-size:19px; font-weight:800; color:#111; }
         .bi-pm-file { margin:0 0 22px; font-size:13px; color:#6B7280; word-break:break-all; }
+        .bi-skip-box { text-align:left; border:1.5px solid #B45309; border-radius:10px; padding:10px 12px; margin:-10px 0 18px; }
+        .bi-skip-box p { margin:0; font-size:12.5px; line-height:1.5; color:#78350F; }
+        .bi-new-box { text-align:left; border:1.5px solid #00461B; border-radius:10px; padding:10px 12px; margin:-10px 0 18px; }
+        .bi-new-box p { margin:0; font-size:12.5px; line-height:1.5; color:#14532D; }
+        .bi-skip-box p + p { margin-top:6px; padding-top:6px; border-top:1px solid #FDE68A; }
         .bi-pm-hint { margin:12px 0 0; font-size:11px; color:#9CA3AF; }
         .bi-success-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px;
             margin:4px 0 22px; text-align:left; }

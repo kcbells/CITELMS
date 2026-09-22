@@ -459,7 +459,7 @@ async function handleScanFiles(files, rowsEl) {
         if (autoFailed) parts.push(`${autoFailed} failed`);
         if (needsReviewCount) parts.push(`${needsReviewCount} need${needsReviewCount === 1 ? 's' : ''} a quick manual check below`);
         await notify.alert(parts.join(', ') + '.', {
-            title: autoFailed ? 'Upload Finished, With Errors' : 'Files Uploaded',
+            title: autoFailed ? 'Upload Finished' : 'Files Uploaded',
             type: autoFailed ? 'warning' : 'success',
         });
     } else if (needsReviewCount) {

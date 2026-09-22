@@ -18,6 +18,9 @@ export function setQuizProctoring(active, options = {}) {
     if (options.attemptsRemaining !== undefined) attemptsRemaining = options.attemptsRemaining;
     if (options.maxAttempts !== undefined) maxAttempts = options.maxAttempts;
     document.body.classList.toggle('quiz-proctored', proctored);
+    // Any open quiz (graded or not) hides Ali so it cannot hand out answers.
+    document.body.classList.toggle('quiz-active', quizId != null);
+    if (quizId != null) document.getElementById('fa-root')?.classList.remove('fa-open');
 }
 
 export function setQuizInProgress(active) {
@@ -44,6 +47,7 @@ export function clearQuizProctoring() {
     leaveConfirmHandler = null;
     confirmedExitHandler = null;
     document.body.classList.remove('quiz-proctored');
+    document.body.classList.remove('quiz-active');
 }
 
 export function isQuizProctored() {
@@ -63,7 +67,8 @@ export function getActiveQuizId() {
 }
 
 export function isAssistantAllowed() {
-    return !proctored;
+    // Not during ANY quiz — Let's Practice, Reflection and Wrap Up included.
+    return !proctored && quizId == null;
 }
 
 /**

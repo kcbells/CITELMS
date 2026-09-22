@@ -49,7 +49,8 @@ export function renderTopbar(container) {
                 ${icon('search', { size: 19 })}
             </button>
 
-            <!-- Ali (AI assistant) -->
+            <!-- Ali (AI assistant) — hidden during any quiz (body.quiz-active) -->
+            <style>body.quiz-active #fa-topbar-btn, body.quiz-active #fa-root { display:none !important; }</style>
             <button class="topbar-btn" id="fa-topbar-btn" title="Ask Ali" aria-label="Ask Ali">
                 <img src="${BASE_URL}/assets/images/assistant-ali.png" alt="" class="fa-topbar-img"
                      onerror="this.style.display='none';this.parentElement.querySelector('.fa-topbar-fallback').style.display='inline-flex'">

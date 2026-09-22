@@ -7,8 +7,8 @@
  * BACKGROUND SYNC — outgoing messages queued in IndexedDB, flushed on reconnect
  */
 
-const SHELL_VER = 'coc-shell-v113';
-const DATA_VER  = 'coc-data-v113';
+const SHELL_VER = 'coc-shell-v116';
+const DATA_VER  = 'coc-data-v116';
 
 // Static shell — precached on install
 const SHELL_FILES = [

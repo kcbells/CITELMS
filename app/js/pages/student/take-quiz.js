@@ -617,7 +617,7 @@ export async function render(container) {
                 const inlineText = cleanText.replace(/_{3,}|\[blank\]/gi,
                     `<input type="text" class="tq-inline-blank" id="tq-text-ans"
                             placeholder="     ?" value="${esc(String(curAnswer))}"
-                            autocomplete="off" spellcheck="false">`
+                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">`
                 );
                 // Override the question text rendered later
                 q._inlineBlankHtml = inlineText;
@@ -631,7 +631,7 @@ export async function render(container) {
                     <input type="text" class="tq-text-input" id="tq-text-ans"
                            placeholder="Fill in the blank…"
                            value="${esc(String(curAnswer))}"
-                           autocomplete="off" spellcheck="false">
+                           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">
                 </div>`;
         } else if (q.question_type === 'short_answer') {
             const charMax = 500;
@@ -643,7 +643,7 @@ export async function render(container) {
                     <label class="tq-text-label">Your Answer</label>
                     <textarea class="tq-textarea" id="tq-text-ans"
                               placeholder="Write your short answer here…"
-                              rows="5" maxlength="${charMax}">${esc(String(curAnswer))}</textarea>
+                              rows="5" maxlength="${charMax}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">${esc(String(curAnswer))}</textarea>
                     <div class="tq-char-count"><span id="tq-char-num">${String(curAnswer).length}</span>/${charMax} characters</div>
                 </div>`;
         } else if (q.question_type === 'essay') {
@@ -657,7 +657,7 @@ export async function render(container) {
                     <label class="tq-text-label">Your Essay Response</label>
                     <textarea class="tq-textarea tq-essay" id="tq-text-ans"
                               placeholder="Write your essay here…"
-                              rows="10" maxlength="${charMax}">${esc(String(curAnswer))}</textarea>
+                              rows="10" maxlength="${charMax}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false">${esc(String(curAnswer))}</textarea>
                     <div class="tq-char-count">
                         <span id="tq-word-num">${wordCount}</span> words &nbsp;·&nbsp;
                         <span id="tq-char-num">${String(curAnswer).length}</span>/${charMax} characters

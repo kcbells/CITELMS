@@ -197,17 +197,27 @@ export function rotateOverlayHtml() {
         </svg>
         <p class="gb-rotate-title">Rotate your device</p>
         <p class="gb-rotate-sub">This gradebook has a lot of columns — turn your phone sideways (landscape) for the full table.</p>
+        <button type="button" class="gb-rotate-anyway" onclick="document.body.classList.add('gb-force-view')">View table anyway</button>
     </div>`;
 }
 
 export function rotateOverlayCss() {
     return `
+        /* A panel inside the page, not a full-screen cover: a fixed cover got
+           trapped under the class tabs (their stacking context), so the tab
+           icons floated over it and hid the phone icon. */
         .gb-rotate-overlay {
-            display:none; position:fixed; inset:0; z-index:99999;
-            background:${G}; color:#fff;
+            display:none; position:relative;
+            background:${G}; color:#fff; border:2px solid #111; border-radius:14px;
             flex-direction:column; align-items:center; justify-content:center;
-            gap:14px; text-align:center; padding:32px;
+            gap:14px; text-align:center; padding:40px 24px; margin:12px 0; min-height:52vh;
+            box-sizing:border-box;
         }
+        .gb-rotate-anyway {
+            margin-top:6px; border:2px solid #fff; background:transparent; color:#fff;
+            font:inherit; font-size:13px; font-weight:700; padding:10px 18px; border-radius:9px; cursor:pointer;
+        }
+        .gb-rotate-anyway:active { background:rgba(255,255,255,.15); }
         .gb-rotate-icon { animation:gbRotateSway 1.6s ease-in-out infinite; }
         @keyframes gbRotateSway {
             0%, 100% { transform:rotate(0deg); }
@@ -216,7 +226,9 @@ export function rotateOverlayCss() {
         .gb-rotate-title { font-size:18px; font-weight:800; margin:0; }
         .gb-rotate-sub   { font-size:13px; color:#D7E9DC; max-width:280px; margin:0; line-height:1.5; }
         @media (max-width:900px) and (orientation:portrait) {
-            .gb-rotate-overlay { display:flex; }
+            body:not(.gb-force-view) .gb-rotate-overlay { display:flex; }
+            /* the table itself waits until the phone is turned (or "View anyway") */
+            body:not(.gb-force-view) .gb-rotate-overlay ~ * { display:none !important; }
         }
         @media (prefers-reduced-motion:reduce) {
             .gb-rotate-icon { animation:none; }
